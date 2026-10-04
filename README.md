@@ -213,7 +213,7 @@ cd rokey_9_pjt2_D2
 
 ## 협업 규칙
 
-- [팀 협업 규칙](docs/06_팀협업규칙_v1_100415.md) — 팀 규칙 9개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
+- [팀 협업 규칙](docs/06_팀협업규칙_v1_100416.md) — 팀 규칙 9개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
 - [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) — GitHub에서 일하는 순서(브랜치 → PR → 승인 → Squash and merge)
 - [AGENTS.md](AGENTS.md) — AI 에이전트 읽기 규칙(커밋의 `변경 파일:`만 읽어 토큰을 아낀다)
 - [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — 자기 파일을 저장소 맨 위 `CLAUDE.local.md`로 복사해 쓴다([쓰는 법](docs/에이전트_프롬프트/쓰는법_v1_100415.md))
