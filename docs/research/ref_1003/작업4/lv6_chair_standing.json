@@ -1,0 +1,249 @@
+{
+ "name": "Lv6 세운 다리 의자",
+ "how": [
+  "Lv4 세운 다리 테이블을 만든다",
+  "상판 뒤쪽 끝에 블록 3개를 세워 나란히(앞뒤 두께 15 mm)",
+  "세운 블록 3개 위에 좌우로 긴 블록 1개를 덮는다(묶어 주기)"
+ ],
+ "blocks": 13,
+ "height_mm": 195.0,
+ "min_margin_lr_mm": 7.5,
+ "min_margin_fb_mm": 7.5,
+ "stage_margins": [
+  {
+   "stage": 1,
+   "lr": 7.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 2,
+   "lr": 7.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 3,
+   "lr": 7.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 4,
+   "lr": 7.5,
+   "fb": 7.5
+  },
+  {
+   "stage": 5,
+   "lr": 7.5,
+   "fb": 7.5
+  }
+ ],
+ "sequence": [
+  {
+   "order": 1,
+   "stage": 1,
+   "part": "세운 다리",
+   "orientation": "세움",
+   "center_xy_mm": [
+    -30,
+    -25
+   ],
+   "bottom_z_mm": 0,
+   "size_mm": [
+    15.0,
+    25.0,
+    75.0
+   ]
+  },
+  {
+   "order": 2,
+   "stage": 1,
+   "part": "세운 다리",
+   "orientation": "세움",
+   "center_xy_mm": [
+    -30,
+    25
+   ],
+   "bottom_z_mm": 0,
+   "size_mm": [
+    15.0,
+    25.0,
+    75.0
+   ]
+  },
+  {
+   "order": 3,
+   "stage": 1,
+   "part": "세운 다리",
+   "orientation": "세움",
+   "center_xy_mm": [
+    30,
+    -25
+   ],
+   "bottom_z_mm": 0,
+   "size_mm": [
+    15.0,
+    25.0,
+    75.0
+   ]
+  },
+  {
+   "order": 4,
+   "stage": 1,
+   "part": "세운 다리",
+   "orientation": "세움",
+   "center_xy_mm": [
+    30,
+    25
+   ],
+   "bottom_z_mm": 0,
+   "size_mm": [
+    15.0,
+    25.0,
+    75.0
+   ]
+  },
+  {
+   "order": 5,
+   "stage": 2,
+   "part": "보",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    -25
+   ],
+   "bottom_z_mm": 75.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 6,
+   "stage": 2,
+   "part": "보",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    25
+   ],
+   "bottom_z_mm": 75.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 7,
+   "stage": 3,
+   "part": "상판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 90.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 8,
+   "stage": 3,
+   "part": "상판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    0,
+    0
+   ],
+   "bottom_z_mm": 90.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 9,
+   "stage": 3,
+   "part": "상판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 90.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 10,
+   "stage": 4,
+   "part": "세운 등받이",
+   "orientation": "세움",
+   "center_xy_mm": [
+    -25,
+    30
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    25.0,
+    15.0,
+    75.0
+   ]
+  },
+  {
+   "order": 11,
+   "stage": 4,
+   "part": "세운 등받이",
+   "orientation": "세움",
+   "center_xy_mm": [
+    0,
+    30
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    25.0,
+    15.0,
+    75.0
+   ]
+  },
+  {
+   "order": 12,
+   "stage": 4,
+   "part": "세운 등받이",
+   "orientation": "세움",
+   "center_xy_mm": [
+    25,
+    30
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    25.0,
+    15.0,
+    75.0
+   ]
+  },
+  {
+   "order": 13,
+   "stage": 5,
+   "part": "등받이 덮개",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    30
+   ],
+   "bottom_z_mm": 180.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  }
+ ]
+}

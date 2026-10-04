@@ -1,0 +1,54 @@
+# src 패키지
+
+ROS 2 Jazzy 패키지 8개 **(안)**. 아직 코드는 없다(코드 작성 전). 노드는 파트별로 나뉘어 있고, 서로 `/d2/` 아래 토픽·서비스·액션으로 주고받는다. 요청-결과는 전용 메시지 패키지 `d2_interfaces`, 상태 방송은 JSON 문자열이다. 이름·칸·단위 약속은 [인터페이스 문서](../docs/02_인터페이스_IRD_v1_100414.md), 구조는 [설계 문서](../docs/03_설계_SDD_v1_100414.md)에 있다.
+
+| 패키지 (안) | 빌드 타입 | 담당 파트 | 역할 | 노드 (실행 이름, 안) | 돌리는 곳 |
+|---|---|---|---|---|---|
+| `d2_interfaces` | ament_cmake (rosidl) | 로봇 동작 (인프라·통합) | 전용 메시지 6개 — `PickPlace.action` · `GripperCommand` · `CheckProgress` · `NextBlock` · `HmiCommand` · `SceneAttach` (`.srv`). 노드 없음. **10/4 저녁에 만든다** | — | 모든 PC |
+| `d2_bringup` | ament_python | 로봇 동작 (인프라·통합) | 팀 브링업(박진용 `real_moveit.launch.py`를 옮김, `mode:=virtual`·`real`) + 전체 실행 launch(진짜·가짜 고르기) + 설정 파일 `config/robot.yaml` | — (launch만) | 로봇 PC 호스트 |
+| `d2_motion` | ament_python | 로봇 동작 | 블록 1개 집기·놓기 액션 서버(실행기는 같은 프로그램 안 클래스) + MoveIt2 장면을 고치는 유일한 노드 | `pick_place` · `scene_manager` | 로봇 PC 호스트 |
+| `d2_gripper` | ament_python | 로봇 동작 (로봇 셀) | RG2를 다루는 유일한 노드. (폭, 힘)을 받아 다 움직인 뒤 잡힘·폭을 답한다 | `gripper` | 로봇 PC 호스트 |
+| `d2_safety` | ament_python | 로봇 동작 (안전 감시) | 정지 판단 + 제어기에 서기 궤적 + 잠금. 늘 켜 둔다 | `safety_stop` | 로봇 PC 호스트 (고정) |
+| `d2_vision` | ament_python | 비전 | 손목 카메라 블록 인식(있음·높이·오차), 손목 손 찾기(깊이 차이 + MediaPipe), 웹캠 구역별 사람 감지 | `wrist_block` · `wrist_hand` · `webcam_human` | 손목: 로봇 PC 호스트 / 웹캠: 서비스 PC 컨테이너 |
+| `d2_task` | ament_python | 비전 | 작업 관리자(상태표: 자동·협동·차례·실패 대응·다시 시작) + 작업 판단(레시피·진행표 주인·다음 블록) | `task_manager` · `task_planner` | 서비스 PC 컨테이너 |
+| `d2_hmi` | ament_python | HMI | 웹 화면(설계 선택·출발·정지·다시 시작·진행) · 음성(웨이크워드 → STT → GPT 의도 분류) · 음성 멈춰(PC 안 키워드) · 기록기(사건 → CSV·DB) | `web_ui` · `voice` · `voice_stop` · `recorder` | 서비스 PC 컨테이너 (`voice_stop`은 HMI가 정함) |
+
+- 패키지 이름과 실행 이름은 이 문서에서 제안한 **안**이다. 만들 때 담당이 바꿀 수 있고, 바꾸면 이 표와 인터페이스 문서 3장을 같이 고친다.
+- 가짜 노드(`mock_*`)는 각 패키지 안에 둔다. 누가 무엇을 만드는지는 [인터페이스 문서 11장](../docs/02_인터페이스_IRD_v1_100414.md#11-가짜mock-노드-규칙)에 있다.
+- CAD → 레시피 도구(한세교)는 노드가 아니라 미리 돌리는 도구다. 둘 곳은 만들 때 정한다.
+
+## 구조 규칙
+
+- **관련 기능은 클래스로 묶는다(팀 규칙 1).** 노드 하나 = 파일 하나 = 클래스 하나를 기본으로 한다. 예: 그리퍼 노드 = `GripperNode` 안에 열기·닫기·폭 읽기. 집기·놓기의 실행기는 노드가 아니라 `pick_place` 프로그램이 쓰는 클래스다(인터페이스 문서 3장).
+- **일회성 참조·과도한 구조화를 하지 않는다(팀 규칙 2).** 한 번만 쓰는 값·함수를 따로 빼서 여기저기서 참조하게 만들지 않는다. '나중에 쓸지도 모르는' 추상 클래스·계층·설정 단계를 미리 만들지 않는다. 지금 필요한 만큼만 짠다.
+- **숫자는 `config/robot.yaml`에.** 좌표·높이·힘·시간은 코드에 쓰지 않고 이 파일 하나에 둔다(보정 값만 따로 파일). 키 이름은 10/4에 정했다 — 인터페이스 문서 9장.
+- **경로를 하드코딩하지 않는다.** `/home/이름/...` 같은 개인 경로를 코드·launch·설정에 쓰지 않는다. `get_package_share_directory('d2_bringup')`이나 `Path(__file__).parent`를 쓴다.
+- **로봇을 움직이는 코드는 Ctrl+C·막힘·실패 때 서기 정지를 먼저 한다.** rclpy는 `rclpy.init(signal_handler_options=SignalHandlerOptions.NO)`로 시작한다. 그래야 Ctrl+C에 ROS가 먼저 꺼지지 않고, 서기 궤적(지금 관절값, 0.3초)을 제어기에 보낸 뒤 끝낼 수 있다. 프로그램이 끝나도 이미 보낸 궤적은 계속 움직이기 때문이다(10/3 가상 시험). 예시는 R-01 정지 수정본의 `init_ros()`·`SafeStop.stop()` — [TS-01](../docs/troubleshooting/TS-01_정지가_안_들음_R-01_v1_100414.md).
+- **MoveIt2 장면은 장면 관리 노드(`scene_manager`)만 고친다.** 다른 노드는 `apply_planning_scene`을 부르지 않는다. 쥔 블록은 `/d2/motion/scene/attach`로 부탁한다. 멈출지는 정지 노드, 차례는 작업 관리자, 진행표는 작업 판단이 정한다.
+- **약속은 파일이 정본.** `d2_interfaces`의 `.action`·`.srv` 파일이 인터페이스 문서와 다르면 파일이 정본이다. 이름·칸을 바꿀 때는 PR을 올리고 **받는 파트 사람이 확인해야** merge한다. 커밋 `영향:`에 파트를 적고 `CHANGES.md`에 한 줄 남긴다.
+- **가짜 노드(`mock_*`).** 보내는 쪽(토픽은 내보내는 쪽, 서비스·액션은 답하는 쪽)이 10/5 오전까지 만든다. 진짜와 같은 이름·형식·JSON 칸을 쓰고, 로봇·카메라·마이크 없이 돌며, 실패 코드를 일부러 낼 수 있다. 진짜와 동시에 켜지 않는다.
+- **Docker.** 서비스 PC 노드(웹 화면·음성·기록기·웹캠 사람 감지·작업 관리자·작업 판단)와 DB는 컨테이너로, 로봇 PC 노드(브링업·MoveIt2·집기·놓기·장면 관리·그리퍼·정지·손목 비전)는 호스트에서 돌린다. 컨테이너는 host 네트워크로 띄운다. 원본 자료(녹화·대용량 CAD·DB 데이터)는 이미지에 넣지 않고 로컬 폴더를 연결(`-v`)한다. 컨테이너를 지우기 전에 `docker ps -a`로 이름·만든 사람을 확인한다. 설치·명령은 [개발 환경 설정](../docs/env/README.md).
+- **키는 `.env`.** OpenAI 키는 PC마다 `.env`에 두고 환경 변수로 읽는다. 코드·설정·커밋에 쓰지 않는다(팀 규칙 4).
+
+## 빌드 · 시험
+
+아직 코드가 없다(코드 작성 전). 패키지가 생기면 아래처럼 빌드한다.
+
+```bash
+# 저장소 루트(rokey_9_pjt2_D2)에서
+source /opt/ros/jazzy/setup.bash
+source <두산 워크스페이스>/install/setup.bash      # 두산 드라이버·MoveIt 설정 (경로는 PC마다 다름)
+colcon build --symlink-install
+source install/setup.bash
+
+# 메시지 패키지만 먼저 (10/4 저녁)
+colcon build --packages-select d2_interfaces
+ros2 interface show d2_interfaces/action/PickPlace
+
+# 자동 시험
+colcon test
+colcon test-result --verbose
+```
+
+- 시험 수·결과는 코드가 생기면 이 절에 적는다.
+- 로봇을 움직이는 시험은 펜던트를 든 사람이 있을 때, 저속·짝과 함께, 정지가 되는지부터 본다([팀 협업 규칙](../docs/06_팀협업규칙_v1_100414.md)).

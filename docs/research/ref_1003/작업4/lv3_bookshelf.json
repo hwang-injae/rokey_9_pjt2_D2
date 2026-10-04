@@ -1,0 +1,508 @@
+{
+ "name": "Lv3 3단 책장",
+ "how": [
+  "옆판: 앞뒤로 긴 블록 2개, 간격 25 mm, 3층",
+  "선반: 좌우로 긴 블록 3개를 옆판 위에 가로질러 놓는다",
+  "옆판 3층을 선반 양 끝 위에 다시 쌓는다(선반을 눌러 고정) → 3번 반복"
+ ],
+ "blocks": 27,
+ "height_mm": 180.0,
+ "min_margin_lr_mm": 12.5,
+ "min_margin_fb_mm": 12.5,
+ "stage_margins": [
+  {
+   "stage": 1,
+   "lr": 12.5,
+   "fb": 37.5
+  },
+  {
+   "stage": 2,
+   "lr": 12.5,
+   "fb": 37.5
+  },
+  {
+   "stage": 3,
+   "lr": 12.5,
+   "fb": 37.5
+  },
+  {
+   "stage": 4,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 5,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 6,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 7,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 8,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 9,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 10,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 11,
+   "lr": 12.5,
+   "fb": 12.5
+  },
+  {
+   "stage": 12,
+   "lr": 12.5,
+   "fb": 12.5
+  }
+ ],
+ "sequence": [
+  {
+   "order": 1,
+   "stage": 1,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 0.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 2,
+   "stage": 1,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 0.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 3,
+   "stage": 2,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 15.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 4,
+   "stage": 2,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 15.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 5,
+   "stage": 3,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 30.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 6,
+   "stage": 3,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 30.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 7,
+   "stage": 4,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    -25
+   ],
+   "bottom_z_mm": 45.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 8,
+   "stage": 4,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    0
+   ],
+   "bottom_z_mm": 45.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 9,
+   "stage": 4,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    25
+   ],
+   "bottom_z_mm": 45.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 10,
+   "stage": 5,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 60.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 11,
+   "stage": 5,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 60.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 12,
+   "stage": 6,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 75.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 13,
+   "stage": 6,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 75.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 14,
+   "stage": 7,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 90.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 15,
+   "stage": 7,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 90.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 16,
+   "stage": 8,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    -25
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 17,
+   "stage": 8,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    0
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 18,
+   "stage": 8,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    25
+   ],
+   "bottom_z_mm": 105.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 19,
+   "stage": 9,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 120.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 20,
+   "stage": 9,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 120.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 21,
+   "stage": 10,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 135.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 22,
+   "stage": 10,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 135.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 23,
+   "stage": 11,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    -25,
+    0
+   ],
+   "bottom_z_mm": 150.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 24,
+   "stage": 11,
+   "part": "옆판",
+   "orientation": "눕힘(앞뒤)",
+   "center_xy_mm": [
+    25,
+    0
+   ],
+   "bottom_z_mm": 150.0,
+   "size_mm": [
+    25.0,
+    75.0,
+    15.0
+   ]
+  },
+  {
+   "order": 25,
+   "stage": 12,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    -25
+   ],
+   "bottom_z_mm": 165.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 26,
+   "stage": 12,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    0
+   ],
+   "bottom_z_mm": 165.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  },
+  {
+   "order": 27,
+   "stage": 12,
+   "part": "선반",
+   "orientation": "눕힘(좌우)",
+   "center_xy_mm": [
+    0,
+    25
+   ],
+   "bottom_z_mm": 165.0,
+   "size_mm": [
+    75.0,
+    25.0,
+    15.0
+   ]
+  }
+ ]
+}
