@@ -1,7 +1,7 @@
 """가짜 웹캠 사람 감지 (mock_webcam_human) — 골격, IRD 6장 안 기준.
 
 웹캠 없이 /d2/vision/human_zone 과 /d2/vision/heartbeat 를 낸다.
-받는 쪽: 정지 노드(로봇 동작), 작업 관리자.
+받는 쪽: 작업 관리자 (정지 노드는 1차 뒤 W066부터).
 
 실행:
   ros2 run d2_vision mock_webcam_human

@@ -23,7 +23,6 @@ setup(
             'webcam_human = d2_vision.webcam_human:main',
             'wrist_hand = d2_vision.wrist_hand:main',
             'mock_webcam_human = d2_vision.mock_webcam_human:main',
-            'mock_wrist_hand = d2_vision.mock_wrist_hand:main',
             # 민범진
             'wrist_block = d2_vision.wrist_block:main',
             'mock_wrist_block = d2_vision.mock_wrist_block:main',
