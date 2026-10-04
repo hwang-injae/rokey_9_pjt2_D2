@@ -32,7 +32,7 @@
 - 하루를 마칠 때 `CHANGES.md` 맨 위에 파트별 한 줄을 적는다.
 
 ## 5. 문서 이름 (팀 규칙 9)
-- `docs/` 아래 문서: `이름_v<버전>_<MMDDHH>.md`. 큰 변경만 버전 +1(`python3 tools/docver.py major <파일>`), 작은 수정은 월일시만(`python3 tools/docver.py touch <파일>`). 링크도 같이 고쳐진다. 이전 판은 git 이력에 있다.
+- `docs/` 아래 문서: `이름_v<버전>_<MMDDHH>.md`. 큰 변경만 버전 +1(`python3 tools/docver.py major <파일>`), 작은 수정은 월일시만(`python3 tools/docver.py touch <파일>`). 링크도 같이 고쳐진다. 이전 판은 git 이력에 있다. 새 판을 만들면 옛 판 파일은 지운다(같은 폴더에 두 판을 두지 않는다).
 - `README.md`·`.github/`·코드는 이 규칙에서 뺀다.
 
 ## 6. 일하는 방식
