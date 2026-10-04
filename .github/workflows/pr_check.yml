@@ -3,7 +3,7 @@
 # - 검사 스크립트는 main 쪽 것을 쓰고(pull_request_target), PR 코드는 읽기만 하고 실행하지 않는다.
 #   → PR에서 이 파일을 고쳐도 검사 방식이 바뀌지 않는다(비밀값 보호).
 # - 모두 통과하면 자동 승인한다. 승인 계정:
-#     · 저장소 비밀값 D2_APPROVER_TOKEN 이 있으면 그 계정(황인재 또는 한세교의 토큰) — CODEOWNERS 승인으로 인정됨
+#     · 저장소 비밀값 D2_APPROVER_TOKEN 이 있으면 그 계정(10/4 결정: 황인재 토큰) — CODEOWNERS 승인으로 인정됨
 #     · 없으면 github-actions 봇 — 'Allow GitHub Actions to create and approve pull requests' 설정이 켜져 있어야 함
 #   승인 계정 본인이 올린 PR은 GitHub이 본인 승인을 막으므로, 다른 승인자(황인재·한세교)가 승인한다.
 name: PR 검사
