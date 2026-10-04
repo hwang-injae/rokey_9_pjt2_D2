@@ -14,7 +14,7 @@
 ## 2. 코드 (팀 규칙 1·2)
 - 관련 기능은 **클래스 하나로 묶는다** — 노드 하나 = 파일 하나 = 클래스 하나.
 - 한 번만 쓰는 참조·'나중을 위한' 구조(추상 계층·설정 단계)를 만들지 않는다. 지금 필요한 만큼만 짠다.
-- 두 번 이상 쓰는 값은 `config/robot.yaml` 한 곳에 둔다. 개인 절대 경로(`/home/...`)를 쓰지 않는다(`get_package_share_directory()`·`Path(__file__).parent`).
+- 두 번 이상 쓰는 값은 `src/d2_bringup/config/robot.yaml` 한 곳에 둔다. 개인 절대 경로(`/home/...`)를 쓰지 않는다(`get_package_share_directory()`·`Path(__file__).parent`).
 - 단위: 노드끼리 m·rad, 파일 mm. 블록 번호는 레시피 block_id(예: `LV1_B001`). 이름은 모두 `/d2/` 아래. 전용 메시지는 `d2_interfaces`.
 - 로봇을 움직이는 코드에는 Ctrl+C·막힘·실패 때 **먼저 로봇을 세우는** 처리(서기 궤적)를 넣는다. rclpy는 `SignalHandlerOptions.NO`로 시작한다.
 - MoveIt2 장면은 **장면 관리 노드만** 고친다. 멈출지는 정지 노드, 차례는 작업 관리자, 진행표는 작업 판단이 정한다.

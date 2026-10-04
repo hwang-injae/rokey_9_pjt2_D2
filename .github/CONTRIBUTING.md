@@ -1,6 +1,6 @@
 # GitHub 협업 규칙 (협동2)
 
-팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100416.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
+팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100422.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
 
 > 하루 흐름: `/today 이름`(main 받기 → 오늘 내 작업 → 브랜치) → 작업 → `/wrap W번호`(커밋 → push → PR 초안). 명령은 `.claude/commands/`에 있다.
 
@@ -30,7 +30,7 @@
 feat: MoveIt 실행기에 서기 정지 추가
 
 - 실행 중 '서라'를 받으면 현재 자리 0.3초 궤적을 보냄
-변경 파일: src/jenga_motion/jenga_motion/executor.py, config/robot.yaml
+변경 파일: src/jenga_motion/jenga_motion/executor.py, src/d2_bringup/config/robot.yaml
 영향: 로봇 동작(실행기)
 ```
 | 접두어 | 쓸 때 |

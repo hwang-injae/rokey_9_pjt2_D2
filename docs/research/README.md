@@ -54,4 +54,4 @@
 | `R-01_정지/safe_stop.py` · `r01_box.py` | Ctrl+C · 막힘 때 서기 궤적으로 먼저 세우는 예시 · 상자 막힘 시험 도구. 가상 시험용 수정본이다. 10/4 실기에서는 박진용이 Ctrl+C로 바로 서게 구현해 확인했다(코드는 PR로 올라온다)([TS-01](../troubleshooting/TS-01_정지가_안_들음_R-01_v1_100415.md)) | 로봇 동작 |
 
 - OpenAI를 쓰는 스크립트는 `OPENAI_API_KEY` 환경 변수만 읽는다. 키는 PC의 `.env`나 터미널에만 둔다(팀 규칙 ④).
-- 경로 · 장치 번호 같은 값은 그날 PC 기준이다. 쓸 때 `config/robot.yaml`로 옮긴다.
+- 경로 · 장치 번호 같은 값은 그날 PC 기준이다. 쓸 때 `src/d2_bringup/config/robot.yaml`로 옮긴다.
