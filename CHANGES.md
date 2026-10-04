@@ -7,5 +7,5 @@
 - 공통(15시): 일정표 v4 반영(10/5·10/9 일정 없음, 10/6 모듈 개발 → 저녁 기능별 통합 확인 ①~④ → 10/7 정지 실기·전체 통합·1차 판정) · ROS_DOMAIN_ID 60 · HMI 황인재 혼자 · 단축 명령 .claude/commands(start·today·wrap·pr-review) · tools/sched.py · 로드맵 그림 v2 — 황인재
 - 공통: 저장소 문서 구조(협동1 양식) · 요구사항 · 인터페이스 · 설계 · 결과표 틀 · 결정 기록 · 팀 협업 규칙 · PR 자동 검사(.github/workflows/pr_check.yml) · 팀원별 에이전트 프롬프트(docs/에이전트_프롬프트/) · 10/3 검증 코드(docs/research/ref_1003/) — 황인재
 - 로봇 동작: MoveIt2 실기 재검증 끝(W010) — 동작 정상, Ctrl+C 바로 정지 구현·실기 확인(R-01 해결, 코드 PR 예정) — 박진용
-- 비전: (작성)
+- 비전: d2_vision 패키지 골격 + mock_webcam_human 구현(W042 진행) — human_zone 10 Hz·heartbeat 2 Hz 가상 확인, hand_wrist는 챌린지 ①(S-02)로 제외 — 한석형
 - HMI: (작성)
