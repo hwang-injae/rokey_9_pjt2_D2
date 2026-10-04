@@ -35,7 +35,7 @@
 
 - 어느 PC가 로봇 PC·서비스 PC인지는 (미정)이다. 정하면 여기에 적는다.
 - 모든 노드는 어느 PC에서나 돌게 짠다. 옮기지 않는 것은 브링업·정지 노드(로봇 PC)이고, 카메라는 그 카메라를 처리하는 PC에 꽂는다.
-- **늘리는 기준:** 10/5 부하 시험에서 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 비전을 3번째 PC로 옮긴다.
+- **늘리는 기준:** 10/7 자동 모드 실기 때 잰 부하가 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 비전을 3번째 PC로 옮긴다(W053).
 
 ## 2. 저장소 받기
 
@@ -58,7 +58,7 @@ printenv ROS_DISTRO        # jazzy (source 뒤)
 
 ## 4. 로봇 브링업
 
-팀 브링업은 박진용 `real_moveit.launch.py` 하나로 통일한다(D-09). M0609 + RG2 + 손목 카메라 모델, 두산 드라이버, MoveIt2를 한 번에 켠다. **10/5 오전에 `d2_bringup` 패키지로 옮긴다**(로봇 동작, 인프라·통합). 옮긴 뒤의 실행 명령은 그때 여기에 적는다.
+팀 브링업은 박진용 `real_moveit.launch.py` 하나로 통일한다(D-09). M0609 + RG2 + 손목 카메라 모델, 두산 드라이버, MoveIt2를 한 번에 켠다. **10/6 오전에 `d2_bringup` 패키지로 옮긴다**(로봇 동작, 인프라·통합, W035). 옮긴 뒤의 실행 명령은 그때 여기에 적는다.
 
 ```bash
 # 가상 (에뮬레이터) — 로봇 없이
@@ -114,7 +114,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 함께 돌리는 PC·컨테이�
 - 지난 프로젝트 설정(Fast DDS 설정 파일, `ROS_DISCOVERY_SERVER`, 다른 `ROS_DOMAIN_ID`)이 `.bashrc`에 남아 있으면 주석 처리한다. 같은 변수가 두 번 있으면 아래 것이 이긴다.
 - `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`는 혼자 가상 시험할 때만 쓴다. 켜 두면 PC 2대가 서로 안 보인다.
 - **PC 2대 통신 확인:** PC A에서 `ros2 run demo_nodes_cpp talker`, PC B에서 `ros2 run demo_nodes_cpp listener`. 글이 안 넘어오면 두 PC의 `echo $RMW_IMPLEMENTATION`·`echo $ROS_DOMAIN_ID`부터 본다.
-- 강의실 무선망이 ROS 2 자동 탐색(멀티캐스트)을 막으면 CycloneDDS 설정 파일(`CYCLONEDDS_URI`)에 상대 PC 주소를 적어야 한다. 필요한지와 설정 내용은 10/5 PC 사이 통신 시험 뒤 정한다 (미정).
+- 강의실 무선망이 ROS 2 자동 탐색(멀티캐스트)을 막으면 CycloneDDS 설정 파일(`CYCLONEDDS_URI`)에 상대 PC 주소를 적어야 한다. 필요한지와 설정 내용은 PC 2대를 처음 함께 돌릴 때 보고 정한다(늦어도 10/7 실기 전, 미정).
 - 다른 팀 노드가 섞이는지: 브링업 뒤 `ros2 node list`에 다른 팀 `/dsr01` 등이 보이면 번호를 다시 본다.
 
 ## 7. Docker
@@ -125,7 +125,7 @@ sudo usermod -aG docker $USER      # 한 번 로그아웃했다 들어오면 sud
 docker --version
 ```
 
-컨테이너는 **서비스 PC 노드 + DB**에 쓴다. 로봇 PC 노드는 호스트에서 돌린다. 이미지·Dockerfile 이름과 위치는 로봇 동작(인프라·통합)이 정하고, DB 제품·시기는 HMI가 10/5 화면 설계 뒤에 정한다. 띄우는 모양은 아래와 같다(이미지 이름은 미정).
+컨테이너는 **서비스 PC 노드 + DB**에 쓴다. 로봇 PC 노드는 호스트에서 돌린다. 이미지·Dockerfile 이름과 위치는 로봇 동작(인프라·통합)이 정하고, DB 제품·시기는 HMI가 10/6 오전 화면 설계 뒤에 정한다(W051). 띄우는 모양은 아래와 같다(이미지 이름은 미정).
 
 ```bash
 docker run -d --name vision-<이름> \

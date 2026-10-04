@@ -1,0 +1,11 @@
+작업(또는 하루) 마무리 루틴을 대신 진행한다. 인자 $ARGUMENTS = 끝낸 일정표 작업 번호(여럿이면 쉼표, 예: `W041,W043`). 없으면 묻는다. 덜 끝났으면 `진행:`으로 적는다.
+
+1. `git status`로 바뀐 파일을 보여 준다. `build/ install/ log/`, 영상·rosbag·DB 파일, `.env`, 키 파일이 섞여 있으면 빼고 왜 뺐는지 말한다. diff에 키 모양 문자열(`sk-…`)이나 개인 절대 경로(`/home/…`)가 있으면 멈추고 알린다.
+2. 로봇을 움직이는 코드가 바뀌었으면 Ctrl+C·막힘·실패 때 먼저 서는 처리(서기 궤적, `SignalHandlerOptions.NO`)가 있는지 확인한다. 없으면 커밋 전에 알린다.
+3. 커밋 메시지를 AGENTS.md 4장 양식으로 제안한다: `type: 요약` + 이유 2~3줄(필요하면) + `변경 파일: 경로, 경로` + `영향: 파트·묶음`. 사용자가 확인하면 `git add <파일들>`·`git commit`.
+4. `git fetch origin && git merge origin/main`. 충돌이 나면 같이 푼다(PR 검사가 main 반영을 확인한다). 그다음 `git push -u origin <현재 브랜치>`.
+5. `CHANGES.md` 맨 위 오늘 날짜 아래 내 파트 줄에 한 줄을 적어 같은 PR에 넣는다(날짜가 없으면 맨 위에 새로 만든다).
+6. PR 본문을 `.github/PULL_REQUEST_TEMPLATE.md`대로 채운 초안을 만든다: 변경 내용, **변경 파일(필수)**, 영향, **완료한 일정표 작업**(`완료: W041` / `진행: W043`), 체크리스트. 사용자가 확인하면 `gh pr create --base main --title "<type: 요약>" --body-file <초안>`. gh가 없으면 본문을 보여 주고 GitHub 화면에서 만들게 안내한다.
+7. `gh pr checks <번호>`로 PR 검사 결과를 본다. 실패하면 Checks에 적힌 이유대로 고쳐 다시 push 한다. 통과하면 자동 승인되고, Squash and merge는 사람이 누른다. merge 뒤 일정표는 문서담당이 `완료:` 줄을 보고 고친다.
+8. 로봇 실기 시험이면 결과(성공·실패·걸린 시간·이상 동작)를 PR 본문이나 `docs/test-reports/<ID>_<내용>_<이름>_v1_<MMDDHH>.md`에 남기게 돕는다.
+9. 끝으로 팀 공유용 3줄을 만든다: 한 일(W번호) / 막힌 것 / 다음에 할 일.
