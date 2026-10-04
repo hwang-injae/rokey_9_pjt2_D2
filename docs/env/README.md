@@ -6,7 +6,7 @@
 | 로봇 | 두산 M0609 + 두산 드라이버(doosan-robot2) + MoveIt2 2.12. 팀 브링업 = 박진용 `real_moveit.launch.py` (`mode:=virtual`·`real`) |
 | 그리퍼 | OnRobot RG2 (고무 패드 뺌, 10/4) |
 | 카메라 | 손목 RealSense D435i(깊이 있음) — 로봇 PC / 웹캠(깊이 없음) — 서비스 PC |
-| ROS 2 통신 | **CycloneDDS**(`rmw_cyclonedds_cpp`), `ROS_DOMAIN_ID` = ＿＿ (미정) |
+| ROS 2 통신 | **CycloneDDS**(`rmw_cyclonedds_cpp`), `ROS_DOMAIN_ID` = 60 (팀 60번대) |
 | 컨테이너 | Docker (필수). 서비스 PC 노드 + DB는 컨테이너, 로봇 PC 노드는 호스트 |
 | PC | 2대로 시작: 로봇 PC + 서비스 PC |
 
@@ -45,7 +45,7 @@ git clone https://github.com/hwang-injae/rokey_9_pjt2_D2.git
 cd rokey_9_pjt2_D2
 ```
 
-- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100414.md)에 있다.
+- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100415.md)에 있다.
 - source 순서는 늘 같다: `/opt/ros/jazzy` → 두산 워크스페이스 → 이 저장소. 빌드 명령은 [src/README](../../src/README.md) '빌드 · 시험'.
 
 ## 3. 버전 확인
@@ -95,7 +95,7 @@ sudo apt install ros-jazzy-realsense2-camera
 
 ## 6. CycloneDDS · ROS_DOMAIN_ID
 
-모든 PC·컨테이너가 **같은 RMW(CycloneDDS)와 같은 `ROS_DOMAIN_ID`**를 써야 서로 보인다. 번호는 다른 팀과 안 겹치게 로봇 동작(인프라·통합)이 10/5 오전까지 정한다.
+모든 PC·컨테이너가 **같은 RMW(CycloneDDS)와 같은 `ROS_DOMAIN_ID`**를 써야 서로 보인다. 우리 팀은 **60번대**(60~69)를 쓴다. GPU PC = **60**. 번호가 같아야 서로 보이므로 함께 돌리는 PC·컨테이너는 모두 **60**으로 맞춘다(혼자 시험할 때 61~69를 각자 쓰는 것은 (안)).
 
 ```bash
 sudo apt install ros-jazzy-rmw-cyclonedds-cpp
@@ -107,7 +107,7 @@ sudo apt install ros-jazzy-rmw-cyclonedds-cpp
 # --- D2 협동2 ---
 source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export ROS_DOMAIN_ID=＿＿          # 팀 번호 (미정 — 정해지면 고친다)
+export ROS_DOMAIN_ID=60          # 팀 60번대. 함께 돌리는 PC·컨테이너는 모두 60
 ```
 
 - 바꾼 뒤 새 터미널을 열고 `ros2 daemon stop`을 한 번 한다(예전 설정으로 떠 있던 데몬을 끈다).
@@ -131,7 +131,7 @@ docker --version
 docker run -d --name vision-<이름> \
   --net=host --ipc=host \
   --env-file .env \
-  -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp -e ROS_DOMAIN_ID=＿＿ \
+  -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp -e ROS_DOMAIN_ID=60 \
   -v <저장소 폴더>:/ws/rokey_9_pjt2_D2 \
   -v <원본 자료 폴더>:/data:ro \
   <이미지 이름>
@@ -150,14 +150,14 @@ docker run -d --name vision-<이름> \
 
 - OpenAI 키는 **PC마다 `.env` 파일에만** 둔다. 코드는 환경 변수로 읽는다.
 - `.env`는 `.gitignore`에 들어 있다. 커밋 전에 `git status`로 `.env`가 없는지 본다. PR 검사도 키 모양 글자와 `.env`를 막는다.
-- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100414.md)).
+- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100415.md)).
 
 ## 9. 작업 전 확인
 
 | 확인 | 명령 | 정상 |
 |---|---|---|
 | RMW | `echo $RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` |
-| 도메인 | `echo $ROS_DOMAIN_ID` | 팀 번호(＿＿) |
+| 도메인 | `echo $ROS_DOMAIN_ID` | `60` |
 | 다른 팀 섞임 | `ros2 node list` | 우리 노드만 |
 | 로봇 연결(실기) | `ping -c 3 192.168.1.100` | 응답 |
 | 정지 준비 | 프로그램 시작 화면 | '[정지 준비] … 있음' 두 줄 |
