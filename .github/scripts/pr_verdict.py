@@ -27,7 +27,7 @@ ITEMS = {
     8: 'docstring (규칙 10)',
 }
 MARK = {'통과': '✅ 통과', '막음': '❌ 막음', '해당 없음': '— 해당 없음'}
-APPROVERS = '황인재 @hwang-injae · 한세교 @hansaekyo'
+APPROVERS = {'hwang-injae': '황인재 @hwang-injae', 'hansaekyo': '한세교 @hansaekyo'}
 
 
 class Verdict:
@@ -39,6 +39,8 @@ class Verdict:
         self.run_url = env.get('RUN_URL', '')
         self.review_result = env.get('REVIEW_RESULT', '')
         self.raw = env.get('REVIEW_JSON', '')
+        # 올린 사람은 자기 PR을 승인할 수 없으므로 안내에서 뺀다
+        self.approvers = ' · '.join(n for login, n in APPROVERS.items() if login != self.author)
 
     def gh(self, *args):
         """gh 명령을 실행하고 성공 여부를 돌려준다(실패 내용은 로그에만)."""
@@ -94,12 +96,12 @@ class Verdict:
     def run(self):
         if self.review_result == 'skipped':
             self.post('comment', 'PR 검사 통과 ✅ — 팀원(협업자)이 아닌 계정이 연 PR이라 Claude 검토·자동 승인을 하지 않습니다. '
-                                 f'승인자({APPROVERS})가 직접 확인합니다.')
+                                 f'승인자({self.approvers})가 직접 확인합니다.')
             return
         parsed = self.parse() if self.review_result == 'success' else None
         if parsed is None:
             self.post('comment', f'PR 검사는 통과 ✅, **Claude 검토를 못 했습니다**([실행 기록]({self.run_url})). '
-                                 f'자동 승인하지 않았습니다 — 승인자({APPROVERS})가 `/pr-review {self.pr}`로 확인해 주세요.')
+                                 f'자동 승인하지 않았습니다 — 승인자({self.approvers})가 `/pr-review {self.pr}`로 확인해 주세요.')
             return
         data, items = parsed
         blocked = any(i['result'] == '막음' for i in items.values())
@@ -107,10 +109,10 @@ class Verdict:
         if self.approver() == self.author:
             # GitHub은 본인 PR에 승인·수정 요청을 못 하게 막는다 → 결과만 남기고 다른 승인자에게 넘긴다
             self.post('comment', text + f'\n\n올린 사람이 자동 승인 계정과 같아서 자동 판정을 남기지 못합니다. '
-                                        f'다른 승인자({APPROVERS})가 승인해 주세요.')
+                                        f'다른 승인자({self.approvers})가 승인해 주세요.')
             return
         if not self.post('request-changes' if blocked else 'approve', text):
-            self.post('comment', text + f'\n\n⚠️ 자동 판정을 남기지 못했습니다(승인 토큰·설정 확인 필요). 승인자({APPROVERS})가 직접 판정해 주세요.')
+            self.post('comment', text + f'\n\n⚠️ 자동 판정을 남기지 못했습니다(승인 토큰·설정 확인 필요). 승인자({self.approvers})가 직접 판정해 주세요.')
 
 
 if __name__ == '__main__':
