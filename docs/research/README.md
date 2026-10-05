@@ -1,6 +1,6 @@
 # 조사 자료 (research)
 
-주제 선정("왜 이 주제인가 · 무엇이 다른가")에 쓴 조사와 참고 자료다. 10/3 주제 확정 무렵 조사한 내용이라, 최종 구현은 [설계 문서](../03_설계_SDD_v1_100519.md)와 [결과표](../04_결과_결과표_v1_100519.md)를 따른다.
+주제 선정("왜 이 주제인가 · 무엇이 다른가")에 쓴 조사와 참고 자료다. 10/3 주제 확정 무렵 조사한 내용이라, 최종 구현은 [설계 문서](../03_설계_SDD_v1_100522.md)와 [결과표](../04_결과_결과표_v1_100519.md)를 따른다.
 
 ## 1. 선행 프로젝트와 차별점
 
@@ -28,7 +28,7 @@
 | [doosan-robot2 (GitHub)](https://github.com/DoosanRobotics/doosan-robot2) | M0609 ROS 2 드라이버 · MoveIt2 설정 · 에뮬레이터(교육 과정 배포본을 쓴다) |
 | [realsense-ros (GitHub)](https://github.com/IntelRealSense/realsense-ros) | 손목 카메라 D435i 깊이 · ROS 2 연결 |
 | [MediaPipe 안내](https://ai.google.dev/edge/mediapipe/solutions/guide) | 손 · 팔 찾기(학습 없음) — 손목 카메라(깊이 차이와 함께) · 웹캠 |
-| [Docker 문서](https://docs.docker.com/) | DB · 서비스 PC 노드 컨테이너 |
+| [Docker 문서](https://docs.docker.com/) | DB · 운영 PC 노드 컨테이너 |
 | [BrickGPT (GitHub)](https://github.com/AvaLovelace1/BrickGPT) | 말 → 구조물 설계 · 안정성 검사 아이디어(챌린지 ③) |
 | 한세교 CAD 예시 · Advanced 레시피(`cad_recipe/1.0`) | 설계도 형식 — 블록마다 자리 · 자세 · sequence · 받침 · 잡기 후보. 1차 설계 lv1_bench 11개. 조립은 DXF, 안정성 검사는 STEP(D-16 · D-40) |
 | 10/3 사전 검증 결과 | 주제 확정 판정 — [시험 기록](../test-reports/) · [결과표](../04_결과_결과표_v1_100519.md) §3 |
