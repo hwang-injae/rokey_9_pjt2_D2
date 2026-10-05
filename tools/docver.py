@@ -7,7 +7,7 @@
   python3 tools/docver.py major <파일...>   # v4-2 -> v5             (이전 판은 archive/문서이력/ 로 복사)
   옵션: --stamp 100316 (월일시 직접 지정), --dry-run (바꾸지 않고 보여 주기만)
 
-이름을 바꾸면 README.md·AGENTS.md·CLAUDE.md·GEMINI.md 와 docs/·src/ 아래 md 파일 안의 링크(파일 이름)도 새 이름으로 고친다.
+이름을 바꾸면 README.md·AGENTS.md·CLAUDE.md·GEMINI.md 와 docs/·src/·.github/ 아래 md 파일 안의 링크(파일 이름)도 새 이름으로 고친다.
 minor/major 는 '내용을 고친 뒤' 실행한다: 고친 파일이 새 이름이 되고, 고치기 전 내용은 미리 만들어 둔
 백업이 없으면 남길 수 없으므로, 고치기 전에 `snap` 으로 이전 판을 archive 에 먼저 떠 둔다.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ARCHIVE = ROOT / "archive" / "문서이력"
 PAT = re.compile(r"^(?P<base>.+?)_v(?P<major>\d+)(?:-(?P<minor>\d+))?_(?P<stamp>\d{6})$")
-LINK_SCOPES = [ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "CLAUDE.md", ROOT / "GEMINI.md", ROOT / "docs", ROOT / "src"]
+LINK_SCOPES = [ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "CLAUDE.md", ROOT / "GEMINI.md", ROOT / "docs", ROOT / "src", ROOT / ".github"]
 
 
 def parse(path: Path):

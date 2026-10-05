@@ -1,5 +1,6 @@
 하루 시작 루틴을 대신 진행한다. 인자 $ARGUMENTS = 내 이름(예: `황인재`), 또는 `이름 W041`처럼 오늘 먼저 할 작업 번호까지. 이름이 없으면 `CLAUDE.local.md`(내 프롬프트)에서 찾고, 그래도 없으면 묻는다.
 
+0. 저장소 맨 위에 `HANDOFF.local.md`(지난 세션 메모)가 있으면 먼저 읽고 '막힌 것·다음 할 일'을 세 줄로 보여 준다. 인자에 W번호가 없으면 메모의 '다음 할 일'을 오늘 첫 작업 후보로 둔다. 없으면 건너뛴다.
 1. `git status`·`git branch --show-current`로 지금 상태를 본다. 커밋 안 한 변경이 있으면 커밋할지 stash할지 먼저 묻는다.
 2. `git fetch origin && git checkout main && git pull --ff-only origin main`. 받은 커밋은 AGENTS.md 1장 방식으로만 본다 — `git log --format='%h %s%n%b' ORIG_HEAD..HEAD`, `git diff --stat ORIG_HEAD..HEAD`. **내 파트 파일이 바뀐 것만** 짚어 준다(전체 diff는 읽지 않는다).
 3. `python3 tools/sched.py <이름>`으로 오늘 내 작업(W번호·칸·상태)을 보여 주고, `python3 tools/sched.py --robot`으로 오늘 로봇 순서를 한 줄로 덧붙인다. 일정표 정본은 공유 드라이브이고 이 도구는 로그인 없이 받는다. 못 받으면 PL에게 알리라고 한다.
