@@ -23,6 +23,7 @@
 - **OpenAI API 키는 절대** 코드·설정·커밋·이슈·PR·노션·채팅에 쓰지 않는다. PC별 `.env`에서 환경 변수로 읽고, 컨테이너에는 `--env-file .env`로 넘긴다. PR 검사가 키 모양 문자열과 `.env`를 막는다.
 - 컨테이너를 지우는 명령은 사람이 `docker ps -a`로 확인한 뒤에만 실행한다. `docker system prune`·`docker rm -f $(docker ps -aq)` 금지.
 - 원본 자료(녹화·대용량 CAD·DB 데이터)는 컨테이너·이미지에 넣지 않고 로컬 폴더를 연결(`-v`)한다.
+- 컨테이너는 그 안에 넣는 노드의 담당이 만든다(S-17): `vision` = 한석형, `hmi`·`db-hmi` = 황인재. Dockerfile은 `docker/<컨테이너 이름>/`(안). 공통 설정은 `docs/env/README.md` 7장.
 
 ## 4. 커밋·PR (팀 규칙 7·8)
 - 브랜치: `{이름}/{YYYYMMDD}-{기능}-{설명}`. main은 PR로만.
