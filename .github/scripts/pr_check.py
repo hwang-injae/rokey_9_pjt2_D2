@@ -9,6 +9,8 @@
   5. 변경 파일 — PR 본문 '변경 파일' 칸이 채워져 있는가(실패). 개별 커밋의 '변경 파일:' 줄은 경고만 (팀 규칙 8)
      squash merge 커밋 메시지를 'PR 제목 + 본문'으로 두면 main 기록에 변경 파일 목록이 남는다.
   6. 문서 이름 — docs/ 아래 .md는 이름_v<버전>_<MMDDHH>.md (README.md 제외, 팀 규칙 9)
+  7. 정지 설정 — 로봇을 움직이는 .py를 바꾼 패키지에 Ctrl+C 정지 설정과 서기 정지 호출이 있는가(팀 규칙 2-5).
+     단어가 있는지만 본다. 실제로 서는 로직인지는 Claude 검토 ①과 실기 시험이 본다.
 
 사용: python pr_check.py --repo <PR 작업 폴더> --base origin/main
 """
@@ -25,6 +27,12 @@ KEY_RE = re.compile(r'sk-(proj-|svcacct-)?[A-Za-z0-9_\-]{20,}')
 DOC_RE = re.compile(r'_v\d+(-\d+)?_\d{6}\.md$')
 SECRET_FILES = re.compile(r'(^|/)(\.env(\..+)?|.*\.(pem|key|p12|crt)|credentials.*|secrets\.ya?ml)$')
 XML_EXT = ('.xml', '.urdf', '.xacro', '.srdf', '.launch')
+# 로봇 팔을 움직이는 코드의 표시(액션·두산 이동 명령). 메시지 모양만 쓰는 JointTrajectory는 넣지 않는다.
+MOTION_RE = re.compile(r'FollowJointTrajectory|ExecuteTrajectory|MoveGroup\b|MoveItPy|pymoveit2|MoveIt2\(|DSR_ROBOT2'
+                       r'|dsr_msgs2\.srv import .*Move|\ba?move[jl]x?\(')
+# Ctrl+C 뒤에도 정지 명령을 보내려면 rclpy 기본 신호 처리를 꺼야 한다(safe_stop.init_ros가 이것을 한다).
+SIGNAL_RE = re.compile(r'SignalHandlerOptions\.NO|\binit_ros\(')
+STOP_RE = re.compile(r'\bSafeStop\b|move_stop|MoveStop|hold_here')
 
 
 class PrCheck:
@@ -124,6 +132,38 @@ class PrCheck:
         else:
             self.notes.append('문서 이름: 규칙에 맞음')
 
+    def check_stop_setup(self, files):
+        """로봇을 움직이는 .py를 바꾼 패키지마다 정지 설정 단어가 있는지 본다(팀 규칙 2-5).
+
+        패키지 단위로 보는 이유: 궤적을 보내는 실행기(executor.py)와 Ctrl+C를 받는 노드가 다른 파일일 수 있다.
+        PR 쪽 파일 전체(바뀌지 않은 파일 포함)에서 찾는다. docs/research/ 참고 코드는 보지 않는다.
+        실패 → self.fails, 통과·해당 없음 → self.notes.
+        """
+        moving = {}
+        for f in files:
+            parts = Path(f).parts
+            if not (f.endswith('.py') and len(parts) > 2 and parts[0] == 'src'):
+                continue
+            p = self.repo / f
+            m = MOTION_RE.search(p.read_text(encoding='utf-8', errors='replace')) if p.is_file() else None
+            if m:
+                moving.setdefault(parts[1], []).append(f'{f}({m.group(0)})')
+        if not moving:
+            self.notes.append('정지 설정: 로봇을 움직이는 코드 변경 없음')
+            return
+        bad = []
+        for pkg, hits in sorted(moving.items()):
+            text = '\n'.join(q.read_text(encoding='utf-8', errors='replace') for q in (self.repo / 'src' / pkg).rglob('*.py'))
+            missing = [what for what, rx in (('Ctrl+C 정지 설정(SignalHandlerOptions.NO 또는 init_ros)', SIGNAL_RE),
+                                              ('서기 정지 호출(SafeStop·move_stop)', STOP_RE)) if not rx.search(text)]
+            if missing:
+                bad.append(f"{pkg}: {', '.join(hits)} — 패키지 안에 {' · '.join(missing)}이 없다")
+        if bad:
+            self.fails.append('정지 설정(팀 규칙 2-5: 로봇을 움직이는 코드는 Ctrl+C·막힘·실패 때 먼저 세운다. '
+                              '예시 docs/research/ref_1003/R-01_정지/safe_stop.py):\n  - ' + '\n  - '.join(bad))
+        else:
+            self.notes.append(f"정지 설정: 로봇을 움직이는 패키지 {', '.join(sorted(moving))} — 정지 설정·서기 정지 있음")
+
     def run(self):
         self.check_main_merged()
         files = self.changed_files()
@@ -132,6 +172,7 @@ class PrCheck:
         self.check_commit_messages()
         self.check_pr_body()
         self.check_doc_names(files)
+        self.check_stop_setup(files)
         ok = not self.fails
         lines = ['## PR 검사 결과: ' + ('통과 ✅' if ok else '실패 ❌'), '']
         lines += [f'- ✅ {n}' for n in self.notes]
