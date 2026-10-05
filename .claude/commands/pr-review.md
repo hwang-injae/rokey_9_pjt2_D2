@@ -13,5 +13,5 @@ PR 번호 $ARGUMENTS 를 검토한다(없으면 `gh pr list --state open`으로 
    ⑧ 새로 만들거나 고친 클래스·함수에 무엇을 하는지·입출력(단위)·바깥 영향·실패 때 동작을 적은 docstring이 있는가(팀 규칙 10). 코드를 고쳤는데 주석이 옛 동작을 말하고 있지 않은가
    그 밖(이름·주석 문장·print 등)은 참고 의견으로만 적는다.
 4. 결과를 표로 낸다: | 항목 | 결과 | 파일:줄 |. 그리고 결정 제안(승인 / 수정 요청)과 PR에 달 코멘트 초안을 보여 준다.
-5. **사람이 확인한 뒤에만** 실행한다: `gh pr review $ARGUMENTS --request-changes --body-file <초안>`(막는 사유가 있을 때) 또는 `gh pr comment`. 자동 판정과 같은 결론이면 다시 누르지 않는다. 자동 '수정 요청'이 틀렸으면 승인하면 풀린다. 올린 사람이 나 자신이면 코멘트만 남긴다. merge(Squash and merge)는 사람이 GitHub에서 누른다.
+5. **사람이 확인한 뒤에만** 실행한다: `gh pr review $ARGUMENTS --request-changes --body-file <초안>`(막는 사유가 있을 때) 또는 `gh pr comment`. 자동 판정과 같은 결론이면 다시 누르지 않는다. 자동 '수정 요청'(황인재 계정)이 틀렸으면 그 리뷰를 Dismiss(취소)한 뒤 승인한다 — 승인만 누르면 수정 요청이 남아 merge가 막힌다. 올린 사람이 나 자신이면 코멘트만 남긴다. merge(Squash and merge)는 사람이 GitHub에서 누른다.
 6. 본문에 `완료: W번호`가 있으면 merge 뒤 문서담당이 일정표에 반영한다고 한 줄 덧붙인다.
