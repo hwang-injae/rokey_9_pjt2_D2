@@ -1,4 +1,4 @@
-PR 번호 $ARGUMENTS 를 검토한다(없으면 `gh pr list --state open`으로 보여 주고 고르게 한다). 승인 권한자(황인재·한세교)가 쓴다. PR 검사(Actions)는 문법·main 반영·충돌·키·변경 파일·문서 이름만 본다. 이 명령은 **그 밖의 팀 규칙**을 본다.
+PR 번호 $ARGUMENTS 를 검토한다(없으면 `gh pr list --state open`으로 보여 주고 고르게 한다). 승인 권한자(황인재·한세교)가 쓴다. PR 검사(Actions)가 기본 검사(문법·main 반영·충돌·키·변경 파일·문서 이름·정지 설정) 뒤 Claude로 아래 ①~⑧을 먼저 보고 결과표를 PR에 남긴다(자동 승인 / 수정 요청). 이 명령은 **사람이 다시 볼 때** 쓴다 — 자동 결과가 의심스럽거나, 검토가 못 돌았거나, 황인재가 올린 PR이라 자동 판정이 안 남았을 때.
 
 1. `gh pr view $ARGUMENTS --json title,body,author,headRefName,files,statusCheckRollup,reviews`로 본문과 검사 결과를 본다. PR 검사가 실패했으면 Checks의 이유만 정리하고 끝낸다.
 2. 본문 '변경 파일'에 적힌 파일만 `gh pr diff $ARGUMENTS`에서 읽는다(토큰 절약 — 팀 규칙 8). 목록과 실제 바뀐 파일이 다르면 그것부터 지적한다.
@@ -13,5 +13,5 @@ PR 번호 $ARGUMENTS 를 검토한다(없으면 `gh pr list --state open`으로 
    ⑧ 새로 만들거나 고친 클래스·함수에 무엇을 하는지·입출력(단위)·바깥 영향·실패 때 동작을 적은 docstring이 있는가(팀 규칙 10). 코드를 고쳤는데 주석이 옛 동작을 말하고 있지 않은가
    그 밖(이름·주석 문장·print 등)은 참고 의견으로만 적는다.
 4. 결과를 표로 낸다: | 항목 | 결과 | 파일:줄 |. 그리고 결정 제안(승인 / 수정 요청)과 PR에 달 코멘트 초안을 보여 준다.
-5. **사람이 확인한 뒤에만** 실행한다: `gh pr review $ARGUMENTS --request-changes --body-file <초안>`(막는 사유가 있을 때) 또는 `gh pr comment`. 검사를 통과한 PR은 이미 자동 승인되어 있으니 승인을 다시 누르지 않는다. 올린 사람이 나 자신이면 코멘트만 남긴다. merge(Squash and merge)는 사람이 GitHub에서 누른다.
+5. **사람이 확인한 뒤에만** 실행한다: `gh pr review $ARGUMENTS --request-changes --body-file <초안>`(막는 사유가 있을 때) 또는 `gh pr comment`. 자동 판정과 같은 결론이면 다시 누르지 않는다. 자동 '수정 요청'이 틀렸으면 승인하면 풀린다. 올린 사람이 나 자신이면 코멘트만 남긴다. merge(Squash and merge)는 사람이 GitHub에서 누른다.
 6. 본문에 `완료: W번호`가 있으면 merge 뒤 문서담당이 일정표에 반영한다고 한 줄 덧붙인다.

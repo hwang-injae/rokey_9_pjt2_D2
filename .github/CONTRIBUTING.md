@@ -1,6 +1,6 @@
 # GitHub 협업 규칙 (협동2)
 
-팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100523.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
+팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100600.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
 
 > 하루 흐름: `/today 이름`(main 받기 → 오늘 내 작업 → 브랜치) → 작업 → `/wrap W번호`(커밋 → push → PR 초안). 명령은 `.claude/commands/`에 있다.
 
@@ -16,7 +16,7 @@
 - 작업 중 오전·오후 한 번씩 `git fetch origin` → 많이 뒤처졌으면 `git merge origin/main`.
 - PR 전: `git fetch origin && git merge origin/main` 으로 충돌을 내 PC에서 먼저 푼다.
 - `Squash and merge`. squash 커밋 메시지는 **'PR 제목 + 본문'**으로 둔다(Settings → General → Pull Requests) — main 기록에 '변경 파일' 목록이 남아 에이전트가 그것만 읽는다.
-- merge된 브랜치는 기록으로 남기되(`Automatically delete head branches` 끔) **더 이어서 쓰지 않는다.** 이어서 할 일은 `main`에서 날짜를 바꾼 새 브랜치를 판다.
+- merge된 브랜치는 GitHub이 자동으로 지운다(`Automatically delete head branches` 켬, 10/6). 이어서 할 일은 `main`에서 날짜를 바꾼 새 브랜치를 판다.
 
 ## 3. 충돌 예방
 - 작업 시작 전 오늘 만질 파일·기능을 노션에 적는다. 파트·패키지 단위로 나누면 충돌이 줄어든다.
@@ -53,7 +53,8 @@ feat: MoveIt 실행기에 서기 정지 추가
   4. 비밀값: OpenAI 키 모양 문자열·`.env`·키 파일이 없는가
   5. 변경 파일: PR 본문 '변경 파일' 칸이 채워져 있는가(개별 커밋의 `변경 파일:` 줄은 경고)
   6. 문서 이름: `docs/` 아래 새 문서가 `이름_v<버전>_<MMDDHH>.md`인가
-  모두 통과하면 **자동 승인**된다(황인재 계정 — 황인재가 올린 PR은 한세교가 직접 승인). 승인 권한자는 **황인재(@hwang-injae)·한세교(@hansaekyo)**(CODEOWNERS)이고, 사람이 직접 승인·거절할 수도 있다. 자동 승인 계정 본인이 올린 PR은 다른 승인자가 승인한다.
+  7. 정지 설정: 로봇을 움직이는 `.py`를 바꾼 패키지에 Ctrl+C 정지 설정·서기 정지 호출이 있는가(단어 수준)
+  통과하면 **Claude 검토**(팀원 PR만, `/pr-review`와 같은 ①~⑧)가 돌고 결과표를 PR에 남긴다. '막음'이 없으면 **자동 승인**, 있으면 **수정 요청**(고쳐서 다시 push), 검토가 못 돌면 코멘트만(승인자가 `/pr-review`). 판정 계정은 황인재 — 황인재가 올린 PR은 결과표만 남고 한세교가 직접 승인한다. 승인 권한자는 **황인재(@hwang-injae)·한세교(@hansaekyo)**(CODEOWNERS)이고, 사람이 직접 승인·거절할 수도 있다.
 - **작업 완료 알림:** 일정표 작업을 끝냈으면 PR 본문에 `완료: W번호`를 적는다. merge되면 PL의 문서담당 에이전트가 확인해 일정표(드라이브)의 상태를 '완료'로 바꾼다.
 - merge 전: Files changed 확인, 충돌 확인, 다른 파트 영향 확인, 키·`.env`·개인 경로 없음 확인.
 
