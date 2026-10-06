@@ -44,14 +44,14 @@ Visualization Manager:
     Value: true
   - Class: rviz_default_plugins/MarkerArray
     Enabled: true
-    Name: 카메라 실제 크기 (빨강)
+    Name: 이동 경로 (손가락 끝, 초록 = 가는 중 / 빨강 = 멈춤)
     Namespaces: {}
     Topic:
-      Depth: 100
+      Depth: 10
       Durability Policy: Volatile
       History Policy: Keep Last
       Reliability Policy: Reliable
-      Value: /obstacle_cloud/markers
+      Value: /d2/motion/path_markers
     Value: true
   - Class: moveit_rviz_plugin/Trajectory
     Color Enabled: false

@@ -81,6 +81,7 @@ def generate_launch_description():
         .robot_description(file_path='config/m0609.urdf.xacro')
         .robot_description_semantic(file_path='config/dsr.srdf.xacro')
         .trajectory_execution(file_path='config/moveit_controllers.yaml')
+        .joint_limits(file_path=os.path.join(SHARE, 'config', 'joint_limits.yaml'))   # 6번 관절 속도를 제어기에 맞춤
         .planning_pipelines(pipelines=['ompl', 'chomp', 'pilz_industrial_motion_planner'],
                             default_planning_pipeline='ompl', load_all=False)
         .to_moveit_configs()

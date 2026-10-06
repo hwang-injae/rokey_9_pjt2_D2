@@ -37,7 +37,7 @@ def rg2_display_width_m(angle):
 class GripperNode(Node):
     """RG2 그리퍼를 다루는 유일한 노드.
 
-    받는 것: /d2/gripper/command (d2_interfaces/GripperCommand: 폭 m, 힘 N)
+    받는 것: /d2/gripper/command (d2_interfaces/GripperCommand: 실제 손가락 끝 사이 폭 m, 힘 N)
     돌려주는 것: 다 움직인 뒤 실제 폭(m)과 잡힘 — 잡힘 = 명령보다 덜 닫혔고, 그 폭이 robot.yaml grasp_width_m 중 하나와 맞음
     내보내는 것: /d2/gripper/state (JSON gripper_state/1, 1초에 1번 + 바뀔 때)
     파라미터 virtual: 가상 그리퍼(폭이 블록에 안 막힘)면 true — 폭은 NaN, 잡힘 = 닫는 방향 명령이었는지로 답한다.
@@ -50,7 +50,7 @@ class GripperNode(Node):
             cfg = yaml.safe_load(f)
         g = cfg['gripper']
         self.offset_m, self.tol_m, self.settle_s = g['feedback_offset_m'], g['check_tolerance_m'], g['settle_timeout_s']
-        self.cmd_offset_m = g.get('command_offset_m', 0.0)
+        self.cmd_offset_m = g['command_offset_m']
         self.grasp_widths = list(cfg['grasp_width_m'].values())
         self.virtual = self.declare_parameter('virtual', False).value
         cb = ReentrantCallbackGroup()
@@ -116,15 +116,15 @@ class GripperNode(Node):
         return self.read_width()
 
     def _on_command(self, req, res):
-        """실제 손가락 끝 사이 폭 width_m 로 움직이고 다 멈춘 뒤 답한다.
+        """폭 width_m 로 움직이고 다 멈춘 뒤 답한다.
 
-        드라이버에는 width_m + command_offset_m 을 명령한다 — 고무 패드를 뺀 뒤 명령 폭보다 실제 폭이 8.5 mm 좁다(10/6 캘리퍼스).
         바깥 영향: 그리퍼가 움직인다. 반환: success = 드라이버가 받았는지, grasped·width_m = 멈춘 뒤 상태.
         드라이버가 없거나 답이 없으면 success=false, reason 에 이유.
         """
         with self.lock:
-            cmd_m = min(MAX_WIDTH_M, max(0.0, req.width_m + self.cmd_offset_m))
-            cmd = str(int(round(cmd_m * 10000)))   # 드라이버 단위 1/10 mm
+            # 요청은 실제 손가락 끝 사이 폭. 드라이버 명령은 그보다 command_offset_m 만큼 크게 줘야 그 폭이 된다 (10/6 캘리퍼스)
+            cmd_m = req.width_m + self.cmd_offset_m if req.width_m > 0 else 0.0
+            cmd = str(int(round(min(MAX_WIDTH_M, max(0.0, cmd_m)) * 10000)))   # 드라이버 단위 1/10 mm
             closing = self.last_cmd_m is not None and req.width_m < self.last_cmd_m
             if not self._send(cmd):
                 res.success, res.reason, res.grasped, res.width_m = False, 'GRIPPER_NO_RESPONSE', False, float('nan')
@@ -146,7 +146,7 @@ class GripperNode(Node):
             self.width_m, self.grasped = w, grasped
         if changed:
             self._publish_state()
-        self.get_logger().info(f'폭 명령 {req.width_m * 1000:.1f} mm (드라이버 {cmd_m * 1000:.1f} mm) -> 실제 '
+        self.get_logger().info(f'폭 명령 {req.width_m * 1000:.1f} mm -> 실제 '
                                f'{"모름" if math.isnan(w) else f"{w * 1000:.1f} mm"}, 잡힘 {grasped}')
         return res
 

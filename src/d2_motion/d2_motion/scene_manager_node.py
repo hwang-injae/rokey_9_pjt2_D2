@@ -20,7 +20,7 @@ from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, String
 
 from d2_motion.executor import make_pose
-from d2_motion.motion_math import block_dims, pick_place_tcp, recipe_blocks, slot_block_pose, tcp_target
+from d2_motion.motion_math import layout_designs, pick_place_tcp, slot_block_pose, tcp_target
 
 HELD = 'held'
 TABLE_THICK_M = 0.02
@@ -38,8 +38,8 @@ class SceneManagerNode(Node):
     받는 것: /d2/motion/scene/attach (SceneAttach — 잡은 뒤 붙이기 / 놓은 뒤 떼기 = 놓인 블록으로),
              /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
-    파라미터 recipe: 레시피 파일 경로 — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
-                    비우면 share/d2_bringup/recipes/*.recipe.json 을 모두 읽는다 (run_recipe 가 실행할 때 고르게).
+    파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
+                    비우면 share/d2_bringup/recipes/*.recipe.json 을 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
     """
 
     def __init__(self):
@@ -48,16 +48,25 @@ class SceneManagerNode(Node):
         share = get_package_share_directory('d2_bringup')
         with open(os.path.join(share, 'config', 'robot.yaml')) as f:
             self.cfg = yaml.safe_load(f)
-        path = self.declare_parameter('recipe', '').value
-        # block_id 에 모델 ID 가 붙어 있어서(001_CHAIR_BENCH_B001) 레시피 여러 개를 한 사전에 넣어도 겹치지 않는다
-        paths = [path] if path else sorted(glob.glob(os.path.join(share, 'recipes', '*.recipe.json')))
+        paths = [p for p in self.declare_parameter('recipe', '').value.split(',') if p.strip()]
         self.blocks = {}
-        for p in paths:
-            with open(p) as f:
-                self.blocks.update({b['block_id']: b for b in recipe_blocks(self.cfg, json.load(f))})
-            self.get_logger().info(f'레시피: {p}')
-        if not self.blocks:
-            self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
+        if paths:
+            recipes = []
+            for path in paths:
+                with open(path.strip()) as f:
+                    recipes.append(json.load(f))
+            # 여러 레시피면 run_recipe 와 같은 세트 배치 (layout_designs 는 계산만으로 정해져 같은 자리가 나온다)
+            self.blocks = {b['block_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
+            self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
+        else:
+            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_B001) 한 사전에 넣어도 겹치지 않는다.
+            # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
+            for path in sorted(glob.glob(os.path.join(share, 'recipes', '*.recipe.json'))):
+                with open(path) as f:
+                    self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [json.load(f)]) for b in design})
+                self.get_logger().info(f'레시피: {path}')
+            if not self.blocks:
+                self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
         cb = ReentrantCallbackGroup()
         self.scene_cli = self.create_client(ApplyPlanningScene, 'apply_planning_scene', callback_group=cb)
         self.get_cli = self.create_client(GetPlanningScene, 'get_planning_scene', callback_group=cb)
@@ -132,7 +141,7 @@ class SceneManagerNode(Node):
 
     def add_placed(self, block_id, center, quat):
         """놓인 블록 blk_<block_id> 를 base 자세 (중심 m, 쿼터니언) 로 넣거나 옮긴다."""
-        size = [max(0.001, v - 2 * PLACED_SHRINK_M) for v in block_dims(self.cfg)]   # 실측 치수 (위층 높이가 실제와 맞게)
+        size = [max(0.001, v - 2 * PLACED_SHRINK_M) for v in self.cfg['block_actual_m']]
         oid = f'blk_{block_id}'
         sc = PlanningScene()
         sc.world.collision_objects = [self._box(oid, size, make_pose(center, quat))]
@@ -140,10 +149,18 @@ class SceneManagerNode(Node):
         if self.apply(sc):
             self.placed.add(block_id)
 
+    def _held_box(self, b):
+        """블록 b 를 쥐었을 때 TCP 기준 상자 (크기·위치). 공급 칸은 잡기마다 하나로 고정이라, 그 칸의 교시 깊이까지
+        반영한다 — 세운 블록은 계산식(11 mm)보다 깊게 물어서, 안 그러면 상자가 실제보다 아래로 붙어 작업대와 겹친다 (10/6 실기)."""
+        slots = [k + 1 for k, st in enumerate(self.cfg['supply_slots']) if st.get('grasp') == b['grasp']]
+        if not slots:
+            return tcp_target(self.cfg, b['center'], b['rot'], b['grasp'], self.cfg['assembly_origin'])[2]
+        center, rot = slot_block_pose(self.cfg, slots[0])
+        return pick_place_tcp(self.cfg, center, rot, b['center'], b['rot'], b['grasp'], slots[0])[4]
+
     def _on_attach(self, req, res):
         """쥔 블록 붙이기 (attach=True: TCP 에 상자) / 떼기 (False: 쥔 상자를 지우고 레시피 자리에 놓인 블록으로).
 
-        쥔 상자 위치는 그 잡기의 공급 칸(robot.yaml supply_slots 의 grasp)에서 집었다고 보고 집기·놓기와 같은 식으로 계산한다.
         레시피에 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
         """
         b = self.blocks.get(req.block_id)
@@ -155,14 +172,7 @@ class SceneManagerNode(Node):
         aco = AttachedCollisionObject(link_name=tcp)
         aco.object.id = HELD
         if req.attach:
-            # 집기·놓기와 같은 계산(pick_place_tcp)으로 쥔 상자를 놓는다: 교시 높이가 있는 칸(세운 블록 p3~p6)은
-            # 표준보다 깊게 물어서, 그 차이를 빼면 상자가 작업대 속 9 mm 로 들어가 들어 올리기가 충돌로 거절됐다 (10/6 가상)
-            slot = next((k + 1 for k, st in enumerate(self.cfg['supply_slots']) if st.get('grasp') == b['grasp']), None)
-            if slot is None:
-                _, _, held = tcp_target(self.cfg, b['center'], b['rot'], b['grasp'], self.cfg['assembly_origin'])
-            else:
-                pc, pr = slot_block_pose(self.cfg, slot)
-                held = pick_place_tcp(self.cfg, pc, pr, b['center'], b['rot'], b['grasp'], slot)[4]
+            held = self._held_box(b)
             aco.object.header.frame_id = tcp
             aco.object.operation = CollisionObject.ADD
             aco.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in held['size_m']])]

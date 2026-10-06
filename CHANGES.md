@@ -3,6 +3,9 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 공통(18시, PM): PR #10(로봇 셀 다시 측정)·#11 merge. IRD 9장 표를 `robot.yaml`에 맞춤 — 조립 원점 (0.4261, −0.0725) · 공급 칸 p1~p6(칸마다 잡기) · place_up 1 mm · speed 0.3 + 새 키 assembly_area_half_m · block_actual_m · block_tolerance_m · gripper.command_offset_m · motion.transit_clearance_m. 일정표 v7_100618(완료 17개 반영) — 황인재
+- 로봇 동작(PM): **로봇 셀 다시 측정(고무 없이)** — 조립 원점 (0.4261, −0.0725) m · 공급 칸 p1~p6(잡기마다 한 칸) · 작업대 높이 4곳 평균 −17.85 mm · 블록 실측 74.45×24.8×14.8 mm(쌓는 높이는 실측) · 그리퍼 폭 보정(표시 −9.4 · 명령 −8.5 mm) · MoveIt 손가락 모델 실측과 일치 → `robot.yaml` 반영, 기록 `docs/test-reports/W011-016_*`. W011~W016·W019·W020·W021·W033·W035~W040·W049·W103 완료 — 박진용
+- 비전: 환경 준비 끝 — 한석형 (git·gh·ROS 2 Jazzy·CycloneDDS·Docker 확인, 에이전트 프롬프트 v3 적용). 다음: W043·W044·W065 → W097
 - 공통(16시, PM 기록): **주제 개편(E-01~E-25, 10/6 회의 · PL 결정)** — 주제 = AI가 설계하고 로봇이 조립하는 젠가 가구(요청(웹 글·음성) → AI 튜닝·생성 → 검사 → DB 세대 관리 → 자동 조립 + 스캔 복제). 협동 모드·웹캠·손 찾기·TTS·±2 mm 판정 뺌(협동은 챌린지 ③). 10/7 1차 판정 = 자동 조립 + 정지. 문서 전부 새 판: 01 v3 · 02 IRD v2(새 인터페이스는 '안', **10/7 오전 W121에서 확정** — `JsonQuery.srv` · `check_design` · `get_design` · `scan_*` · `scan` 명령 · `request_design` 의도 · 실패 코드 추가) · 03 SDD v2 · 04 v2 · 05 v2(새 작업 W108~W125, 뺀 작업 8장) · 06 · env · README · 아키텍처 v3 · 작업대 배치 v3 · 결정 기록 10/6. 10/6 박진용 요청(robot.yaml 값·추가 키, 서기 궤적 **토픽** `/dsr_moveit_controller/joint_trajectory`, pick/place_pose = 블록 중심 자세, 실패 코드 6개) 반영. 각자 `docs/README.md` 색인 → 내 파트 05 장 · IRD 4~9장만 읽을 것
 - 공통(11시): PR 자동 검토 결과표의 줄 번호 고침 — Claude가 diff의 줄 번호를 적던 것(PR #6에서 확인). 검토 자료를 줄마다 실제 파일 줄 번호가 붙은 `changes.txt`로 바꿈(`.github/scripts/numbered_diff.py`) — 황인재
 - 로봇 동작(PM 기록): **10/6 실기 LV1 벤치 11개 자동 조립 11/11 · 337초**(시제품 recipe_demo, 고무 낀 채 — W037·W063 첫 성공), 잡기 6가지 표 · 책상면 base_link −18 mm → 결과표 04 반영 — 박진용 · 한세교
