@@ -17,6 +17,8 @@ setup(
     description='D2 작업 관리자 — 작업 판단(진행표 · 다음 블록), 상태표, 검사 묶음, 기록',
     license='Apache-2.0',
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'task = d2_task.task_node:main',
+        ],
     },
 )
