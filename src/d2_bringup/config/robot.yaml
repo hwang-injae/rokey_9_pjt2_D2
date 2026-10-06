@@ -1,0 +1,72 @@
+# D2 설정 파일 — 좌표·높이·힘·시간은 코드에 쓰지 않고 여기 하나에 둔다 (IRD 9장).
+# 단위: 길이 m (이름 끝 _m), 각 도 (_deg), 시간 s (_s), 힘 N (_n). 기준 좌표계 base_link.
+# 틀: 황인재 (W031). 측정값: 로봇 동작 (W033).
+# 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 — 그리퍼 값은 모두 고무 패드 낀 상태라 고무 빼고 다시 잰다 (W011~W014).
+
+frame_id: base_link
+tcp_link: rg2_tcp
+table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
+table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
+  x_m: [-0.2675, 0.9325]
+  y_m: [-0.325, 0.325]
+  base_clear_m: 0.15
+
+# 조립 원점: 설계도 (0, 0, 0) 이 로봇 좌표로 어디인지. 여기 하나만 쓴다 (10/4 직접 교시)
+assembly_origin: {x_m: 0.5600, y_m: 0.1641, z_m: -0.018, yaw_deg: -0.1}
+
+block_size_m: [0.075, 0.025, 0.015]   # 젠가 블록 LENGTH, WIDTH, THICKNESS
+
+# 로봇 공급 칸 (10/4 직접 교시). block_up = 위를 향하는 블록 축, yaw_deg = 블록 긴 쪽 방향
+# tcp_z_m·grip_display_width_m 이 있으면 그 교시 높이로 집는다 (세운 블록은 더 깊게 문다)
+supply_slots:
+  - {x_m: 0.4363, y_m: -0.2157, surface_z_m: -0.018, yaw_deg: 89.5, block_up: THICKNESS}
+  - {x_m: 0.5140, y_m: -0.2196, surface_z_m: -0.018, yaw_deg: 89.7, block_up: WIDTH}
+  - {x_m: 0.6106, y_m: -0.2199, surface_z_m: -0.018, yaw_deg: -0.2, block_up: THICKNESS}
+  - {x_m: 0.3680, y_m: -0.2187, surface_z_m: -0.018, yaw_deg: 89.8, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244}
+  - {x_m: 0.4779, y_m: -0.3015, surface_z_m: -0.018, yaw_deg: -89.8, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244}
+  - {x_m: 0.5817, y_m: -0.2943, surface_z_m: -0.018, yaw_deg: 0.1, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344}
+
+observe_pose: null             # 관측 자세 (교시 전, W018) — {joints_deg: [...]}
+home_pose: {joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]}
+
+finger:
+  thickness_m: 0.0114          # RG2 모델 메시 값 (캘리퍼스 W011)
+  width_m: 0.020
+
+gripper:
+  force_n: 10.0                # 드라이버는 2.5 N 단위로만 바꾼다
+  open_margin_m: null          # (측정 전) — 지금은 잡기별 grasp_open_place_m 을 쓴다
+  feedback_offset_m: 0.0094    # 잡았을 때 표시(피드백) 폭 = 실제 폭 + 이 값
+  check_tolerance_m: 0.005     # |실제 폭 - grasp_width_m| 이 이 안이면 잡힘
+  settle_timeout_s: 4.0        # 명령 뒤 폭이 멈출 때까지 기다리는 최대 시간
+  finger_height:               # 손가락 끝 높이 보정점: 다 닫고 끝이 작업대 위 약 1 mm 일 때 (10/4 펜던트)
+    touch_tcp_z_m: 0.0112
+    touch_display_width_m: 0.009
+
+grasp_depth_m: 0.011           # 블록 윗면에서 손가락 끝까지 (15 mm 블록이면 끝이 바닥 4 mm 위)
+
+# 잡기 6가지 (IRD 2장). 폭은 실제 손가락 끝 사이 거리 (= 그리퍼 명령 폭)
+grasp_width_m:                 # 닫힌 폭 = 블록 치수 (잡힘 판정 기준)
+  {FLAT_SHORT: 0.025, FLAT_LONG: 0.075, EDGE_SHORT: 0.015, EDGE_LONG: 0.075, STAND_SHORT: 0.015, STAND_LONG: 0.025}
+grasp_open_pick_m:             # 집을 때 열림 — 공급 칸은 주변이 비어 크게 연다
+  {FLAT_SHORT: 0.060, FLAT_LONG: 0.100, EDGE_SHORT: 0.050, EDGE_LONG: 0.100, STAND_SHORT: 0.050, STAND_LONG: 0.060}
+grasp_open_place_m:            # 놓을 때 열림 — LV1 다리 기둥 사이 틈 25 mm: 2 x (37.5 - 손가락 11.4 - 여유 3) = 46 mm 미만
+  {FLAT_SHORT: 0.040, FLAT_LONG: 0.100, EDGE_SHORT: 0.035, EDGE_LONG: 0.100, STAND_SHORT: 0.035, STAND_LONG: 0.040}
+grasp_close_m:                 # 닫기 명령 — 블록보다 5 mm 작게 줘서 힘이 걸리게 한다
+  {FLAT_SHORT: 0.020, FLAT_LONG: 0.070, EDGE_SHORT: 0.010, EDGE_LONG: 0.070, STAND_SHORT: 0.010, STAND_LONG: 0.020}
+
+motion:
+  approach_m: 0.08             # 집기·놓기 위 이 높이에서 수직 직선으로 내려가고 올라온다
+  pick_up_m: 0.0
+  place_up_m: 0.004            # 블록 바닥이 이만큼 떠 있을 때 연다 (작업대 충돌 감지 방지)
+
+speed_scale: 0.1               # 속도 비율 (10/6 LV1 실기 값)
+place_tolerance_m: 0.002       # 배치 목표 정밀도 — 판정은 1차 뒤 (W100)
+
+turn:
+  hand_absent_s: 3
+  start_warning_s: 2
+
+stop:
+  vision_timeout_s: 1          # 1차 뒤 (W066)
+  first_wait_s: 2.0            # 서기 궤적 뒤 이 안에 안 서면 move_stop
