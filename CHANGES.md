@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 비전(10시): **멈춘 뒤 배치 다시 알아보기(1차)** — 관측 자세에서 설계 위치 ROI + 깊이 약 10프레임 → 있음·없음·애매함, 애매하면 같은 자세 1번 다시 → 사람 호출. 전후 비교는 보조, 가까이·다른 자세는 1차 뒤. 높이 허용 오차는 W058·W022 뒤. IRD 8.2·SDD·결정 기록 반영 — 민범진·한석형(PL이 맡김)
 - 공통(10시): **S-26 `motion/halt` 없앰** — 집기·놓기도 `/d2/safety/state`를 보고 목표 취소·잠긴 동안 새 목표 거절, `safety/state`는 바뀔 때 + QoS TRANSIENT_LOCAL. **S-27 카메라 연결 신호 ROS 이름 `/d2/vision/heartbeat` → `/d2/vision/camera_status`**(JSON `camera_status/1`). IRD·SDD·01·05·결정 기록·아키텍처 설명·그림 — 황인재
 - 공통(10시): 시스템 아키텍처 그림 v2_100609 — `gripper/state`(→ 작업 관리자·화면) 선을 넣고 카메라 연결 신호를 적음(드라이브 같은 링크). 아키텍처 설명 8장 = 10/6 결정표, 결정 기록에 10/6 절(S-18~S-25), 01 요구사항·05 작업분류·README도 맞춤. PR 자동 검토 ⑦: 팀이 만든 CAD(DXF·STEP)는 한 파일 1 MB 이하면 `recipe_manager/`에 넣어도 됨 — 황인재
 - 공통(9시): **10/6 PL 결정 S-18~S-25 — 아키텍처 v2에 IRD·SDD 맞춤.** task 노드 하나(작업 관리자 + 작업 판단, `NextBlock` 없앰) · 화면 알림은 `task/state`의 `message_id`·`message`(`task/notify` 없앰) · 화면 정지 = 서비스 `/d2/safety/stop`(`StopRequest.srv`) · 관측·홈 이동 = 서비스 `/d2/motion/move_to`(`MoveTo.srv`, target) · 다시 시작 = 버튼 한 번 → 바로 관측부터(`resume` 명령 없앰) · `gripper/state` 유지(1초 1번 + 바뀔 때) · '생존 신호' → **카메라 연결 신호**(정지 연결 10/8 W066) · 잡기 이름 6가지 `FLAT_SHORT`·`FLAT_LONG`…(예전 SIDE_25·END_75). `motion/halt`는 검토 중 — 황인재
