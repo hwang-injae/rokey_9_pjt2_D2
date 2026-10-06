@@ -64,7 +64,7 @@
 | 서기 궤적 | 토픽 `/dsr_moveit_controller/joint_trajectory` | 정지 노드 → 두산 제어기 | 지금 관절값 0.3초 — 제어기에 직접 |
 | `/d2/gripper/command` · `/d2/gripper/state` | 서비스 · 토픽 | 집기 · 놓기 → 그리퍼 → 모두 | 폭 · 힘 → 잡힘 · 폭 |
 
-좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v2_100616.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v2_100616.md).
+좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v2_100618.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v2_100616.md).
 
 ### 동작 흐름
 
@@ -164,7 +164,7 @@ cd rokey_9_pjt2_D2
 | 경로 | 내용 |
 |---|---|
 | `src/` | ROS 2 패키지(작성 중). `d2_interfaces`(전용 메시지 7개 + `JsonQuery`) · `d2_bringup`(브링업 · `robot.yaml`) · `d2_motion`(집기 · 놓기 + 실행기 · 장면 관리) · `d2_gripper` · `d2_safety`(정지 노드) · `d2_vision`(손목 블록 인식 · 스캔 추론기) · `d2_task`(작업 관리자 · 작업 판단 · 검사 묶음 · 변환기 ②) · `d2_hmi`(웹 · 음성 · AI 생성 · 저장소) · 레시피 도구(CAD → 레시피 · 변환기 ①) |
-| `src/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v2_100616.md) |
+| `src/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v2_100618.md) |
 | `docs/` | 문서 지도는 [docs/README.md](docs/README.md) — 요구사항 · 인터페이스 · 설계 · 결과표 · 작업 분류 · 팀 규칙 · 결정 기록 · 시험 기록 · 트러블슈팅 · 환경 · 조사 · 그림 · 에이전트 프롬프트 |
 | `docs/research/ref_1003/작업4/` | 10/3 검증 코드 — **`prompt_v09*` · `run_v09.py`(AI 설계 생성 · 재생성) · `jenga_check.py`(안정성 검사기 · 템플릿 생성기 · 그림)** → `d2_hmi` · `d2_task`의 바탕 |
 | `tools/docver.py` | 문서 파일 이름(`이름_v버전_MMDDHH`)과 링크를 한 번에 바꾸는 도구 |

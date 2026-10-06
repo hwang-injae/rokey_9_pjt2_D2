@@ -100,7 +100,7 @@ def main():
     ap.add_argument('recipes', nargs='+',
                     help='레시피 파일 (assembly.recipe/1.0 또는 m0609.jenga.cad_recipe/1.0). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음)')
     ap.add_argument('--slots', default=None,
-                    help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 놓을 자세와 같은 자세의 칸을 자동으로 돌려 쓴다')
+                    help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 잡기마다 정한 칸(robot.yaml supply_slots grasp)을 쓴다')
     ap.add_argument('--steps', default=None, help='실행할 순번 (전체 블록 중 몇 번째, 예: 1-3,5). 없으면 전부')
     ap.add_argument('--check', action='store_true', help='목표만 계산해 보여 주고 끝낸다 (로봇 안 움직임)')
     ap.add_argument('--auto', action='store_true', help='y 확인 없이 (가상 시험용)')

@@ -209,7 +209,7 @@ class PickPlaceNode(Node):
         if self.holding:
             # 블록을 쥔 채 출발하면 다른 칸으로 들고 가거나, 집는 폭 '열기' 가 오히려 조이는 명령이 된다 (10/6 실기)
             self.get_logger().error(f'{g.block_id}: 그리퍼가 블록을 쥐고 있다 — 사람이 블록을 빼고 연 뒤 다시')
-            return finish(False, 'HOLDING_BLOCK')
+            return finish(False, 'ERROR')   # IRD 7장: 먼저 세움 → 사람 호출. 자세한 이유는 위 로그
         if g.grasp not in GRASP_AXIS:
             return finish(False, 'PLAN_FAILED')
         if not self.busy.acquire(blocking=False):
