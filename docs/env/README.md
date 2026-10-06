@@ -18,7 +18,7 @@
 |---|---|
 | 1. PC 2대 역할 | 로봇 PC · 웹 PC에 무엇을 켜나, 늘리는 기준 |
 | 2. 저장소 받기 | `git clone`, 빌드 순서 |
-| 3. 버전 확인 | OS · Python · ROS 2 |
+| 3. 버전 확인 | OS · Python · ROS 2 · **3-1 로봇 PC 패키지 판**(두산 드라이버 · 브링업 바탕) |
 | 4. 로봇 브링업 | 팀 브링업(가상 · 실기), 유선 IP, 정지 준비 확인 |
 | 5. RG2 · RealSense D435i | 장치 연결과 확인 |
 | 6. CycloneDDS · ROS_DOMAIN_ID | 로봇 PC 안 설치 · `.bashrc` (PC 사이 DDS는 안 씀) |
@@ -57,6 +57,22 @@ cd rokey_9_pjt2_D2
 lsb_release -ds            # Ubuntu 24.04.x
 python3 --version          # Python 3.12.x
 printenv ROS_DISTRO        # jazzy (source 뒤)
+```
+
+### 3-1. 로봇 PC 패키지 판 (박진용, 10/6)
+
+로봇 PC의 두산 드라이버 · 브링업 바탕 패키지는 아래 판으로 맞춘다. 둘 다 이 저장소 밖(두산 워크스페이스)에 있다.
+
+| 패키지 | 저장소 · 브랜치 | 판(커밋) | 주의 |
+|---|---|---|---|
+| 두산 드라이버 `doosan-robot2` | `ROKEY-SPARK/doosan-robot2_jazzy` · `main` | `31750d6` (7/10) | 교육 과정 배포본(포크) |
+| 브링업 바탕 `m0609_rg2_integration` | `ROKEY-SPARK/m0609_rg2_integration` · `jazzy` | `e80512d` (8/11) | **`a152736`(7/21) 이전 판은 쓰지 않는다** — 모델 파일에 `ros2_control`이 없어 `real_moveit` 제어기가 안 붙는다(민범진 PC에서 나옴. R-01 시험 기록 3장의 현상과 같다) |
+
+```bash
+# 판 확인 — 두산 워크스페이스 src 안에서
+git -C <doosan-robot2 경로> log -1 --oneline                # 31750d6
+git -C <m0609_rg2_integration 경로> log -1 --oneline        # e80512d
+git -C <m0609_rg2_integration 경로> branch --show-current   # jazzy
 ```
 
 ## 4. 로봇 브링업
