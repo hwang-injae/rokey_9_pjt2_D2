@@ -47,7 +47,7 @@ gripper:
   check_tolerance_m: 0.005     # |실제 폭 - grasp_width_m| 이 이 안이면 잡힘
   settle_timeout_s: 4.0        # 명령 뒤 폭이 멈출 때까지 기다리는 최대 시간
   finger_height:               # 손가락 끝 높이 보정점: 다 닫고 끝이 작업대 위 약 1 mm 일 때 (10/4 펜던트, 10/6 고무 없이 확인 — 열림 28.1 vs 식 27.4 mm)
-    touch_tcp_z_m: 0.0112
+    touch_tcp_z_m: 0.011         # 10/6 직접 교시 (검정 패드 있음 · 고무 패드(골무) 뺌). 이전 0.0112 (10/4 펜던트)
     touch_display_width_m: 0.009
 
 grasp_depth_m: 0.011           # 블록 윗면에서 손가락 끝까지 (15 mm 블록이면 끝이 바닥 4 mm 위)

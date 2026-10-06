@@ -1,6 +1,6 @@
 from enum import Enum
 
-from recipe_manager.CAD_to_Recipe.recipe.model.defined.BoundingBox import TOL
+from model.defined.BoundingBox import TOL
 from recipe.defined.GraspAxis import GraspAxis
 
 # 놓인 상태 → 그 상태에서 수직(위)을 향하는 부품 축. 부품 치수는 L ≥ W ≥ T 순서다.

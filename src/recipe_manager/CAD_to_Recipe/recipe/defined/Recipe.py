@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from recipe_manager.CAD_to_Recipe.recipe.model.defined.BoundingBox import TOL
-from recipe_manager.CAD_to_Recipe.recipe.model.defined.Model import Model
+from model.defined.BoundingBox import TOL
+from model.defined.Model import Model
 from recipe.defined.Step import Step
 
 RECIPE_SCHEMA = 'assembly.recipe/1.0'

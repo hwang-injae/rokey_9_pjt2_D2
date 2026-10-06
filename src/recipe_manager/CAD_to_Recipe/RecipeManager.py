@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from cad.CadReader import CadReader
-from recipe_manager.CAD_to_Recipe.recipe.model.defined.Model import Model
+from model.defined.Model import Model
 from recipe.defined.Plan import Plan
 from recipe.defined.Recipe import Recipe
 
