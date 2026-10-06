@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 |---|---|
 | 하드웨어 | Doosan M0609(6축 협동로봇) + OnRobot RG2 그리퍼 + 손목 카메라 Intel RealSense D435i(깊이) + 마이크 |
-| 소프트웨어 | Ubuntu 24.04 · ROS 2 Jazzy · MoveIt2 · CycloneDDS(로봇 PC 안) · **MQTT(Mosquitto, PC 사이)** · Docker compose · DB(제품 10/8 결정) · 웹 화면(Next.js · FastAPI) · OpenAI API(GPT-4o · STT) · GitHub Actions CI |
+| 소프트웨어 | Ubuntu 24.04 · ROS 2 Jazzy · MoveIt2 · CycloneDDS(로봇 PC 안) · **MQTT(Mosquitto, PC 사이)** · Docker compose · DB(PostgreSQL) · 웹 화면(Next.js · FastAPI) · OpenAI API(GPT-4o · STT) · GitHub Actions CI |
 | 상태 | **1차 구현 중** — 10/6 벤치 11개 자동 조립 실기 11/11(337초). 10/7 1차 판정(자동 조립 + 정지) → 10/7~13 핵심(AI 생성 · 검사 · DB · 스캔 복제) → 10/13 기능 동결 → 10/16 시연 |
 | 차별점 | 설계도를 **AI가 만들고 검사하고 세대로 관리**하며, 로봇은 그 설계도를 그대로 쌓는다. 실물을 스캔해 설계도로 복원 · 복제한다 → [선행 프로젝트와 차별점](docs/research/README.md) |
 
@@ -141,7 +141,7 @@ cd rokey_9_pjt2_D2
 | 로봇 드라이버 | 교육 과정 배포본 `doosan-robot2` · RG2 그리퍼 드라이버 — 저장소 밖 |
 | 비전 | RealSense D435i 깊이 — 배치 확인 · 스캔 점군(격자 맞추기). GPU 없이 CPU |
 | AI · 음성 | OpenAI GPT-4o(설계 생성 · 튜닝 — 구조화 출력, 학습 없음 · 의도 분류) · STT · 웨이크워드. 키는 PC마다 `.env`에만 |
-| 화면 · DB | 웹 화면(Next.js 정적 + FastAPI · paho-mqtt · WebSocket, three.js 3D 미리보기는 챌린지) · DB(`designs` · `builds`, 제품 10/8 결정 — PL 후보 PostgreSQL) |
+| 화면 · DB | 웹 화면(Next.js 정적 + FastAPI · paho-mqtt · WebSocket, three.js 3D 미리보기는 챌린지) · DB(`designs` · `builds`, PostgreSQL — 10/6 21시 PL 확정 E-39) |
 | 실행 환경 | 로봇 PC = 호스트(ROS 노드 전부 + 다리) · 웹 PC = docker compose `mosquitto` · `db` · `web`(ROS 없음) + 호스트 음성. PC 2대 유선 LAN |
 | 언어 · 도구 | Python 3.12 · colcon · pytest(ROS 없는 계산 파일 · `tests/`) · GitHub Actions CI(토큰 없음) |
 
