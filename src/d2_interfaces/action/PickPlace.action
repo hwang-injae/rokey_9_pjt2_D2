@@ -1,0 +1,14 @@
+# 블록 1개 전체 집기·놓기 — task 노드 → 집기·놓기 (/d2/motion/pick_place)
+# 목표 칸은 task 노드 안 TaskPlanner가 정한 값 그대로 (S-18, NextBlock 서비스 없음). 자세는 base_link 기준, m·쿼터니언
+string block_id                   # 레시피 block_id (예: LV1_B001)
+string supply_slot
+geometry_msgs/Pose pick_pose      # base_link, m
+geometry_msgs/Pose place_pose
+string grasp                      # FLAT_SHORT | FLAT_LONG (1차) · EDGE_* · STAND_*  (S-25. 예전 SIDE_25 = FLAT_SHORT, END_75 = FLAT_LONG)
+---
+bool success
+string reason                     # IRD 7장 실패 코드
+float64 grip_width_m
+float64 duration_s
+---
+string step                       # approach | grasp | lift | move | place | retreat

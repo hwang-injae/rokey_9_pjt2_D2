@@ -1,0 +1,9 @@
+# 화면 버튼 명령 — 화면 → 작업 관리자 (/d2/hmi/command)
+# 음성 출발은 /d2/hmi/intent start로 들어오고 작업 관리자가 이것의 start와 똑같이 처리 (S-16)
+# '다시 시작'은 여기 없다 — /d2/safety/resume 한 번으로 잠금이 풀리고 task가 관측부터 이어 감 (S-24)
+string cmd                        # select_design | set_mode | start | turn_done  (turn_done = 내 차례 끝)
+string design_id
+string mode
+---
+bool success
+string reason
