@@ -171,7 +171,7 @@ cd rokey_9_pjt2_D2
 | `docs/` | 문서 지도는 [docs/README.md](docs/README.md) — 요구사항 · 인터페이스 · 설계 · 결과표 · 작업 분류 · 팀 규칙 · 결정 기록 · 시험 기록 · 트러블슈팅 · 환경 · 조사 · 그림 · 에이전트 프롬프트 |
 | `docs/research/ref_1003/작업4/` | 10/3 검증 코드 — **`prompt_v09*` · `run_v09.py`(AI 설계 생성 · 재생성) · `jenga_check.py`(안정성 검사기 · 템플릿 생성기 · 그림)** → `web/backend` · `d2_task`의 바탕 |
 | `tools/docver.py` | 문서 파일 이름(`이름_v버전_MMDDHH`)과 링크를 한 번에 바꾸는 도구 |
-| `.github/` | 협업 규칙 · PR 양식 · CODEOWNERS · PR 자동 검사(`pr_check.yml`) · **CI(`ci.yml`: pytest · colcon · ruff, 토큰 없음)** · Claude 검토(라벨 `claude-review` 때만) |
+| `.github/` | 협업 규칙 · PR 양식 · CODEOWNERS · PR 자동 검사(`pr_check.yml`) · **CI(`ci.yml`: pytest · colcon · ruff, 토큰 없음)** · Claude 검토·자동 승인·auto-merge(팀원 PR 전부, 10/7) |
 | `AGENTS.md` · `CHANGES.md` | AI 에이전트 읽기 규칙 · 날마다 파트별 변경 한 줄 |
 | `LICENSE` | Apache-2.0 |
 
@@ -192,7 +192,7 @@ cd rokey_9_pjt2_D2
 
 ## 협업 규칙
 
-- [팀 협업 규칙](docs/06_팀협업규칙_v1_100618.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
+- [팀 협업 규칙](docs/06_팀협업규칙_v1_100701.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
 - [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) — GitHub에서 일하는 순서
 - [AGENTS.md](AGENTS.md) — AI 에이전트 읽기 규칙
 - [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — v4(10/6 개편 + PC 배치)를 저장소 맨 위 `CLAUDE.local.md`로 복사
