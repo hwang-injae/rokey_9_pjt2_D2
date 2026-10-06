@@ -70,10 +70,11 @@ class TaskPlanner:
           DONE         모든 블록이 놓였다
           NO_SUPPORT   그 블록의 받침이 놓여 있지 않다 (block_id)
           UNKNOWN_BLOCK 그 블록이 있는지 없는지 못 봤다(occluded · unknown) → 재관측 (block_id)
-          WAIT_SUPPLY  그 블록의 자세(눕힘 · 세움)에 맞는 공급 칸이 모두 비었다 (block_id) → 사람이 채운 뒤 supply_refilled()
-        공급 칸은 그 자세로 놓인 칸 중 빔으로 적히지 않은 칸을, 같은 자세 블록 순번대로 돌려 쓴다
-        (위에서 집으므로 자세를 못 바꾼다. 같은 칸만 쓰면 한 칸이 먼저 빈다).
-        robot.yaml 에 그 자세의 공급 칸이 아예 없으면 ValueError(설정 오류).
+          WAIT_SUPPLY  그 블록의 잡기에 맞는 공급 칸이 모두 비었다 (block_id) → 사람이 채운 뒤 supply_refilled()
+        공급 칸은 robot.yaml supply_slots 의 grasp 가 블록 잡기와 같은 칸(칸마다 그리퍼 방향이 고정 — 10/6 다시 교시)
+        중 빔으로 적히지 않은 칸을, 같은 잡기 블록 순번대로 돌려 쓴다. 고르는 규칙은 d2_motion run_recipe 와 같다.
+        place_pose 높이는 recipe_blocks 가 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
+        robot.yaml 에 그 잡기의 공급 칸이 아예 없으면 ValueError(설정 오류).
         """
         for index, b in enumerate(self.blocks):
             state = self.progress[b['block_id']]['state']
@@ -95,14 +96,16 @@ class TaskPlanner:
     def _pick_slot(self, index):
         """self.blocks[index] 를 집을 공급 칸 번호(1부터). 맞는 칸이 모두 비었으면 None.
 
-        같은 자세로 앞서 놓일 블록 수만큼 칸을 돌려, 칸마다 고르게 쓴다.
+        칸에 grasp 가 없으면 같은 자세(block_up)의 칸이면 된다. 같은 잡기로 앞서 놓일 블록 수만큼 칸을 돌려 고르게 쓴다.
         """
-        up = up_axis(self.blocks[index]['rot'])
-        same = [k + 1 for k, st in enumerate(self.cfg['supply_slots']) if st.get('block_up', 'THICKNESS') == up]
+        b = self.blocks[index]
+        up = up_axis(b['rot'])
+        same = [k + 1 for k, st in enumerate(self.cfg['supply_slots'])
+                if st.get('grasp', b['grasp']) == b['grasp'] and st.get('block_up', 'THICKNESS') == up]
         if not same:
-            raise ValueError(f'{self.blocks[index]["block_id"]}: {up} 가 위로 놓인 공급 칸이 robot.yaml 에 없다')
+            raise ValueError(f'{b["block_id"]}: {b["grasp"]} 공급 칸이 robot.yaml 에 없다')
         free = [s for s in same if s not in self.empty_slots]
         if not free:
             return None
-        turn = sum(1 for b in self.blocks[:index] if up_axis(b['rot']) == up)
+        turn = sum(1 for o in self.blocks[:index] if o['grasp'] == b['grasp'])
         return free[turn % len(free)]

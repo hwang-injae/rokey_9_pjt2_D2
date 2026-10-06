@@ -27,14 +27,22 @@ def test_빈_작업대면_첫_블록():
     assert r['status'] == 'FOUND'
     assert r['block_id'] == IDS[0]
     assert r['grasp'] == 'FLAT_SHORT'          # 한세교 레시피 sequence 1 (다리 벽)
-    assert r['supply_slot'] == '1'             # 눕힘 칸은 1 · 3 번
+    assert r['supply_slot'] == '2'             # robot.yaml p2 = FLAT_SHORT 칸
     assert len(r['pick_pose'][0]) == 3 and len(r['pick_pose'][1]) == 4
-    assert r['place_pose'][0][2] == pytest.approx(CFG['assembly_origin']['z_m'] + 0.0075)   # 바닥 층 블록 중심 높이
 
 
-def test_놓인_만큼_건너뛰고_칸을_돌려_쓴다():
-    assert [planner(n).next_block()['supply_slot'] for n in (0, 1, 2, 3)] == ['1', '3', '1', '3']
-    assert planner(4).next_block()['block_id'] == IDS[4]
+def test_블록마다_잡기가_같은_칸을_준다():
+    for n in range(11):
+        r = planner(n).next_block()
+        assert CFG['supply_slots'][int(r['supply_slot']) - 1]['grasp'] == r['grasp'], r['block_id']
+    assert [planner(n).next_block()['supply_slot'] for n in (0, 7, 8)] == ['2', '2', '1']   # 벽 p2, 좌판 p1
+
+
+def test_높이는_실측_블록으로_쌓아_올린다():
+    z0, t = CFG['assembly_origin']['z_m'], CFG['block_actual_m'][2]
+    assert planner(0).next_block()['place_pose'][0][2] == pytest.approx(z0 + t / 2)        # 1층 벽
+    assert planner(2).next_block()['place_pose'][0][2] == pytest.approx(z0 + 1.5 * t)      # 2층 벽
+    assert planner(8).next_block()['place_pose'][0][2] == pytest.approx(z0 + 4.5 * t)      # 벽 4층 위 좌판
 
 
 def test_다_놓이면_DONE():
@@ -59,21 +67,19 @@ def test_처음_관측_전에는_UNKNOWN_BLOCK():
     assert TaskPlanner(CFG, RECIPE).next_block()['status'] == 'UNKNOWN_BLOCK'
 
 
-def test_빈_칸은_피하고_다_비면_WAIT_SUPPLY_채우면_이어_감():
+def test_칸이_비면_WAIT_SUPPLY_채우면_이어_감():
     p = planner(0)
-    p.mark_slot_empty(1)
-    assert p.next_block()['supply_slot'] == '3'
-    p.mark_slot_empty(3)
+    p.mark_slot_empty(2)
     assert p.next_block() == {'status': 'WAIT_SUPPLY', 'block_id': IDS[0]}
     p.supply_refilled()
-    assert p.next_block()['status'] == 'FOUND'
+    assert p.next_block()['supply_slot'] == '2'
 
 
-def test_다른_자세_칸이_비어도_눕힘_블록은_그대로():
+def test_다른_잡기_칸이_비어도_그대로():
     p = planner(0)
-    for slot in (2, 4, 5, 6):                  # 눕힘(THICKNESS) 칸이 아닌 칸
+    for slot in (1, 3, 4, 5, 6):               # FLAT_SHORT 가 아닌 칸
         p.mark_slot_empty(slot)
-    assert p.next_block()['status'] == 'FOUND'
+    assert p.next_block()['supply_slot'] == '2'
 
 
 def test_잘못된_관측은_아무것도_안_바꾼다():
