@@ -17,7 +17,7 @@ ROS 2 Jazzy 패키지 8개(로봇 PC) + 레시피 도구 **(안)** + 저장소 �
 - 10/6 개편으로 ROS 노드는 **8개**(웹캠 사람 감지 `webcam_human` · 손목 손 찾기 뺌 — `mock_webcam_human.py`는 지우거나 두되 켜지 않는다; 웹 자리는 `d2_bridge`). `web/backend/`에 AI 설계 생성 `design_gen.py` · 저장소 `design_store.py`, `d2_task`에 검사 묶음 `design_checker.py` · 변환기 ② `recipe_to_blocks.py`, `d2_vision`에 스캔 추론기 `structure_scanner.py`가 ROS 없는 계산 파일로 들어간다. `d2_interfaces`에 `JsonQuery.srv`를 더한다(W121). 자세한 것은 [결정 기록 §9](../docs/decisions/결정기록_시나리오_역할_인터페이스_1004_v1_100609.md#9-104-15시-30분-간소화-결정-s-01s-13--대비책).
 - 패키지 이름과 실행 이름은 이 문서에서 제안한 **안**이다. 만들 때 담당이 바꿀 수 있고, 바꾸면 이 표와 인터페이스 문서 3장을 같이 고친다.
 - 가짜 노드(`mock_*`)는 각 패키지 안에 둔다. 누가 무엇을 만드는지는 [인터페이스 문서 11장](../docs/02_인터페이스_IRD_v3_100620.md#11-가짜mock-노드-규칙)에 있다.
-- CAD → 레시피 도구(한세교)는 노드가 아니라 라이브러리다. **변환기 ①(블록 JSON → 레시피, `blocks_to_recipe`)** 도 여기 들어가고 `d2_task`의 `DesignChecker`가 import 해서 쓴다. 패키지 이름 · 위치는 로봇 동작이 정한다(W110).
+- CAD → 레시피 도구(한세교)는 노드가 아니라 라이브러리다. **변환기 ①(블록 JSON → 레시피, `blocks_to_recipe`)** 도 여기 들어가고 `d2_task`의 `DesignChecker`가 import 해서 쓴다. 지금 위치는 [`src/recipe_manager/`](recipe_manager/)이고 `COLCON_IGNORE`로 빌드에서 뺐다(10/6). 패키지 이름 · 최종 위치는 로봇 동작이 정한다(W110).
 
 ## 구조 규칙
 

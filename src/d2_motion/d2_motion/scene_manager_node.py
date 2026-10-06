@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """장면 관리 노드 scene_manager — MoveIt2 장면을 고치는 유일한 노드. 1차 장면 = 작업대 + 쌓인 블록 + 쥔 블록 (W036)."""
+import glob
 import json
 import os
 import threading
@@ -38,12 +39,14 @@ class SceneManagerNode(Node):
              /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
     파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
+                    비우면 share/d2_bringup/recipes/*.recipe.json 을 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
     """
 
     def __init__(self):
         """설정·레시피를 읽고 서비스·구독을 만든다. 장면 초기화는 run() 에서 move_group 이 뜬 뒤 한다."""
         super().__init__('scene_manager')
-        with open(os.path.join(get_package_share_directory('d2_bringup'), 'config', 'robot.yaml')) as f:
+        share = get_package_share_directory('d2_bringup')
+        with open(os.path.join(share, 'config', 'robot.yaml')) as f:
             self.cfg = yaml.safe_load(f)
         paths = [p for p in self.declare_parameter('recipe', '').value.split(',') if p.strip()]
         self.blocks = {}
@@ -56,7 +59,14 @@ class SceneManagerNode(Node):
             self.blocks = {b['block_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
             self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
         else:
-            self.get_logger().warn('recipe 파라미터가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
+            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_B001) 한 사전에 넣어도 겹치지 않는다.
+            # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
+            for path in sorted(glob.glob(os.path.join(share, 'recipes', '*.recipe.json'))):
+                with open(path) as f:
+                    self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [json.load(f)]) for b in design})
+                self.get_logger().info(f'레시피: {path}')
+            if not self.blocks:
+                self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
         cb = ReentrantCallbackGroup()
         self.scene_cli = self.create_client(ApplyPlanningScene, 'apply_planning_scene', callback_group=cb)
         self.get_cli = self.create_client(GetPlanningScene, 'get_planning_scene', callback_group=cb)
