@@ -1,7 +1,7 @@
 """웹캠 사람 구역 판정 (HumanZoneDetector) — ROS·MediaPipe·OpenCV 없이 도는 계산 부분.
 
 webcam_human 노드가 쓴다. 화면 픽셀 점들을 책상 좌표(mm, base_link)로 바꾸고,
-robot.yaml 의 webcam_zones 사각형 안에 들어오는지로 구역별 사람 있음/없음을 정한다.
+robot.yaml 의 webcam_zones(m) 사각형 안에 들어오는지로 구역별 사람 있음/없음을 정한다.
 웹캠이 없어도 시험할 수 있게 노드와 파일을 나눴다.
 
 보정 파일은 docs/research/ref_1003/작업4/webcam_calib.py 가 만든 webcam_H.json 형식을 그대로 읽는다
@@ -13,7 +13,8 @@ import os
 import yaml
 
 ZONES = ('assembly', 'robot_supply', 'path', 'human_supply')
-ZONE_KEYS = ('x_min_mm', 'x_max_mm', 'y_min_mm', 'y_max_mm')
+ZONE_KEYS = ('x_min_m', 'x_max_m', 'y_min_m', 'y_max_m')   # robot.yaml 은 base_link, m (S-28)
+M_TO_MM = 1000.0   # webcam_H.json 의 H 가 mm 를 내므로 구역도 mm 로 맞춰 비교한다
 
 
 class ConfigError(Exception):
@@ -41,9 +42,9 @@ class HumanZoneDetector:
 
     @staticmethod
     def _load_zones(path):
-        """robot.yaml 맨 위의 webcam_zones 를 읽는다. 값이 하나라도 비었거나 min >= max 면 ConfigError.
+        """robot.yaml 맨 위의 webcam_zones(m)를 읽어 구역별 (x_min, x_max, y_min, y_max) mm 로 돌려준다.
 
-        임의 좌표로 채우지 않는다 — 좌표는 W055 보정 뒤 로봇 파트 robot.yaml 에 들어온다.
+        값이 하나라도 비었거나 min >= max 면 ConfigError. 임의 좌표로 채우지 않는다 — 좌표는 W055 보정 뒤 로봇 파트 robot.yaml 에 들어온다.
         """
         if not path or not os.path.isfile(path):
             raise ConfigError("설정 파일이 없다: '%s' (config_file 파라미터에 robot.yaml 경로를 준다)" % path)
@@ -64,8 +65,8 @@ class HumanZoneDetector:
                     raise ConfigError("webcam_zones.%s.%s 값이 비었거나 숫자가 아니다: %r" % (name, key, v))
                 vals.append(float(v))
             if vals[0] >= vals[1] or vals[2] >= vals[3]:
-                raise ConfigError("webcam_zones.%s 의 min 이 max 보다 작아야 한다: %s" % (name, vals))
-            zones[name] = tuple(vals)
+                raise ConfigError("webcam_zones.%s 의 min 이 max 보다 작아야 한다(m): %s" % (name, vals))
+            zones[name] = tuple(v * M_TO_MM for v in vals)
         return zones
 
     @staticmethod

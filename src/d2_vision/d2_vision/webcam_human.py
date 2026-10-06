@@ -4,7 +4,7 @@
 1차(10/7)는 신호만 낸다. 받는 쪽(정지 노드)은 10/8 W066부터, 카메라 연결 신호(camera_status, 예전 이름 heartbeat)도 그때 더한다.
 
 판정: MediaPipe Pose 의 어깨·팔꿈치·손목(점 11~16) 중 보임 정도 min_visibility 이상인 점이
-하나라도 구역(robot.yaml webcam_zones, mm) 안이면 그 구역 = 있음. 높이 때문에 밀리는 오차는 보정하지 않는다
+하나라도 구역(robot.yaml webcam_zones, base_link m) 안이면 그 구역 = 있음. 높이 때문에 밀리는 오차는 보정하지 않는다
 (W055 설치·보정 뒤 구역 경계·margin 으로 정한다).
 
 필요한 것 (MediaPipe·OpenCV 는 vision 컨테이너(W101)에만 설치한다 — 호스트 pip 금지):
