@@ -9,7 +9,7 @@
 {이름}/{날짜 YYYYMMDD}-{기능}-{간단설명}   예: 황인재/20261005-hmi-web-buttons
 ```
 - `{이름}`은 한글 이름(10/6 PL — GitHub ID가 아니다). 설명은 영문 kebab-case. 같은 기능을 여러 날 하면 날짜만 바꿔 새 브랜치.
-- `main` 보호(Settings → Branches, 10/4 적용): PR 필수, 승인 1명 이상, Code Owners 승인 필수, 직접 push 금지. 관리자(황인재)만 예외 — **10/6 PL: 황인재는 코드도 PR 없이 main에 바로 push한다**(한세교 승인 부담을 덜려고). 다른 사람은 PR로만.
+- `main` 보호(Settings → Branches, 10/4 적용): PR 필수, 승인 1명 이상, Code Owners 승인 필수, 직접 push 금지. 관리자(황인재)만 예외 — **10/6 PL: 황인재는 코드도 PR 없이 main에 바로 push한다**(한세교 승인 부담을 덜려고) — 대신 push 전에 `python3 .github/scripts/pr_check.py --repo . --base origin/main`를 통과해야 하고, 커밋 메시지에 `완료: W번호`를 적는다. 다른 사람은 PR로만.
 - 이 저장소는 공개 저장소라 위 보호가 실제로 강제된다. 필수 상태 검사로 **'PR 검사 / 문법·main 반영·충돌·규칙 검사'** 를 넣는다.
 
 ## 2. Merge

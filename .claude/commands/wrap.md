@@ -1,5 +1,6 @@
 작업(또는 하루) 마무리 루틴을 대신 진행한다. 인자 $ARGUMENTS = 끝낸 일정표 작업 번호(여럿이면 쉼표, 예: `W041,W043`). 없으면 묻는다. 덜 끝났으면 `진행:`으로 적는다.
 **W번호가 없거나 사용자가 모르면:** `python3 tools/sched.py <이름>`(이름은 `CLAUDE.local.md`에서)으로 오늘 내 작업과 '진행 중'·'지연' 작업을 보고, 바뀐 파일·브랜치 이름·커밋 메시지·`HANDOFF.local.md`와 맞춰 가장 맞는 W번호를 1~3개 골라 이유와 함께 제안한 뒤 확인받는다. 맞는 작업이 없으면 PR 본문에 `W번호 없음 — <한 일>`으로 적고 PL에게 알리라고 한다.
+**황인재(10/6 PL — PR 없이 main에 바로 push):** 4~7단계 대신 ① `git fetch origin && git merge origin/main` ② **`python3 .github/scripts/pr_check.py --repo . --base origin/main`를 돌려 통과해야 push한다**(실패면 고친 뒤 다시) ③ 코드면 `.claude/commands/pr-review.md`의 ①~⑧로 스스로 한 번 본다 ④ 커밋 메시지에 `완료: W번호`(덜 끝났으면 `진행: W번호`) 줄을 넣는다 — 문서담당이 커밋 메시지에서 읽어 일정표에 반영한다 ⑤ `CHANGES.md` 한 줄 ⑥ `git push origin main`.
 인자가 `메모`이면 커밋·PR 없이 **10단계(메모)만** 한다 — 작업 중간에 큰 주제를 바꿔 새 세션을 열 때 쓴다.
 
 1. `git status`로 바뀐 파일을 보여 준다. `build/ install/ log/`, 영상·rosbag·DB 파일, `.env`, 키 파일이 섞여 있으면 빼고 왜 뺐는지 말한다. diff에 키 모양 문자열(`sk-…`)이나 개인 절대 경로(`/home/…`)가 있으면 멈추고 알린다.
