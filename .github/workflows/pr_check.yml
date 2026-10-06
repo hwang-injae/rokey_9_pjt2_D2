@@ -99,9 +99,8 @@ jobs:
           git -C pr fetch --no-tags "https://github.com/${{ github.repository }}.git" "main:refs/remotes/origin/main"
           mkdir -p review_input
           printf '# %s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > review_input/body.md
-          git -C pr -c core.quotePath=false diff --name-status origin/main...HEAD > review_input/files.txt
-          # 줄마다 새 파일의 실제 줄 번호를 붙인다 — diff 자체의 줄 번호를 결과표에 적는 일이 있어서(PR #6)
-          git -C pr -c core.quotePath=false diff origin/main...HEAD | python3 .github/scripts/numbered_diff.py > review_input/changes.txt
+          # files.txt + changes.txt. 줄마다 실제 줄 번호(PR #6). 데이터 파일(CAD·그림·큰 json 등)은 diff 대신 이름·크기만(PR #15 토큰 절약, 10/7)
+          python3 .github/scripts/review_input.py --repo pr --base origin/main --out review_input
           wc -l review_input/*
       - name: Claude 검토
         id: claude
@@ -117,6 +116,7 @@ jobs:
             `docs/03_설계_SDD_*.md`의 패키지 표(패키지 → 담당 파트)를 읽는다.
 
             [PR 자료] `review_input/body.md`(제목·본문), `review_input/files.txt`(바뀐 파일), `review_input/changes.txt`(바뀐 내용 — 줄마다 맨 앞 숫자가 **새 파일의 실제 줄 번호**, `-` 줄은 지운 줄이라 번호 없음).
+            CAD·그림·큰 json 같은 **데이터 파일은 changes.txt 맨 끝 표에 이름·크기만** 있다(내용 생략) — ⑦은 그것으로 판정하고, 그 밖의 항목에서 데이터 파일은 '해당 없음'으로 둔다.
             PR의 전체 파일은 `pr/` 아래에 있다 — 줄 번호와 주변 코드는 여기서 확인한다.
             본문 '변경 파일' 목록과 실제 바뀐 파일이 다르면 참고 의견에 적는다.
 
