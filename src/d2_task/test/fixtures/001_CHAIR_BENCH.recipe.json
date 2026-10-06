@@ -1,0 +1,440 @@
+{
+  "schema": "assembly.recipe/1.0",
+  "recipe_id": "001_CHAIR_BENCH_ASSEMBLY",
+  "revision": "1",
+  "model": {
+    "schema": "assembly.model/1.0",
+    "model_id": "001_CHAIR_BENCH",
+    "revision": "1",
+    "frame": {
+      "units": "mm",
+      "handedness": "right",
+      "z": "up",
+      "table_z_mm": 0
+    },
+    "source_cad": {
+      "filename": "001_chair_bench.dxf",
+      "sha256": "13bc23f81abc790dd1ef682fed4ae498b8b80a024dd19b44b783a81a0007ad9e"
+    },
+    "parts": [
+      {
+        "part_id": "PART_001",
+        "size_mm": [
+          75.0,
+          25.0,
+          15.0
+        ]
+      }
+    ],
+    "instances": [
+      {
+        "instance_id": "DXF_INSERT_3E",
+        "part_id": "PART_001",
+        "center_mm": [
+          -25.0,
+          0.0,
+          7.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_4F",
+        "part_id": "PART_001",
+        "center_mm": [
+          25.0,
+          0.0,
+          7.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_61",
+        "part_id": "PART_001",
+        "center_mm": [
+          -25.0,
+          0.0,
+          22.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_72",
+        "part_id": "PART_001",
+        "center_mm": [
+          25.0,
+          0.0,
+          22.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_84",
+        "part_id": "PART_001",
+        "center_mm": [
+          -25.0,
+          0.0,
+          37.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_95",
+        "part_id": "PART_001",
+        "center_mm": [
+          25.0,
+          0.0,
+          37.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_A7",
+        "part_id": "PART_001",
+        "center_mm": [
+          -25.0,
+          0.0,
+          52.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_B8",
+        "part_id": "PART_001",
+        "center_mm": [
+          25.0,
+          0.0,
+          52.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_CA",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          -25.0,
+          67.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_DB",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          67.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_EC",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          25.0,
+          67.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "step_id": "PLACE_DXF_INSERT_3E",
+      "instance_id": "DXF_INSERT_3E",
+      "sequence": 1,
+      "stage": 1,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": []
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_4F",
+      "instance_id": "DXF_INSERT_4F",
+      "sequence": 2,
+      "stage": 1,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": []
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_61",
+      "instance_id": "DXF_INSERT_61",
+      "sequence": 3,
+      "stage": 2,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_3E"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_72",
+      "instance_id": "DXF_INSERT_72",
+      "sequence": 4,
+      "stage": 2,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_4F"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_84",
+      "instance_id": "DXF_INSERT_84",
+      "sequence": 5,
+      "stage": 3,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_61"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_95",
+      "instance_id": "DXF_INSERT_95",
+      "sequence": 6,
+      "stage": 3,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_72"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_A7",
+      "instance_id": "DXF_INSERT_A7",
+      "sequence": 7,
+      "stage": 4,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_84"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_B8",
+      "instance_id": "DXF_INSERT_B8",
+      "sequence": 8,
+      "stage": 4,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_95"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_CA",
+      "instance_id": "DXF_INSERT_CA",
+      "sequence": 9,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_A7",
+        "DXF_INSERT_B8"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_DB",
+      "instance_id": "DXF_INSERT_DB",
+      "sequence": 10,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_A7",
+        "DXF_INSERT_B8"
+      ]
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_EC",
+      "instance_id": "DXF_INSERT_EC",
+      "sequence": 11,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_A7",
+        "DXF_INSERT_B8"
+      ]
+    }
+  ]
+}
