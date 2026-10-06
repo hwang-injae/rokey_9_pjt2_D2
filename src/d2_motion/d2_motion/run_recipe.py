@@ -3,12 +3,13 @@
 
 원본: 박진용 recipe_demo/make_targets.py + run_targets.py 의 실행 순서 (10/6 LV1 11개 실기 성공).
 
-  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json> --check   # 목표만 계산해 보여 줌 (ROS·로봇 없음)
-  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json>           # 블록마다 y 확인
-  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json> --auto    # 확인 없이 (가상 시험)
+  ros2 run d2_motion run_recipe --check   # 목표만 계산해 보여 줌 (ROS·로봇 없음)
+  ros2 run d2_motion run_recipe           # 시작할 때만 y 확인, 그다음은 블록을 쉬지 않고 이어 쌓는다
+  ros2 run d2_motion run_recipe --auto    # 시작 확인도 없이 (가상 시험)
+레시피 경로를 주지 않으면 share/d2_bringup/recipes/ 의 레시피 목록을 보여 주고 번호로 고르게 한다.
 --slots 없음 = 블록의 잡기(grasp)에 정해진 공급 칸(robot.yaml supply_slots 의 grasp)을 쓴다 (10/6 교시: 칸 하나 = 잡기 하나).
 --slots 2,1 처럼 주면 그 칸을 차례로 쓰지만, 잡기가 다른 칸이면 계산 단계에서 거절한다.
-같은 칸을 블록마다 다시 쓰므로 사람이 칸을 다시 채운다. Ctrl+C = 지금 목표 취소 -> pick_place 가 세운다.
+같은 칸을 블록마다 다시 쓰므로, 로봇이 놓으러 간 사이에 사람이 칸을 다시 채운다 (블록 사이에 기다리지 않는다). Ctrl+C = 지금 목표 취소 -> pick_place 가 세운다.
 """
 import argparse
 import csv
@@ -87,20 +88,47 @@ def confirm(what):
         return False
 
 
+def choose_recipe(folder):
+    """folder 안의 레시피(*.recipe.json)를 번호로 보여 주고 사람이 고른 파일 경로를 돌려준다.
+
+    입력: folder = 레시피 폴더 경로. 반환: 고른 파일 경로, 레시피가 없거나 번호가 틀리면 None.
+    """
+    files = sorted(f for f in os.listdir(folder) if f.endswith('.recipe.json')) if os.path.isdir(folder) else []
+    if not files:
+        print(f'[오류] 레시피가 없다: {folder} (src/recipe_manager/recipes/ 에 넣고 d2_bringup 을 다시 빌드)')
+        return None
+    for i, f in enumerate(files, 1):
+        print(f'  {i}. {f[:-len(".recipe.json")]}')
+    try:
+        k = input('레시피 번호: ').strip()
+    except EOFError:
+        return None
+    if not k.isdigit() or not 1 <= int(k) <= len(files):
+        print(f'[오류] 번호가 틀렸다: {k!r}')
+        return None
+    return os.path.join(folder, files[int(k) - 1])
+
+
 def main():
     """레시피를 읽어 목표를 계산하고, --check 가 아니면 블록마다 PickPlace 를 보내 결과를 CSV 로 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
-    ap.add_argument('recipe', help='레시피 파일 (assembly.recipe/1.0)')
+    ap.add_argument('recipe', nargs='?', default=None,
+                    help='레시피 파일 (assembly.recipe/1.0). 없으면 설치된 레시피 목록에서 고름')
     ap.add_argument('--slots', default=None,
                     help='단계 순서대로 쓸 공급 칸 (예: 2,1). 없으면 블록의 잡기에 정해진 칸을 쓴다')
     ap.add_argument('--steps', default=None, help='실행할 sequence (예: 1-3,5). 없으면 전부')
     ap.add_argument('--check', action='store_true', help='목표만 계산해 보여 주고 끝낸다 (로봇 안 움직임)')
-    ap.add_argument('--auto', action='store_true', help='y 확인 없이 (가상 시험용)')
+    ap.add_argument('--auto', action='store_true', help='시작 y 확인도 없이 (가상 시험용)')
     args = ap.parse_args()
 
-    with open(os.path.join(get_package_share_directory('d2_bringup'), 'config', 'robot.yaml')) as f:
+    share = get_package_share_directory('d2_bringup')
+    with open(os.path.join(share, 'config', 'robot.yaml')) as f:
         cfg = yaml.safe_load(f)
-    with open(args.recipe) as f:
+    recipe_path = args.recipe or choose_recipe(os.path.join(share, 'recipes'))
+    if not recipe_path:
+        return 1
+    print(f'레시피: {recipe_path}')
+    with open(recipe_path) as f:
         recipe = json.load(f)
     try:
         jobs = plan_jobs(cfg, recipe, parse_list(args.slots) if args.slots else None,
@@ -126,13 +154,9 @@ def main():
         if not ac.wait_for_server(timeout_sec=10.0):
             print('[오류] /d2/motion/pick_place 가 없다. pick_place 노드를 먼저 띄운다')
             return 1
-        used = set()
         if not args.auto and not confirm(f'시작: 공급 칸 {", ".join(sorted({str(s) for _, s, _, _ in jobs}))}번에 블록을 놓았으면'):
             return 1
         for b, slot, center, rot in jobs:
-            if slot in used and not args.auto and not confirm(f'{b["block_id"]}: 공급 칸 {slot}번에 블록을 다시 놓았으면'):
-                break
-            used.add(slot)
             goal = PickPlace.Goal(block_id=b['block_id'], supply_slot=str(slot), grasp=b['grasp'],
                                   pick_pose=make_pose(center, quat_from_axes(*(column(rot, k) for k in range(3)))),
                                   place_pose=make_pose(b['center'], b['quat']))

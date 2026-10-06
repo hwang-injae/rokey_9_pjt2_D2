@@ -15,6 +15,8 @@ setup(
         ('share/' + package_name + '/description', glob('description/*')),
         # robot.yaml(W031, 황인재)이 config/ 에 생기면 그대로 설치된다
         ('share/' + package_name + '/config', glob('config/*')),
+        # 레시피(한세교 recipe_manager, COLCON_IGNORE)를 함께 설치 — robot.yaml recipe_file 이 이 폴더의 파일 이름
+        ('share/' + package_name + '/recipes', glob('../recipe_manager/recipes/*.recipe.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

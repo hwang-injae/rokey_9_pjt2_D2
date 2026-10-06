@@ -2,8 +2,9 @@
 """로봇 PC 노드 4개를 띄운다: 정지(safety_stop) · 그리퍼(gripper) · 장면 관리(scene_manager) · 집기·놓기(pick_place).
 
 브링업(real_moveit.launch.py)을 다른 터미널에서 먼저 띄운 뒤 쓴다.
-  ros2 launch d2_bringup robot_nodes.launch.py recipe:=<LV1.recipe.json>               # 가상
-  ros2 launch d2_bringup robot_nodes.launch.py recipe:=<LV1.recipe.json> mode:=real    # 실기
+  ros2 launch d2_bringup robot_nodes.launch.py                # 가상
+  ros2 launch d2_bringup robot_nodes.launch.py mode:=real     # 실기
+레시피를 주지 않으면 장면 관리가 share/d2_bringup/recipes/ 의 레시피를 모두 읽는다 (어느 것을 쌓을지는 run_recipe 에서 고름).
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -17,7 +18,7 @@ def generate_launch_description():
     virtual = PythonExpression(["'", LaunchConfiguration('mode'), "' != 'real'"])
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='virtual', description='virtual | real'),
-        DeclareLaunchArgument('recipe', default_value='', description='레시피 파일 (장면 관리가 블록 크기·자리를 읽음)'),
+        DeclareLaunchArgument('recipe', default_value='', description='레시피 파일 (장면 관리가 블록 크기·자리를 읽음). 비우면 설치된 레시피 전부'),
         Node(package='d2_safety', executable='safety_stop', output='screen'),
         Node(package='d2_gripper', executable='gripper', output='screen',
              parameters=[{'virtual': ParameterValue(virtual, value_type=bool)}]),

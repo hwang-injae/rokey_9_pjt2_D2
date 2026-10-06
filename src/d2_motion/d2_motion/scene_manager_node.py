@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """장면 관리 노드 scene_manager — MoveIt2 장면을 고치는 유일한 노드. 1차 장면 = 작업대 + 쌓인 블록 + 쥔 블록 (W036)."""
+import glob
 import json
 import os
 import threading
@@ -38,21 +39,25 @@ class SceneManagerNode(Node):
              /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
     파라미터 recipe: 레시피 파일 경로 — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
+                    비우면 share/d2_bringup/recipes/*.recipe.json 을 모두 읽는다 (run_recipe 가 실행할 때 고르게).
     """
 
     def __init__(self):
         """설정·레시피를 읽고 서비스·구독을 만든다. 장면 초기화는 run() 에서 move_group 이 뜬 뒤 한다."""
         super().__init__('scene_manager')
-        with open(os.path.join(get_package_share_directory('d2_bringup'), 'config', 'robot.yaml')) as f:
+        share = get_package_share_directory('d2_bringup')
+        with open(os.path.join(share, 'config', 'robot.yaml')) as f:
             self.cfg = yaml.safe_load(f)
         path = self.declare_parameter('recipe', '').value
+        # block_id 에 모델 ID 가 붙어 있어서(001_CHAIR_BENCH_B001) 레시피 여러 개를 한 사전에 넣어도 겹치지 않는다
+        paths = [path] if path else sorted(glob.glob(os.path.join(share, 'recipes', '*.recipe.json')))
         self.blocks = {}
-        if path:
-            with open(path) as f:
-                self.blocks = {b['block_id']: b for b in recipe_blocks(self.cfg, json.load(f))}
-            self.get_logger().info(f'레시피 {len(self.blocks)}개 블록: {path}')
-        else:
-            self.get_logger().warn('recipe 파라미터가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
+        for p in paths:
+            with open(p) as f:
+                self.blocks.update({b['block_id']: b for b in recipe_blocks(self.cfg, json.load(f))})
+            self.get_logger().info(f'레시피: {p}')
+        if not self.blocks:
+            self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
         cb = ReentrantCallbackGroup()
         self.scene_cli = self.create_client(ApplyPlanningScene, 'apply_planning_scene', callback_group=cb)
         self.get_cli = self.create_client(GetPlanningScene, 'get_planning_scene', callback_group=cb)
