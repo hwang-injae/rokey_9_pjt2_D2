@@ -34,7 +34,8 @@ def classify(repo, base):
         big = not binary and int(added) + int(deleted) > BIG_LINES
         if binary or big or Path(path).suffix.lower() in DATA_EXT:
             size = (Path(repo) / path).stat().st_size if (Path(repo) / path).exists() else 0
-            data.append(f'{path}\t{size / 1024:.0f} KB\t' + ('바이너리' if binary else f'+{added}/-{deleted}'))
+            shown = f'{size} B' if size < 1024 else f'{size / 1024:.0f} KB'  # 256 B 같은 작은 파일이 '0 KB'로 보이지 않게
+            data.append(f'{path}\t{shown}\t' + ('바이너리' if binary else f'+{added}/-{deleted}'))
         else:
             code.append(path)
     return code, data
