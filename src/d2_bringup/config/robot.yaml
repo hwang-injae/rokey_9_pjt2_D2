@@ -30,7 +30,7 @@ supply_slots:
   - {x_m: 0.5450, y_m: 0.1698, surface_z_m: -0.018, yaw_deg: 0.3, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344, grasp: STAND_LONG}   # p5 STAND_LONG
   - {x_m: 0.5445, y_m: 0.2620, surface_z_m: -0.018, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT
 
-observe_pose: null             # 관측 자세 (교시 전, W018) — {joints_deg: [...]}
+observe_pose: {joints_deg: [-18.25, 1.73, 72.73, 0.02, 105.52, 71.44]}   # 관측 자세 (W018, 10/6 실기 확인·민범진 OK): TCP (350.5, -109.0, 294.8) mm 아래 방향, 작업대까지 약 497 mm. 조립 영역(초록 사각형)이 화면 가운데에 다 보임
 home_pose: {joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]}
 
 finger:
