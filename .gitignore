@@ -66,6 +66,7 @@ data/
 *.crt
 *.p12
 *_secret*
+!tests/test_no_secrets.py
 *credentials*
 secrets.yaml
 secrets.yml
