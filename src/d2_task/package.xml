@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>d2_task</name>
+  <version>0.0.1</version>
+  <description>D2 작업 관리자 — 작업 판단(진행표 · 다음 블록), 상태표, 검사 묶음, 기록</description>
+  <maintainer email="gkstjrgud19@gmail.com">한석형</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>d2_motion</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
