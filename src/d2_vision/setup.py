@@ -9,6 +9,7 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/config', ['config/T_gripper2camera.npy']),   # 손목 hand-eye 보정값 (민범진)
     ],
     install_requires=['setuptools'],
     zip_safe=True,
