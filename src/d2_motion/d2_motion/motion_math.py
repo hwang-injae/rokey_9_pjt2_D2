@@ -121,6 +121,15 @@ def half_height(rot, size):
     return sum(abs(rot[2][i]) * size[i] / 2 for i in range(3))
 
 
+def block_dims(cfg):
+    """실제 블록 치수 (m, LENGTH·WIDTH·THICKNESS). robot.yaml block_actual_m(실측)이 없으면 설계 치수.
+
+    높이 계산(쌓는 높이·집는 높이·장면 상자)은 실측으로 한다 — 설계 15 mm로 쌓으면 10층에서 1.8 mm 높은 곳에서
+    놓게 되어 블록이 떨어지며 뒤틀렸다 (10/6 실기, LV2 의자).
+    """
+    return cfg.get('block_actual_m') or cfg['block_size_m']
+
+
 def slot_block_pose(cfg, slot):
     """공급 칸 slot (1부터) 에 놓인 블록의 중심 (m) 과 회전 행렬.
 
@@ -140,8 +149,7 @@ def slot_block_pose(cfg, slot):
         rot = rot_z(rpy_matrix(0.0, -math.pi / 2, 0.0), yaw - math.pi / 2)
     else:
         raise ValueError(f'공급 칸 {slot}: block_up 은 THICKNESS / WIDTH / LENGTH ({up})')
-    size = cfg['block_size_m']
-    return (st['x_m'], st['y_m'], st['surface_z_m'] + half_height(rot, size)), rot
+    return (st['x_m'], st['y_m'], st['surface_z_m'] + half_height(rot, block_dims(cfg))), rot
 
 
 # ---------------- RG2 손가락 끝 높이 ----------------
@@ -173,7 +181,7 @@ def _tcp_z_for_tip(cfg, tip_z, grasp):
 
 def _tcp_z_from_taught(cfg, slot_cfg, top_z, grasp):
     """교시한 집는 높이 기준 TCP z = 교시 높이 + (윗면 높이 차) + (무는 폭이 달라 생기는 손가락 끝 높이 차)."""
-    size = dict(zip(('LENGTH', 'WIDTH', 'THICKNESS'), cfg['block_size_m']))
+    size = dict(zip(('LENGTH', 'WIDTH', 'THICKNESS'), block_dims(cfg)))
     top_ref = cfg['table_z_m'] + size[slot_cfg.get('block_up', 'THICKNESS')]
     drop = rg2_tip_height_m(_grip_display_m(cfg, grasp)) - rg2_tip_height_m(slot_cfg['grip_display_width_m'])
     return slot_cfg['tcp_z_m'] + (top_z - top_ref) + drop
@@ -193,7 +201,7 @@ def tcp_target(cfg, center, rot, grasp, slot_cfg=None):
     if tilt > LEVEL_TOL_DEG:
         raise ValueError(f'잡는 축이 수평이 아님 (기울기 {tilt:.1f}도)')
     q = tcp_quat_down(wrap_half(math.atan2(gdir[1], gdir[0])))
-    size = cfg['block_size_m']
+    size = block_dims(cfg)
     top = center[2] + half_height(rot, size)
     if slot_cfg is not None and slot_cfg.get('tcp_z_m') is not None:
         tcp_z = _tcp_z_from_taught(cfg, slot_cfg, top, grasp)
@@ -212,12 +220,16 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
     놓는 높이는 assembly_origin 에 교시 높이가 있으면 그것을 기준으로 한다.
     공급 칸 slot 에 교시 높이가 있으면 블록을 표준보다 깊거나 얕게 문다. 놓을 때도 같은 깊이로 물고 있으므로
     놓는 TCP 를 그 차이만큼 옮긴다 (안 그러면 블록 바닥이 작업대를 누른다, 10/4 실기).
-    반환: (pick_xyz, pick_q, place_xyz, place_q, held). 계산할 수 없거나 공급·놓기 자세가 다르면 ValueError.
+    반환: (pick_xyz, pick_q, place_xyz, place_q, held).
+    계산할 수 없거나, 공급·놓기 자세가 다르거나, 칸에 정해진 잡기(grasp)와 다르면 ValueError — 움직이기 전에 거절한다.
     """
     # 위에서 집어 그대로 내려놓으므로 블록 자세(어느 면이 바닥인지)를 바꿀 수 없다: 공급 자세 = 놓을 자세여야 한다
     if up_axis(pick_rot) != up_axis(place_rot):
         raise ValueError(f'공급 블록은 {up_axis(pick_rot)} 가 위인데 놓을 자세는 {up_axis(place_rot)} 가 위 — 같은 자세의 칸이 필요하다')
     slot_cfg = cfg['supply_slots'][slot - 1] if slot else None
+    # 칸 하나 = 잡기 하나 (10/6 교시): 칸의 블록 방향·집는 높이가 그 잡기에 맞춰 찍혀 있다
+    if slot_cfg is not None and slot_cfg.get('grasp') not in (None, grasp):
+        raise ValueError(f'공급 칸 {slot} 은 {slot_cfg["grasp"]} 칸인데 {grasp} 로 집으라고 함')
     pick_xyz, pick_q, _ = tcp_target(cfg, pick_center, pick_rot, grasp, slot_cfg)
     # 놓는 높이는 조립 원점에서 교시한 높이(tcp_z_m, record_cell 의 m)가 있으면 그것 기준, 없으면 손가락 끝 보정식 (원본과 같음)
     place_xyz, place_q, held = tcp_target(cfg, place_center, place_rot, grasp, cfg['assembly_origin'])
@@ -233,8 +245,10 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 def recipe_blocks(cfg, recipe):
     """레시피(assembly.recipe/1.0) -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    block_id 는 레시피에 칸이 없어서 '<model_id>_B<sequence 3자리>' 로 만든다 (IRD 2장 예: LV1_B001).
-    반환: [{'block_id', 'sequence', 'stage', 'grasp', 'center': (m), 'rot': 3x3, 'quat'}]
+    block_id 는 레시피에 칸이 없어서 '<model_id>_B<sequence 3자리>' 로 만든다 (예: 001_CHAIR_BENCH_B001).
+    가로 위치는 설계 그대로, 높이는 실측 치수로 쌓는다: 블록 바닥 = 받침 블록(support_instance_ids)의 실제 윗면
+    (받침이 없으면 설계 높이 그대로 = 작업대). 레시피는 설계 치수(block_size_m)여야 한다 — 다르면 ValueError.
+    반환: [{'block_id', 'sequence', 'stage', 'grasp', 'center': (m), 'rot': 3x3, 'quat', 'design_xy': (m)}]
     """
     model = recipe['model']
     sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
@@ -242,6 +256,8 @@ def recipe_blocks(cfg, recipe):
     o = cfg['assembly_origin']
     yaw = math.radians(o['yaw_deg'])
     c, s = math.cos(yaw), math.sin(yaw)
+    actual = block_dims(cfg)
+    top_shift = {}            # instance_id -> 실제 윗면 - 설계 윗면 (m). 위층으로 갈수록 쌓인다
     out = []
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         i = inst[st['instance_id']]
@@ -249,12 +265,32 @@ def recipe_blocks(cfg, recipe):
         if any(abs(a - b) > 1e-4 for a, b in zip(size_m, cfg['block_size_m'])):
             raise ValueError(f'{st["instance_id"]}: 블록 크기 {size_m} 가 robot.yaml block_size_m 와 다르다')
         x, y, z = (v / 1000.0 for v in i['center_mm'])
-        center = (o['x_m'] + c * x - s * y, o['y_m'] + s * x + c * y, o['z_m'] + z)
         rot = rot_z(i['R'], yaw)
+        # 받침보다 먼저 놓는 블록은 없다(레시피가 받침 순서를 검사함). 받침 여러 개면 가장 높은 실제 윗면에 얹힌다
+        shift = max((top_shift[k] for k in st.get('support_instance_ids') or []), default=0.0)
+        nominal_half, actual_half = half_height(rot, cfg['block_size_m']), half_height(rot, actual)
+        z_real = z - nominal_half + shift + actual_half
+        top_shift[st['instance_id']] = shift + 2 * (actual_half - nominal_half)
+        center = (o['x_m'] + c * x - s * y, o['y_m'] + s * x + c * y, o['z_m'] + z_real)
         out.append({'block_id': f'{model["model_id"]}_B{st["sequence"]:03d}', 'sequence': st['sequence'],
                     'stage': st.get('stage'), 'grasp': grasp_name(rot, st['grasp_axis']),
-                    'center': center, 'rot': rot, 'quat': quat_from_axes(*(column(rot, k) for k in range(3)))})
+                    'center': center, 'rot': rot, 'quat': quat_from_axes(*(column(rot, k) for k in range(3))),
+                    'design_xy': (x, y)})
     return out
+
+
+def check_in_area(cfg, block):
+    """블록이 조립 작업공간(assembly_origin ± assembly_area_half_m, 설계 x·y) 안에 다 들어가는지. 밖이면 ValueError."""
+    half = cfg.get('assembly_area_half_m')
+    if half is None:
+        return
+    rot = block['rot']
+    size = block_dims(cfg)
+    # 설계 축 기준 블록 반폭: base 회전에서 조립 원점 yaw 를 빼도 축 성분 크기는 거의 같다 (yaw 0.3°)
+    for k, v in enumerate(block['design_xy']):
+        reach = abs(v) + sum(abs(rot[k][i]) * size[i] / 2 for i in range(3))
+        if reach > half + 1e-6:
+            raise ValueError(f'{block["block_id"]}: 조립 작업공간(±{half * 1000:.0f} mm) 밖 — {"xy"[k]} {reach * 1000:.1f} mm')
 
 
 # ---------------- 궤적 ----------------

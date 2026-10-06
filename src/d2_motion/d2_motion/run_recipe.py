@@ -3,10 +3,12 @@
 
 원본: 박진용 recipe_demo/make_targets.py + run_targets.py 의 실행 순서 (10/6 LV1 11개 실기 성공).
 
-  ros2 run d2_motion run_recipe <LV1.recipe.json> --slots 1,3 --check   # 목표만 계산해 보여 줌 (ROS·로봇 없음)
-  ros2 run d2_motion run_recipe <LV1.recipe.json> --slots 1,3           # 블록마다 y 확인
-  ros2 run d2_motion run_recipe <LV1.recipe.json> --slots 1,3 --auto    # 확인 없이 (가상 시험)
---slots 없음 = 놓을 자세에 맞는 칸을 자동으로, --slots 1,3 = 공급 칸 1, 3, 1, 3 ... 번갈아 (사람이 가져간 칸을 다시 채운다). Ctrl+C = 지금 목표 취소 -> pick_place 가 세운다.
+  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json> --check   # 목표만 계산해 보여 줌 (ROS·로봇 없음)
+  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json>           # 블록마다 y 확인
+  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json> --auto    # 확인 없이 (가상 시험)
+--slots 없음 = 블록의 잡기(grasp)에 정해진 공급 칸(robot.yaml supply_slots 의 grasp)을 쓴다 (10/6 교시: 칸 하나 = 잡기 하나).
+--slots 2,1 처럼 주면 그 칸을 차례로 쓰지만, 잡기가 다른 칸이면 계산 단계에서 거절한다.
+같은 칸을 블록마다 다시 쓰므로 사람이 칸을 다시 채운다. Ctrl+C = 지금 목표 취소 -> pick_place 가 세운다.
 """
 import argparse
 import csv
@@ -23,8 +25,8 @@ from d2_interfaces.action import PickPlace
 from rclpy.action import ActionClient
 
 from d2_motion.executor import make_pose
-from d2_motion.motion_math import (close_angle_deg, column, pick_place_tcp, quat_from_axes, recipe_blocks,
-                                   slot_block_pose, up_axis)
+from d2_motion.motion_math import (check_in_area, close_angle_deg, column, pick_place_tcp, quat_from_axes,
+                                   recipe_blocks, slot_block_pose)
 from d2_safety.safe_stop import init_ros
 
 
@@ -40,20 +42,20 @@ def parse_list(spec):
 def plan_jobs(cfg, recipe, slots=None, only=None):
     """레시피 블록마다 (블록, 공급 칸, 칸의 블록 중심, 칸의 블록 회전) 을 만든다.
 
-    slots 를 주면 그 칸을 차례로 다시 쓴다. 안 주면 놓을 자세와 같은 자세(block_up)의 칸을 자세별로 돌려 쓴다
-    (원본 make_targets 와 같음 — 위에서 집으므로 자세를 못 바꾼다). 맞는 칸이 없으면 ValueError.
+    slots 를 주면 그 칸을 차례로 다시 쓴다. 안 주면 블록의 잡기와 같은 grasp 의 칸을 쓴다 (같은 잡기 칸이 여럿이면 돌려 씀).
+    맞는 칸이 없거나 블록이 조립 작업공간 밖이면 ValueError.
     """
     jobs, turn = [], {}
     for i, b in enumerate(recipe_blocks(cfg, recipe)):
+        check_in_area(cfg, b)
         if slots:
             slot = slots[i % len(slots)]
         else:
-            up = up_axis(b['rot'])
-            cand = [k + 1 for k, st in enumerate(cfg['supply_slots']) if st.get('block_up', 'THICKNESS') == up]
+            cand = [k + 1 for k, st in enumerate(cfg['supply_slots']) if st.get('grasp') == b['grasp']]
             if not cand:
-                raise ValueError(f'{b["block_id"]}: {up} 가 위로 놓인 공급 칸이 robot.yaml 에 없다')
-            slot = cand[turn.get(up, 0) % len(cand)]
-            turn[up] = turn.get(up, 0) + 1
+                raise ValueError(f'{b["block_id"]}: {b["grasp"]} 공급 칸이 robot.yaml 에 없다')
+            slot = cand[turn.get(b['grasp'], 0) % len(cand)]
+            turn[b['grasp']] = turn.get(b['grasp'], 0) + 1
         if only and b['sequence'] not in only:
             continue
         center, rot = slot_block_pose(cfg, slot)
@@ -90,7 +92,7 @@ def main():
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipe', help='레시피 파일 (assembly.recipe/1.0)')
     ap.add_argument('--slots', default=None,
-                    help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 놓을 자세와 같은 자세의 칸을 자동으로 돌려 쓴다')
+                    help='단계 순서대로 쓸 공급 칸 (예: 2,1). 없으면 블록의 잡기에 정해진 칸을 쓴다')
     ap.add_argument('--steps', default=None, help='실행할 sequence (예: 1-3,5). 없으면 전부')
     ap.add_argument('--check', action='store_true', help='목표만 계산해 보여 주고 끝낸다 (로봇 안 움직임)')
     ap.add_argument('--auto', action='store_true', help='y 확인 없이 (가상 시험용)')

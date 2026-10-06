@@ -50,6 +50,7 @@ class GripperNode(Node):
             cfg = yaml.safe_load(f)
         g = cfg['gripper']
         self.offset_m, self.tol_m, self.settle_s = g['feedback_offset_m'], g['check_tolerance_m'], g['settle_timeout_s']
+        self.cmd_offset_m = g.get('command_offset_m', 0.0)
         self.grasp_widths = list(cfg['grasp_width_m'].values())
         self.virtual = self.declare_parameter('virtual', False).value
         cb = ReentrantCallbackGroup()
@@ -115,13 +116,15 @@ class GripperNode(Node):
         return self.read_width()
 
     def _on_command(self, req, res):
-        """폭 width_m 로 움직이고 다 멈춘 뒤 답한다.
+        """실제 손가락 끝 사이 폭 width_m 로 움직이고 다 멈춘 뒤 답한다.
 
+        드라이버에는 width_m + command_offset_m 을 명령한다 — 고무 패드를 뺀 뒤 명령 폭보다 실제 폭이 8.5 mm 좁다(10/6 캘리퍼스).
         바깥 영향: 그리퍼가 움직인다. 반환: success = 드라이버가 받았는지, grasped·width_m = 멈춘 뒤 상태.
         드라이버가 없거나 답이 없으면 success=false, reason 에 이유.
         """
         with self.lock:
-            cmd = str(int(round(min(MAX_WIDTH_M, max(0.0, req.width_m)) * 10000)))   # 드라이버 단위 1/10 mm
+            cmd_m = min(MAX_WIDTH_M, max(0.0, req.width_m + self.cmd_offset_m))
+            cmd = str(int(round(cmd_m * 10000)))   # 드라이버 단위 1/10 mm
             closing = self.last_cmd_m is not None and req.width_m < self.last_cmd_m
             if not self._send(cmd):
                 res.success, res.reason, res.grasped, res.width_m = False, 'GRIPPER_NO_RESPONSE', False, float('nan')
@@ -143,7 +146,7 @@ class GripperNode(Node):
             self.width_m, self.grasped = w, grasped
         if changed:
             self._publish_state()
-        self.get_logger().info(f'폭 명령 {req.width_m * 1000:.1f} mm -> 실제 '
+        self.get_logger().info(f'폭 명령 {req.width_m * 1000:.1f} mm (드라이버 {cmd_m * 1000:.1f} mm) -> 실제 '
                                f'{"모름" if math.isnan(w) else f"{w * 1000:.1f} mm"}, 잡힘 {grasped}')
         return res
 

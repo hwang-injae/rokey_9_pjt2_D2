@@ -19,7 +19,7 @@ from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, String
 
 from d2_motion.executor import make_pose
-from d2_motion.motion_math import recipe_blocks, tcp_target
+from d2_motion.motion_math import block_dims, pick_place_tcp, recipe_blocks, slot_block_pose, tcp_target
 
 HELD = 'held'
 TABLE_THICK_M = 0.02
@@ -127,7 +127,7 @@ class SceneManagerNode(Node):
 
     def add_placed(self, block_id, center, quat):
         """놓인 블록 blk_<block_id> 를 base 자세 (중심 m, 쿼터니언) 로 넣거나 옮긴다."""
-        size = [max(0.001, v - 2 * PLACED_SHRINK_M) for v in self.cfg['block_size_m']]
+        size = [max(0.001, v - 2 * PLACED_SHRINK_M) for v in block_dims(self.cfg)]   # 실측 치수 (위층 높이가 실제와 맞게)
         oid = f'blk_{block_id}'
         sc = PlanningScene()
         sc.world.collision_objects = [self._box(oid, size, make_pose(center, quat))]
@@ -138,6 +138,7 @@ class SceneManagerNode(Node):
     def _on_attach(self, req, res):
         """쥔 블록 붙이기 (attach=True: TCP 에 상자) / 떼기 (False: 쥔 상자를 지우고 레시피 자리에 놓인 블록으로).
 
+        쥔 상자 위치는 그 잡기의 공급 칸(robot.yaml supply_slots 의 grasp)에서 집었다고 보고 집기·놓기와 같은 식으로 계산한다.
         레시피에 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
         """
         b = self.blocks.get(req.block_id)
@@ -149,7 +150,14 @@ class SceneManagerNode(Node):
         aco = AttachedCollisionObject(link_name=tcp)
         aco.object.id = HELD
         if req.attach:
-            _, _, held = tcp_target(self.cfg, b['center'], b['rot'], b['grasp'], self.cfg['assembly_origin'])
+            # 집기·놓기와 같은 계산(pick_place_tcp)으로 쥔 상자를 놓는다: 교시 높이가 있는 칸(세운 블록 p3~p6)은
+            # 표준보다 깊게 물어서, 그 차이를 빼면 상자가 작업대 속 9 mm 로 들어가 들어 올리기가 충돌로 거절됐다 (10/6 가상)
+            slot = next((k + 1 for k, st in enumerate(self.cfg['supply_slots']) if st.get('grasp') == b['grasp']), None)
+            if slot is None:
+                _, _, held = tcp_target(self.cfg, b['center'], b['rot'], b['grasp'], self.cfg['assembly_origin'])
+            else:
+                pc, pr = slot_block_pose(self.cfg, slot)
+                held = pick_place_tcp(self.cfg, pc, pr, b['center'], b['rot'], b['grasp'], slot)[4]
             aco.object.header.frame_id = tcp
             aco.object.operation = CollisionObject.ADD
             aco.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in held['size_m']])]
