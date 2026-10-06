@@ -44,8 +44,8 @@ gripper:
   command_offset_m: 0.0085     # 실제 폭 = 명령 폭 - 이 값 (10/6 캘리퍼스: 50 -> 41.7, 100 -> 91.3 mm, 고무 뺀 뒤). 그리퍼 노드가 더해서 명령한다
   check_tolerance_m: 0.005     # |실제 폭 - grasp_width_m| 이 이 안이면 잡힘
   settle_timeout_s: 4.0        # 명령 뒤 폭이 멈출 때까지 기다리는 최대 시간
-  finger_height:               # 손가락 끝 높이 보정점: 다 닫고 끝이 작업대 위 약 1 mm 일 때 (10/4 펜던트)
-    touch_tcp_z_m: 0.0112
+  finger_height:               # 손가락 끝 높이 보정점: 다 닫고(표시 9 mm) 끝이 작업대에 닿을 때의 rg2_tcp z
+    touch_tcp_z_m: 0.011         # 10/6 직접 교시 (한세교, 고무 패드 뺌). 이전 0.0112 (10/4 펜던트) — 무는 깊이만 0.2 mm 바뀜
     touch_display_width_m: 0.009
 
 grasp_depth_m: 0.011           # 블록 윗면에서 손가락 끝까지 (15 mm 블록이면 끝이 바닥 4 mm 위)
