@@ -4,16 +4,16 @@ ROS 2 Jazzy 패키지 8개 **(안)**. 아직 코드는 없다(코드 작성 전)
 
 | 패키지 (안) | 빌드 타입 | 담당 파트 | 역할 | 노드 (실행 이름, 안) | 돌리는 곳 |
 |---|---|---|---|---|---|
-| `d2_interfaces` | ament_cmake (rosidl) | 로봇 동작 (인프라·통합) | 전용 메시지 6개 — `PickPlace.action` · `GripperCommand` · `CheckProgress` · `NextBlock` · `HmiCommand` · `SceneAttach` (`.srv`). 노드 없음. **10/4 오후에 만든다** | — | 모든 PC |
+| `d2_interfaces` | ament_cmake (rosidl) | 황인재 (W027, 10/6 PL이 로봇 동작에서 옮김) | 전용 메시지 7개 — `PickPlace.action` · `GripperCommand` · `CheckProgress` · `HmiCommand` · `SceneAttach` · `StopRequest` · `MoveTo` (`.srv`, 10/6 NextBlock 빠짐). 노드 없음 | — | 모든 PC |
 | `d2_bringup` | ament_python | 로봇 동작 (인프라·통합) | 팀 브링업(박진용 `real_moveit.launch.py`를 옮김, `mode:=virtual`·`real`) + 전체 실행 launch(진짜·가짜 고르기) + 설정 파일 `src/d2_bringup/config/robot.yaml` | — (launch만) | 로봇 PC 호스트 |
 | `d2_motion` | ament_python | 로봇 동작 | 블록 1개 집기·놓기 액션 서버(실행기는 같은 프로그램 안 클래스) + MoveIt2 장면을 고치는 유일한 노드 | `pick_place` · `scene_manager` | 로봇 PC 호스트 |
 | `d2_gripper` | ament_python | 로봇 동작 (로봇 셀) | RG2를 다루는 유일한 노드. (폭, 힘)을 받아 다 움직인 뒤 폭을 보고 **잡힘까지** 답한다(잡힘 확인을 따로 두지 않음, S-01) | `gripper` | 로봇 PC 호스트 |
 | `d2_safety` | ament_python | 로봇 동작 (안전 감시) | 정지 판단 + 제어기에 서기 궤적 + 잠금. 늘 켜 둔다. 1차 정지 입력 = 키·화면 버튼·Ctrl+C·로봇 알람 4개(웹캠·카메라 끊김·음성 멈춰 연결은 1차 뒤, W066) | `safety_stop` | 로봇 PC 호스트 (고정) |
 | `d2_vision` | ament_python | 비전 | 손목 카메라 블록 인식(1차: 있음·높이 / 오차는 1차 뒤 W100), 웹캠 구역별 사람 감지(1차는 신호만) · 손목 손 찾기(깊이 차이 + MediaPipe)는 챌린지 ① | `wrist_block` · `webcam_human` · (챌린지 ①) `wrist_hand` | 손목: 로봇 PC 호스트 / 웹캠: 운영 PC 컨테이너 `vision` |
-| `d2_task` | ament_python | 비전 | 작업 관리자(상태표: 자동·협동·차례·실패 대응·다시 시작 + **1차 run_id CSV 기록**, S-10) + 작업 판단(레시피·진행표 주인·다음 블록) | `task_manager` · `task_planner` | 운영 PC 호스트 (S-15) |
+| `d2_task` | ament_python | 비전 | 작업 관리자(상태표: 자동·협동·차례·실패 대응·다시 시작 + **1차 run_id CSV 기록**, S-10) + 작업 판단(레시피·진행표 주인·다음 블록) — **노드 하나**(10/6 S-18) | `task` | 운영 PC 호스트 (S-15) |
 | `d2_hmi` | ament_python | HMI | **1차 = 웹 + 음성(설계 선택·모드·출발 — 출발 = 화면 버튼 또는 음성, 음성으로 출발시키는 방법은 HMI가 정함, S-16).** 웹 화면(버튼 6개: 설계 선택·모드·출발·정지·다시 시작·내 차례 끝 + 상태 글자) · 음성(웨이크워드 → STT → GPT 의도 분류). 음성 멈춰(PC 안 키워드)는 1차 뒤(W046). 기록기 노드는 없다(S-10) | `web_ui` · `voice` · (1차 뒤) `voice_stop` | `web_ui`: 운영 PC 컨테이너 `hmi` / `voice`: 운영 PC 호스트 (S-15, `voice_stop`은 HMI가 정함) |
 
-- 10/4 15시 간소화(S-01~S-13)로 1차에 만드는 노드는 **10개**(기록기 없음, 그리퍼 하나; 음성 멈춰 · 손목 손 찾기는 1차 뒤). 자세한 것은 [결정 기록 §9](../docs/decisions/결정기록_시나리오_역할_인터페이스_1004_v1_100523.md#9-104-15시-30분-간소화-결정-s-01s-13--대비책).
+- 10/4 15시 간소화(S-01~S-13)로 1차에 만드는 노드는 **10개**(기록기 없음, 그리퍼 하나; 음성 멈춰 · 손목 손 찾기는 1차 뒤). 자세한 것은 [결정 기록 §9](../docs/decisions/결정기록_시나리오_역할_인터페이스_1004_v1_100609.md#9-104-15시-30분-간소화-결정-s-01s-13--대비책).
 - 패키지 이름과 실행 이름은 이 문서에서 제안한 **안**이다. 만들 때 담당이 바꿀 수 있고, 바꾸면 이 표와 인터페이스 문서 3장을 같이 고친다.
 - 가짜 노드(`mock_*`)는 각 패키지 안에 둔다. 누가 무엇을 만드는지는 [인터페이스 문서 11장](../docs/02_인터페이스_IRD_v1_100609.md#11-가짜mock-노드-규칙)에 있다.
 - CAD → 레시피 도구(한세교)는 노드가 아니라 미리 돌리는 도구다. 둘 곳은 만들 때 정한다.
