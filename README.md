@@ -66,7 +66,7 @@
 | `/d2/gripper/command` | 서비스 | 집기 · 놓기 → 그리퍼 노드 | 폭 · 힘 → 다 움직인 뒤 잡힘 · 폭 |
 | `/d2/task/state` · `notify` | 토픽(JSON) | 작업 관리자 → 화면 · 정지 노드 | 지금 상태 · 사람에게 알릴 말. 기록 전용 토픽(`event`)은 1차 뒤 — 1차는 작업 관리자가 CSV를 직접 쓴다 |
 
-좌표 · 그리퍼 값 · 시간 기준은 코드가 아니라 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 전체 이름 · 칸 · 단위는 [인터페이스 문서](docs/02_인터페이스_IRD_v1_100523.md), 패키지 · 노드 설계는 [설계 문서](docs/03_설계_SDD_v1_100609.md)에 있다.
+좌표 · 그리퍼 값 · 시간 기준은 코드가 아니라 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 전체 이름 · 칸 · 단위는 [인터페이스 문서](docs/02_인터페이스_IRD_v1_100609.md), 패키지 · 노드 설계는 [설계 문서](docs/03_설계_SDD_v1_100609.md)에 있다.
 
 ### 동작 흐름
 
@@ -186,7 +186,7 @@ cd rokey_9_pjt2_D2
 | 경로 | 내용 |
 |---|---|
 | `src/` | ROS 2 패키지 (아직 없음). 패키지 이름(안): `d2_interfaces`(전용 메시지) · `d2_bringup`(브링업 · launch) · `d2_motion`(집기 · 놓기 + 실행기 · 장면 관리) · `d2_gripper` · `d2_safety`(정지 노드) · `d2_vision` · `d2_task`(작업 판단 · 작업 관리자, 1차 CSV 기록) · `d2_hmi`(웹 · 음성 — 기록기 노드는 없음) |
-| `src/d2_bringup/config/robot.yaml` | (예정) 설정 파일 하나 — 작업대 높이 · 조립 원점 · 공급 칸 · 관측 자세 · TCP · 그리퍼 값 · 시간 기준. 키 이름은 [IRD](docs/02_인터페이스_IRD_v1_100523.md) |
+| `src/d2_bringup/config/robot.yaml` | (예정) 설정 파일 하나 — 작업대 높이 · 조립 원점 · 공급 칸 · 관측 자세 · TCP · 그리퍼 값 · 시간 기준. 키 이름은 [IRD](docs/02_인터페이스_IRD_v1_100609.md) |
 | `docs/` | 문서 지도는 [docs/README.md](docs/README.md) — 요구사항 · 인터페이스 · 설계 · 결과표 · 작업 분류 · 팀 규칙 · 결정 기록 · 시험 기록 · 트러블슈팅 · 환경 설정 · 조사 · 그림 |
 | `tools/docver.py` | 문서 파일 이름(`이름_v버전_MMDDHH`)과 링크를 한 번에 바꾸는 도구 |
 | `.github/` | 협업 규칙 · PR 양식 · CODEOWNERS(PR 승인자) · 트러블슈팅 이슈 양식 · **PR 자동 검사 · 승인**(`workflows/pr_check.yml` — 문법 · main 반영 · 충돌 · 키 · 변경 파일 · 문서 이름) |

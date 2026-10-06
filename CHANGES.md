@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 공통(9시): **10/6 PL 결정 S-18~S-25 — 아키텍처 v2에 IRD·SDD 맞춤.** task 노드 하나(작업 관리자 + 작업 판단, `NextBlock` 없앰) · 화면 알림은 `task/state`의 `message_id`·`message`(`task/notify` 없앰) · 화면 정지 = 서비스 `/d2/safety/stop`(`StopRequest.srv`) · 관측·홈 이동 = 서비스 `/d2/motion/move_to`(`MoveTo.srv`, target) · 다시 시작 = 버튼 한 번 → 바로 관측부터(`resume` 명령 없앰) · `gripper/state` 유지(1초 1번 + 바뀔 때) · '생존 신호' → **카메라 연결 신호**(정지 연결 10/8 W066) · 잡기 이름 6가지 `FLAT_SHORT`·`FLAT_LONG`…(예전 SIDE_25·END_75). `motion/halt`는 검토 중 — 황인재
 - HMI: **1차 웹 화면 기술 확정** — 화면 Next.js(정적 내보내기 `out/`) + 노드 `web_ui` = FastAPI · rclpy 한 노드 + WebSocket, rosbridge 안 씀(실행 시 Node 서버 없음 → `hmi` 컨테이너는 파이썬만). SDD 반영. DB 제품 · 시기만 W051(10/8)에 남음 — 황인재
 - 공통(8시): **일정표 v6** — Time Line을 파트별(PL·전원 → 로봇 동작 → 비전 → HMI)로 나누고 파트 안은 시간순(G열 '파트', 날짜 구역 설명은 맨 아래). **W027 `d2_interfaces` · W031 `robot.yaml` 틀은 황인재가 맡는다**(로봇 동작 일이 많아서, 값 넣기 W033은 그대로 로봇 동작). 한세교 레시피 W104 칸·기준점 합의 · W105 내보내기 · W106 `recipe_manager/` 저장소 PR(10/6) · W107 DB 형식(10/8). 에이전트 프롬프트 다시 만듦(v2_100608 — 마무리 프롬프트 5번에서 새로 복사) — 황인재
 - 공통(0시): **PR 자동 검토** — PR 검사(+ 정지 설정 단어 검사)를 통과하면 Claude가 `/pr-review`와 같은 ①~⑧로 검토해 결과표를 PR에 남긴다. '막음'이 없으면 자동 승인, 있으면 **수정 요청**(파일:줄을 고쳐 다시 push), 검토가 못 돌면 코멘트만. 팀원 PR만, 황인재 PR은 결과표만 남고 한세교 승인. merge된 브랜치는 자동 삭제. 06 팀 규칙 3-2, CONTRIBUTING 5장, AGENTS·CLAUDE·GEMINI.md 4장 — 황인재
