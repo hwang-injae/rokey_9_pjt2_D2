@@ -17,7 +17,7 @@ def generate_launch_description():
     virtual = PythonExpression(["'", LaunchConfiguration('mode'), "' != 'real'"])
     return LaunchDescription([
         DeclareLaunchArgument('mode', default_value='virtual', description='virtual | real'),
-        DeclareLaunchArgument('recipe', default_value='', description='레시피 파일 (장면 관리가 블록 크기·자리를 읽음)'),
+        DeclareLaunchArgument('recipe', default_value='', description='레시피 파일, 여럿이면 쉼표로 (장면 관리가 블록 크기·자리를 읽음)'),
         Node(package='d2_safety', executable='safety_stop', output='screen'),
         Node(package='d2_gripper', executable='gripper', output='screen',
              parameters=[{'virtual': ParameterValue(virtual, value_type=bool)}]),

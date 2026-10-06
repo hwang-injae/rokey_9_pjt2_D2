@@ -1,0 +1,50 @@
+# MoveIt 관절 한계 — dsr_moveit_config_m0609/config/joint_limits.yaml 을 그대로 옮기고 joint_6 속도만 낮춤.
+# 왜: 두산 제어기 안전 설정(감속 구역)이 6번 관절을 30 deg/s 로 자른다. MoveIt 이 3.927 rad/s 로 알고 계획하면
+#      궤적 시간이 끝나도 손목이 덜 돌아 도착 확인에서 실패한다 (10/6 가상: 31.6 deg 덜 돎).
+#      1.0 rad/s x speed_scale 0.3 = 17 deg/s < 30. speed_scale 을 0.5 넘게 올리면 다시 확인한다.
+default_velocity_scaling_factor: 1.0
+default_acceleration_scaling_factor: 1.0
+
+joint_limits:
+  joint_1:
+    has_velocity_limits: true
+    max_velocity: 2.618
+    has_acceleration_limits: true
+    max_acceleration: 2.618
+    min_position: -3.14
+    max_position: 3.14
+  joint_2:
+    has_velocity_limits: true
+    max_velocity: 2.618
+    has_acceleration_limits: true
+    max_acceleration: 2.618
+    min_position: -1.6581
+    max_position: 1.6581
+  joint_3:
+    has_velocity_limits: true
+    max_velocity: 3.14
+    has_acceleration_limits: true
+    max_acceleration: 3.14
+    min_position: -2.1817
+    max_position: 2.1817
+  joint_4:
+    has_velocity_limits: true
+    max_velocity: 3.927
+    has_acceleration_limits: true
+    max_acceleration: 3.927
+    min_position: -3.14
+    max_position: 3.14
+  joint_5:
+    has_velocity_limits: true
+    max_velocity: 3.927
+    has_acceleration_limits: true
+    max_acceleration: 3.927
+    min_position: -2.3562
+    max_position: 2.3562
+  joint_6:
+    has_velocity_limits: true
+    max_velocity: 1.0
+    has_acceleration_limits: true
+    max_acceleration: 3.927
+    min_position: -3.14
+    max_position: 3.14
