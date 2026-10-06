@@ -155,7 +155,8 @@ def grab_ros(prefix, want_depth, want_posx, timeout_s=10.0):
 
     if want_posx:
         from dsr_msgs2.srv import GetCurrentPosx
-        cli = node.create_client(GetCurrentPosx, "/aux_control/get_current_posx")
+        # 팀 브링업(real_moveit.launch.py)은 두산 서비스를 컨트롤러 이름 아래에 둔다: /dsr_controller2/aux_control/...
+        cli = node.create_client(GetCurrentPosx, "/dsr_controller2/aux_control/get_current_posx")
 
     posx, fut = None, None
     t0 = time.time()
@@ -181,7 +182,7 @@ def grab_ros(prefix, want_depth, want_posx, timeout_s=10.0):
             f"(받은 프레임 {len(frames)}장). `ros2 topic list | grep depth` 로 이름을 확인하고 "
             "카메라는 align_depth.enable:=true 로 띄운다.")
     if want_posx and posx is None:
-        raise RuntimeError("두산 posx 서비스(/aux_control/get_current_posx)가 답하지 않는다. "
+        raise RuntimeError("두산 posx 서비스(/dsr_controller2/aux_control/get_current_posx)가 답하지 않는다. "
                            "브링업이 떠 있는지 보거나 --posx 로 펜던트 값을 넣는다.")
     depth = np.median(np.stack(frames), axis=0) if want_depth else None
     intr = (info["fx"], info["fy"], info["ppx"], info["ppy"]) if want_depth else None
