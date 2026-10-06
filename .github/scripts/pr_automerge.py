@@ -6,7 +6,7 @@ merge 조건을 정하는 것은 이 스크립트가 아니라 브랜치 보호(
 
 입력(환경 변수):
   REPO, PR     저장소 · PR 번호
-  GH_TOKEN     판정 계정 토큰(D2_APPROVER_TOKEN, 없으면 GITHUB_TOKEN)
+  GH_TOKEN     GITHUB_TOKEN(job 권한 contents·pull-requests write). 판정용 fine-grained PAT은 auto-merge 예약을 못 해서 쓰지 않는다(10/6).
 바깥 영향: `gh pr merge --auto --squash` 한 번. squash 커밋 메시지는 저장소 설정(PR 제목 + 본문)을 따른다.
 실패 때: 이미 걸려 있거나(다시 push) 조건이 이미 다 끝난 PR(clean — auto-merge를 걸 수 없음)은 그때만 바로 merge한다.
        그 밖의 실패는 로그에만 남기고 job을 실패시키지 않는다 — 사람이 PR 화면에서 'Enable auto-merge'를 누르면 된다.
