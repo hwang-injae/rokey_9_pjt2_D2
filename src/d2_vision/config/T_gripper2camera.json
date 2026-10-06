@@ -1,0 +1,48 @@
+{
+  "file": "T_gripper2camera.npy",
+  "meaning": "카메라 → 그리퍼(TCP) 4x4 변환, mm. p_base = T_base2gripper(posx) @ T_gripper2camera @ p_cam",
+  "tcp": "GripperDA_v1 (플랜지 +Z 228 mm, config/tcp.json) — posx 는 이 TCP 기준이어야 한다",
+  "origin": "2월(2026-02-25) 수업 hand-eye 보정값 (corecode/Calibration_Tutorial). 보정 때 TCP 는 2FG_TCP 로 추정(data_recording.py)",
+  "original_translation_mm": [
+    33.0937,
+    75.7056,
+    -233.5689
+  ],
+  "correction": {
+    "date": "2026-10-06 21:00",
+    "what": "T[2,3] (카메라 z, 그리퍼 좌표) += 49.4 mm",
+    "why": "빈 작업대를 아래로 보며 잰 작업면 높이가 robot.yaml table_z_m(-18 mm)보다 +50.5 / +48.4 mm 높게 나옴(R-05 4.8 cm). 로봇을 100 mm 올려도 같은 양이라 상수 오차로 판단, 재보정 대신 상수 보정",
+    "runs": [
+      {
+        "posx": [
+          367.47,
+          8.06,
+          195.02,
+          100.64,
+          179.97,
+          100.4
+        ],
+        "median_diff_mm": 50.5,
+        "spread_mm": 13.0
+      },
+      {
+        "posx": [
+          367.46,
+          8.07,
+          295.02,
+          100.43,
+          179.97,
+          100.18
+        ],
+        "median_diff_mm": 48.4,
+        "spread_mm": 11.6
+      }
+    ],
+    "residual_mm": [
+      0.3000000000000007,
+      -1.1000000000000014
+    ],
+    "tool": "src/d2_vision/d2_vision/check_wrist_calib.py"
+  },
+  "not_verified": "x·y 방향 오차와 기울기(구역 '왼위'가 늘 +8~10 mm)는 이 측정으로 못 봄 → 10/7 V-15(TCP 로 5점 짚기)에서 확인"
+}
