@@ -23,8 +23,8 @@ from d2_motion.executor import MoveItExecutor
 from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, pick_place_tcp
 from d2_safety.safe_stop import SafeStop, init_ros
 
-PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect
-LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도
+PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
+LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도 (Pilz 직선 속도 한계 x 비율)
 GRIPPER_TIMEOUT_S = 10.0
 SAFETY_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                         history=HistoryPolicy.KEEP_LAST, depth=1)   # 정지 노드와 같게 (IRD 4.1, S-26)
@@ -58,6 +58,8 @@ class PickPlaceNode(Node):
         self.grip_cli = self.create_client(GripperCommand, '/d2/gripper/command', callback_group=cb)
         self.attach_cli = self.create_client(SceneAttach, '/d2/motion/scene/attach', callback_group=cb)
         self.create_subscription(String, '/d2/safety/state', self._on_safety, SAFETY_QOS, callback_group=cb)
+        self.create_subscription(String, '/d2/gripper/state', self._on_gripper, 10, callback_group=cb)
+        self.holding = False              # 그리퍼가 블록을 쥐고 있나 (gripper/state grasped)
         self.halt_reason = None           # 정지 노드가 멈춘 이유 (safety/state reason). 잠금이 풀리면 지운다
         self.locked = False
         self.busy = threading.Lock()      # 팔은 하나라 목표를 하나씩만 실행한다
@@ -79,6 +81,10 @@ class PickPlaceNode(Node):
             self.halt_reason = None
         self.locked = locked
 
+    def _on_gripper(self, msg):
+        """그리퍼 노드의 gripper_state/1 — 블록을 쥐고 있는지 적는다 (쥔 채로 새 목표를 시작하지 않게)."""
+        self.holding = bool(json.loads(msg.data).get('grasped'))
+
     def _halted(self, gh=None):
         """멈춰야 할 이유 (정지 노드의 stopped, 목표 취소) 를 돌려준다. 없으면 None."""
         if self.halt_reason:
@@ -88,35 +94,46 @@ class PickPlaceNode(Node):
         return None
 
     # ---------- 동작 단위 ----------
-    def go_free(self, goal, halted, keep_down=True):
-        """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유)."""
+    def go_free(self, goal, halted, keep_down=True, skip_slot=None):
+        """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유).
+
+        skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸).
+        """
         # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
         if keep_down and not self.exe.valid(self.exe.current(), self.exe.down_constraint())[0]:
             self.get_logger().info('출발 자세가 공구 아래가 아니라 자세 제약 없이 계획한다')
             keep_down = False
-        path = None
-        for planner in PLANNERS:
-            path, err = self.exe.plan(goal, keep_down, planner)
-            if path is not None:
+        # 놓인 블록에서 transit_clearance_m 띄운 길을 먼저 찾고, 없으면 절반 여유로 한 번 더 (그래도 없으면 안 움직인다)
+        clear = self.cfg['motion']['transit_clearance_m']
+        jt = None
+        for pad in (clear, clear / 2):
+            for planner in PLANNERS:
+                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot)
+                if jt is not None:
+                    break
+                self.get_logger().warn(f'길 찾기 실패 ({planner}, 여유 {pad * 1000:.0f} mm): {err}')
+            if jt is not None:
                 break
-            self.get_logger().warn(f'길 찾기 실패 ({planner}): {err}')
-        if path is None:
+        if jt is None:
             return False, 'PLAN_FAILED'
-        if keep_down:
-            path = self.exe.shortcut(path, self.exe.down_constraint())
-        return self.exe.execute(path, self.cfg['speed_scale'], halted)
+        return self.exe.execute(jt, halted)
 
-    def go_line(self, a_xyz, b_xyz, quat, halted):
-        """TCP 를 a -> b 수직 직선으로 옮긴다. 실행 전에 경로 점마다 충돌을 본다. 반환: (성공, 실패 이유)."""
-        path = self.exe.line(a_xyz, b_xyz, quat, self.exe.current())
-        if path is None:
+    def go_line(self, b_xyz, quat, halted):
+        """TCP 를 지금 자세에서 b_xyz 까지 수직 직선으로 옮긴다 (MoveIt Pilz LIN). 실행 전에 궤적 점마다 충돌을 본다.
+
+        반환: (성공, 실패 이유).
+        """
+        jt, err = self.exe.plan_line(b_xyz, quat, self.cfg['speed_scale'] * LINE_SCALE)
+        if jt is None:
+            self.get_logger().error(f'직선 경로를 못 만든다 (Pilz LIN): {err}')
             return False, 'PLAN_FAILED'
+        path = self.exe.positions(jt)
         for k in range(0, len(path), 2):
             ok, hits = self.exe.valid(path[k])
             if not ok:
                 self.get_logger().error(f'수직 경로 충돌 {k}/{len(path) - 1}: {", ".join(hits)}')
                 return False, 'PLAN_FAILED'
-        return self.exe.execute(path, self.cfg['speed_scale'] * LINE_SCALE, halted)
+        return self.exe.execute(jt, halted)
 
     def grip(self, width_m):
         """그리퍼 노드에 폭 width_m 로 움직이라고 하고 다 움직일 때까지 기다린다. 반환: 결과 (응답 없으면 None)."""
@@ -137,6 +154,7 @@ class PickPlaceNode(Node):
     def _targets(self, g):
         """목표의 블록 자세 -> 집기·놓기 TCP 목표와 IK. 반환: dict, 풀리지 않으면 None."""
         def pose(p):
+            """geometry_msgs/Pose -> (위치 m 튜플, 3x3 회전 행렬)."""
             return ((p.position.x, p.position.y, p.position.z),
                     matrix_from_quat((p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w)))
         (pc, pr), (lc, lr) = pose(g.pick_pose), pose(g.place_pose)
@@ -154,15 +172,17 @@ class PickPlaceNode(Node):
             low = (xyz[0], xyz[1], xyz[2] + up)
             high = (low[0], low[1], low[2] + m['approach_m'])
             qa, quat = self.exe.solve(high, q, seed)
-            if qa is None or self.exe.line(high, low, quat, qa) is None:
-                self.get_logger().error(f'{g.block_id}: {kind} IK 실패 ({", ".join(f"{v:.3f}" for v in high)})')
+            # 움직이기 전에 위 자세에서 수직으로 내려가는 직선이 풀리는지 미리 본다 (Pilz LIN, 위 자세에서 출발)
+            down = None if qa is None else self.exe.plan_line(low, quat, self.cfg['speed_scale'] * LINE_SCALE, start_q=qa)[0]
+            if down is None:
+                self.get_logger().error(f'{g.block_id}: {kind} IK·직선 실패 ({", ".join(f"{v:.3f}" for v in high)})')
                 return None
             out[kind] = {'qa': qa, 'quat': quat, 'high': high, 'low': low}
             seed = qa
         return out
 
     def _execute(self, gh):
-        """PickPlace 목표 1개: 열기 -> 집기 위 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
+        """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
 
         바깥 영향: 로봇 팔·그리퍼가 움직이고, 장면 관리에 쥔 블록 붙이기·떼기를 부탁한다.
         실패·정지·취소 때는 세운 뒤 success=false 와 이유 코드(IRD 7장, 정지면 halt 이유)로 끝낸다.
@@ -171,6 +191,7 @@ class PickPlaceNode(Node):
         res = PickPlace.Result()
 
         def finish(ok, reason='', width=float('nan')):
+            """액션 결과를 채운다(성공·이유·잡은 폭 m·걸린 시간 s)."""
             res.success, res.reason, res.grip_width_m, res.duration_s = ok, reason, width, time.monotonic() - t0
             if ok:
                 gh.succeed()
@@ -185,6 +206,10 @@ class PickPlaceNode(Node):
             return finish(False, self.halt_reason or 'STOPPED')
         if self.controller_error:
             return finish(False, 'TCP_MISMATCH')
+        if self.holding:
+            # 블록을 쥔 채 출발하면 다른 칸으로 들고 가거나, 집는 폭 '열기' 가 오히려 조이는 명령이 된다 (10/6 실기)
+            self.get_logger().error(f'{g.block_id}: 그리퍼가 블록을 쥐고 있다 — 사람이 블록을 빼고 연 뒤 다시')
+            return finish(False, 'HOLDING_BLOCK')
         if g.grasp not in GRASP_AXIS:
             return finish(False, 'PLAN_FAILED')
         if not self.busy.acquire(blocking=False):
@@ -194,22 +219,26 @@ class PickPlaceNode(Node):
             if p is None:
                 return finish(False, 'PLAN_FAILED')
             pk, pl = p['pick'], p['place']
+            slot = int(g.supply_slot) if g.supply_slot.isdigit() else None
             halted = lambda: self._halted(gh)       # noqa: E731
             width = float('nan')
 
             def step(name):
+                """중간 보고(step)를 보내고 로그에 남긴다."""
                 gh.publish_feedback(PickPlace.Feedback(step=name))
                 self.get_logger().info(f'{g.block_id}: {name}')
 
             step('approach')
+            ok, why = self.go_free(pk['qa'], halted, skip_slot=slot)
+            if not ok:
+                return finish(False, why)
+            # 집는 폭으로 여는 것은 집을 블록 바로 위에서 한다: 이동 중 벌린 손가락이 다른 것에 걸리지 않게 (10/6 실기)
             r = self.grip(self.cfg['grasp_open_pick_m'][g.grasp])
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED')
-            for fn in (lambda: self.go_free(pk['qa'], halted),
-                       lambda: self.go_line(pk['high'], pk['low'], pk['quat'], halted)):
-                ok, why = fn()
-                if not ok:
-                    return finish(False, why)
+            ok, why = self.go_line(pk['low'], pk['quat'], halted)
+            if not ok:
+                return finish(False, why)
             step('grasp')
             r = self.grip(self.cfg['grasp_close_m'][g.grasp])
             if r is None or not r.success:
@@ -222,15 +251,15 @@ class PickPlaceNode(Node):
                 return finish(False, 'GRASP_FAILED', width)
             self.scene_attach(g.block_id, True)
             step('lift')
-            ok, why = self.go_line(pk['low'], pk['high'], pk['quat'], halted)
+            ok, why = self.go_line(pk['high'], pk['quat'], halted)
             if not ok:
                 return finish(False, why, width)
             step('move')
-            ok, why = self.go_free(pl['qa'], halted)
+            ok, why = self.go_free(pl['qa'], halted, skip_slot=slot)
             if not ok:
                 return finish(False, why, width)
             step('place')
-            ok, why = self.go_line(pl['high'], pl['low'], pl['quat'], halted)
+            ok, why = self.go_line(pl['low'], pl['quat'], halted)
             if not ok:
                 return finish(False, why, width)
             r = self.grip(self.cfg['grasp_open_place_m'][g.grasp])
@@ -238,7 +267,7 @@ class PickPlaceNode(Node):
                 return finish(False, 'GRASP_FAILED', width)
             self.scene_attach(g.block_id, False)
             step('retreat')
-            ok, why = self.go_line(pl['low'], pl['high'], pl['quat'], halted)
+            ok, why = self.go_line(pl['high'], pl['quat'], halted)
             return finish(ok, why, width)
         except Exception as e:            # 예상 못 한 오류: 궤적이 아직 돌고 있을 수 있으니 먼저 세운다
             self.get_logger().error(f'{g.block_id}: 오류 {e!r}')
