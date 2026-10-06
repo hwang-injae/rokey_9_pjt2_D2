@@ -94,7 +94,8 @@ jobs:
           mkdir -p review_input
           printf '# %s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > review_input/body.md
           git -C pr -c core.quotePath=false diff --name-status origin/main...HEAD > review_input/files.txt
-          git -C pr -c core.quotePath=false diff origin/main...HEAD > review_input/diff.patch
+          # 줄마다 새 파일의 실제 줄 번호를 붙인다 — diff 자체의 줄 번호를 결과표에 적는 일이 있어서(PR #6)
+          git -C pr -c core.quotePath=false diff origin/main...HEAD | python3 .github/scripts/numbered_diff.py > review_input/changes.txt
           wc -l review_input/*
       - name: Claude 검토
         id: claude
@@ -109,7 +110,7 @@ jobs:
             필요하면 지금 폴더(main)의 `docs/06_팀협업규칙_*.md`(팀 규칙), `docs/02_인터페이스_IRD_*.md`(이름 정본),
             `docs/03_설계_SDD_*.md`의 패키지 표(패키지 → 담당 파트)를 읽는다.
 
-            [PR 자료] `review_input/body.md`(제목·본문), `review_input/files.txt`(바뀐 파일), `review_input/diff.patch`(바뀐 내용).
+            [PR 자료] `review_input/body.md`(제목·본문), `review_input/files.txt`(바뀐 파일), `review_input/changes.txt`(바뀐 내용 — 줄마다 맨 앞 숫자가 **새 파일의 실제 줄 번호**, `-` 줄은 지운 줄이라 번호 없음).
             PR의 전체 파일은 `pr/` 아래에 있다 — 줄 번호와 주변 코드는 여기서 확인한다.
             본문 '변경 파일' 목록과 실제 바뀐 파일이 다르면 참고 의견에 적는다.
 
@@ -119,7 +120,7 @@ jobs:
             [판정] ①~⑧ 각각 하나씩, 8개를 모두 낸다.
             - 바뀐 파일 중 그 항목에 해당하는 것이 없으면 '해당 없음' (예: 문서만 바뀐 PR은 ①②④⑤⑧ 대개 해당 없음)
             - 지키면 '통과', 어기면 '막음'. '막음'은 diff에 근거가 있을 때만 쓰고, where에 파일:줄, reason에 무엇이 문제고 어떻게 고치는지 쓴다.
-            - where의 줄 번호는 diff.patch의 줄이 아니라, `pr/<경로>` 파일을 Read로 열어 확인한 **실제 파일의 줄 번호**다. 경로는 `pr/`를 뺀 저장소 경로로 쓴다.
+            - where의 줄 번호는 changes.txt 줄 맨 앞의 숫자를 그대로 쓴다(그것이 실제 파일 줄 번호다. changes.txt 안에서 몇째 줄인지가 아니다). 바뀌지 않은 곳이면 `pr/<경로>` 파일을 Read로 열어 확인한다. 경로는 `pr/`를 뺀 저장소 경로로 쓴다.
             - 애매하면 '통과'로 두고 참고 의견에 적는다.
             summary는 이 PR이 무엇을 바꿨는지와 판정을 한두 문장으로 쓴다. 모두 한국어로 짧게 쓴다.
           claude_args: >-
