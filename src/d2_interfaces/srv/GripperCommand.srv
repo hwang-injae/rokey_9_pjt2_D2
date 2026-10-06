@@ -1,0 +1,9 @@
+# 그리퍼 열기·닫기 — 집기·놓기 → 그리퍼 노드 (/d2/gripper/command)
+# 다 움직인 뒤에 답한다
+float64 width_m
+float64 force_n
+---
+bool grasped                      # 그리퍼 노드가 닫힌 폭을 robot.yaml grasp_width_m.* 와 비교해 정함 (S-01)
+float64 width_m
+bool success
+string reason
