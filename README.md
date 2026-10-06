@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 |---|---|
 | 하드웨어 | Doosan M0609(6축 협동로봇) + OnRobot RG2 그리퍼 + 손목 카메라 Intel RealSense D435i(깊이) + 마이크 |
-| 소프트웨어 | Ubuntu 24.04 · ROS 2 Jazzy · MoveIt2 · CycloneDDS · Docker · DB(제품 10/8 결정) · 웹 화면 · OpenAI API(GPT-4o · STT) |
+| 소프트웨어 | Ubuntu 24.04 · ROS 2 Jazzy · MoveIt2 · CycloneDDS(로봇 PC 안) · **MQTT(Mosquitto, PC 사이)** · Docker compose · DB(제품 10/8 결정) · 웹 화면(Next.js · FastAPI) · OpenAI API(GPT-4o · STT) · GitHub Actions CI |
 | 상태 | **1차 구현 중** — 10/6 벤치 11개 자동 조립 실기 11/11(337초). 10/7 1차 판정(자동 조립 + 정지) → 10/7~13 핵심(AI 생성 · 검사 · DB · 스캔 복제) → 10/13 기능 동결 → 10/16 시연 |
 | 차별점 | 설계도를 **AI가 만들고 검사하고 세대로 관리**하며, 로봇은 그 설계도를 그대로 쌓는다. 실물을 스캔해 설계도로 복원 · 복제한다 → [선행 프로젝트와 차별점](docs/research/README.md) |
 
@@ -37,19 +37,20 @@
 ### 아키텍처
 
 <p align="center">
-  <img src="docs/images/시스템아키텍처_v3_100616.png" width="900" alt="시스템 아키텍처 v3 — 노드 카드: 입력 → 처리 → 출력"><br>
-  <sub>시스템 아키텍처 v3 (10/6 주제 개편) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v2_100616.md">시스템 아키텍처 설명</a></sub>
+  <img src="docs/images/시스템아키텍처_v4_100618.png" width="900" alt="시스템 아키텍처 v4 — 노드 카드: 입력 → 처리 → 출력"><br>
+  <sub>시스템 아키텍처 v4 (10/6 주제 개편 + PC 배치 · MQTT 다리) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100618.md">시스템 아키텍처 설명</a></sub>
 </p>
 
-**PC 2대.** 로봇에 붙은 노드(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기)는 로봇 PC 호스트에서 돈다. 운영 PC에는 컨테이너 `hmi`(웹 화면 · 설계 생성 · 저장소)와 `db-hmi`(DB), 호스트에 task(작업 관리자 · 작업 판단 · 검사 묶음)와 음성이 있다.
+**PC 2대(10/6 18시 E-26~E-31).** **로봇 PC**에 ROS 2 노드 전부(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기 · **task** · **다리 `bridge`**)가 호스트로 돈다. **웹 PC**에는 ROS가 없다 — docker compose로 `mosquitto`(MQTT 브로커) · `db`(DB) · `web`(웹 화면 · 설계 생성 · 저장소)을 띄우고, 음성은 호스트. 두 PC는 **MQTT**로 잇는다(다리 노드가 ROS ↔ MQTT 변환).
 
 | 위치 | 구성 | 실행 |
 |---|---|---|
-| 로봇 PC(로봇과 유선) | 두산 드라이버 · MoveIt2 `move_group`(브링업) · 집기 · 놓기 + 실행기 · 장면 관리 · 그리퍼 노드 · **정지 노드(고정)** · 손목 블록 인식 + **스캔 추론기** | 호스트 |
-| 운영 PC — 컨테이너 | `hmi`: 웹 화면 · **AI 설계 생성(GPT-4o)** · **저장소 인터페이스** / `db-hmi`: DB(`designs` · `builds`) | Docker(host 네트워크) |
-| 운영 PC — 호스트 | task(작업 관리자 · 작업 판단 · **검사 묶음 · 변환기 ②**) · 음성 | 호스트 |
+| 로봇 PC(로봇과 유선) | 두산 드라이버 · MoveIt2 `move_group`(브링업) · 집기 · 놓기 + 실행기 · 장면 관리 · 그리퍼 노드 · **정지 노드(고정)** · 손목 블록 인식 + **스캔 추론기** · **task(작업 관리자 · 작업 판단 · 검사 묶음 · 변환기 ②)** · **다리 `bridge`(ROS ↔ MQTT)** | 호스트(ROS 2 · CycloneDDS 60) |
+| 웹 PC — 컨테이너(compose) | `mosquitto`: MQTT 브로커(1883) / `db`: DB(`designs` · `builds`) / `web`(안): 웹 화면 · **AI 설계 생성(GPT-4o)** · **저장소 인터페이스**(FastAPI · Next.js, ROS 없음) | Docker compose |
+| 웹 PC — 호스트 | 음성(마이크 → MQTT) | 호스트 |
 
-노드는 **8개**다. 이름은 모두 `/d2/` 아래, 요청-결과는 전용 메시지(`d2_interfaces` 7개 + JSON 공용 `JsonQuery`), 상태는 JSON 토픽이다. 새 인터페이스는 '안'이고 10/7 오전에 확정한다.
+
+ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, 요청-결과는 전용 메시지(`d2_interfaces` 7개 + JSON 공용 `JsonQuery`), 상태는 JSON 토픽이다. 웹 PC와는 MQTT 토픽 `d2/…`(요청은 `…/req` · `…/res`)로 다리가 잇는다. 새 인터페이스는 '안'이고 10/7 오전에 확정한다.
 
 | 통신 | 종류 | 방향 | 내용 |
 |---|---|---|---|
@@ -64,11 +65,11 @@
 | 서기 궤적 | 토픽 `/dsr_moveit_controller/joint_trajectory` | 정지 노드 → 두산 제어기 | 지금 관절값 0.3초 — 제어기에 직접 |
 | `/d2/gripper/command` · `/d2/gripper/state` | 서비스 · 토픽 | 집기 · 놓기 → 그리퍼 → 모두 | 폭 · 힘 → 잡힘 · 폭 |
 
-좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v2_100618.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v2_100616.md).
+좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v3_100618.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v3_100618.md).
 
 ### 동작 흐름
 
-**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v2_100616.md))
+**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v3_100618.md))
 
 ```
 ① 요청        웹 글상자 "2인용 벤치 만들어 줘" [생성]  /  "hello rokey" → 음성 → 받아 적은 문장을 화면에서 확인 → [생성]
@@ -105,7 +106,7 @@
 
 ## 결과
 
-**아직 1차 구현 중이라 최종 결과는 없다.** 주제 확정 때 쓴 10/3 사전 검증 값과 10/4 · 10/6 실기다. 근거는 [결과표](docs/04_결과_결과표_v2_100617.md).
+**아직 1차 구현 중이라 최종 결과는 없다.** 주제 확정 때 쓴 10/3 사전 검증 값과 10/4 · 10/6 실기다. 근거는 [결과표](docs/04_결과_결과표_v2_100618.md).
 
 | 항목 | 결과 | 판정 |
 |---|---|---|
@@ -118,7 +119,7 @@
 | V-18 음성 받아 적기 | STT 1.8초 · 짧은 말 5/10 → 음성 설계 요청은 문장 확인 뒤 생성 | ⚠️ |
 | AI 설계 생성(10/3 코드) | 프롬프트 · 검사기는 있으나 **시험 전** — 10/7 요청 15개 | 시험 전 |
 
-1차 판정(10/7): 자동 조립 벤치 11개 **3번 중 2번** + 정지 입력 4개. 핵심(10/13): 변형 요청 3개 중 2개 검사 통과 · 생성 설계 조립 2종 · 스캔 복제 일치율 ≥ 90 % · 1회 · DB 트리 · 컨테이너 2개.
+1차 판정(10/7): 자동 조립 벤치 11개 **3번 중 2번** + 정지 입력 4개. 핵심(10/13): 변형 요청 3개 중 2개 검사 통과 · 생성 설계 조립 2종 · 스캔 복제 일치율 ≥ 90 % · 1회 · DB 트리 · 컨테이너 2개 이상 · PC 2대 MQTT 통신.
 
 ## 실행 방법
 
@@ -135,14 +136,14 @@ cd rokey_9_pjt2_D2
 
 | 항목 | 값 |
 |---|---|
-| OS · ROS | Ubuntu 24.04 LTS · ROS 2 Jazzy · CycloneDDS |
+| OS · ROS | Ubuntu 24.04 LTS · ROS 2 Jazzy · CycloneDDS(로봇 PC 안) · PC 사이 MQTT(Mosquitto) |
 | 동작 계획 | MoveIt2 2.12 · OMPL BiTRRT · `dsr_moveit_controller` · 브링업 `real_moveit.launch.py` |
 | 로봇 드라이버 | 교육 과정 배포본 `doosan-robot2` · RG2 그리퍼 드라이버 — 저장소 밖 |
 | 비전 | RealSense D435i 깊이 — 배치 확인 · 스캔 점군(격자 맞추기). GPU 없이 CPU |
 | AI · 음성 | OpenAI GPT-4o(설계 생성 · 튜닝 — 구조화 출력, 학습 없음 · 의도 분류) · STT · 웨이크워드. 키는 PC마다 `.env`에만 |
-| 화면 · DB | 웹 화면(Next.js + FastAPI · rclpy · WebSocket) · DB(`designs` · `builds`, 제품 10/8 결정 — MongoDB 추천) |
-| 실행 환경 | Docker — 운영 PC 컨테이너 `hmi` · `db-hmi`(host 네트워크), 나머지는 호스트. PC 2대 |
-| 언어 · 도구 | Python 3.12 · colcon · pytest(ROS 없는 계산 파일) |
+| 화면 · DB | 웹 화면(Next.js 정적 + FastAPI · paho-mqtt · WebSocket, three.js 3D 미리보기는 챌린지) · DB(`designs` · `builds`, 제품 10/8 결정 — PL 후보 PostgreSQL) |
+| 실행 환경 | 로봇 PC = 호스트(ROS 노드 전부 + 다리) · 웹 PC = docker compose `mosquitto` · `db` · `web`(ROS 없음) + 호스트 음성. PC 2대 유선 LAN |
+| 언어 · 도구 | Python 3.12 · colcon · pytest(ROS 없는 계산 파일 · `tests/`) · GitHub Actions CI(토큰 없음) |
 
 | 장비 | 모델명 · 사양 | 수량 | 용도 |
 |---|---|---|---|
@@ -152,7 +153,7 @@ cd rokey_9_pjt2_D2
 | 마이크 | — | 1 | 웨이크워드 · 음성 요청 |
 | 블록 | 표준 젠가 75 × 25 × 15 mm(실측 두께 14.7 mm) · 1세트 54개 | 1 | 기본 설계 9~16개 + 공급 여분 |
 | 작업대 | 1200 × 650 mm · 맨 작업대 | 1 | 조립 작업영역 · 로봇 공급 칸 6개 |
-| PC | Ubuntu 24.04 · ROS 2 Jazzy | 2 | 로봇 PC · 운영 PC |
+| PC | Ubuntu 24.04 · (로봇 PC만 ROS 2 Jazzy) | 2 | 로봇 PC · 웹 PC |
 
 <p align="center">
   <img src="docs/images/작업대_배치_v3_100616.png" width="640" alt="작업대 배치 v3"><br>
@@ -163,12 +164,14 @@ cd rokey_9_pjt2_D2
 
 | 경로 | 내용 |
 |---|---|
-| `src/` | ROS 2 패키지(작성 중). `d2_interfaces`(전용 메시지 7개 + `JsonQuery`) · `d2_bringup`(브링업 · `robot.yaml`) · `d2_motion`(집기 · 놓기 + 실행기 · 장면 관리) · `d2_gripper` · `d2_safety`(정지 노드) · `d2_vision`(손목 블록 인식 · 스캔 추론기) · `d2_task`(작업 관리자 · 작업 판단 · 검사 묶음 · 변환기 ②) · `d2_hmi`(웹 · 음성 · AI 생성 · 저장소) · 레시피 도구(CAD → 레시피 · 변환기 ①) |
-| `src/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v2_100618.md) |
+| `src/` | ROS 2 패키지(작성 중). `d2_interfaces`(전용 메시지 7개 + `JsonQuery`) · `d2_bringup`(브링업 · `robot.yaml`) · `d2_motion`(집기 · 놓기 + 실행기 · 장면 관리) · `d2_gripper` · `d2_safety`(정지 노드) · `d2_vision`(손목 블록 인식 · 스캔 추론기) · `d2_task`(작업 관리자 · 작업 판단 · 검사 묶음 · 변환기 ②) · **`d2_bridge`(MQTT 다리)** · 레시피 도구(CAD → 레시피 · 변환기 ①) |
+| `web/`(예정, E-32) | 웹 PC 코드(ROS 아님) — `backend/`(FastAPI · paho-mqtt · WebSocket · AI 설계 생성 · 저장소 · 음성) · `frontend/`(Next.js 정적) · `compose.yaml`(`mosquitto` · `db` · `web`) · `mosquitto/` — 황인재 |
+| [`tests/`](tests/) | ROS 없는 자동 시험(pytest) — `motion_math` · `robot.yaml` 형식 · srv/action 형식 · 문서 이름 · 링크 · 키 모양 · 개인 경로. CI가 PR마다 돈다. 규칙은 [tests/README.md](tests/README.md) |
+| `src/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v3_100618.md) |
 | `docs/` | 문서 지도는 [docs/README.md](docs/README.md) — 요구사항 · 인터페이스 · 설계 · 결과표 · 작업 분류 · 팀 규칙 · 결정 기록 · 시험 기록 · 트러블슈팅 · 환경 · 조사 · 그림 · 에이전트 프롬프트 |
-| `docs/research/ref_1003/작업4/` | 10/3 검증 코드 — **`prompt_v09*` · `run_v09.py`(AI 설계 생성 · 재생성) · `jenga_check.py`(안정성 검사기 · 템플릿 생성기 · 그림)** → `d2_hmi` · `d2_task`의 바탕 |
+| `docs/research/ref_1003/작업4/` | 10/3 검증 코드 — **`prompt_v09*` · `run_v09.py`(AI 설계 생성 · 재생성) · `jenga_check.py`(안정성 검사기 · 템플릿 생성기 · 그림)** → `web/backend` · `d2_task`의 바탕 |
 | `tools/docver.py` | 문서 파일 이름(`이름_v버전_MMDDHH`)과 링크를 한 번에 바꾸는 도구 |
-| `.github/` | 협업 규칙 · PR 양식 · CODEOWNERS · PR 자동 검사 · Claude 검토 |
+| `.github/` | 협업 규칙 · PR 양식 · CODEOWNERS · PR 자동 검사(`pr_check.yml`) · **CI(`ci.yml`: pytest · colcon · ruff, 토큰 없음)** · Claude 검토(라벨 `claude-review` 때만) |
 | `AGENTS.md` · `CHANGES.md` | AI 에이전트 읽기 규칙 · 날마다 파트별 변경 한 줄 |
 | `LICENSE` | Apache-2.0 |
 
@@ -180,7 +183,7 @@ cd rokey_9_pjt2_D2
 |---|---|---|
 | 로봇 동작 | 박진용 · 한세교 | 로봇 셀 · MoveIt 실행기 · 정지 · 장면 · 집기 · 놓기 · 안전 감시(정지 노드) · 인프라 · 통합 · **CAD · 레시피 · 변환기 ①(블록 JSON → 레시피)** · 스캔 촬영 자세 |
 | 비전 | 민범진 · 한석형 | 손목 보정 · 블록 인식 · 배치 확인 · 작업 판단 · 작업 관리자 · **검사 묶음(안정성 · 받침 · 잡기) · 변환기 ② · 스캔 추론기 ③(점군 → 블록 JSON)** |
-| HMI | 황인재(PL) | 웹 화면 · 음성 · **글상자 · AI 설계 생성 · 튜닝(GPT-4o) · DB(`designs` · `builds`) · 미리보기 · 버전 트리 · 스캔 비교 화면** · 컨테이너 `hmi` · `db-hmi` · PL(일정 · 회의 · 강사 확인 · 발표) |
+| HMI | 황인재(PL) | 웹 화면 · 음성 · **글상자 · AI 설계 생성 · 튜닝(GPT-4o) · DB(`designs` · `builds`) · 미리보기 · 버전 트리 · 스캔 비교 화면** · 웹 PC compose(`mosquitto` · `db` · `web`) · MQTT 다리(안) · PL(일정 · 회의 · 강사 확인 · 발표) |
 
 - **PR 승인:** 황인재(@hwang-injae) · 한세교(@hansaekyo). `main`에는 PR로만(황인재만 예외 — 바로 push).
 - **백업:** 박진용(10/10 없음) → 한세교 · 비전 두 사람은 서로 백업 · HMI는 **황인재 혼자**(팀 규칙 ③의 예외).
@@ -189,8 +192,8 @@ cd rokey_9_pjt2_D2
 
 ## 협업 규칙
 
-- [팀 협업 규칙](docs/06_팀협업규칙_v1_100617.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
+- [팀 협업 규칙](docs/06_팀협업규칙_v1_100618.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
 - [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) — GitHub에서 일하는 순서
 - [AGENTS.md](AGENTS.md) — AI 에이전트 읽기 규칙
-- [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — v3(10/6 개편)를 저장소 맨 위 `CLAUDE.local.md`로 복사
+- [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — v4(10/6 개편 + PC 배치)를 저장소 맨 위 `CLAUDE.local.md`로 복사
 - 작업을 끝내면 PR 본문 '완료한 일정표 작업'에 `완료: W번호` → merge 뒤 문서담당이 일정표(공유 드라이브)에 반영한다

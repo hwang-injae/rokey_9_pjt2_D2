@@ -1,0 +1,6 @@
+# tests/ 의 pytest 와 CI(.github/workflows/ci.yml python-tests)가 쓰는 도구.
+#   pip install -r tests/requirements.txt
+# ruff 는 치명 오류(문법 오류·정의 안 된 이름)만 본다 — ci.yml 의 --select E9,F63,F7,F82
+pytest
+pyyaml
+ruff

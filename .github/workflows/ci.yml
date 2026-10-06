@@ -1,0 +1,84 @@
+# CI — 토큰(Claude API)을 쓰지 않는 자동 시험. PR(main 대상)과 main push 마다 돈다. 비밀값(secrets)을 쓰지 않으므로
+# pull_request_target 이 아니라 pull_request 로 PR 코드를 그대로 받아 돌린다.
+# 1. python-tests: tests/ 의 pytest — ROS 없이 도는 계산(motion_math) · 설정(robot.yaml) · 인터페이스 파일 · 문서 규칙(이름·링크) ·
+#    비밀값. 그 뒤 ruff 로 치명 오류만 본다(문법 오류 · 정의 안 된 이름 = E9·F63·F7·F82). 스타일은 보지 않는다.
+# 2. ros-build-test: ros:jazzy-ros-base 컨테이너에서 두산 의존이 없는 패키지(CI_PKGS)만 colcon build · test.
+# Claude 검토(pr_check.yml)는 라벨 claude-review 를 붙인 PR에서만 돈다 — 이 파일은 토큰을 쓰지 않는다.
+# 로컬에서 같은 시험:
+#   python3 -m pytest tests -q
+#   ruff check --select E9,F63,F7,F82 src tests tools .github/scripts
+#   source /opt/ros/jazzy/setup.bash && colcon build --packages-select d2_interfaces d2_vision \
+#     && colcon test --packages-select d2_interfaces d2_vision; colcon test-result --verbose
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 같은 PR 에 새로 push 하면 이전 실행을 취소한다. main push 는 취소하지 않고 모두 돈다
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python-tests:
+    # 이 이름은 브랜치 보호의 필수 상태 검사 이름이다('CI / 파이썬 시험 (pytest · ROS 없이)') — 바꾸면 Settings → Branches 에서도 바꾼다
+    name: 파이썬 시험 (pytest · ROS 없이)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 시험 도구 설치
+        run: pip install --quiet -r tests/requirements.txt
+      - name: pytest (tests/)
+        run: python -m pytest tests -q
+      - name: ruff (치명 오류만 — 문법 오류 · 정의 안 된 이름)
+        run: ruff check --select E9,F63,F7,F82 src tests tools .github/scripts
+
+  ros-build-test:
+    name: ROS 2 패키지 빌드·시험 (jazzy)
+    runs-on: ubuntu-latest
+    container: ros:jazzy-ros-base
+    env:
+      # CI 에서 빌드·시험하는 패키지. 두산(dsr_msgs2 · dsr_bringup2 등) · OnRobot(onrobot_rg_msgs) 패키지가 필요한
+      # d2_bringup · d2_motion · d2_gripper · d2_safety 는 CI 에서 빌드하지 않는다(실기 PC 에서 colcon build).
+      # 두산 의존이 없는 새 패키지(d2_task · d2_bridge 등)가 생기면 여기에 더한다.
+      CI_PKGS: d2_interfaces d2_vision
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: 빌드·시험 도구 설치
+        run: |
+          apt-get update
+          apt-get install -y python3-pytest python3-colcon-common-extensions
+      - name: rosdep (패키지 의존 설치)
+        run: |
+          rosdep init || true        # ros 이미지는 이미 init 되어 있어 실패해도 된다
+          rosdep update
+          rosdep install --from-paths $(for p in $CI_PKGS; do printf 'src/%s ' "$p"; done) --ignore-src -y
+      - name: colcon build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --packages-select $CI_PKGS --event-handlers console_cohesion+
+      - name: colcon test
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          # 시험이 하나도 없는 ament_python 패키지는 colcon 이 'NO TESTS RAN'(code 5)으로 '실패'라 적는다
+          # (setup.py 에 tests_require=['pytest'] 가 없으면 setup.py test 로 떨어진다). 그래서 종료 코드는 경고로만 남기고
+          # 판정은 colcon test-result(시험 결과 XML — pytest 로 돈 패키지의 실패가 여기 남는다)가 한다.
+          colcon test --packages-select $CI_PKGS --event-handlers console_cohesion+ \
+            || echo "::warning::colcon test 종료 코드 $? — 시험이 없는 패키지(code 5)인지 위 로그를 본다"
+          colcon test-result --verbose
