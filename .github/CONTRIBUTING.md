@@ -10,12 +10,12 @@
 ```
 - `{이름}`은 한글 이름(10/6 PL — GitHub ID가 아니다). 설명은 영문 kebab-case. 같은 기능을 여러 날 하면 날짜만 바꿔 새 브랜치.
 - `main` 보호(Settings → Branches, 10/4 적용): PR 필수, 승인 1명 이상, Code Owners 승인 필수, 직접 push 금지. 관리자(황인재)만 예외 — **10/6 PL: 황인재는 코드도 PR 없이 main에 바로 push한다**(한세교 승인 부담을 덜려고) — 대신 push 전에 `python3 .github/scripts/pr_check.py --repo . --base origin/main`를 통과해야 하고, 커밋 메시지에 `완료: W번호`를 적는다. 다른 사람은 PR로만.
-- 이 저장소는 공개 저장소라 위 보호가 실제로 강제된다. 필수 상태 검사로 **'PR 검사 / 문법·main 반영·충돌·규칙 검사'** + **'CI / 파이썬 시험 (pytest · ROS 없이)'** 를 넣는다.
+- 이 저장소는 공개 저장소라 위 보호가 실제로 강제된다. 필수 상태 검사로 **'PR 검사 / 문법·main 반영·충돌·규칙 검사'** + **'CI / 파이썬 시험 (pytest · ROS 없이)'** + **'CI / ROS 2 패키지 빌드·시험 (jazzy)'** 를 넣는다(10/6 저녁 등록). 'Require branches to be up to date'는 끈다 — main이 움직여도 승인된 PR이 막히지 않게.
 
 ## 2. Merge
 - 작업 중 오전·오후 한 번씩 `git fetch origin` → 많이 뒤처졌으면 `git merge origin/main`.
 - PR 전: `git fetch origin && git merge origin/main` 으로 충돌을 내 PC에서 먼저 푼다.
-- `Squash and merge`. squash 커밋 메시지는 **'PR 제목 + 본문'**으로 둔다(Settings → General → Pull Requests) — main 기록에 '변경 파일' 목록이 남아 에이전트가 그것만 읽는다.
+- **승인 = merge**(10/6 저녁 PL): PR이 열리면 `pr_check.yml`의 automerge job이 GitHub auto-merge(`Squash and merge`)를 걸어 둔다. 승인(자동·사람) + 필수 검사가 끝나면 GitHub이 merge한다. 사람은 merge 버튼을 누르지 않는다. squash 커밋 메시지는 **'PR 제목 + 본문'**으로 둔다(Settings → General → Pull Requests) — main 기록에 '변경 파일' 목록이 남아 에이전트가 그것만 읽는다.
 - merge된 브랜치는 GitHub이 자동으로 지운다(`Automatically delete head branches` 켬, 10/6). 이어서 할 일은 `main`에서 날짜를 바꾼 새 브랜치를 판다.
 
 ## 3. 충돌 예방
