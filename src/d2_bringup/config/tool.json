@@ -1,0 +1,16 @@
+{
+  "name": "Tool Weight",
+  "weight": 1.47,
+  "cog": [2.02, 3.52, 1.98],
+  "cog_axis_order": ["X", "Y", "Z"],
+  "inertia": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+  "units": {
+    "weight": "kg",
+    "cog": "mm",
+    "inertia": "kg*mm^2"
+  },
+  "source": "2026-10-06 실물 제어기 192.168.1.100 직접 조회 (DRFL, DRCF_VERSION=2, 제어기 버전 GF02120100).",
+  "verified_at": "2026-10-06",
+  "verification": "ROS get_current_tool과 DRFL get_tool로 활성 이름 Tool Weight 확인. get_safety_configuration의 현재 Tool과 같은 이름의 등록 Tool에서 질량·무게중심·관성값이 일치함. 조회만 수행, 로봇 이동·그리퍼 조작·서보 켜기·설정 변경 없음.",
+  "note": "원본은 LV1 실기(2026-10-06), 그리퍼 고무 패드 낀 상태의 기록. 원본 펜던트 기록의 무게중심 Z 1.95 mm를 이번 제어기 직접 조회값 1.98 mm로 갱신하고, 원본에 없던 관성값 6개를 모두 0으로 기록함."
+}

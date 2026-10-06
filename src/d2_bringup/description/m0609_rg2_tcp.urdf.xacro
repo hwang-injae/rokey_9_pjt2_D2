@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!--
+  M0609 + RG2 + 브라켓 + D435 (m0609_rg2_bringup/urdf/m0609_with_rg2_camera.urdf.xacro) 에
+  손가락 끝 TCP 프레임(rg2_tcp)만 더한다. 원본 파일은 고치지 않는다.
+
+  tcp_z: rg2_base_link 원점에서 손가락 끝까지 (공구 축 방향, m).
+         rg2_base_link 원점은 플랜지에서 공구 축으로 4 mm 이므로, 플랜지 -> 손가락 끝 = tcp_z + 0.004.
+         기본 0.224 = 플랜지 -> 손가락 끝 228 mm (작업 2 TCP 값). 실측값이 다르면 바꾼다.
+-->
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="m0609_rg2_camera">
+  <xacro:arg name="tcp_z" default="0.224"/>
+  <xacro:include filename="$(find m0609_rg2_bringup)/urdf/m0609_with_rg2_camera.urdf.xacro"/>
+  <link name="rg2_tcp"/>
+  <joint name="rg2_base_to_tcp" type="fixed">
+    <parent link="rg2_base_link"/>
+    <child link="rg2_tcp"/>
+    <origin xyz="0 0 $(arg tcp_z)" rpy="0 0 0"/>
+  </joint>
+</robot>
