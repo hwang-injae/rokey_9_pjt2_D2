@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 로봇 동작(21시): **레시피 3종 실물 조립 11/11 · 16/16 · 9/9**(001 의자 좌판 · 002 등받이 · 003 책상, 블록당 20~26 s, 기록 `docs/test-reports/W048_*`) — 바닥층만 살짝 떨어뜨리듯 놓음(원인 미확정). `src/recipe_manager/`(CAD → 레시피 도구 · 레시피 3종) · `run_recipe` 레시피 번호 선택 · 시작 때만 y · 손가락 끝 기준점 `touch_tcp_z_m` 0.011 m(문서 4곳). PR #15. 완료: W048 · 진행: W106·W104·W105 — 한세교
 - 공통(21시, PM): **승인 = 자동 merge(PL)** — 저장소 Allow auto-merge 켬 · 브랜치 보호 필수 검사에 CI 두 job 추가 · 'up to date' 요구 끔 · `pr_check.yml` automerge job(`pr_automerge.py`)이 PR마다 auto-merge(squash)를 걸어 둠 · 규칙 06·CONTRIBUTING·pr-review 갱신. PR #12(W043)·#13(W034) merge — 황인재
 - 공통(19시, PM): **PC 배치 · MQTT 다리 · CI(E-26~E-35, PL 결정)** — PC 2대 = **웹 PC**(ROS 없음: 화면 · AI 생성 · DB · MQTT 브로커 · 음성, compose `mosquitto` · `db` · `web`) + **로봇 PC**(ROS 노드 전부 — task · 검사 묶음 · **다리 `d2_bridge`**). PC 사이 **MQTT**(ROS 쪽 이름 그대로, 토픽 `d2/…`, 서비스 `…/req` · `…/res` + `req_id`, retained, 생존 신호 — IRD v3 10장). `d2_hmi` 없음 → `web/`. 컨테이너 `hmi` · `db-hmi` 이름 없앰. **CI 추가**(`ci.yml`: `tests/` pytest · colcon · ruff, 토큰 없음) · PR 검사의 Claude 검토는 라벨 `claude-review` 때만. 문서: 결정 기록 PC배치_MQTT_CI · IRD v3 · SDD v3 · 01 · 04 · 05(W126~W129) · 06 · env · README · 아키텍처 v4 · 설명 v3 · 프롬프트 v4 · 일정표 v8 — 황인재
 - 공통(18시, PM): PR #10(로봇 셀 다시 측정)·#11 merge. IRD 9장 표를 `robot.yaml`에 맞춤 — 조립 원점 (0.4261, −0.0725) · 공급 칸 p1~p6(칸마다 잡기) · place_up 1 mm · speed 0.3 + 새 키 assembly_area_half_m · block_actual_m · block_tolerance_m · gripper.command_offset_m · motion.transit_clearance_m. 일정표 v7_100618(완료 17개 반영) — 황인재
