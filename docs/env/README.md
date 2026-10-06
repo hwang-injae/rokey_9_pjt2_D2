@@ -7,7 +7,7 @@
 | 그리퍼 | OnRobot RG2 (고무 패드 뺌, 10/4) |
 | 카메라 | 손목 RealSense D435i(깊이 있음) — 로봇 PC. **웹캠은 쓰지 않는다**(10/6 주제 개편 E-19) |
 | ROS 2 통신 | **로봇 PC 안에서만**: CycloneDDS(`rmw_cyclonedds_cpp`), `ROS_DOMAIN_ID` = 60 (팀 60번대). **PC 사이는 MQTT**(10/6 E-27) |
-| 컨테이너 | Docker compose, **웹 PC에만**(10/6 E-31): `mosquitto`(MQTT 브로커 1883) · `db`(PostgreSQL 16) · `web`(FastAPI · Next.js · AI 생성 · 저장소, 안). 셋 다 황인재. 로봇 PC는 전부 호스트 |
+| 컨테이너 | Docker compose, **웹 PC에만**(10/6 E-31): `mosquitto`(MQTT 브로커 1883) · `db`(PostgreSQL 16) · `web`(backend FastAPI :8000 + frontend 정적 파일 · AI 생성 · 저장소, 안). 셋 다 황인재. 로봇 PC는 전부 호스트 |
 | PC | 2대: **로봇 PC**(ROS 2 노드 전부) + **웹 PC**(ROS 없음 — 브로커 · DB · 웹 · 음성). 유선 LAN으로 연결 |
 
 이 저장소 워크스페이스(`rokey_9_pjt2_D2`)는 두산 드라이버 워크스페이스 위에 겹쳐 쓴다. ROS 2 Jazzy와 두산 드라이버를 처음부터 까는 순서는 강의 설치 안내를 따른다. 이 문서는 **팀이 맞춰야 하는 것**만 적는다.
@@ -32,7 +32,7 @@
 | PC | 켜는 것 | 연결 장치 | 돌리는 곳 |
 |---|---|---|---|
 | **로봇 PC** | 브링업(두산 드라이버·제어기·MoveIt2 move_group), 집기·놓기 + 실행기, 장면 관리, 그리퍼 노드, **정지 노드**, 손목 블록 인식 + **스캔 추론기**, **작업 관리자 · 작업 판단 · 검사 묶음(task)**, **다리 `bridge`(ROS ↔ MQTT)** | 로봇·그리퍼(유선 랜), RealSense D435i(USB), 웹 PC(유선 LAN) | 호스트(ROS 2 Jazzy) |
-| **웹 PC**(옛 운영 PC, **ROS 없음**) | 웹 화면 · **AI 설계 생성 · 저장소**(`web/`), **DB**, **MQTT 브로커**, 음성(마이크) | 마이크 · 화면 · 로봇 PC(유선 LAN) | compose `mosquitto` · `db` · `web` + 호스트 음성 |
+| **웹 PC**(옛 운영 PC, **ROS 없음**) | 웹 화면(`web/frontend`, 브라우저에서 실행) · **AI 설계 생성 · 저장소**(`web/backend`), **DB**, **MQTT 브로커**, 음성(마이크) | 마이크 · 화면 · 로봇 PC(유선 LAN) | compose `mosquitto` · `db` · `web` + 호스트 음성 |
 
 - 어느 PC가 로봇 PC·웹 PC인지는 (미정)이다. 정하면 여기에 적는다(웹 PC IP는 `robot.yaml` `mqtt.host`에).
 - 로봇 PC 노드는 어느 PC에서나 돌게 짠다. 옮기지 않는 것은 브링업·정지 노드(로봇 PC)이고, 카메라는 그 카메라를 처리하는 PC에 꽂는다. **웹 PC에는 ROS 2·두산 환경을 깔지 않는다**(10/6 E-26).
@@ -48,7 +48,7 @@ git clone https://github.com/hwang-injae/rokey_9_pjt2_D2.git
 cd rokey_9_pjt2_D2
 ```
 
-- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100701.md)에 있다.
+- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100702.md)에 있다.
 - source 순서는 늘 같다: `/opt/ros/jazzy` → 두산 워크스페이스 → 이 저장소. 빌드 명령은 [src/README](../../src/README.md) '빌드 · 시험'.
 
 ## 3. 버전 확인
@@ -135,7 +135,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 로봇 PC는 60
 
 ## 6-1. MQTT (PC 사이 — 웹 PC 브로커 ↔ 로봇 PC 다리)
 
-PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100701.md#10-pc-사이-통신--mqtt-다리-e-27e-30-안)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
+PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100702.md#10-pc-사이-통신--mqtt-다리-e-27e-30-안)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
 
 ```bash
 # 두 PC 모두 — 확인용 클라이언트
@@ -170,11 +170,11 @@ docker --version
 |---|---|---|---|
 | `mosquitto` | MQTT 브로커(eclipse-mosquitto, 1883) — `web/mosquitto/mosquitto.conf` | PC 사이 통신의 가운데 서버. 설치 없이 이미지 1줄 | 황인재 · 10/6 저녁~10/7 (W102) |
 | `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/8~10 (W088) |
-| `web`(안) | FastAPI(paho-mqtt · WebSocket) + Next.js 정적 + **AI 설계 생성(GPT-4o) · 저장소 인터페이스** | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. 10/7은 호스트로 띄워도 된다 | 황인재 · 10/7 (W102 · W126) |
+| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. 10/7은 호스트로 띄워도 된다 | 황인재 · 10/7 (W102 · W126) |
 
 | 호스트에서 바로 | 이유 |
 |---|---|
-| 음성 (웹 PC) | 마이크 장치를 컨테이너에 넘기기가 번거롭다. `web/backend/voice.py` → MQTT |
+| 음성 (웹 PC) | 마이크 장치를 컨테이너에 넘기기가 번거롭다. `web/backend/voice.py` → Whisper API → MQTT |
 | 로봇 PC 전부(브링업 · 동작 · 그리퍼 · 정지 · 비전 · task · 다리) | 10/3에 시험한 호스트 환경(두산 드라이버 · MoveIt2 · RealSense)을 그대로 쓴다. 다리는 paho-mqtt만 더 깐다 |
 
 **컨테이너는 그 안에 넣는 것의 담당이 만든다(10/5 S-17).** 10/6 저녁 기능별 통합 확인 ②(W097)부터 브로커를 띄워 쓰고, 두 PC 연결 확인은 10/8 오전(W129). 1시간 넘게 막히면 일단 호스트로 돌리고 10/8에 마저 한다.
@@ -191,7 +191,7 @@ docker compose logs -f web    # 키 읽힘(값은 안 찍음) · 브로커 연�
 
 | 규칙 | 내용 |
 |---|---|
-| 네트워크 | compose 기본 네트워크. `mosquitto`만 `ports: "1883:1883"`으로 LAN에 연다(로봇 PC 다리가 붙음). 웹은 `8000`(안). ROS가 없으므로 `--net=host` · DDS 설정이 필요 없다 |
+| 네트워크 | compose 기본 네트워크. `mosquitto`만 `ports: "1883:1883"`으로 LAN에 연다(로봇 PC 다리가 붙음). `web`은 `8000`(안) — backend가 frontend 정적 파일 · REST · WebSocket `/ws`를 같은 포트로 낸다(브라우저 `http://<웹 PC IP>:8000`). ROS가 없으므로 `--net=host` · DDS 설정이 필요 없다 |
 | 키는 `env_file: .env` | 키를 Dockerfile·이미지·compose 파일에 넣지 않는다 |
 | 원본 자료는 로컬 연결 | 녹화(rosbag)·대용량 CAD·DB 데이터·스캔 점군·사진은 이미지에 넣지 않고(`COPY` 금지) 로컬 폴더를 `volumes:`로 연결한다. 읽기만 할 원본은 `:ro`. 설정·레시피도 복사하지 않고 로컬 저장소 폴더를 연결해 읽는다. DB 데이터는 이름 있는 볼륨이나 로컬 폴더에 둔다 |
 | 이름 | compose 서비스 이름 `mosquitto` · `db` · `web`. 따로 이름을 붙이면 파트·이름(예: `web-<이름>`) |
@@ -203,7 +203,7 @@ docker compose logs -f web    # 키 읽힘(값은 안 찍음) · 브로커 연�
 
 - OpenAI 키는 **PC마다 `.env` 파일에만** 둔다. 코드는 환경 변수로 읽는다.
 - `.env`는 `.gitignore`에 들어 있다. 커밋 전에 `git status`로 `.env`가 없는지 본다. PR 검사도 키 모양 글자와 `.env`를 막는다.
-- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100701.md)).
+- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100702.md)).
 
 ## 9. 작업 전 확인
 
