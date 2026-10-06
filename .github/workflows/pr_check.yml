@@ -3,7 +3,10 @@
 # 2. Claude 검토: .claude/commands/pr-review.md 3번의 ①~⑧. 라벨 `claude-review` 를 붙인 PR에서만 돈다(10/6 PL — 기본은 토큰을
 #    쓰지 않는다. 자동 시험은 ci.yml). 라벨이 없으면 check 만 돌고 승인은 사람이 한다. 팀원(협업자)이 연 PR에만 돈다(공개 저장소라 외부 PR 막음).
 # 3. 판정: ①~⑧에 '막음'이 없으면 자동 승인, 있으면 '수정 요청' + 이유. 검토가 돌지 않았거나 실패하면 판정도 돌지 않는다(코멘트 없음).
-#    merge(Squash and merge)는 사람이 누른다.
+# 4. auto-merge: PR이 열리거나 push될 때마다 pr_automerge.py 가 GitHub auto-merge(Squash)를 걸어 둔다(10/6 저녁 PL).
+#    승인(자동이든 사람이든) + 필수 검사(이 파일의 check · ci.yml의 두 job)가 끝나면 GitHub이 merge하고 브랜치를 지운다.
+#    이 job만 GITHUB_TOKEN(contents·pull-requests write)으로 돈다 — fine-grained PAT은 enablePullRequestAutoMerge를 못 한다(10/6 확인).
+#    merge 조건은 브랜치 보호가 정하고, 사람은 merge 버튼을 누르지 않는다. 'up to date' 요구는 꺼 두어 main이 움직여도 막히지 않는다.
 # - pull_request_target: 검사 도구·검토 기준은 main 쪽 것을 쓰고, PR 코드는 읽기만 하고 실행하지 않는다.
 #   → PR에서 이 파일·기준을 고쳐도 검사 방식이 바뀌지 않는다(비밀값 보호).
 # - Claude는 구독 토큰(비밀값 CLAUDE_CODE_OAUTH_TOKEN — `claude setup-token`, 1년 유효)으로 돌고, Claude GitHub 앱은 쓰지 않는다.
@@ -152,3 +155,23 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 .github/scripts/pr_verdict.py
+
+  automerge:
+    name: auto-merge 걸기 (승인 + 검사 통과 시 GitHub이 Squash merge)
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # auto-merge 예약·merge 에 필요. PR 코드는 실행하지 않으므로(main 쪽 스크립트만) 안전하다.
+      pull-requests: write
+    steps:
+      - name: 도구 받기 (main)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: auto-merge 걸기
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: python3 .github/scripts/pr_automerge.py
