@@ -26,6 +26,9 @@ from d2_safety.safe_stop import SafeStop, init_ros
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
 LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도 (Pilz 직선 속도 한계 x 비율)
 GRIPPER_TIMEOUT_S = 10.0
+# 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
+# 팔 끝까지 약 0.9 m 이므로 관절 0.005 rad 는 TCP 4.5 mm 이하 (10/6 한세교 교차 검증)
+LINE_CHECK_RAD = 0.005
 SAFETY_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                         history=HistoryPolicy.KEEP_LAST, depth=1)   # 정지 노드와 같게 (IRD 4.1, S-26)
 
@@ -119,7 +122,7 @@ class PickPlaceNode(Node):
         return self.exe.execute(jt, halted)
 
     def go_line(self, b_xyz, quat, halted):
-        """TCP 를 지금 자세에서 b_xyz 까지 수직 직선으로 옮긴다 (MoveIt Pilz LIN). 실행 전에 궤적 점마다 충돌을 본다.
+        """TCP 를 지금 자세에서 b_xyz 까지 수직 직선으로 옮긴다 (MoveIt Pilz LIN). 실행 전에 궤적을 촘촘히 나눠(dense) 충돌을 본다.
 
         반환: (성공, 실패 이유).
         """
@@ -128,12 +131,21 @@ class PickPlaceNode(Node):
             self.get_logger().error(f'직선 경로를 못 만든다 (Pilz LIN): {err}')
             return False, 'PLAN_FAILED'
         path = self.exe.positions(jt)
-        for k in range(0, len(path), 2):
-            ok, hits = self.exe.valid(path[k])
+        for k, q in enumerate(self.dense(path)):
+            ok, hits = self.exe.valid(q)
             if not ok:
-                self.get_logger().error(f'수직 경로 충돌 {k}/{len(path) - 1}: {", ".join(hits)}')
+                self.get_logger().error(f'수직 경로 충돌 (검사 {k}번째 자세): {", ".join(hits)}')
                 return False, 'PLAN_FAILED'
         return self.exe.execute(jt, halted)
+
+    @staticmethod
+    def dense(path):
+        """관절 경로(rad 목록) -> 이웃 자세 사이를 LINE_CHECK_RAD 이하로 나눈 자세 목록. 처음·끝 자세를 꼭 넣는다 (끝 = 제일 낮은 집기·놓기 자세)."""
+        out = [path[0]]
+        for a, b in zip(path, path[1:]):
+            n = max(1, math.ceil(max(abs(y - x) for x, y in zip(a, b)) / LINE_CHECK_RAD))
+            out += [[x + (y - x) * i / n for x, y in zip(a, b)] for i in range(1, n + 1)]
+        return out
 
     def grip(self, width_m):
         """그리퍼 노드에 폭 width_m 로 움직이라고 하고 다 움직일 때까지 기다린다. 반환: 결과 (응답 없으면 None)."""

@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 로봇 동작(PM): 수직 직선(Pilz LIN) 충돌 검사를 촘촘히 — 2점마다(최대 약 30 mm, 끝점 빠질 수 있음) → 관절 0.005 rad(TCP 4.5 mm 이하)마다 + 끝점 꼭 (한세교 PR #10 교차 검증) — 박진용
 - 공통(18시, PM): PR #10(로봇 셀 다시 측정)·#11 merge. IRD 9장 표를 `robot.yaml`에 맞춤 — 조립 원점 (0.4261, −0.0725) · 공급 칸 p1~p6(칸마다 잡기) · place_up 1 mm · speed 0.3 + 새 키 assembly_area_half_m · block_actual_m · block_tolerance_m · gripper.command_offset_m · motion.transit_clearance_m. 일정표 v7_100618(완료 17개 반영) — 황인재
 - 로봇 동작(PM): **로봇 셀 다시 측정(고무 없이)** — 조립 원점 (0.4261, −0.0725) m · 공급 칸 p1~p6(잡기마다 한 칸) · 작업대 높이 4곳 평균 −17.85 mm · 블록 실측 74.45×24.8×14.8 mm(쌓는 높이는 실측) · 그리퍼 폭 보정(표시 −9.4 · 명령 −8.5 mm) · MoveIt 손가락 모델 실측과 일치 → `robot.yaml` 반영, 기록 `docs/test-reports/W011-016_*`. W011~W016·W019·W020·W021·W033·W035~W040·W049·W103 완료 — 박진용
 - 비전: 환경 준비 끝 — 한석형 (git·gh·ROS 2 Jazzy·CycloneDDS·Docker 확인, 에이전트 프롬프트 v3 적용). 다음: W043·W044·W065 → W097
