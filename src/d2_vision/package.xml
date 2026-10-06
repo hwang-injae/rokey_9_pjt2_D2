@@ -9,6 +9,14 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>        <!-- wrist_block: 깊이 영상 · camera_info -->
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>d2_interfaces</exec_depend>      <!-- CheckProgress -->
+  <exec_depend>dsr_msgs2</exec_depend>          <!-- 두산 posx · TCP 조회 (로봇 PC에만 있음 — CI 는 d2_vision 을 빌드만 한다) -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
