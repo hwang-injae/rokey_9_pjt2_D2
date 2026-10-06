@@ -2,7 +2,7 @@
 
 웹캠 없이 /d2/vision/human_zone 을 낸다.
 1차(10/7)는 방송만 한다. 받는 쪽(정지 노드)은 10/8 W066부터 구독한다.
-heartbeat 는 1차 범위에서 빠졌다(W066에서 다시 넣는다. 지운 코드는 git 이력 b7df006 에 있다).
+카메라 연결 신호(camera_status, 예전 이름 heartbeat)는 1차 범위에서 빠졌다(W066에서 다시 넣는다. 지운 코드는 git 이력 b7df006 에 있다).
 
 실행:
   ros2 run d2_vision mock_webcam_human
