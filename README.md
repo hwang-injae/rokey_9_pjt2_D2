@@ -37,8 +37,8 @@
 ### 아키텍처
 
 <p align="center">
-  <img src="docs/images/시스템아키텍처_v5_100701.png" width="900" alt="시스템 아키텍처 v5 — 노드 카드: 입력 → 처리 → 출력"><br>
-  <sub>시스템 아키텍처 v5 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100701.md">시스템 아키텍처 설명</a></sub>
+  <img src="docs/images/시스템아키텍처_v6_100701.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
+  <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100701.md">시스템 아키텍처 설명</a></sub>
 </p>
 
 **PC 2대(10/6 18시 E-26~E-31).** **로봇 PC**에 ROS 2 노드 전부(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기 · **task** · **다리 `bridge`**)가 호스트로 돈다. **웹 PC**에는 ROS가 없다 — docker compose로 `mosquitto`(MQTT 브로커) · `db`(DB) · `web`(웹 화면 · 설계 생성 · 저장소)을 띄우고, 음성은 호스트. 두 PC는 **MQTT**로 잇는다(다리 노드가 ROS ↔ MQTT 변환).
