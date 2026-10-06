@@ -94,3 +94,108 @@ def test_잘못된_관측은_아무것도_안_바꾼다():
 def test_없는_공급_칸_번호는_거부():
     with pytest.raises(ValueError):
         planner(0).mark_slot_empty(7)
+
+
+def cfg_two_flat_short_slots():
+    """FLAT_SHORT 칸이 둘인 robot.yaml 복사본 (실제 robot.yaml 은 잡기마다 칸이 하나)."""
+    cfg = copy.deepcopy(CFG)
+    extra = dict(cfg['supply_slots'][1], x_m=cfg['supply_slots'][1]['x_m'] + 0.05)
+    cfg['supply_slots'].append(extra)                      # 7번 칸, p2 와 같은 FLAT_SHORT
+    return cfg
+
+
+def test_avoid_slots로_다른_칸을_받는다():
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p.update_progress({b: {'state': 'absent'} for b in IDS})
+    first = p.next_block()
+    second = p.next_block(avoid_slots=(int(first['supply_slot']),))
+    assert first['status'] == 'FOUND'
+    assert second['status'] == 'FOUND'
+    assert second['block_id'] == first['block_id']          # 같은 블록, 칸만 다름
+    assert second['supply_slot'] != first['supply_slot']
+    assert second['grasp'] == first['grasp']
+    assert p.next_block()['supply_slot'] == first['supply_slot']   # 피하기는 그 호출 한 번뿐(빔으로 적지 않음)
+
+
+def test_avoid_slots는_문자열_번호도_받는다():
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p.update_progress({b: {'state': 'absent'} for b in IDS})
+    first = p.next_block()
+    assert p.next_block(avoid_slots=[first['supply_slot']])['supply_slot'] != first['supply_slot']
+
+
+def test_후보가_하나뿐이면_avoid_slots에서_WAIT_SUPPLY():
+    p = planner(0)
+    first = p.next_block()
+    result = p.next_block(avoid_slots=(int(first['supply_slot']),))
+    assert result == {'status': 'WAIT_SUPPLY', 'block_id': IDS[0]}   # '공급 없음'이 아니라 '다른 칸 없음' — TaskManager 가 구분
+
+
+def test_judge_정상이면_문제없음():
+    p = planner(3)
+    p.update_progress({IDS[2]: {'state': 'present', 'dz_m': 0.001}})
+    assert p.judge(expect_present=[IDS[2]]) == []
+
+
+def test_judge_놓은_블록이_없으면_OFFSET_OVER():
+    p = planner(2)
+    assert [x['reason'] for x in p.judge(expect_present=[IDS[2]])] == ['OFFSET_OVER']
+
+
+def test_judge_높이는_두께_절반이_경계():
+    half = CFG['block_actual_m'][2] / 2
+    p = planner(1)
+    p.update_progress({IDS[0]: {'state': 'present', 'dz_m': half}})
+    assert p.judge() == []                                         # 경계값은 통과
+    p.update_progress({IDS[0]: {'state': 'present', 'dz_m': half + 0.0001}})
+    assert p.judge()[0]['block_id'] == IDS[0]
+
+
+def test_judge_받침_없이_위층만_있으면_OFFSET_OVER():
+    p = planner(0)
+    p.update_progress({IDS[0]: {'state': 'absent'}, IDS[2]: {'state': 'present'}})   # 3번(받침 1번)만 있음
+    assert [x['block_id'] for x in p.judge()] == [IDS[2]]
+
+
+def test_judge_못_본_블록은_문제로_안_본다():
+    p = planner(2)
+    p.update_progress({IDS[1]: {'state': 'occluded'}, IDS[2]: {'state': 'unknown'}})
+    assert p.judge(expect_present=[IDS[1], IDS[2]]) == []
+
+
+def test_judge_없는_블록_이름은_거부():
+    with pytest.raises(ValueError):
+        planner(0).judge(expect_present=['NOPE'])
+
+
+def test_progress_message는_NaN_없는_JSON():
+    p = planner(2)
+    p.update_progress({IDS[0]: {'state': 'present', 'top_z_m': 0.0123}})
+    msg = p.progress_message(None, 12.5)
+    text = json.dumps(msg, allow_nan=False)                        # NaN 이 남아 있으면 ValueError
+    got = json.loads(text)
+    assert got['schema'] == 'progress/1' and got['run_id'] is None and got['obs_stamp'] == 12.5
+    assert len(got['blocks']) == 11 and got['blocks'][0]['by'] == 'robot'
+    assert got['blocks'][0]['top_z_m'] == 0.0123 and got['blocks'][0]['dx_m'] is None
+
+
+def test_빔으로_적은_칸은_다음_호출에서도_계속_제외_채우면_복귀():
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p.update_progress({b: {'state': 'absent'} for b in IDS})
+    first = p.next_block()
+    p.mark_slot_empty(int(first['supply_slot']))
+    for _ in range(3):                                        # 몇 번을 불러도 빈 칸은 안 나온다
+        again = p.next_block()
+        assert again['status'] == 'FOUND' and again['supply_slot'] != first['supply_slot']
+    p.supply_refilled()
+    assert p.next_block()['supply_slot'] == first['supply_slot']   # 채운 뒤에는 다시 후보
+
+
+def test_빈_칸이_다_차면_WAIT_SUPPLY_채우면_FOUND():
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p.update_progress({b: {'state': 'absent'} for b in IDS})
+    for slot in (2, 7):                                       # FLAT_SHORT 칸 둘 다 빔
+        p.mark_slot_empty(slot)
+    assert p.next_block() == {'status': 'WAIT_SUPPLY', 'block_id': IDS[0]}
+    p.supply_refilled()
+    assert p.next_block()['status'] == 'FOUND'
