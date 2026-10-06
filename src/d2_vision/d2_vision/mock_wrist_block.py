@@ -59,6 +59,7 @@ class MockWristBlock(Node):
     """check_progress 에 답하고 camera_status 를 내는 가짜 노드. 로봇·카메라에 아무것도 하지 않는다."""
 
     def __init__(self):
+        """파라미터 선언 → 레시피 읽기 → 서비스·토픽·타이머 만들기. 레시피를 못 읽어도 노드는 뜬다(경고만)."""
         super().__init__('mock_wrist_block')
         self.declare_parameter('recipe_path', '')        # cad_recipe/1.0 파일. 없으면 높이는 NaN
         self.declare_parameter('origin_z_m', -0.018)     # robot.yaml assembly_origin.z_m (작업면 높이)
@@ -79,9 +80,11 @@ class MockWristBlock(Node):
         self.get_logger().info('mock_wrist_block 시작: /d2/vision/check_progress 대기')
 
     def now(self):
+        """노드 시계의 지금 시각(초, float). JSON stamp 칸에 쓴다."""
         return self.get_clock().now().nanoseconds / 1e9
 
     def _ids(self, name):
+        """쉼표로 적힌 문자열 파라미터(name) → block_id 집합. 빈 문자열이면 빈 집합."""
         raw = self.get_parameter(name).value
         return {s.strip() for s in raw.split(',') if s.strip()}
 
@@ -113,12 +116,14 @@ class MockWristBlock(Node):
         return res
 
     def publish_status(self):
+        """타이머마다 `/d2/vision/camera_status`(camera_status/1)를 낸다. 가짜라 last_frame_stamp = 지금 시각(초)."""
         t = self.now()
         msg = {'schema': 'camera_status/1', 'stamp': t, 'node': 'wrist_block', 'last_frame_stamp': t}
         self.pub_status.publish(String(data=json.dumps(msg)))
 
 
 def main(args=None):
+    """노드를 띄우고 Ctrl+C 까지 돈다. 로봇·카메라에 명령을 보내지 않으므로 서기 처리는 없다."""
     rclpy.init(args=args)
     node = MockWristBlock()
     try:
