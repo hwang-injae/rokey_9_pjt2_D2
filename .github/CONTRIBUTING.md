@@ -1,6 +1,6 @@
 # GitHub 협업 규칙 (협동2)
 
-팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100609.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
+팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100610.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
 
 > 하루 흐름: `/today 이름`(main 받기 → 오늘 내 작업 → 브랜치) → 작업 → `/wrap W번호`(커밋 → push → PR 초안). 명령은 `.claude/commands/`에 있다.
 
@@ -9,7 +9,7 @@
 {이름}/{날짜 YYYYMMDD}-{기능}-{간단설명}   예: 황인재/20261005-hmi-web-buttons
 ```
 - `{이름}`은 한글 이름(10/6 PL — GitHub ID가 아니다). 설명은 영문 kebab-case. 같은 기능을 여러 날 하면 날짜만 바꿔 새 브랜치.
-- `main` 보호(Settings → Branches, 10/4 적용): PR 필수, 승인 1명 이상, Code Owners 승인 필수, 직접 push 금지. 관리자(황인재)만 예외 — 문서 정리용, 코드는 황인재도 PR.
+- `main` 보호(Settings → Branches, 10/4 적용): PR 필수, 승인 1명 이상, Code Owners 승인 필수, 직접 push 금지. 관리자(황인재)만 예외 — **10/6 PL: 황인재는 코드도 PR 없이 main에 바로 push한다**(한세교 승인 부담을 덜려고). 다른 사람은 PR로만.
 - 이 저장소는 공개 저장소라 위 보호가 실제로 강제된다. 필수 상태 검사로 **'PR 검사 / 문법·main 반영·충돌·규칙 검사'** 를 넣는다.
 
 ## 2. Merge

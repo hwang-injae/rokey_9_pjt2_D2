@@ -1,0 +1,5 @@
+# 정해진 자세로 팔 이동 — task 노드 → 집기·놓기 (/d2/motion/move_to). 팔을 움직이는 노드를 pick_place 하나로 (S-23)
+string target                     # observe | home  (자세 값은 robot.yaml observe_pose · home_pose)
+---
+bool success                      # 다 간 뒤 답
+string reason                     # IRD 7장 실패 코드
