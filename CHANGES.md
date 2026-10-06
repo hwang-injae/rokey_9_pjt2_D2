@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-06
+- 공통(10시): 황인재 바로 push에 **push 전 스스로 검사**를 더함(10/6 PL) — `python3 .github/scripts/pr_check.py --repo . --base origin/main` 통과 + 코드면 ①~⑧ 스스로 확인 + 커밋 메시지에 `완료: W번호`. `/wrap`에 황인재 갈래. 문서담당은 커밋 메시지의 W번호도 일정표에 반영 — 황인재
 - 공통(10시): **황인재는 코드도 PR 없이 main에 바로 push**(10/6 PL — 황인재 PR은 한세교가 승인해야 하는데 한세교 일이 많아서). 다른 사람은 그대로 PR. 06 규칙 3-2·CONTRIBUTING·AGENTS·CLAUDE·GEMINI.md·README, 황인재 프롬프트 — 황인재
 - 공통(10시): **S-28 `robot.yaml`에 웹캠 구역 키** — `webcam_zones.<구역>.x_min_m`·`x_max_m`·`y_min_m`·`y_max_m`(base_link, m — 한석형 제안, 단위는 m로). 값은 W055·W057 뒤 비전, 틀은 W031 — 황인재
 - 공통(10시): **브랜치 이름 = `{이름}/{YYYYMMDD}-{기능}-{영문 설명}`, `{이름}`은 한글**(10/6 PL, 한세교 지적 — `/today`·`/start`·공지가 GitHub ID로 적혀 있던 것을 고침). 06 규칙 3-1·CONTRIBUTING·AGENTS·CLAUDE·GEMINI.md — 황인재
