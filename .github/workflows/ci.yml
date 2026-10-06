@@ -3,7 +3,7 @@
 # 1. python-tests: tests/ 의 pytest — ROS 없이 도는 계산(motion_math) · 설정(robot.yaml) · 인터페이스 파일 · 문서 규칙(이름·링크) ·
 #    비밀값. 그 뒤 ruff 로 치명 오류만 본다(문법 오류 · 정의 안 된 이름 = E9·F63·F7·F82). 스타일은 보지 않는다.
 # 2. ros-build-test: ros:jazzy-ros-base 컨테이너에서 두산 의존이 없는 패키지(CI_PKGS)만 colcon build · test.
-# Claude 검토(pr_check.yml)는 라벨 claude-review 를 붙인 PR에서만 돈다 — 이 파일은 토큰을 쓰지 않는다.
+# Claude 검토(pr_check.yml)는 팀원 PR 전부에서 돈다(10/7 01시 PL — '막음'이 없으면 자동 승인 → auto-merge). 이 파일은 토큰을 쓰지 않는다.
 # 로컬에서 같은 시험:
 #   python3 -m pytest tests -q
 #   ruff check --select E9,F63,F7,F82 src tests tools .github/scripts
