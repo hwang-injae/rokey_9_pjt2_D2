@@ -39,7 +39,7 @@ python src/recipe_manager/CAD_to_Recipe/main.py build src/recipe_manager/cad/001
 |---|---|
 | `sequence` | 배치 순서 1..N, 빠짐·중복 없음 |
 | `stage` | 1부터 시작하고, 순서를 따라 같거나 1씩 증가 |
-| `grasp` | 파지 방법 `<상태>_<LONG\|SHORT>` 6가지([IRD 2장 잡기](../../../docs/02_인터페이스_IRD_v3_100620.md#2-공통-값)). 상태 `FLAT`(눕힘)·`EDGE`(옆세움)·`STAND`(세움)는 CAD 배치와 같아야 한다. `LONG`은 수평 치수 중 긴 쪽, `SHORT`는 짧은 쪽을 끼운다. 예: 젠가 벽 `FLAT_SHORT`(25 mm), 좌판 `FLAT_LONG`(75 mm). 닫힘 축 `grasp_axis`는 `build`가 계산한다 |
+| `grasp` | 파지 방법 `<상태>_<LONG\|SHORT>` 6가지([IRD 2장 잡기](../../../docs/02_인터페이스_IRD_v3_100701.md#2-공통-값)). 상태 `FLAT`(눕힘)·`EDGE`(옆세움)·`STAND`(세움)는 CAD 배치와 같아야 한다. `LONG`은 수평 치수 중 긴 쪽, `SHORT`는 짧은 쪽을 끼운다. 예: 젠가 벽 `FLAT_SHORT`(25 mm), 좌판 `FLAT_LONG`(75 mm). 닫힘 축 `grasp_axis`는 `build`가 계산한다 |
 
 `build`는 CAD를 다시 읽어 모델을 만든다. 계획의 CAD 해시가 다르면 거부하므로, CAD가 바뀌었으면 `inspect`부터 다시 한다. 같은 이름의 출력 파일이 이미 있으면 **[1] 덮어쓰기 / [2] 다른 이름으로 저장(같은 폴더) / [3] 취소** 중에서 고른다. 입력을 받을 수 없는 환경에서는 기존 파일을 지키기 위해 취소한다.
 
