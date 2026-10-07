@@ -6,7 +6,9 @@
 카메라 연결 신호 `/d2/vision/camera_status` 를 2 Hz 로 낸다(마지막 프레임 시각).
 
 입력(파라미터)
-  recipe_path  cad_recipe/1.0 파일(mm). 블록 자리는 여기서 읽는다 — 설계를 `get_design` 으로 받는 길은 W121 뒤(§아직 정하지 않은 것)
+  recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). 요청 block_id 의 앞글자(`001_CHAIR_BENCH_B003` → `001_CHAIR_BENCH`)로
+               `<recipe_dir>/<design_id>.recipe.json` 을 찾아 팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다(설계마다 한 번, 캐시).
+               설계를 `get_design` 으로 받는 길은 W121 뒤.
   calib_path   T_gripper2camera.npy(카메라 → TCP 4x4, mm). 비우면 이 패키지 share/config 의 것
   cam_prefix   realsense 토픽 접두 (Jazzy 기본 /camera/camera)
   posx         시험용 posx 6개(mm·deg, **실수로** 예: [460.5, -157.0, 294.8, 154.8, 180.0, 154.5]). 비우면 두산 서비스로 읽는다
@@ -20,10 +22,10 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m 을 읽는�
 NaN 규칙(IRD 5장): dx·dy 는 1차 늘 NaN. absent·unknown 은 dz·top_z 도 NaN. 가려진 present(위 블록 때문에 못 잼)도 NaN.
 보정값은 TCP 기준이라(config/T_gripper2camera.json) 켤 때 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 다르면 경고한다(한 번).
 
-실행:
-  ros2 run d2_vision wrist_block --ros-args -p recipe_path:=<lv1_bench.recipe.json>
+실행 (저장소 맨 위에서):
+  ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes
 시험 호출:
-  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{block_ids: [LV1_B001, LV1_B002]}"
+  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{block_ids: [001_CHAIR_BENCH_B001, 001_CHAIR_BENCH_B002]}"
 """
 import json
 import threading
@@ -43,6 +45,7 @@ from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress
+from d2_motion.motion_math import recipe_blocks
 from d2_vision.block_checker import BlockChecker, depth_to_base_points
 from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp
 
@@ -67,7 +70,7 @@ class WristBlock(Node):
     def __init__(self):
         """파라미터 · 설정 · 보정값 · 레시피를 읽고 구독 · 서비스 · 타이머를 만든다. 레시피 · 보정이 없어도 노드는 뜬다(경고)."""
         super().__init__('wrist_block')
-        self.declare_parameter('recipe_path', '')
+        self.declare_parameter('recipe_dir', '')
         self.declare_parameter('calib_path', '')
         self.declare_parameter('cam_prefix', '/camera/camera')
         self.declare_parameter('posx', [0.0] * 6)
@@ -81,11 +84,11 @@ class WristBlock(Node):
         self.last_frame_t = 0.0
         self.n_frames = int(self.get_parameter('n_frames').value)
 
-        cfg = self._load_robot_yaml()
-        self.origin = cfg['assembly_origin']
-        self.half_m = float(cfg['assembly_area_half_m'])
+        self.cfg = self._load_robot_yaml()
         self.T_g2c = self._load_calib()
-        self.checker = self._load_checker()
+        self.checkers = {}                    # design_id → BlockChecker (레시피는 설계마다 한 번만 읽는다)
+        if not self.get_parameter('recipe_dir').value:
+            self.get_logger().warn('recipe_dir 파라미터가 비었다 — check_progress 는 ERROR 로 답한다')
 
         group = ReentrantCallbackGroup()
         prefix = self.get_parameter('cam_prefix').value
@@ -118,17 +121,25 @@ class WristBlock(Node):
             self.get_logger().error('보정값을 못 읽음 %s: %s — 모든 블록을 unknown 으로 답한다' % (p, e))
             return None
 
-    def _load_checker(self):
-        """recipe_path 의 레시피로 BlockChecker 를 만든다. 못 읽으면 None."""
-        p = self.get_parameter('recipe_path').value
-        try:
-            recipe = json.loads(Path(p).read_text(encoding='utf-8'))
-            chk = BlockChecker(recipe, self.origin, self.half_m)
-            self.get_logger().info('레시피 블록 %d개 (%s)' % (len(chk.blocks), p))
-            return chk
-        except (OSError, KeyError, TypeError, ValueError) as e:
-            self.get_logger().warn('레시피를 못 읽음(recipe_path=%r): %s — 모든 블록을 unknown 으로 답한다' % (p, e))
+    def checker_for(self, design_id):
+        """design_id 의 BlockChecker(캐시). `<recipe_dir>/<design_id>.recipe.json` → recipe_blocks(robot.yaml, 레시피) → BlockChecker.
+        이름에 경로 문자가 있거나 파일 · 형식이 틀리면 None (task 노드 load_recipe 와 같은 규칙)."""
+        if design_id in self.checkers:
+            return self.checkers[design_id]
+        recipe_dir = self.get_parameter('recipe_dir').value
+        if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
             return None
+        try:
+            recipe = json.loads((Path(recipe_dir) / f'{design_id}.recipe.json').read_text(encoding='utf-8'))
+            blocks = recipe_blocks(self.cfg, recipe)
+            o = self.cfg['assembly_origin']
+            chk = BlockChecker(blocks, (o['x_m'], o['y_m']), float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
+            self.get_logger().info('레시피 %s: 블록 %d개' % (design_id, len(chk.blocks)))
+        except (OSError, KeyError, TypeError, ValueError) as e:
+            self.get_logger().error('레시피 %s 를 못 읽음(recipe_dir=%r): %s' % (design_id, recipe_dir, e))
+            chk = None
+        self.checkers[design_id] = chk
+        return chk
 
     # ---------- 카메라 ----------
     def on_depth(self, msg):
@@ -222,8 +233,11 @@ class WristBlock(Node):
     def on_check(self, req, res):
         """요청 뒤 새 깊이 프레임 n장 중앙값 + posx → 점군 → BlockChecker → 답. 설정 없음 → ERROR, 프레임 · posx 없음 → TIMEOUT."""
         ids = list(req.block_ids)
-        if self.checker is None or self.T_g2c is None:
-            self.get_logger().error('보정값 또는 레시피가 없어 답할 수 없다 → ERROR')
+        # block_id = '<design_id>_B<순번>' (IRD 2장) → 앞글자로 설계를 찾는다. 한 요청은 한 설계라고 본다(섞이면 나머지는 unknown)
+        design_ids = [i.rsplit('_B', 1)[0] for i in ids if '_B' in i]
+        checker = self.checker_for(design_ids[0]) if design_ids else None
+        if checker is None or self.T_g2c is None:
+            self.get_logger().error('보정값 또는 레시피(%s)가 없어 답할 수 없다 → ERROR' % (design_ids[:1] or ids[:1]))
             return self._fill(res, ids, reason='ERROR')
         t_req = self.now()
         posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
@@ -239,7 +253,7 @@ class WristBlock(Node):
         T_b2c = posx_to_matrix(*posx) @ self.T_g2c
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         pts = depth_to_base_points(depth_m, self.intr, T_b2c, stride=2)
-        results = self.checker.check(pts, ids)
+        results = checker.check(pts, ids)
 
         res.block_ids = ids
         res.states = [r['state'] for r in results]
