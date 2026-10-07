@@ -251,3 +251,11 @@ def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
     req['blocks'][0]['ori'] = []
     ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
     assert (ok, reason) == (False, 'ERROR') and not res['ok']
+
+
+@pytest.mark.parametrize('literal', ['1e999', '-1e999', '1E400'])
+def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
+    text = json.dumps(base_design('001_CHAIR_BENCH')).replace('"x": -25', f'"x": {literal}', 1)
+    assert literal in text
+    ok, reason, res = handle(text, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
