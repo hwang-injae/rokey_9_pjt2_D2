@@ -12,7 +12,7 @@
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
         /d2/task/scan_result (JSON scan_result/1 — 구조 검사·저장은 HMI에서 진행)
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
-설계 조회: 선택 · 출발 때 /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
+설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
         recipe_dir 아래 <design_id>_recipe.json · _structure.json 을 읽는다. 옮기는 동안 옛 .recipe.json 도 받는다(E-52).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.

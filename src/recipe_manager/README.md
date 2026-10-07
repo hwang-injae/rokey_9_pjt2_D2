@@ -83,6 +83,17 @@ python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/
 
 시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 3종을 DXF에서 다시 만들어 저장된 레시피와 같은지 + 겹침·뜬 블록·순서·잡기 상태 오류 거부.
 
+## 기본 설계 블록 JSON (`<모델ID>_blocks.json`, W117)
+
+HMI 가 DB 기본 설계를 등록할 때(W111) 이 폴더 하나만 읽도록, 같은 설계의 `_structure` · `_recipe` · `_placements` 옆에 변환기 ②가 만든 `blocks/1` 파일을 둔다.
+**레시피가 바뀌면 다시 만든다**(저장소 맨 위에서 한 줄 — 변환 · `DesignChecker` 검사에 하나라도 실패하면 아무것도 쓰지 않는다):
+
+```bash
+PYTHONPATH=src/d2_task python3 -m d2_task.base_blocks
+```
+
+레시피를 고치고 이 파일을 안 고치면 `src/d2_task/test/test_base_blocks.py`가 실패한다.
+
 ## 지켜야 할 약속
 
 - 단위 mm, 설계 원점 = 바닥 외곽 가운데, X 오른쪽·Y 뒤쪽·Z 위, 책상면 Z = 0.

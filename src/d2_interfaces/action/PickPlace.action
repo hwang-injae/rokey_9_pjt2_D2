@@ -6,6 +6,9 @@ geometry_msgs/Pose pick_pose      # 블록 중심 자세(블록 자신의 축), 
 geometry_msgs/Pose place_pose
 string grasp                      # FLAT_SHORT | FLAT_LONG (1차) · EDGE_* · STAND_*  (S-25. 예전 SIDE_25 = FLAT_SHORT, END_75 = FLAT_LONG)
 float64 open_width_m              # 집기 전에 여는 폭(실제 폭, m). 0 이면 robot.yaml grasp_open_pick_m.<grasp> (흩어진 블록 틈에 맞출 때만 넣음, W121 C-10)
+geometry_msgs/Pose[] obstacles    # 흩뿌림(supply_slot 빈 값)의 공중 이동 계획용 장애물(E-53 B안): 방금 식별한 블록 중 고른 블록만 뺀 나머지의 중심 자세(블록 자신의 축), base_link, m.
+                                  # 크기 = robot.yaml block_actual_m(면마다 줄이지 않음), 계획 때만 transit_clearance_m 로 부풀림 · 장면에는 안 넣음. 빈 목록 = 다른 블록 없음(공급 칸 가정 상자로 안 돌아감)
+                                  # 개수 상한 · 자르기 없음, 포개진 블록은 따로 상자, 기울어진 블록은 윗면 = 가장 높은 점인 반듯한 상자. 공급 칸 모드에서는 쓰지 않는다
 ---
 bool success
 string reason                     # IRD 7장 실패 코드

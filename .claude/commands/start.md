@@ -13,7 +13,7 @@
 4. ROS 2 환경: `docs/env/README.md` 순서대로 — Ubuntu 24.04·ROS 2 Jazzy, 두산 드라이버(로봇 PC), (로봇 쪽) CycloneDDS 설치, `.bashrc`에 `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`와 `ROS_DOMAIN_ID=60`(로봇 PC 안에서만 쓴다). PC 사이는 MQTT — `mosquitto-clients`를 깔고 환경 README 6-1 확인표를 본다(웹 PC는 ROS 없음, 10/6 E-26 · E-27). 문서 끝 점검표를 하나씩 본다.
 5. Docker: `docker --version`. 규칙 세 가지를 짚는다 — 지우기 전 `docker ps -a`로 만든 사람 확인, 원본 자료는 이미지에 넣지 않고 `-v`로 연결, 키는 `--env-file .env`.
 6. 읽을 것을 네가 요약해 준다: `AGENTS.md`(규칙), `docs/README.md`의 읽는 순서, `docs/02_인터페이스_IRD_*.md`에서 내 파트 노드·통신만, `docs/05_작업분류_파트별_*.md`에서 내 파트, `docs/06_팀협업규칙_*.md`의 팀 규칙 10개.
-7. 첫 PR 연습: 브랜치 `{이름}/{YYYYMMDD}-docs-hello`(한글 이름, 예: `한석형/20261006-docs-hello`) → `CHANGES.md` 오늘 날짜의 내 파트 줄에 "환경 준비 끝 — <이름>" 한 줄 → 커밋(`변경 파일: CHANGES.md`) → push → PR(양식의 '변경 파일' 채우기) → `gh pr checks`로 PR 검사·CI 통과 확인(Claude 검토는 라벨 `claude-review`를 붙였을 때만).
+7. 첫 PR 연습: 브랜치 `{이름}/{YYYYMMDD}-docs-hello`(한글 이름, 예: `한석형/20261006-docs-hello`) → `CHANGES.md` 오늘 날짜의 내 파트 줄에 "환경 준비 끝 — <이름>" 한 줄 → 커밋(`변경 파일: CHANGES.md`) → push → PR(양식의 '변경 파일' 채우기) → `gh pr checks`로 PR 검사·CI 통과 확인(Claude 검토는 팀원 PR 전부에서 돌고, '막음'이 없으면 자동 승인 → auto-merge).
 8. `python3 tools/sched.py <이름>`으로 오늘·다음 작업을 보여 주고, "내일부터는 `/today 이름`으로 시작하고 `/wrap W번호`로 마무리"라고 안내한다.
 
 첫 응답: 이름과 파트(로봇 동작 박진용·한세교 / 비전 민범진·한석형·황인재 / HMI 황인재 — 황인재는 비전·HMI 두 파트, 10/7)를 확인하고, 1단계 확인 명령을 네가 실행한 결과부터 보여 준다.

@@ -87,7 +87,7 @@ def test_ird_content_change_is_found(mod):
 def test_ird_link_stamp_only_is_ignored(mod):
     """다른 문서 이름이 바뀌어 IRD 안 링크의 월일시만 바뀐 것은 내용 변경이 아니다(docver touch)."""
     patch = ('@@ -3 +3 @@\n-[SDD](03_설계_SDD_v3_100714.md) · [05](05_작업분류_파트별_v2_100714.md)\n'
-             '+[SDD](03_설계_SDD_v3_100716.md) · [05](05_작업분류_파트별_v2_100716.md)')
+             '+[SDD](03_설계_SDD_v3_100716.md) · [05](05_작업분류_파트별_v2_100719.md)')
     assert mod.ird_changes([{'filename': IRD, 'status': 'modified', 'patch': patch}]) == []
 
 
