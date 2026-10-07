@@ -37,8 +37,8 @@
 ### 아키텍처
 
 <p align="center">
-  <img src="docs/images/시스템아키텍처_v6_100708.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
-  <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100713.md">시스템 아키텍처 설명</a></sub>
+  <img src="docs/images/시스템아키텍처_v6_100716.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
+  <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100716.md">시스템 아키텍처 설명</a></sub>
 </p>
 
 **PC 2대(10/6 18시 E-26~E-31).** **로봇 PC**에 ROS 2 노드 전부(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기 · **task** · **다리 `bridge`**)가 호스트로 돈다. **웹 PC**에는 ROS가 없다 — docker compose로 `mosquitto`(MQTT 브로커) · `db`(DB) · `web`(backend FastAPI — 설계 생성 · 저장소 + frontend 화면 정적 파일)을 띄우고, 음성은 호스트. 화면(frontend)은 사람의 브라우저에서 돌고 backend와 REST · WebSocket으로만 주고받는다(10/7 E-41). 두 PC는 **MQTT**로 잇는다(다리 노드가 ROS ↔ MQTT 변환).
@@ -69,7 +69,7 @@ ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, �
 
 ### 동작 흐름
 
-**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v3_100713.md))
+**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v3_100716.md))
 
 ```
 ① 요청        웹 글상자 "2인용 벤치 만들어 줘" [생성]  /  "hello rokey" → 음성 → 받아 적은 문장을 화면에서 확인 → [생성]
@@ -192,7 +192,7 @@ cd rokey_9_pjt2_D2
 
 ## 협업 규칙
 
-- [팀 협업 규칙](docs/06_팀협업규칙_v1_100712.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
+- [팀 협업 규칙](docs/06_팀협업규칙_v1_100716.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
 - [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) — GitHub에서 일하는 순서
 - [AGENTS.md](AGENTS.md) — AI 에이전트 읽기 규칙
 - [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — v4(10/6 개편 + PC 배치)를 저장소 맨 위 `CLAUDE.local.md`로 복사
