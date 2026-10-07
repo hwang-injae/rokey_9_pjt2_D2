@@ -236,7 +236,7 @@ def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식은 이름(schema)이 아니라 blocks 칸 유무로 가른다.
 
     - cad_recipe/1.0 (팀 레시피, recipe_manager 출력 — 예전 이름 assembly.recipe/1.0, 10/7 E-44로 이름만 바뀌고 구조 그대로):
-      model.instances + steps.
+      model.instances + steps (예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json).
       steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
       block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
     - 옛 blocks[] 형식 (한세교 Advanced m0609.jenga.cad_recipe/1.0, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
