@@ -15,8 +15,10 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py') + glob('launch/*.rviz')),
         ('share/' + package_name + '/description', glob('description/*.xacro') + glob('description/*.srdf')),
         ('share/' + package_name + '/config', glob('config/*.yaml') + glob('config/*.json')),
-        # 레시피(한세교 recipe_manager, COLCON_IGNORE)를 함께 설치 — run_recipe 번호 선택·장면 관리가 이 폴더를 읽는다
-        ('share/' + package_name + '/recipes', glob('../recipe_manager/recipes/*.recipe.json')),
+        # 레시피(한세교 recipe_manager, COLCON_IGNORE)를 함께 설치 — run_recipe 번호 선택·장면 관리가 이 폴더를 읽는다.
+        # E-52 새 형식은 조립 · 구조 두 파일(_recipe.json · _structure.json), 옛 이름 .recipe.json 은 W139 뒤 뺀다 (W138)
+        ('share/' + package_name + '/recipes', glob('../recipe_manager/recipes/*_recipe.json')
+         + glob('../recipe_manager/recipes/*_structure.json') + glob('../recipe_manager/recipes/*.recipe.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
