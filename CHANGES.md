@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-07
+- 로봇 동작 · 비전(15시, PM): **시간 초과 처리(PL, 박진용 · 한석형 제안)** — `timeout.move_to_s` 30 → **45초**(계획 최악 20초 + 이동 · 도착 대기), `TIMEOUT`이면 **먼저 세움 → 사람 호출**: `pick_place`는 목표 취소, `move_to`는 작업 관리자가 `/d2/safety/stop {source: task, reason: TIMEOUT}`(정지 입력 `source`에 `task` 추가, 정지 노드 코드는 그대로). IRD 2 · 4 · 7 · 9장 · `StopRequest.srv` 주석 · SDD 7.1 · 상태도. robot.yaml `timeout.move_to_s` · `pick_place_s`는 박진용 PR.
 - 비전 · HMI(15시, PM): **웹 끊김 = 새 상태 `WAIT_HMI`(PL, 한석형 W119 질문)** — 현재 블록까지 놓고 멈춤, 웹이 다시 붙고 사람이 [계속](= `start`)해야 이어 감(`WAIT_SUPPLY`와 섞지 않음). **화면 명령 `cancel` 추가** — `SCAN_REVIEW`: 저장 뒤 `select_design` → READY · 다시 스캔 `scan` · 취소 `cancel` → IDLE. IRD 2장 · 4장 · 10.3 · 미정 표 · `HmiCommand.srv` 주석 · SDD 상태도 · 상태표.
 - HMI(15시, PM): **IRD 두 곳 맞춤(PL)** — ① `check_design` 요청 = `blocks/1` 객체 그대로(4.2를 10장 · PR #33 코드에 맞춤, 바깥 상자 없음) ② `save_build` 응답 = 서비스 `success`(처리함) + JSON `ok`(DB 저장됨) 두 층(10장 MQTT 응답에 `ok` 추가, PR #40 코드와 같음). **웹 backend는 같은 run_id 재전송을 한 번만 저장하고 `ok: true`로 답한다.**
 - 비전(15시, PM): **`find_blocks` `yaw_deg` 정의(민범진 요청, 한석형 W130과 맞춤)** — 0° = 블록 긴 변이 base x축과 평행, base z 기준 반시계 +, −90° ≤ yaw < 90°(180° 대칭 — `motion_math.wrap_half`와 같은 경계로 15시 고침). IRD 4.2.
