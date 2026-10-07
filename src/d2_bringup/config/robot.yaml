@@ -37,6 +37,10 @@ finger:
   thickness_m: 0.0114          # RG2 모델 메시 값 (캘리퍼스 W011)
   width_m: 0.020
 
+check:                         # 검사 묶음 DesignChecker (IRD 9장, 10/7 W109)
+  margin_mm: 7                 # 쌓는 도중 무게중심이 받침 가장자리에서 이만큼 안쪽이어야 통과 (구조 유지 한계, V-02)
+  max_blocks: 54               # 설계 한 개의 블록 수 상한 (젠가 1세트)
+
 gripper:
   force_n: 10.0                # 드라이버는 2.5 N 단위로만 바꾼다
   open_margin_m: null          # (측정 전) — 지금은 잡기별 grasp_open_place_m 을 쓴다

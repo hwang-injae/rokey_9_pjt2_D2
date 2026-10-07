@@ -12,7 +12,6 @@ from d2_task.recipe_to_blocks import RecipeToBlocks
 
 SRC = Path(__file__).resolve().parents[2]
 CFG = yaml.safe_load((SRC / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
-CFG['check'] = {'margin_mm': 7, 'max_blocks': 54}   # IRD 8장 check.* (새, 안) — robot.yaml 에 들어오기 전까지 시험에서 넣는다
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
 DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chair_back', 'chair', 12.5),
            '003_DESK_STAND': ('desk_stand', 'desk', 7.5)}
