@@ -13,6 +13,7 @@ pick_place 노드·scene_manager 노드·run_recipe 도구가 같이 쓴다. ROS
     (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정(T_gripper2camera)은 posx 기준이다.
   - 잡기 이름 6가지(IRD 2장) = <바닥 상태>_<LONG|SHORT>. 그리퍼 폭은 '손가락 사이에 끼우는 블록 축'만으로 정해진다.
 """
+import hashlib
 import json
 import math
 import os
@@ -288,13 +289,19 @@ def recipe_name(path):
 def load_recipe(path):
     """레시피 파일을 읽는다. 새 형식(E-52 — cad_recipe/1.0 조립 파일, steps[].block)이면 같은 폴더의
     <model_id>_structure.json(cad_structure/1.0)을 읽어 'structure' 칸에 붙인다 — recipe_blocks 가 두 파일을 블록 이름으로 잇는다.
-    옛 형식은 읽은 그대로. 구조 파일이 없으면 FileNotFoundError."""
+    옛 형식은 읽은 그대로. 구조 파일이 없으면 FileNotFoundError.
+    조립 파일에 structure_sha256 이 있으면 구조 파일 바이트 그대로의 sha256 과 비교해, 다르면 ValueError — 구조가 바뀌었는데
+    옛 조립 순서로 쌓으면 받침 · 잡기가 어긋난다(한세교 10/7: source_cad.sha256 과 같은 방식)."""
     with open(path) as f:
         recipe = json.load(f)
     if 'model' not in recipe and 'blocks' not in recipe and 'structure' not in recipe:
         sp = os.path.join(os.path.dirname(path), recipe['model_id'] + STRUCTURE_SUFFIX)
-        with open(sp) as f:
-            recipe['structure'] = json.load(f)
+        with open(sp, 'rb') as f:
+            raw = f.read()
+        want = recipe.get('structure_sha256')
+        if want and hashlib.sha256(raw).hexdigest() != want:
+            raise ValueError(f'{os.path.basename(sp)} 가 조립 파일의 structure_sha256 과 다르다 (구조 파일이 바뀜 — 레시피 도구로 다시 만든다)')
+        recipe['structure'] = json.loads(raw)
     return recipe
 
 

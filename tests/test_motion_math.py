@@ -2,6 +2,7 @@
 
 실기로 확인한 식(10/4~10/6)이 리팩터링으로 바뀌지 않게 한다. 좌표·칸 자세는 지어내지 않고 robot.yaml 에서 읽는다.
 """
+import hashlib
 import json
 import math
 
@@ -209,6 +210,19 @@ def test_load_recipe_reads_structure_next_to_it(tmp_path, robot_cfg):
     assert loaded[0]['structure'] == structure and 'structure' not in loaded[1]
     assert len(mm.recipe_blocks(robot_cfg, loaded[0])) == 2
     assert mm.recipe_model_id(loaded[0]) == '001_CHAIR_BENCH'
+
+
+def test_load_recipe_checks_structure_sha256(tmp_path):
+    """structure_sha256 = 구조 파일 바이트 그대로의 sha256 (한세교 10/7). 맞으면 읽고, 구조 파일이 바뀌면 ValueError."""
+    recipe, structure = _recipe_v2()
+    sp = tmp_path / '001_CHAIR_BENCH_structure.json'
+    sp.write_text(json.dumps(structure))
+    rp = tmp_path / '001_CHAIR_BENCH_recipe.json'
+    rp.write_text(json.dumps(dict(recipe, structure_sha256=hashlib.sha256(sp.read_bytes()).hexdigest())))
+    assert mm.load_recipe(str(rp))['structure'] == structure
+    sp.write_text(json.dumps(structure, indent=1))
+    with pytest.raises(ValueError):
+        mm.load_recipe(str(rp))
 
 
 @pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])
