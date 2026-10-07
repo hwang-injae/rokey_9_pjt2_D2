@@ -150,7 +150,8 @@ class PrCheck:
         """로봇을 움직이는 .py를 바꾼 패키지마다 정지 설정 단어가 있는지 본다(팀 규칙 2-5).
 
         패키지 단위로 보는 이유: 궤적을 보내는 실행기(executor.py)와 Ctrl+C를 받는 노드가 다른 파일일 수 있다.
-        PR 쪽 파일 전체(바뀌지 않은 파일 포함)에서 찾는다. docs/research/ 참고 코드는 보지 않는다.
+        가장 가까운 package.xml이 있는 패키지의 파일 전체(바뀌지 않은 파일 포함)에서 찾는다.
+        src/d2_robot/처럼 묶어도 옆 패키지의 정지 설정을 빌려 통과하지 않는다. docs/research/ 참고 코드는 보지 않는다.
         실패 → self.fails, 통과·해당 없음 → self.notes.
         """
         moving = {}
@@ -161,7 +162,15 @@ class PrCheck:
             p = self.repo / f
             m = MOTION_RE.search(p.read_text(encoding='utf-8', errors='replace')) if p.is_file() else None
             if m:
-                moving.setdefault(parts[1], []).append(f'{f}({m.group(0)})')
+                package_dir = p.parent
+                src_dir = self.repo / 'src'
+                while package_dir != src_dir and not (package_dir / 'package.xml').is_file():
+                    package_dir = package_dir.parent
+                if package_dir == src_dir:
+                    self.fails.append(f'정지 설정: {f}의 소속 ROS 패키지(package.xml)를 찾을 수 없다')
+                    continue
+                pkg = str(package_dir.relative_to(src_dir))
+                moving.setdefault(pkg, []).append(f'{f}({m.group(0)})')
         if not moving:
             self.notes.append('정지 설정: 로봇을 움직이는 코드 변경 없음')
             return

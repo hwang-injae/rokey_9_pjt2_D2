@@ -13,7 +13,7 @@ DOC_OK = ['01_요구사항_BR-SR_v3_100616.md', 'TS-01_정지가_안_들음_R-01
 DOC_BAD = ['회의록.md', 'foo_v1.md', 'foo_v1_1006.md', 'foo_v1_100616.txt']
 
 SECRET_OK = ['.env', 'config/.env.local', 'certs/robot.pem', 'a/credentials.json', 'secrets.yaml', 'k/server.key']
-SECRET_NOT = ['docs/env/README.md', 'src/d2_bringup/config/robot.yaml', 'docs/environment.md']
+SECRET_NOT = ['docs/env/README.md', 'src/d2_robot/d2_bringup/config/robot.yaml', 'docs/environment.md']
 
 MOTION_OK = ['movej(', 'amovel(', 'MoveGroup', 'FollowJointTrajectory', 'movejx(', 'from dsr_msgs2.srv import MoveJoint']
 MOTION_NOT = ['JointTrajectory', 'trajectory_msgs', 'move_to(', 'MoveGroupInterface']
@@ -90,6 +90,50 @@ def test_stop_re(pr_check_mod):
     assert not pr_check_mod.STOP_RE.search('stop = True')
 
 
+@pytest.mark.parametrize('prefix', ['src', 'src/d2_robot'])
+@pytest.mark.parametrize('missing', [None, 'signal', 'stop'])
+def test_stop_setup_stays_within_package(pr_check_mod, tmp_path, prefix, missing):
+    """직접·중첩 패키지 모두 자기 정지 설정으로 판정하고 옆 패키지 설정으로 통과하지 않는다.
+
+    입력: 시험용 패키지 경로와 누락할 정지 설정. 출력: 검사 실패 여부 비교.
+    임시 파일만 쓰며 ROS·로봇은 실행하지 않는다. 검사 경계가 틀리면 assertion으로 실패한다.
+    """
+    package_dir = tmp_path / prefix / 'd2_motion'
+    package_dir.mkdir(parents=True)
+    (package_dir / 'package.xml').write_text('<package/>\n')
+    moving = package_dir / 'executor.py'
+    moving.write_text('from moveit_msgs.action import ExecuteTrajectory\n')
+    words = []
+    if missing != 'signal':
+        words.append('init_ros()')
+    if missing != 'stop':
+        words.append('SafeStop(node)')
+    (package_dir / 'node.py').write_text('\n'.join(words))
+
+    sibling = package_dir.parent / 'd2_safety'
+    sibling.mkdir()
+    (sibling / 'package.xml').write_text('<package/>\n')
+    (sibling / 'node.py').write_text('init_ros()\nSafeStop(node)\n')
+
+    checker = pr_check_mod.PrCheck(tmp_path, 'main')
+    checker.check_stop_setup([str(moving.relative_to(tmp_path))])
+    assert bool(checker.fails) == (missing is not None)
+
+
+def test_stop_setup_rejects_missing_package(pr_check_mod, tmp_path):
+    """움직이는 파일의 package.xml이 없으면 정지 검사 범위를 추측하지 않고 실패한다.
+
+    입력: 패키지 표시 없는 임시 이동 파일. 출력: 검사 실패 이유.
+    임시 파일만 쓰고 로봇은 실행하지 않는다. 실패를 놓치면 assertion으로 시험이 실패한다.
+    """
+    moving = tmp_path / 'src/d2_robot/executor.py'
+    moving.parent.mkdir(parents=True)
+    moving.write_text('from moveit_msgs.action import ExecuteTrajectory\n')
+    checker = pr_check_mod.PrCheck(tmp_path, 'main')
+    checker.check_stop_setup([str(moving.relative_to(tmp_path))])
+    assert any('package.xml' in failure for failure in checker.fails)
+
+
 def _git(repo, *args):
     """시험용 git 실행(작성자 이름 고정). 실패하면 예외."""
     import subprocess
@@ -124,4 +168,3 @@ def test_main_behind_with_conflict_fails(pr_check_mod, tmp_path):
     c = pr_check_mod.PrCheck(tmp_path, 'main')
     assert c.check_main_merged() is False
     assert any(f.startswith('충돌') for f in c.fails)
-

@@ -46,12 +46,15 @@ RECORD = Path.cwd() / "check_wrist_calib_log.jsonl"
 
 
 def robot_yaml_path():
-    """d2_bringup 패키지의 robot.yaml 경로. 빌드 전(소스 트리)이면 src/ 안의 파일로 대신한다."""
+    """robot.yaml 경로를 반환한다. 입력 없음·출력 Path이며 빌드 전에는 src/d2_robot/ 경로를 사용한다.
+
+    로봇·메시지에 영향은 없고 설치 경로 조회 실패 때 소스 설정 경로를 반환한다.
+    """
     try:
         from ament_index_python.packages import get_package_share_directory
         return Path(get_package_share_directory("d2_bringup")) / "config" / "robot.yaml"
     except Exception:
-        return Path(__file__).resolve().parents[2] / "d2_bringup" / "config" / "robot.yaml"   # src/d2_vision/d2_vision → src/
+        return Path(__file__).resolve().parents[2] / "d2_robot" / "d2_bringup" / "config" / "robot.yaml"
 
 # 깊이 평균을 낼 구역(픽셀 상자 한 변)과 모을 프레임 수.
 # 10/3 V-17 경험: 정지 상태에서 10 프레임 중앙값이면 ±0.5 mm 로 안정적이다.

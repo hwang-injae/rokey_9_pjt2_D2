@@ -1,0 +1,87 @@
+{
+  "schema": "cad_plan/1.0",
+  "recipe_id": "004_DESK_PEDESTAL_ASSEMBLY",
+  "revision": "1",
+  "model_id": "004_DESK_PEDESTAL",
+  "model_revision": "1",
+  "source_cad_sha256": "45ce04e4f1b88aa13502124bc513b05f5e0e8d309ea4c86bfdb33e90784d62b2",
+  "steps": [
+    {
+      "step_id": "PLACE_DXF_INSERT_9E",
+      "instance_id": "DXF_INSERT_9E",
+      "sequence": 1,
+      "stage": 1,
+      "grasp": "FLAT_LONG"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_A1",
+      "instance_id": "DXF_INSERT_A1",
+      "sequence": 2,
+      "stage": 1,
+      "grasp": "FLAT_LONG"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_A4",
+      "instance_id": "DXF_INSERT_A4",
+      "sequence": 3,
+      "stage": 1,
+      "grasp": "FLAT_LONG"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_A7",
+      "instance_id": "DXF_INSERT_A7",
+      "sequence": 4,
+      "stage": 2,
+      "grasp": "FLAT_SHORT"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_AA",
+      "instance_id": "DXF_INSERT_AA",
+      "sequence": 5,
+      "stage": 3,
+      "grasp": "FLAT_SHORT"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_AD",
+      "instance_id": "DXF_INSERT_AD",
+      "sequence": 6,
+      "stage": 4,
+      "grasp": "FLAT_SHORT"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_B0",
+      "instance_id": "DXF_INSERT_B0",
+      "sequence": 7,
+      "stage": 5,
+      "grasp": "FLAT_SHORT"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_B3",
+      "instance_id": "DXF_INSERT_B3",
+      "sequence": 8,
+      "stage": 6,
+      "grasp": "FLAT_SHORT"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_B6",
+      "instance_id": "DXF_INSERT_B6",
+      "sequence": 9,
+      "stage": 7,
+      "grasp": "FLAT_LONG"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_B9",
+      "instance_id": "DXF_INSERT_B9",
+      "sequence": 10,
+      "stage": 7,
+      "grasp": "FLAT_LONG"
+    },
+    {
+      "step_id": "PLACE_DXF_INSERT_BC",
+      "instance_id": "DXF_INSERT_BC",
+      "sequence": 11,
+      "stage": 7,
+      "grasp": "FLAT_LONG"
+    }
+  ]
+}
