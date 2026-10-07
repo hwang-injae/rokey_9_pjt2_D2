@@ -28,6 +28,8 @@ LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까�
 GRIPPER_TIMEOUT_S = 10.0
 # move_to 가 받는 자세 이름 (IRD 4.2 MoveTo). 값은 robot.yaml <이름>_pose — 공급 관측 · 스캔 앞 · 옆은 W134 교시
 MOVE_TARGETS = ('observe', 'home', 'observe_supply', 'observe_front', 'observe_side')
+# run_recipe --grasp-test 의 block_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
+TEST_BLOCK_PREFIX = 'GRASP_P'
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
 # 팔 끝까지 약 0.9 m 이므로 관절 0.005 rad 는 TCP 4.5 mm 이하 (10/6 한세교 교차 검증)
 LINE_CHECK_RAD = 0.005
@@ -199,6 +201,7 @@ class PickPlaceNode(Node):
         """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
 
         집기 전 여는 폭은 open_width_m(0 이면 robot.yaml grasp_open_pick_m, 블록 폭 이하면 움직이기 전에 PLAN_FAILED).
+        잡은 뒤 장면에 쥔 블록을 못 붙이면(장면 관리 없음 · 모르는 블록) 그 자리에 다시 내려놓고 올라와 ERROR.
 
         바깥 영향: 로봇 팔·그리퍼가 움직이고, 장면 관리에 쥔 블록 붙이기·떼기를 부탁한다.
         실패·정지·취소 때는 세운 뒤 success=false 와 이유 코드(IRD 7장, 정지면 halt 이유)로 끝낸다.
@@ -270,7 +273,13 @@ class PickPlaceNode(Node):
             if not r.grasped or (not math.isnan(width) and abs(width - expect) > tol):
                 self.get_logger().error(f'{g.block_id}: 잡힘 실패 (폭 {width * 1000:.1f} mm, 기대 {expect * 1000:.1f})')
                 return finish(False, 'GRASP_FAILED', width)
-            self.scene_attach(g.block_id, True)
+            # 쥔 블록이 장면에 안 붙으면 운반 계획이 들고 가는 블록의 충돌을 못 본다 → 들지 않는다.
+            # 블록은 아직 바닥에 닿아 있으므로 그 자리에서 다시 열면 원래 자리에 그대로 남는다(공중 개방 아님)
+            if not self.scene_attach(g.block_id, True) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+                self.get_logger().error(f'{g.block_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 올라와 멈춘다')
+                self.grip(open_pick)
+                self.go_line(pk['high'], pk['quat'], halted)
+                return finish(False, 'ERROR', width)
             step('lift')
             ok, why = self.go_line(pk['high'], pk['quat'], halted)
             if not ok:
@@ -286,7 +295,9 @@ class PickPlaceNode(Node):
             r = self.grip(self.cfg['grasp_open_place_m'][g.grasp])
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED', width)
-            self.scene_attach(g.block_id, False)
+            if not self.scene_attach(g.block_id, False) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+                # 떼기 실패는 장면에 블록이 남아 다음 계획이 더 조심스러워질 뿐이라 멈추지 않는다
+                self.get_logger().warn(f'{g.block_id}: 장면에서 쥔 블록을 못 뗐다')
             step('retreat')
             ok, why = self.go_line(pl['high'], pl['quat'], halted)
             return finish(ok, why, width)
