@@ -257,8 +257,12 @@ def test_local_and_get_design_paths_give_same_blocks(design_id, n):
     tp = pytest.importorskip('d2_task.task_planner')
     yaml = pytest.importorskip('yaml')
     root = Path(__file__).resolve().parents[3]
-    cfg = yaml.safe_load((root / 'src/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
-    folders = [root / 'src/recipe_manager/recipes']                       # 옛 한 파일(.recipe.json) 셋
+    # robot.yaml 은 10/7 #51 부터 src/d2_robot/ 아래 — 옛 자리도 같이 찾아 둔다(브랜치가 섞여 있어도 돌게)
+    cfg_path = next((p for p in (root / 'src/d2_robot/d2_bringup/config/robot.yaml', root / 'src/d2_bringup/config/robot.yaml') if p.exists()), None)
+    if cfg_path is None:
+        pytest.skip('robot.yaml 이 없다')
+    cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8'))
+    folders = [root / 'src/recipe_manager/recipes']                       # 기본 설계(이름은 _recipe.json, 내용은 한 파일 형식)
     if design_id == '001_CHAIR_BENCH':
         folders.append(root / 'src/d2_task/test/fixtures')                # 새 두 파일(_recipe · _structure) — 벤치만 있다
     for folder in folders:
