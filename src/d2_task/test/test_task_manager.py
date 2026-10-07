@@ -25,7 +25,7 @@ OK = (True, '')
 SAFE_OK = {'stopped': False, 'locked': False, 'reason': ''}
 SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_REQUEST'}
 # IRD 2장 '화면 알림 message_id' 중 이번에 쓰는 값. 이 밖의 값은 새로 만든 이름이라 나오면 안 된다
-IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored'}
+IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost'}
 
 
 class FakeIO:
@@ -40,6 +40,7 @@ class FakeIO:
         self.events, self.states, self.progress = [], [], []
         self.world, self.missing, self.dz = set(), [], 0.0
         self.move_script, self.check_script, self.pick_script = [], [], []
+        self.stop_script, self.move_speeds = [], []
 
     @property
     def calls(self):
@@ -56,9 +57,17 @@ class FakeIO:
     def services_ready(self):
         return list(self.missing)
 
-    def move_to(self, target, should_abort):
+    def move_to(self, target, should_abort, speed_ratio=1.0):
+        """이동 호출과 속도 비율을 기록한다. 실패 시나리오가 없으면 성공."""
         self.events.append(('call', 'move_to', target))
+        self.move_speeds.append(speed_ratio)
         return self.move_script.pop(0) if self.move_script else OK
+
+    def request_stop(self, reason):
+        """정지 요청만 기록한다. 신호를 따로 넣지 않으면 실제 정지는 확인되지 않은 것으로 둔다."""
+        self.events.append(('call', 'stop', reason))
+        step = self.stop_script.pop(0) if self.stop_script else (False, '가짜 정지 서비스 없음')
+        return step(self) if callable(step) else step
 
     def check_progress(self, block_ids, should_abort):
         self.events.append(('call', 'check', tuple(block_ids)))
@@ -243,7 +252,7 @@ def test_BUSY는_PICK_PLACE에_머물며_다시_시도한다():
 
 @pytest.mark.parametrize('reason', ['TIMEOUT', 'ERROR', 'GRIPPER_NO_RESPONSE'])
 def test_IRD_정식_실패_코드는_ERROR로_간다(reason):
-    """TIMEOUT · ERROR · GRIPPER_NO_RESPONSE 는 IRD 7장의 정식 코드이고 SDD 7.1 이 ERROR 로 정했다(TIMEOUT 은 '모르는 reason' 이 아니다)."""
+    """일반 실패는 ERROR. TIMEOUT 도 정지 서비스를 못 부르면 ERROR 에서 정지 신호를 기다린다."""
     m, io = go(pick_script=[(False, reason)])
     drive(m, 'ERROR')
     assert reason in io.states[-1]['message'] and 'STOPPED' not in seen(io)
@@ -386,7 +395,7 @@ def test_운전_중에는_명령을_거절한다():
     m, io = go()
     assert m.command('start') == (False, 'BUSY')
     assert m.command('select_design', 'bench') == (False, 'BUSY')
-    assert m.command('scan') == (False, '')              # 스캔은 W119
+    assert m.command('scan') == (False, 'BUSY')           # 조립 중에는 스캔 이동을 시작하지 않는다
     assert m.command('모르는 것') == (False, '')
     assert m.state == 'CHECK'
     m.on_safety(SAFE_STOP)
