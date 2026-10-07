@@ -9,9 +9,11 @@ import yaml
 
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_document import RecipeDocument
 
 SRC = Path(__file__).resolve().parents[2]
-CFG = yaml.safe_load((SRC / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
+ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
+CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
 DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chair_back', 'chair', 12.5),
            '003_DESK_STAND': ('desk_stand', 'desk', 7.5)}
@@ -19,8 +21,9 @@ DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chai
 
 def base_design(model_id):
     design_id, family, _ = DESIGNS[model_id]
-    recipe = json.loads((SRC / f'recipe_manager/recipes/{model_id}.recipe.json').read_text(encoding='utf-8'))
-    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(recipe)
+    """main 구조·레시피를 읽어 blocks/1 로 바꾼다. 읽기 실패는 시험에 알린다."""
+    document = RecipeDocument.load(SRC / 'recipe_manager/recipes', model_id)
+    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(document.recipe, document.structure)
 
 
 def design(*items):
