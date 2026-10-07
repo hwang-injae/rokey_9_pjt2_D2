@@ -41,7 +41,12 @@ def grasp_target(grasp, cfg):
 
 def _num(v):
     """bool 이 아닌 유한한 숫자인가."""
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if not isinstance(v, (int, float)) or isinstance(v, bool):
+        return False
+    try:
+        return math.isfinite(v)
+    except OverflowError:                       # 10**1000 같은 큰 정수는 float 로 못 바꾼다 → 잘못된 값
+        return False
 
 
 class BlockPicker:
@@ -57,15 +62,18 @@ class BlockPicker:
         self.min_gap_mm = min_gap_mm
 
     def pick(self, blocks, up, axis):
-        """집을 블록을 고른다. up = 목표 자세(THICKNESS · WIDTH · LENGTH), axis = 잡는 축(LENGTH · WIDTH).
+        """집을 블록을 고른다. up = 목표 자세(THICKNESS · WIDTH · LENGTH), axis = 잡는 축(LENGTH · WIDTH · THICKNESS, up 과 달라야 한다).
+        잡는 축이 THICKNESS 이면 응답에 그 방향 clear · gap_mm 칸이 있는 블록만 후보가 된다(없으면 counts['no_gap_info']).
 
         반환: {'status': 'FOUND', 'index': 입력 번호, 'block': 그 dict(복사), 'overlap': 'none'|'top', 'gap_mm': 그 축 틈}
               또는 {'status': 'NONE', 'reason': 이유 글자, 'counts': {거른 이유: 개수}}.
         reason: EMPTY(블록 없음) · NO_MATCH(맞는 후보 없음). 잘못된 입력 블록은 건너뛰고 counts['invalid'] 에 센다.
-        blocks 가 목록이 아니거나 up · axis 가 틀리면 ValueError(부르는 쪽 실수). yaw_deg 는 −90 ≤ yaw < 90 밖이면 잘못된 값이다(IRD 4.2).
+        blocks 가 목록이 아니거나 up · axis 가 틀리거나 같으면 ValueError(부르는 쪽 실수). yaw_deg 는 −90 ≤ yaw < 90 밖이면 잘못된 값이다(IRD 4.2).
         """
         if up not in UPS or axis not in AXES:
             raise ValueError(f'up={up!r} axis={axis!r}')
+        if axis == up:                           # 위를 향한 면과 손가락이 닫히는 면이 같을 수는 없다
+            raise ValueError(f'잡는 축이 위를 향한 면과 같다: {axis!r}')
         if not isinstance(blocks, list):
             raise ValueError(f'blocks 가 목록이 아니다: {type(blocks).__name__}')     # 부르는 쪽 실수 — 빈 공급(EMPTY)과 섞지 않는다
         if not blocks:
