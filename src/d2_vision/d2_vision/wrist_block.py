@@ -11,27 +11,41 @@
   design_id 가 비면 옛 방식(10/8 저녁까지만): 첫 block_id 의 '_B' 앞(001_CHAIR_BENCH_B003 → 001_CHAIR_BENCH).
   한 요청은 한 설계다 — 그 설계 레시피에 없는 블록은 그 블록만 unknown.
 
+설계 읽기 — task 와 같은 파라미터 design_source (10/7 민범진 · 한석형 합의). **task 와 손목에 같은 design_source 값을 준다**
+  (다르면 task 는 웹 설계로 쌓는데 손목은 파일 설계로 보는 식으로 어긋난다).
+  remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/1)으로 받는다 — 생성 · 스캔 설계도 같은 길.
+                design/1 의 structure + recipe 를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
+                팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다. 설계마다 한 번 받아 캐시(실패는 캐시 안 함).
+                제한 시간 robot.yaml timeout.service_s. 실패하면 로컬 파일로 대신하지 않고 check_progress 를 실패로 답한다(아래).
+  local         파일만(웹 없이 개발할 때 명시): `<recipe_dir>/<design_id>_recipe.json`(새, E-52 — 같은 폴더 `_structure.json` 도 읽음),
+                없으면 `<design_id>.recipe.json`(옛)을 `load_recipe()` · `recipe_blocks()` 로(설계마다 한 번, 캐시).
+
 입력(파라미터)
-  recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). 설계 이름으로
-               `<recipe_dir>/<design_id>_recipe.json`(새, E-52 — 같은 폴더 `_structure.json` 도 읽음), 없으면 `<design_id>.recipe.json`(옛)을 찾아
-               팀 공용 `d2_motion.motion_math.load_recipe()` · `recipe_blocks()` 로 base 블록 목록을 만든다(설계마다 한 번, 캐시).
-               설계를 `get_design` 으로 받는 길(생성 · 스캔 설계)은 아직 없다.
+  design_source  'remote'(기본) · 'local' — task 노드와 같은 이름 · 기본값 · 뜻. 'local' 이 아니면 모두 remote 로 본다(task 와 같음)
+  recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). design_source:=local 일 때만 쓴다
   calib_path   T_gripper2camera.npy(카메라 → TCP 4x4, mm). 비우면 이 패키지 share/config 의 것
   cam_prefix   realsense 토픽 접두 (Jazzy 기본 /camera/camera)
   posx         시험용 posx 6개(mm·deg, **실수로** 예: [460.5, -157.0, 294.8, 154.8, 180.0, 154.5]). 비우면 두산 서비스로 읽는다
   n_frames     중앙값 낼 깊이 프레임 수(10 — V-17 경험: 정지 상태 10장이면 ±0.5 mm)
-robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_actual_m 을 읽는다.
+robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_actual_m · timeout.service_s 를 읽는다.
 
-바깥 영향: 서비스 답과 camera_status 발행뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 자세 이동은 작업 관리자가 move_to 로).
+바깥 영향: 서비스 답 · camera_status 발행 · get_design 조회(remote, 설계마다 첫 요청 때 한 번)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다
+  (관측 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
+  remote 에서 처음 보는 설계면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 실패 때: 새 프레임이 시간 안에 안 오거나 posx 를 못 받으면 success=false, reason=TIMEOUT.
-         보정값·레시피를 못 읽거나 설계를 못 고르면 노드는 뜬 채 success=false, reason=ERROR (배열은 요청 길이, state unknown).
+         get_design 이 timeout.service_s 안에 답하지 않으면 success=false, reason=TIMEOUT (task_node.get_design 과 같은 코드).
+         get_design 서버 없음 · success=false · 응답 형식 오류, 보정값·레시피를 못 읽음, 설계를 못 고름 → 노드는 뜬 채 success=false, reason=ERROR.
+         (배열은 모두 요청 길이, state unknown, 값 NaN.)
 NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_m 은 present 일 때만 값.
   top_z_m 은 present · occluded(설계 밖 물체 윗면, 참고값) 일 때 값. absent·unknown · 위 블록에 가려진 present 는 dz·top_z 둘 다 NaN.
 보정값은 TCP 기준이라(config/T_gripper2camera.json) 켤 때 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 다르면 경고한다(한 번).
 
-실행 (저장소 맨 위에서):
-  ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes
+실행 (저장소 맨 위에서). **task 와 같은 design_source 값을 준다:**
+  웹 · 다리와 함께(기본 remote — task 도 기본 remote):
+    ros2 run d2_vision wrist_block
+  웹 없이 파일로(task 도 -p design_source:=local -p recipe_dir:=… 로 띄운다):
+    ros2 run d2_vision wrist_block --ros-args -p design_source:=local -p recipe_dir:=src/recipe_manager/recipes
 시험 호출 (새 — design_id 칸 + 전체 블록 이름):
   ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH, block_ids: [001_CHAIR_BENCH_LEG_001_01, 001_CHAIR_BENCH_SEAT_001_03]}"
 시험 호출 (옛 — design_id 빈 값, 레시피가 아직 옛 이름일 때. 10/8 저녁까지):
@@ -55,9 +69,9 @@ from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
-from d2_interfaces.srv import CheckProgress
+from d2_interfaces.srv import CheckProgress, JsonQuery
 from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
-from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, recipe_path
+from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, recipe_from_design, recipe_path
 from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp
 
 NAN = float('nan')
@@ -79,9 +93,11 @@ class WristBlock(Node):
     """check_progress 에 답하고 camera_status 를 내는 손목 블록 인식 노드."""
 
     def __init__(self):
-        """파라미터 · 설정 · 보정값 · 레시피를 읽고 구독 · 서비스 · 타이머를 만든다. 레시피 · 보정이 없어도 노드는 뜬다(경고)."""
+        """파라미터 · 설정 · 보정값을 읽고 구독 · 서비스 · 클라이언트(posx · tcp · get_design) · 타이머를 만든다.
+        설계는 요청이 올 때 읽는다(설계마다 한 번). 레시피 폴더 · 보정이 없어도 노드는 뜬다(경고)."""
         super().__init__('wrist_block')
-        self.declare_parameter('recipe_dir', '')
+        self.declare_parameter('recipe_dir', '')           # design_source:=local 일 때만 쓰는 레시피 폴더(task 와 같음)
+        self.declare_parameter('design_source', 'remote')  # task 와 같은 값: remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일
         self.declare_parameter('calib_path', '')
         self.declare_parameter('cam_prefix', '/camera/camera')
         self.declare_parameter('posx', [0.0] * 6)
@@ -97,9 +113,14 @@ class WristBlock(Node):
 
         self.cfg = self._load_robot_yaml()
         self.T_g2c = self._load_calib()
-        self.checkers = {}                    # design_id → BlockChecker (레시피는 설계마다 한 번만 읽는다)
-        if not self.get_parameter('recipe_dir').value:
-            self.get_logger().warn('recipe_dir 파라미터가 비었다 — check_progress 는 ERROR 로 답한다')
+        self.service_s = float(self.cfg['timeout']['service_s'])   # get_design 한 번의 제한 시간(task 와 같은 값)
+        self.checkers = {}                    # (design_source, design_id) → BlockChecker — 설계마다 한 번만 읽는다
+        if self.get_parameter('design_source').value == 'local':
+            self.get_logger().info('설계 읽기: local — recipe_dir 파일만 (task 도 design_source:=local 이어야 한다)')
+            if not self.get_parameter('recipe_dir').value:
+                self.get_logger().warn('recipe_dir 파라미터가 비었다 — check_progress 는 ERROR 로 답한다')
+        else:
+            self.get_logger().info('설계 읽기: remote — /d2/hmi/get_design (제한 %.1f초, task 도 remote 여야 한다)' % self.service_s)
 
         group = ReentrantCallbackGroup()
         prefix = self.get_parameter('cam_prefix').value
@@ -107,6 +128,7 @@ class WristBlock(Node):
         self.create_subscription(CameraInfo, f'{prefix}/color/camera_info', self.on_info, 10, callback_group=group)
         self.cli_posx = self.create_client(GetCurrentPosx, '/dsr_controller2/aux_control/get_current_posx', callback_group=group)
         self.cli_tcp = self.create_client(GetCurrentTcp, '/dsr_controller2/tcp/get_current_tcp', callback_group=group)
+        self.cli_design = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=group)
         self.create_service(CheckProgress, '/d2/vision/check_progress', self.on_check, callback_group=group)
         self.pub_status = self.create_publisher(String, '/d2/vision/camera_status', QOS_STATUS)
         self.create_timer(1.0 / self.get_parameter('status_hz').value, self.publish_status, callback_group=group)
@@ -133,31 +155,74 @@ class WristBlock(Node):
             return None
 
     def checker_for(self, design_id):
-        """설계 이름 → 그 설계의 BlockChecker (설계마다 한 번 읽어 캐시). 바깥 영향: 로그뿐.
+        """설계 이름 → (그 설계의 BlockChecker 또는 None, 실패 코드). design_source 에 따라 원격(기본) 또는 로컬 파일 하나만 쓴다.
 
-        파일: `<recipe_dir>/<design_id>_recipe.json`(새 — load_recipe 가 옆 `_structure.json` 도 붙임), 없으면 `.recipe.json`(옛).
-        → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 recipe_blocks 가 만든 이름(새 형식은 '<model_id>_<블록 이름>').
-        실패 → None, 부르는 쪽이 ERROR 로 답한다. 파일을 못 찾으면(이름 비었음 · 경로 문자 · 파일 없음) 캐시하지 않아 다음 요청에
-        다시 찾고, 찾은 파일을 못 읽으면(구조 파일 없음 · 형식 틀림 · 블록 크기 다름) None 을 캐시한다(같은 오류를 매번 읽지 않게)."""
+        출력: 성공 (BlockChecker, '') · 실패 (None, 'ERROR' 또는 'TIMEOUT') — 부르는 쪽이 그 코드로 check_progress 를 답한다.
+        바깥 영향: 로그, remote 면 get_design 조회(설계마다 성공할 때까지). 캐시 열쇠는 (design_source, design_id) —
+        돌리는 중에 design_source 를 바꿔도 다른 길로 읽은 설계를 쓰지 않는다.
+        - remote: _remote_checker. 실패는 캐시하지 않는다(웹 · 다리가 늦게 떠도 다음 요청에 다시 받는다).
+        - local: `<recipe_dir>/<design_id>_recipe.json`(새 — load_recipe 가 옆 `_structure.json` 도 붙임), 없으면 `.recipe.json`(옛)
+          → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 recipe_blocks 가 만든 이름(새 형식은 '<model_id>_<블록 이름>').
+          파일을 못 찾으면(이름 비었음 · 경로 문자 · 파일 없음) 캐시하지 않아 다음 요청에 다시 찾고, 찾은 파일을 못 읽으면
+          (구조 파일 없음 · 형식 틀림 · 블록 크기 다름) None 을 캐시한다(같은 오류를 매번 읽지 않게)."""
         if not design_id:                     # 설계를 못 고름(design_id 칸이 비었고 '_B' 이름도 없음) — 로그는 on_check 가 남긴다
-            return None
-        if design_id in self.checkers:
-            return self.checkers[design_id]
+            return None, 'ERROR'
+        source = 'local' if self.get_parameter('design_source').value == 'local' else 'remote'
+        key = (source, design_id)
+        if key in self.checkers:
+            chk = self.checkers[key]
+            return chk, ('' if chk is not None else 'ERROR')
+        if source == 'remote':
+            chk, reason = self._remote_checker(design_id)
+            if chk is not None:
+                self.checkers[key] = chk
+            return chk, reason
         recipe_dir = self.get_parameter('recipe_dir').value
         path = recipe_path(recipe_dir, design_id, RECIPE_SUFFIXES)
         if path is None:
             self.get_logger().error('레시피 %r 파일을 못 찾음(recipe_dir=%r, 끝 %s)' % (design_id, recipe_dir, ' · '.join(RECIPE_SUFFIXES)))
-            return None
+            return None, 'ERROR'
         try:
-            blocks = recipe_blocks(self.cfg, load_recipe(str(path)))
-            o = self.cfg['assembly_origin']
-            chk = BlockChecker(blocks, (o['x_m'], o['y_m']), float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
+            chk = self._make_checker(load_recipe(str(path)))
             self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.blocks)))
         except (OSError, KeyError, TypeError, ValueError) as e:
             self.get_logger().error('레시피 %s 를 못 읽음(%s): %s' % (design_id, path, e))
             chk = None
-        self.checkers[design_id] = chk
-        return chk
+        self.checkers[key] = chk
+        return chk, ('' if chk is not None else 'ERROR')
+
+    def _make_checker(self, recipe):
+        """레시피 dict(load_recipe 모양, mm) → 팀 공용 recipe_blocks(robot.yaml) → BlockChecker. 실패는 recipe_blocks 의 예외 그대로."""
+        o = self.cfg['assembly_origin']
+        return BlockChecker(recipe_blocks(self.cfg, recipe), (o['x_m'], o['y_m']),
+                            float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
+
+    def _remote_checker(self, design_id):
+        """/d2/hmi/get_design 으로 design/1 을 받아 BlockChecker 를 만든다. 출력: (BlockChecker, '') 또는 (None, 코드).
+
+        요청 {"design_id"} → 최대 timeout.service_s 기다림(서비스 콜백 안이라 _call — 멀티스레드 실행기 + 재진입 그룹).
+        실패 코드는 task_node.get_design 과 맞춘다: 서버 없음(지금 안 보임) → ERROR · 시간 초과(요청을 치움) → TIMEOUT ·
+        success=false → ERROR(서버 이유는 로그에만 — 10/7 합의) · JSON · design/1 형식 · 레시피 내용 오류 → ERROR.
+        로컬 파일로 몰래 대신하지 않는다. 바깥 영향: get_design 요청 하나 · 로그."""
+        if not self.cli_design.service_is_ready():
+            self.get_logger().error('get_design 서버가 없다(다리 · 웹?) — 설계 %s 를 못 받음 → ERROR' % design_id)
+            return None, 'ERROR'
+        req = JsonQuery.Request()
+        req.request_json = json.dumps({'design_id': design_id}, ensure_ascii=False)
+        res = self._call(self.cli_design, req, self.service_s)
+        if res is None:
+            self.get_logger().error('get_design 이 %.1f초 안에 답하지 않음 — 설계 %s → TIMEOUT' % (self.service_s, design_id))
+            return None, 'TIMEOUT'
+        if not res.success:
+            self.get_logger().error('get_design 실패(%r) — 설계 %s → ERROR' % (res.reason, design_id))
+            return None, 'ERROR'
+        try:
+            chk = self._make_checker(recipe_from_design(json.loads(res.response_json), design_id))
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/1 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
+            self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
+            return None, 'ERROR'
+        self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.blocks)))
+        return chk, ''
 
     # ---------- 카메라 ----------
     def on_depth(self, msg):
@@ -185,15 +250,15 @@ class WristBlock(Node):
         self.pub_status.publish(String(data=json.dumps(msg)))
 
     # ---------- 로봇 ----------
-    def _call(self, cli, req):
-        """서비스를 부르고 답을 기다린다(멀티스레드 실행기 + 재진입 그룹이라 콜백 중에도 됨). 최대 SERVICE_WAIT_S×2 초 막힌다.
-        시간 안에 못 받으면 보낸 요청을 치우고 None."""
-        if not cli.wait_for_service(timeout_sec=SERVICE_WAIT_S):
+    def _call(self, cli, req, wait_s=SERVICE_WAIT_S):
+        """서비스를 부르고 답을 기다린다(멀티스레드 실행기 + 재진입 그룹이라 콜백 중에도 됨). 서버 기다림 wait_s + 답 기다림 wait_s
+        (초 — 두산 서비스는 SERVICE_WAIT_S, get_design 은 timeout.service_s)만큼 막힌다. 시간 안에 못 받으면 보낸 요청을 치우고 None."""
+        if not cli.wait_for_service(timeout_sec=wait_s):
             return None
         done = threading.Event()
         fut = cli.call_async(req)
         fut.add_done_callback(lambda _: done.set())
-        if not done.wait(SERVICE_WAIT_S):
+        if not done.wait(wait_s):
             cli.remove_pending_request(fut)
             return None
         return fut.result()
@@ -251,16 +316,21 @@ class WristBlock(Node):
     def on_check(self, req, res):
         """check_progress 콜백. 입력 req.design_id(빈 값 가능) · req.block_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
 
-        설계 고르기 → 요청 뒤 새 깊이 프레임 n장 중앙값 + posx → 점군 → BlockChecker → 답. 바깥 영향: 두산 posx 조회 · 로그.
-        실패: 설계를 못 고름 · 레시피 · 보정값 없음 → ERROR, 프레임 · posx 없음 → TIMEOUT (둘 다 state unknown, 값 NaN)."""
+        보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
+        + posx → 점군 → BlockChecker → 답. 바깥 영향: get_design · 두산 posx 조회 · 로그.
+        실패: 보정값 없음 · 설계를 못 고름 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · posx 없음 → TIMEOUT
+        (모두 state unknown, 값 NaN)."""
         ids = list(req.block_ids)
-        # 설계 = design_id 칸(E-52). 비었으면 옛 방식으로 첫 '_B' block_id 의 앞(10/8 저녁까지).
+        if self.T_g2c is None:                # 보정값이 없으면 설계를 받아도 답할 수 없다 — get_design 을 부르지 않는다
+            self.get_logger().error('보정값이 없어 답할 수 없다 → ERROR')
+            return self._fill(res, ids, reason='ERROR')
+        # 설계 = design_id 칸(E-52). 비었으면 옛 방식으로 첫 '_B' block_id 의 앞(10/8 저녁까지 — remote 면 그 이름으로 get_design).
         # 한 요청은 한 설계라고 본다 — 그 설계에 없는 블록은 BlockChecker 가 그 블록만 unknown 으로 답한다
         design_id = next((d for d in (design_of(req.design_id, i) for i in ids) if d), '')
-        checker = self.checker_for(design_id)
-        if checker is None or self.T_g2c is None:
-            self.get_logger().error('보정값 또는 레시피(%r, design_id 칸 %r)가 없어 답할 수 없다 → ERROR' % (design_id or ids[:1], req.design_id))
-            return self._fill(res, ids, reason='ERROR')
+        checker, reason = self.checker_for(design_id)
+        if checker is None:
+            self.get_logger().error('설계(%r, design_id 칸 %r)를 못 읽어 답할 수 없다 → %s' % (design_id or ids[:1], req.design_id, reason))
+            return self._fill(res, ids, reason=reason)
         t_req = self.now()
         posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
         if posx is None:
