@@ -1,396 +1,93 @@
 {
-  "schema": "assembly.recipe/1.0",
-  "recipe_id": "003_DESK_STAND_ASSEMBLY",
-  "revision": "1",
-  "model": {
-    "schema": "cad_model/1.0",
-    "model_id": "003_DESK_STAND",
-    "revision": "1",
-    "frame": {
-      "units": "mm",
-      "handedness": "right",
-      "z": "up",
-      "table_z_mm": 0
-    },
-    "source_cad": {
-      "filename": "003_desk_stand.dxf",
-      "sha256": "ae66dcb45b87a45f81afc5772970ea51b0df84032fe220ceb7a6f4995cf7229f"
-    },
-    "parts": [
-      {
-        "part_id": "PART_001",
-        "size_mm": [
-          75.0,
-          25.0,
-          15.0
-        ]
-      }
-    ],
-    "instances": [
-      {
-        "instance_id": "DXF_INSERT_3E",
-        "part_id": "PART_001",
-        "center_mm": [
-          -30.0,
-          -25.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -0.0,
-            1.0
-          ],
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_4F",
-        "part_id": "PART_001",
-        "center_mm": [
-          30.0,
-          -25.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -0.0,
-            1.0
-          ],
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_60",
-        "part_id": "PART_001",
-        "center_mm": [
-          -30.0,
-          25.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -0.0,
-            1.0
-          ],
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_71",
-        "part_id": "PART_001",
-        "center_mm": [
-          30.0,
-          25.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -0.0,
-            1.0
-          ],
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_83",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          -25.0,
-          82.5
-        ],
-        "R": [
-          [
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_94",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          25.0,
-          82.5
-        ],
-        "R": [
-          [
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_A6",
-        "part_id": "PART_001",
-        "center_mm": [
-          -25.0,
-          0.0,
-          97.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_B7",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          0.0,
-          97.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_C8",
-        "part_id": "PART_001",
-        "center_mm": [
-          25.0,
-          0.0,
-          97.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      }
-    ]
-  },
+  "schema": "cad_recipe/1.0",
+  "model_id": "003_DESK_STAND",
+  "structure_sha256": "1c3127f7439ef010dbf9d8b9a86a8fab23f6cf1841e5e5c7cd774e66c1eddfbf",
   "steps": [
     {
-      "block_id": "003_DESK_STAND_B001",
-      "step_id": "PLACE_DXF_INSERT_3E",
-      "instance_id": "DXF_INSERT_3E",
+      "block": "LEG_001_01",
       "sequence": 1,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "003_DESK_STAND_B002",
-      "step_id": "PLACE_DXF_INSERT_4F",
-      "instance_id": "DXF_INSERT_4F",
+      "block": "LEG_002_01",
       "sequence": 2,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "003_DESK_STAND_B003",
-      "step_id": "PLACE_DXF_INSERT_60",
-      "instance_id": "DXF_INSERT_60",
+      "block": "LEG_003_01",
       "sequence": 3,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "003_DESK_STAND_B004",
-      "step_id": "PLACE_DXF_INSERT_71",
-      "instance_id": "DXF_INSERT_71",
+      "block": "LEG_004_01",
       "sequence": 4,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "003_DESK_STAND_B005",
-      "step_id": "PLACE_DXF_INSERT_83",
-      "instance_id": "DXF_INSERT_83",
+      "block": "BEAM_001_01",
       "sequence": 5,
       "stage": 2,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_3E",
-        "DXF_INSERT_4F"
-      ],
-      "support_block_ids": [
-        "003_DESK_STAND_B001",
-        "003_DESK_STAND_B002"
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_001_01",
+        "LEG_002_01"
       ]
     },
     {
-      "block_id": "003_DESK_STAND_B006",
-      "step_id": "PLACE_DXF_INSERT_94",
-      "instance_id": "DXF_INSERT_94",
+      "block": "BEAM_002_01",
       "sequence": 6,
       "stage": 2,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_60",
-        "DXF_INSERT_71"
-      ],
-      "support_block_ids": [
-        "003_DESK_STAND_B003",
-        "003_DESK_STAND_B004"
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_003_01",
+        "LEG_004_01"
       ]
     },
     {
-      "block_id": "003_DESK_STAND_B007",
-      "step_id": "PLACE_DXF_INSERT_A6",
-      "instance_id": "DXF_INSERT_A6",
+      "block": "TOP_001_01",
       "sequence": 7,
       "stage": 3,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_83",
-        "DXF_INSERT_94"
-      ],
-      "support_block_ids": [
-        "003_DESK_STAND_B005",
-        "003_DESK_STAND_B006"
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "BEAM_001_01",
+        "BEAM_002_01"
       ]
     },
     {
-      "block_id": "003_DESK_STAND_B008",
-      "step_id": "PLACE_DXF_INSERT_B7",
-      "instance_id": "DXF_INSERT_B7",
+      "block": "TOP_001_02",
       "sequence": 8,
       "stage": 3,
       "grasp": "FLAT_LONG",
       "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_83",
-        "DXF_INSERT_94"
-      ],
-      "support_block_ids": [
-        "003_DESK_STAND_B005",
-        "003_DESK_STAND_B006"
+      "supports": [
+        "BEAM_001_01",
+        "BEAM_002_01"
       ]
     },
     {
-      "block_id": "003_DESK_STAND_B009",
-      "step_id": "PLACE_DXF_INSERT_C8",
-      "instance_id": "DXF_INSERT_C8",
+      "block": "TOP_001_03",
       "sequence": 9,
       "stage": 3,
       "grasp": "FLAT_LONG",
       "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_83",
-        "DXF_INSERT_94"
-      ],
-      "support_block_ids": [
-        "003_DESK_STAND_B005",
-        "003_DESK_STAND_B006"
+      "supports": [
+        "BEAM_001_01",
+        "BEAM_002_01"
       ]
     }
   ]

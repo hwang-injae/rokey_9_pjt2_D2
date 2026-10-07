@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461321.6506597223
+2461321.8834606484
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461321.6506597223
+2461321.8834606484
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-172
+188
   9
 $SURFTAB1
  70
@@ -937,7 +937,7 @@ $FINGERPRINTGUID
   9
 $VERSIONGUID
   2
-{077C7040-C9FB-4D07-A267-705E94AAED3C}
+{39828BC0-1FEA-4710-A50F-5598F690E91E}
   9
 $EXTNAMES
 290
@@ -5085,7 +5085,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B001
+BASE_001_01
 340
 0
  70
@@ -5105,7 +5105,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B002
+BASE_001_02
 340
 0
  70
@@ -5125,7 +5125,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B003
+BASE_001_03
 340
 0
  70
@@ -5145,7 +5145,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B004
+COLUMN_001_01
 340
 0
  70
@@ -5165,7 +5165,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B005
+COLUMN_001_02
 340
 0
  70
@@ -5185,7 +5185,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B006
+COLUMN_001_03
 340
 0
  70
@@ -5205,7 +5205,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B007
+COLUMN_001_04
 340
 0
  70
@@ -5225,7 +5225,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B008
+COLUMN_001_05
 340
 0
  70
@@ -5245,7 +5245,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B009
+TOP_001_01
 340
 0
  70
@@ -5265,7 +5265,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B010
+TOP_001_02
 340
 0
  70
@@ -5285,7 +5285,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-004_DESK_PEDESTAL_B011
+TOP_001_03
 340
 0
  70
@@ -5607,7 +5607,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B001
+BASE_001_01
  70
 2
  10
@@ -5617,7 +5617,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B001
+BASE_001_01
   1
 
   0
@@ -5963,7 +5963,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B002
+BASE_001_02
  70
 2
  10
@@ -5973,7 +5973,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B002
+BASE_001_02
   1
 
   0
@@ -6319,7 +6319,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B003
+BASE_001_03
  70
 2
  10
@@ -6329,7 +6329,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B003
+BASE_001_03
   1
 
   0
@@ -6675,7 +6675,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B004
+COLUMN_001_01
  70
 2
  10
@@ -6685,7 +6685,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B004
+COLUMN_001_01
   1
 
   0
@@ -7031,7 +7031,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B005
+COLUMN_001_02
  70
 2
  10
@@ -7041,7 +7041,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B005
+COLUMN_001_02
   1
 
   0
@@ -7387,7 +7387,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B006
+COLUMN_001_03
  70
 2
  10
@@ -7397,7 +7397,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B006
+COLUMN_001_03
   1
 
   0
@@ -7743,7 +7743,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B007
+COLUMN_001_04
  70
 2
  10
@@ -7753,7 +7753,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B007
+COLUMN_001_04
   1
 
   0
@@ -8099,7 +8099,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B008
+COLUMN_001_05
  70
 2
  10
@@ -8109,7 +8109,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B008
+COLUMN_001_05
   1
 
   0
@@ -8455,7 +8455,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B009
+TOP_001_01
  70
 2
  10
@@ -8465,7 +8465,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B009
+TOP_001_01
   1
 
   0
@@ -8811,7 +8811,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B010
+TOP_001_02
  70
 2
  10
@@ -8821,7 +8821,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B010
+TOP_001_02
   1
 
   0
@@ -9167,7 +9167,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-004_DESK_PEDESTAL_B011
+TOP_001_03
  70
 2
  10
@@ -9177,7 +9177,7 @@ AcDbBlockBegin
  30
 0.0
   3
-004_DESK_PEDESTAL_B011
+TOP_001_03
   1
 
   0
@@ -9531,7 +9531,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B001
+BASE_001_01
  10
 0.0
  20
@@ -9543,7 +9543,7 @@ ATTRIB
   5
 D9
 330
-17
+9E
 100
 AcDbEntity
   8
@@ -9575,7 +9575,7 @@ ATTRIB
   5
 DA
 330
-17
+9E
 100
 AcDbEntity
   8
@@ -9607,7 +9607,7 @@ ATTRIB
   5
 DB
 330
-17
+9E
 100
 AcDbEntity
   8
@@ -9623,7 +9623,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -9639,7 +9639,7 @@ SEQEND
   5
 C2
 330
-9E
+17
 100
 AcDbEntity
   8
@@ -9659,7 +9659,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B002
+BASE_001_02
  10
 0.0
  20
@@ -9671,7 +9671,7 @@ ATTRIB
   5
 E8
 330
-17
+A1
 100
 AcDbEntity
   8
@@ -9703,7 +9703,7 @@ ATTRIB
   5
 E9
 330
-17
+A1
 100
 AcDbEntity
   8
@@ -9735,7 +9735,7 @@ ATTRIB
   5
 EA
 330
-17
+A1
 100
 AcDbEntity
   8
@@ -9751,7 +9751,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_LONG
 100
 AcDbAttribute
   2
@@ -9767,7 +9767,7 @@ SEQEND
   5
 C3
 330
-A1
+17
 100
 AcDbEntity
   8
@@ -9787,7 +9787,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B003
+BASE_001_03
  10
 0.0
  20
@@ -9799,7 +9799,7 @@ ATTRIB
   5
 F7
 330
-17
+A4
 100
 AcDbEntity
   8
@@ -9831,7 +9831,7 @@ ATTRIB
   5
 F8
 330
-17
+A4
 100
 AcDbEntity
   8
@@ -9863,7 +9863,7 @@ ATTRIB
   5
 F9
 330
-17
+A4
 100
 AcDbEntity
   8
@@ -9879,7 +9879,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_LONG
 100
 AcDbAttribute
   2
@@ -9895,7 +9895,7 @@ SEQEND
   5
 C4
 330
-A4
+17
 100
 AcDbEntity
   8
@@ -9915,7 +9915,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B004
+COLUMN_001_01
  10
 0.0
  20
@@ -9929,7 +9929,7 @@ ATTRIB
   5
 106
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -9961,7 +9961,7 @@ ATTRIB
   5
 107
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -9993,7 +9993,7 @@ ATTRIB
   5
 108
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -10009,7 +10009,7 @@ AcDbText
  40
 2.5
   1
-SIDE_25
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10025,7 +10025,7 @@ SEQEND
   5
 C5
 330
-A7
+17
 100
 AcDbEntity
   8
@@ -10045,7 +10045,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B005
+COLUMN_001_02
  10
 0.0
  20
@@ -10059,7 +10059,7 @@ ATTRIB
   5
 115
 330
-17
+AA
 100
 AcDbEntity
   8
@@ -10091,7 +10091,7 @@ ATTRIB
   5
 116
 330
-17
+AA
 100
 AcDbEntity
   8
@@ -10123,7 +10123,7 @@ ATTRIB
   5
 117
 330
-17
+AA
 100
 AcDbEntity
   8
@@ -10139,7 +10139,7 @@ AcDbText
  40
 2.5
   1
-SIDE_25
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10155,7 +10155,7 @@ SEQEND
   5
 C6
 330
-AA
+17
 100
 AcDbEntity
   8
@@ -10175,7 +10175,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B006
+COLUMN_001_03
  10
 0.0
  20
@@ -10189,7 +10189,7 @@ ATTRIB
   5
 124
 330
-17
+AD
 100
 AcDbEntity
   8
@@ -10221,7 +10221,7 @@ ATTRIB
   5
 125
 330
-17
+AD
 100
 AcDbEntity
   8
@@ -10253,7 +10253,7 @@ ATTRIB
   5
 126
 330
-17
+AD
 100
 AcDbEntity
   8
@@ -10269,7 +10269,7 @@ AcDbText
  40
 2.5
   1
-SIDE_25
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10285,7 +10285,7 @@ SEQEND
   5
 C7
 330
-AD
+17
 100
 AcDbEntity
   8
@@ -10305,7 +10305,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B007
+COLUMN_001_04
  10
 0.0
  20
@@ -10319,7 +10319,7 @@ ATTRIB
   5
 133
 330
-17
+B0
 100
 AcDbEntity
   8
@@ -10351,7 +10351,7 @@ ATTRIB
   5
 134
 330
-17
+B0
 100
 AcDbEntity
   8
@@ -10383,7 +10383,7 @@ ATTRIB
   5
 135
 330
-17
+B0
 100
 AcDbEntity
   8
@@ -10399,7 +10399,7 @@ AcDbText
  40
 2.5
   1
-SIDE_25
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10415,7 +10415,7 @@ SEQEND
   5
 C8
 330
-B0
+17
 100
 AcDbEntity
   8
@@ -10435,7 +10435,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B008
+COLUMN_001_05
  10
 0.0
  20
@@ -10449,7 +10449,7 @@ ATTRIB
   5
 142
 330
-17
+B3
 100
 AcDbEntity
   8
@@ -10481,7 +10481,7 @@ ATTRIB
   5
 143
 330
-17
+B3
 100
 AcDbEntity
   8
@@ -10513,7 +10513,7 @@ ATTRIB
   5
 144
 330
-17
+B3
 100
 AcDbEntity
   8
@@ -10529,7 +10529,7 @@ AcDbText
  40
 2.5
   1
-SIDE_25
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10545,7 +10545,7 @@ SEQEND
   5
 C9
 330
-B3
+17
 100
 AcDbEntity
   8
@@ -10565,7 +10565,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B009
+TOP_001_01
  10
 0.0
  20
@@ -10577,7 +10577,7 @@ ATTRIB
   5
 151
 330
-17
+B6
 100
 AcDbEntity
   8
@@ -10609,7 +10609,7 @@ ATTRIB
   5
 152
 330
-17
+B6
 100
 AcDbEntity
   8
@@ -10641,7 +10641,7 @@ ATTRIB
   5
 153
 330
-17
+B6
 100
 AcDbEntity
   8
@@ -10657,7 +10657,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_SHORT
 100
 AcDbAttribute
   2
@@ -10673,7 +10673,7 @@ SEQEND
   5
 CA
 330
-B6
+17
 100
 AcDbEntity
   8
@@ -10693,7 +10693,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B010
+TOP_001_02
  10
 0.0
  20
@@ -10705,7 +10705,7 @@ ATTRIB
   5
 160
 330
-17
+B9
 100
 AcDbEntity
   8
@@ -10737,7 +10737,7 @@ ATTRIB
   5
 161
 330
-17
+B9
 100
 AcDbEntity
   8
@@ -10769,7 +10769,7 @@ ATTRIB
   5
 162
 330
-17
+B9
 100
 AcDbEntity
   8
@@ -10785,7 +10785,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_LONG
 100
 AcDbAttribute
   2
@@ -10801,7 +10801,7 @@ SEQEND
   5
 CB
 330
-B9
+17
 100
 AcDbEntity
   8
@@ -10821,7 +10821,7 @@ AcDbBlockReference
  66
 1
   2
-004_DESK_PEDESTAL_B011
+TOP_001_03
  10
 0.0
  20
@@ -10833,7 +10833,7 @@ ATTRIB
   5
 16F
 330
-17
+BC
 100
 AcDbEntity
   8
@@ -10865,7 +10865,7 @@ ATTRIB
   5
 170
 330
-17
+BC
 100
 AcDbEntity
   8
@@ -10897,7 +10897,7 @@ ATTRIB
   5
 171
 330
-17
+BC
 100
 AcDbEntity
   8
@@ -10913,7 +10913,7 @@ AcDbText
  40
 2.5
   1
-END_75
+FLAT_LONG
 100
 AcDbAttribute
   2
@@ -10929,7 +10929,7 @@ SEQEND
   5
 CC
 330
-BC
+17
 100
 AcDbEntity
   8
@@ -18599,7 +18599,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-10-07T06:36:57.197378+00:00
+1.4.4 @ 2026-10-07T12:12:11.608307+00:00
   0
 ENDSEC
   0
