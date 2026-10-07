@@ -84,6 +84,12 @@ def bad(mutate):
         RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
 
 
+def test_새_이름_cad_recipe도_같은_결과():
+    r = load('001_CHAIR_BENCH')
+    r['schema'] = 'cad_recipe/1.0'
+    assert RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r) == convert('001_CHAIR_BENCH')
+
+
 def test_잘못된_schema():
     bad(lambda r: r.update(schema='m0609.jenga.cad_recipe/1.0'))
     with pytest.raises(ValueError):
