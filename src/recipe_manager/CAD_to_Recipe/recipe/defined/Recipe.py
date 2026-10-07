@@ -4,7 +4,7 @@ from model.defined.BoundingBox import TOL
 from model.defined.Model import Model
 from recipe.defined.Step import Step
 
-RECIPE_SCHEMA = 'assembly.recipe/1.0'
+RECIPE_SCHEMA = 'assembly.recipe/1.0'   # cad_recipe/1.0 으로 바꿀 예정 — 변환기 ②(recipe_to_blocks)가 이 이름을 검사해 W121에서 같이 바꾼다
 
 
 @dataclass
@@ -71,6 +71,7 @@ class Recipe:
 
         # 4·5. 순서대로 하나씩 놓아 보며 파지 방법과 지지 확인
         placed = []   # 지금까지 놓인 CADPartInstance
+        block_of = {}   # instance_id -> block_id
         steps = []
         for step in ordered:
             instance = instances[step.instance_id]
@@ -90,9 +91,13 @@ class Recipe:
                     raise ValueError(f'{step.instance_id}: nothing placed beneath it yet; '
                                      'it would float at this point in the sequence')
 
+            # 블록 이름은 모델ID + 놓는 순서라, 이름만 보고 몇 번째로 놓는 블록인지 안다(W105).
+            block_id = f'{model.model_id}_B{step.sequence:03d}'
+            block_of[step.instance_id] = block_id
             steps.append(Step(step_id=step.step_id, instance_id=step.instance_id,
                               sequence=step.sequence, stage=step.stage,
-                              grasp=step.grasp, grasp_axis=grasp_axis, support_instance_ids=supports))
+                              grasp=step.grasp, grasp_axis=grasp_axis, support_instance_ids=supports,
+                              block_id=block_id, support_block_ids=[block_of[k] for k in supports]))
             placed.append(instance)
 
 
@@ -102,9 +107,9 @@ class Recipe:
     def make_placement_rows(self):
         """사람이 확인하는 배치표. sequence 순서대로 레시피 단계와 CAD 목표 위치·방향을 한 줄씩 합친다.
 
-        출력: 줄 목록. 한 줄 = {'sequence', 'stage', 'instance_id', 'part_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
+        출력: 줄 목록. 한 줄 = {'block_id', 'sequence','stage', 'instance_id', 'part_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
               'center_x_mm', 'center_y_mm', 'center_z_mm', 'axis_L', 'axis_W', 'axis_T',
-              'grasp', 'grasp_axis', 'support_instance_ids'}
+              'grasp', 'grasp_axis', 'support_instance_ids', 'support_block_ids'}
         """
         instances = {instance.instance_id: instance for instance in self.model.instances}
         rows = []
@@ -120,6 +125,7 @@ class Recipe:
                 directions.append(('+' if column[axis] > 0 else '-') + 'XYZ'[axis])
 
             rows.append({
+                'block_id': step.block_id,
                 'sequence': step.sequence,
                 'stage': step.stage,
                 'instance_id': step.instance_id,
@@ -136,6 +142,7 @@ class Recipe:
                 'grasp': step.grasp.name,
                 'grasp_axis': step.grasp_axis.name,
                 'support_instance_ids': list(step.support_instance_ids),
+                'support_block_ids': list(step.support_block_ids),
             })
         return rows
 

@@ -1,4 +1,4 @@
-"""CAD -> assembly recipe.
+"""CAD -> 조립 레시피(recipe).
 inspect: CAD -> model JSON + plan template.  build: CAD + filled plan -> recipe JSON + placement table."""
 import argparse
 from pathlib import Path

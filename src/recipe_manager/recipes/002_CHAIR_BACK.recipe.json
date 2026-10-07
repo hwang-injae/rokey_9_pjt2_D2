@@ -3,7 +3,7 @@
   "recipe_id": "002_CHAIR_BACK_ASSEMBLY",
   "revision": "1",
   "model": {
-    "schema": "assembly.model/1.0",
+    "schema": "cad_model/1.0",
     "model_id": "002_CHAIR_BACK",
     "revision": "1",
     "frame": {
@@ -447,24 +447,29 @@
   },
   "steps": [
     {
+      "block_id": "002_CHAIR_BACK_B001",
       "step_id": "PLACE_DXF_INSERT_3E",
       "instance_id": "DXF_INSERT_3E",
       "sequence": 1,
       "stage": 1,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "002_CHAIR_BACK_B002",
       "step_id": "PLACE_DXF_INSERT_4F",
       "instance_id": "DXF_INSERT_4F",
       "sequence": 2,
       "stage": 1,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "002_CHAIR_BACK_B003",
       "step_id": "PLACE_DXF_INSERT_61",
       "instance_id": "DXF_INSERT_61",
       "sequence": 3,
@@ -473,9 +478,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_3E"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B001"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B004",
       "step_id": "PLACE_DXF_INSERT_72",
       "instance_id": "DXF_INSERT_72",
       "sequence": 4,
@@ -484,9 +493,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_4F"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B002"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B005",
       "step_id": "PLACE_DXF_INSERT_84",
       "instance_id": "DXF_INSERT_84",
       "sequence": 5,
@@ -495,9 +508,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_61"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B003"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B006",
       "step_id": "PLACE_DXF_INSERT_95",
       "instance_id": "DXF_INSERT_95",
       "sequence": 6,
@@ -506,9 +523,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_72"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B004"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B007",
       "step_id": "PLACE_DXF_INSERT_A7",
       "instance_id": "DXF_INSERT_A7",
       "sequence": 7,
@@ -517,9 +538,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_84"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B005"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B008",
       "step_id": "PLACE_DXF_INSERT_B8",
       "instance_id": "DXF_INSERT_B8",
       "sequence": 8,
@@ -528,9 +553,13 @@
       "grasp_axis": "WIDTH",
       "support_instance_ids": [
         "DXF_INSERT_95"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B006"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B009",
       "step_id": "PLACE_DXF_INSERT_CA",
       "instance_id": "DXF_INSERT_CA",
       "sequence": 9,
@@ -540,9 +569,14 @@
       "support_instance_ids": [
         "DXF_INSERT_A7",
         "DXF_INSERT_B8"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B007",
+        "002_CHAIR_BACK_B008"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B010",
       "step_id": "PLACE_DXF_INSERT_DB",
       "instance_id": "DXF_INSERT_DB",
       "sequence": 10,
@@ -552,9 +586,14 @@
       "support_instance_ids": [
         "DXF_INSERT_A7",
         "DXF_INSERT_B8"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B007",
+        "002_CHAIR_BACK_B008"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B011",
       "step_id": "PLACE_DXF_INSERT_EC",
       "instance_id": "DXF_INSERT_EC",
       "sequence": 11,
@@ -564,9 +603,14 @@
       "support_instance_ids": [
         "DXF_INSERT_A7",
         "DXF_INSERT_B8"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B007",
+        "002_CHAIR_BACK_B008"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B012",
       "step_id": "PLACE_DXF_INSERT_FE",
       "instance_id": "DXF_INSERT_FE",
       "sequence": 12,
@@ -575,9 +619,13 @@
       "grasp_axis": "LENGTH",
       "support_instance_ids": [
         "DXF_INSERT_EC"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B011"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B013",
       "step_id": "PLACE_DXF_INSERT_110",
       "instance_id": "DXF_INSERT_110",
       "sequence": 13,
@@ -586,9 +634,13 @@
       "grasp_axis": "LENGTH",
       "support_instance_ids": [
         "DXF_INSERT_FE"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B012"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B014",
       "step_id": "PLACE_DXF_INSERT_122",
       "instance_id": "DXF_INSERT_122",
       "sequence": 14,
@@ -597,9 +649,13 @@
       "grasp_axis": "LENGTH",
       "support_instance_ids": [
         "DXF_INSERT_110"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B013"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B015",
       "step_id": "PLACE_DXF_INSERT_134",
       "instance_id": "DXF_INSERT_134",
       "sequence": 15,
@@ -608,9 +664,13 @@
       "grasp_axis": "LENGTH",
       "support_instance_ids": [
         "DXF_INSERT_122"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B014"
       ]
     },
     {
+      "block_id": "002_CHAIR_BACK_B016",
       "step_id": "PLACE_DXF_INSERT_146",
       "instance_id": "DXF_INSERT_146",
       "sequence": 16,
@@ -619,6 +679,9 @@
       "grasp_axis": "LENGTH",
       "support_instance_ids": [
         "DXF_INSERT_134"
+      ],
+      "support_block_ids": [
+        "002_CHAIR_BACK_B015"
       ]
     }
   ]

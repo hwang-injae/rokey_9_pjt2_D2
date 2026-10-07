@@ -75,13 +75,13 @@ class RecipeManager:
 
 
         # 배치표 터미널 출력. 한글은 화면에서 두 칸을 차지하므로 머리글의 공백은 직접 맞췄다.
-        print('순번 단계  부품            치수 LxWxT  중심 x, y, z (mm)       방향 L/W/T  파지 방법    닫힘 축    지지 부품')
+        print('순번 단계  블록                  치수 LxWxT  중심 x, y, z (mm)       방향 L/W/T  파지 방법    닫힘 축    지지 부품')
         for row in rows:
             size = f"{row['size_L_mm']:g}x{row['size_W_mm']:g}x{row['size_T_mm']:g}"
             center = f"({row['center_x_mm']:g}, {row['center_y_mm']:g}, {row['center_z_mm']:g})"
             axes = f"{row['axis_L']}/{row['axis_W']}/{row['axis_T']}"
-            supports = ', '.join(row['support_instance_ids']) or '책상'
-            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['instance_id']:<16}{size:<12}"
+            supports = ', '.join(row['support_block_ids']) or '책상'
+            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['block_id']:<22}{size:<12}"
                   f"{center:<24}{axes:<12}{row['grasp']:<13}{row['grasp_axis']:<11}{supports}")
         print()
 
@@ -91,7 +91,8 @@ class RecipeManager:
         writer = csv.DictWriter(buffer, fieldnames=list(rows[0]), lineterminator='\n')
         writer.writeheader()
         for row in rows:
-            writer.writerow({**row, 'support_instance_ids': ';'.join(row['support_instance_ids'])})
+            writer.writerow({**row, 'support_instance_ids': ';'.join(row['support_instance_ids']),
+                             'support_block_ids': ';'.join(row['support_block_ids'])})
 
 
         # 레시피와 배치표 저장
