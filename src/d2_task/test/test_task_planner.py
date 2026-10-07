@@ -10,7 +10,7 @@ import yaml
 from d2_task.task_planner import TaskPlanner
 
 SRC = Path(__file__).resolve().parents[2]
-CFG = yaml.safe_load((SRC / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
+CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 RECIPE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH.recipe.json').read_text(encoding='utf-8'))
 IDS = [f'001_CHAIR_BENCH_B{n:03d}' for n in range(1, 12)]
 

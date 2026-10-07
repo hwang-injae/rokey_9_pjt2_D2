@@ -235,7 +235,7 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식 두 가지를 읽는다.
 
-    - assembly.recipe/1.0 (CAD_to_Recipe 출력, 예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json): model.instances + steps.
+    - assembly.recipe/1.0 (recipe_manager 출력, 예 src/recipe_manager/recipes/001_CHAIR_BENCH_recipe.json): model.instances + steps.
       steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
       block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
     - m0609.jenga.cad_recipe/1.0 (한세교 Advanced, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].

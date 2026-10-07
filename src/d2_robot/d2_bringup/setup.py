@@ -15,8 +15,9 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.launch.py') + glob('launch/*.rviz')),
         ('share/' + package_name + '/description', glob('description/*.xacro') + glob('description/*.srdf')),
         ('share/' + package_name + '/config', glob('config/*.yaml') + glob('config/*.json')),
-        # 레시피(한세교 recipe_manager, COLCON_IGNORE)를 함께 설치 — run_recipe 번호 선택·장면 관리가 이 폴더를 읽는다
-        ('share/' + package_name + '/recipes', glob('../recipe_manager/recipes/*.recipe.json')),
+        # 레시피(src/recipe_manager/recipes)는 패키지 안 링크 recipes/ 로 읽는다. '../..' 같은 패키지 밖 경로를 주면
+        # colcon --symlink-install 이 build/d2_bringup 기준으로 따라가 작업 공간 맨 위에 recipe_manager/ 링크를 만든다 (10/7)
+        ('share/' + package_name + '/recipes', glob('recipes/*_recipe.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
