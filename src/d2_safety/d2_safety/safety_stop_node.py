@@ -26,7 +26,7 @@ STATE_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=Durabi
 class SafetyStopNode(Node):
     """정지 판단 + 서기 궤적 + 잠금을 맡는 유일한 노드 (1차 정지 입력 4개: 화면 버튼·키·Ctrl+C·로봇 알람).
 
-    받는 것: /d2/safety/stop (d2_interfaces/StopRequest, 화면·키), /d2/safety/resume (std_srvs/Trigger, 화면 '다시 시작'),
+    받는 것: /d2/safety/stop (d2_interfaces/StopRequest, 화면·키·작업 관리자), /d2/safety/resume (std_srvs/Trigger, 화면 '다시 시작'),
              두산 /dsr_controller2/system/get_robot_state (로봇 알람), Ctrl+C (이 프로그램 터미널)
     내보내는 것: 서기 궤적 (SafeStop), /d2/safety/state (JSON safety_state/1, 바뀔 때, TRANSIENT_LOCAL)
     한 번 멈추면 잠그고, 화면 '다시 시작'(safety/resume)으로만 푼다. 집기·놓기는 safety/state 를 보고 목표를 취소한다 (S-26).
@@ -56,9 +56,11 @@ class SafetyStopNode(Node):
             return FIRST_WAIT_DEFAULT_S
 
     def _on_stop(self, req, res):
-        """화면·키 정지 요청을 받는다. 바로 '받았다'고 답하고, 실제로 세우는 것은 run() 이 한다.
+        """화면·키·작업 관리자 정지 요청을 받는다. 바로 '받았다'고 답하고, 실제로 세우는 것은 run() 이 한다.
 
-        입력: source (web·key), reason. 출력: success = 정지를 시작하거나 이미 멈춰 있으면 True.
+        입력: source (web·key·task — task 는 move_to 가 timeout.move_to_s 를 넘을 때 reason TIMEOUT, 10/7 PL), reason.
+        source 를 가리지 않고 받는다: 멈추라는 요청은 누가 보내든 받는 쪽이 안전하다(멈출지 판단은 이 노드 한 곳).
+        출력: success = 정지를 시작하거나 이미 멈춰 있으면 True.
         """
         if not (self.locked or self.stopping):
             self.pending = req.reason or f'STOP_{req.source.upper()}'
