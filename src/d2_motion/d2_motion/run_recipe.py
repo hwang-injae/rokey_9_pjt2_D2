@@ -133,7 +133,7 @@ def choose_recipe(folder):
 
 
 def main():
-    """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 그리퍼 초기화 -> 블록마다 PickPlace -> 홈, 결과를 CSV 로 남긴다."""
+    """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 블록마다 PickPlace(그리퍼 폭은 블록 위에서 바뀜) -> 홈, 결과를 CSV 로 --log-dir(기본 ~/d2_data/runs, 저장소 밖)에 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipes', nargs='*',
                     help='레시피 파일 (cad_recipe/1.0 — 예전 이름 assembly.recipe/1.0 — 또는 옛 blocks[] 형식). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
@@ -146,6 +146,8 @@ def main():
     ap.add_argument('--grasp-test', default=None,
                     help='잡기 폭 시험: 이 공급 칸(예: 1-6)에서 집어 같은 자리에 다시 놓는다 (레시피 안 씀)')
     ap.add_argument('--repeat', type=int, default=1, help='--grasp-test 때 칸마다 반복 횟수')
+    ap.add_argument('--log-dir', default=os.path.join('~', 'd2_data', 'runs'),
+                    help='결과 CSV 폴더 — 기본 ~/d2_data/runs(저장소 밖, 작업 관리자 log_dir 과 같음 · 팀 규칙 6). 빈 값 = 안 남김')
     args = ap.parse_args()
 
     share = get_package_share_directory('d2_bringup')
@@ -244,11 +246,16 @@ def main():
     finally:
         if rows:
             model_id = '_'.join(r['model']['model_id'] if 'model' in r else r['model_id'] for r in recipes) or 'GRASP_TEST'
-            out = f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv'
-            with open(out, 'w', newline='') as f:
-                w = csv.writer(f)
-                w.writerow(['block_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
-                w.writerows(rows)
+            # 실기 기록은 원본 자료라 저장소 밖에 둔다(팀 규칙 6 — 예전엔 실행한 폴더에 남아 저장소에 쌓였다, 10/7)
+            out = '(안 남김)'
+            if args.log_dir:
+                folder = os.path.expanduser(args.log_dir)
+                os.makedirs(folder, exist_ok=True)
+                out = os.path.join(folder, f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv')
+                with open(out, 'w', newline='') as f:
+                    w = csv.writer(f)
+                    w.writerow(['block_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
+                    w.writerows(rows)
             ok_n = sum(1 for r in rows if r[3])
             print(f'결과: {ok_n}/{len(jobs)} 성공, 전체 {time.monotonic() - t_start:.0f} s, 기록 {out}')
         node.destroy_node()
