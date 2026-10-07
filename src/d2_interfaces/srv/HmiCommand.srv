@@ -1,7 +1,7 @@
 # 화면 버튼 명령 — 화면(다리 d2_bridge가 대신 부름) → 작업 관리자 (/d2/hmi/command)
 # 음성 출발은 /d2/hmi/intent start로 들어오고 작업 관리자가 이것의 start와 똑같이 처리 (S-16)
 # '다시 시작'은 여기 없다 — /d2/safety/resume 한 번으로 잠금이 풀리고 task가 관측부터 이어 감 (S-24)
-string cmd                        # select_design | start | scan  (start = 출발, WAIT_SUPPLY 에서는 [계속]. set_mode·turn_done 은 안 씀 — E-03)
+string cmd                        # select_design | start | scan | cancel  (start = 출발, WAIT_SUPPLY · WAIT_HMI 에서는 [계속]. SCAN_REVIEW: scan = 다시 스캔, cancel = 취소 → IDLE, 저장 뒤 select_design → READY. set_mode·turn_done 은 안 씀 — E-03)
 string design_id                  # select_design · start 때 (IRD 2장 design_id)
 string mode                       # "auto" 또는 빈 값 (모드 없음 — 칸만 둔다)
 ---
