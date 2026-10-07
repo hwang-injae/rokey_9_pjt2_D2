@@ -15,10 +15,12 @@
   (다르면 task 는 웹 설계로 쌓는데 손목은 파일 설계로 보는 식으로 어긋난다).
   remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/1)으로 받는다 — 생성 · 스캔 설계도 같은 길.
                 design/1 의 structure + recipe 를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
-                팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다. 설계마다 한 번 받아 캐시(실패는 캐시 안 함).
+                팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다. 설계마다 받아 캐시(실패는 캐시 안 함).
                 제한 시간 robot.yaml timeout.service_s. 실패하면 로컬 파일로 대신하지 않고 check_progress 를 실패로 답한다(아래).
   local         파일만(웹 없이 개발할 때 명시): `<recipe_dir>/<design_id>_recipe.json`(새, E-52 — 같은 폴더 `_structure.json` 도 읽음),
-                없으면 `<design_id>.recipe.json`(옛)을 `load_recipe()` · `recipe_blocks()` 로(설계마다 한 번, 캐시).
+                없으면 `<design_id>.recipe.json`(옛)을 `load_recipe()` · `recipe_blocks()` 로(설계마다 캐시).
+  캐시는 한 판(run) 안에서만(E-55 ① 10/7 PL — 기본 설계는 같은 design_id 로 다시 등록될 수 있다): 설계 블록 **전부**를 묻는 요청
+  (= 작업 관리자의 시작 확인 CHECK)이 오면 새 판으로 보고 그 설계를 다시 읽는다. 블록 몇 개만 묻는 배치 확인(VERIFY)은 캐시를 쓴다.
 
 입력(파라미터)
   design_source  'remote'(기본) · 'local' — task 노드와 같은 이름 · 기본값 · 뜻. 'local' 이 아니면 모두 remote 로 본다(task 와 같음)
@@ -29,10 +31,10 @@
   n_frames     중앙값 낼 깊이 프레임 수(10 — V-17 경험: 정지 상태 10장이면 ±0.5 mm)
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_actual_m · timeout.service_s 를 읽는다.
 
-바깥 영향: 서비스 답 · camera_status 발행 · get_design 조회(remote, 설계마다 첫 요청 때 한 번)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다
+바깥 영향: 서비스 답 · camera_status 발행 · get_design 조회(remote, 설계마다 · 판마다 한 번)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다
   (관측 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
-  remote 에서 처음 보는 설계면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
+  remote 에서 처음 보는 설계이거나 시작 확인(블록 전부)이면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 실패 때: 새 프레임이 시간 안에 안 오거나 posx 를 못 받으면 success=false, reason=TIMEOUT.
          get_design 이 timeout.service_s 안에 답하지 않으면 success=false, reason=TIMEOUT (task_node.get_design 과 같은 코드).
          get_design 서버 없음 · success=false · 응답 형식 오류, 보정값·레시피를 못 읽음, 설계를 못 고름 → 노드는 뜬 채 success=false, reason=ERROR.
@@ -154,12 +156,13 @@ class WristBlock(Node):
             self.get_logger().error('보정값을 못 읽음 %s: %s — 모든 블록을 unknown 으로 답한다' % (p, e))
             return None
 
-    def checker_for(self, design_id):
+    def checker_for(self, design_id, block_ids):
         """설계 이름 → (그 설계의 BlockChecker 또는 None, 실패 코드). design_source 에 따라 원격(기본) 또는 로컬 파일 하나만 쓴다.
 
+        입력: design_id · block_ids(이번 요청의 블록 이름 — 캐시한 설계의 블록을 전부 담고 있으면 새 판의 시작 확인으로 보고 다시 읽는다, E-55 ①).
         출력: 성공 (BlockChecker, '') · 실패 (None, 'ERROR' 또는 'TIMEOUT') — 부르는 쪽이 그 코드로 check_progress 를 답한다.
-        바깥 영향: 로그, remote 면 get_design 조회(설계마다 성공할 때까지). 캐시 열쇠는 (design_source, design_id) —
-        돌리는 중에 design_source 를 바꿔도 다른 길로 읽은 설계를 쓰지 않는다.
+        바깥 영향: 로그, remote 면 get_design 조회(설계마다 · 판마다 한 번). 캐시 열쇠는 (design_source, design_id) —
+        돌리는 중에 design_source 를 바꿔도 다른 길로 읽은 설계를 쓰지 않는다. 다시 읽기가 실패하면 옛 캐시도 버린다(옛 설계로 답하지 않는다).
         - remote: _remote_checker. 실패는 캐시하지 않는다(웹 · 다리가 늦게 떠도 다음 요청에 다시 받는다).
         - local: `<recipe_dir>/<design_id>_recipe.json`(새 — load_recipe 가 옆 `_structure.json` 도 붙임), 없으면 `.recipe.json`(옛)
           → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 recipe_blocks 가 만든 이름(새 형식은 '<model_id>_<블록 이름>').
@@ -171,7 +174,14 @@ class WristBlock(Node):
         key = (source, design_id)
         if key in self.checkers:
             chk = self.checkers[key]
-            return chk, ('' if chk is not None else 'ERROR')
+            # E-55 ①(10/7 PL): 캐시는 한 번의 조립(run) 안에서만 — 기본 설계는 레시피 파일을 고치면 같은 design_id 로 다시 등록된다.
+            # 손목은 [설계 선택]을 못 받으므로 '설계 블록 전부를 묻는 요청'(= 작업 관리자의 시작 확인 CHECK, SDD §6.3)을 새 판의 시작으로 보고
+            # 그때 다시 받는다. 블록 1~2개를 묻는 배치 확인(VERIFY)은 캐시를 쓴다(블록이 2개뿐인 설계는 VERIFY 도 전부라 매번 받지만 해롭지 않다).
+            if chk is not None and set(chk.blocks) <= set(block_ids):
+                self.get_logger().info('설계 %s: 블록 전부를 묻는 요청(시작 확인) — 새 판으로 보고 다시 읽는다' % design_id)
+                del self.checkers[key]
+            else:
+                return chk, ('' if chk is not None else 'ERROR')
         if source == 'remote':
             chk, reason = self._remote_checker(design_id)
             if chk is not None:
@@ -316,7 +326,7 @@ class WristBlock(Node):
     def on_check(self, req, res):
         """check_progress 콜백. 입력 req.design_id(빈 값 가능) · req.block_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
 
-        보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
+        보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계 · 시작 확인(블록 전부)만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
         + posx → 점군 → BlockChecker → 답. 바깥 영향: get_design · 두산 posx 조회 · 로그.
         실패: 보정값 없음 · 설계를 못 고름 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · posx 없음 → TIMEOUT
         (모두 state unknown, 값 NaN)."""
@@ -327,7 +337,7 @@ class WristBlock(Node):
         # 설계 = design_id 칸(E-52). 비었으면 옛 방식으로 첫 '_B' block_id 의 앞(10/8 저녁까지 — remote 면 그 이름으로 get_design).
         # 한 요청은 한 설계라고 본다 — 그 설계에 없는 블록은 BlockChecker 가 그 블록만 unknown 으로 답한다
         design_id = next((d for d in (design_of(req.design_id, i) for i in ids) if d), '')
-        checker, reason = self.checker_for(design_id)
+        checker, reason = self.checker_for(design_id, ids)
         if checker is None:
             self.get_logger().error('설계(%r, design_id 칸 %r)를 못 읽어 답할 수 없다 → %s' % (design_id or ids[:1], req.design_id, reason))
             return self._fill(res, ids, reason=reason)
