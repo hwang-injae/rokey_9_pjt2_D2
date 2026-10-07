@@ -136,7 +136,7 @@ def main():
     """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 그리퍼 초기화 -> 블록마다 PickPlace -> 홈, 결과를 CSV 로 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipes', nargs='*',
-                    help='레시피 파일 (assembly.recipe/1.0 또는 m0609.jenga.cad_recipe/1.0). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
+                    help='레시피 파일 (cad_recipe/1.0 — 예전 이름 assembly.recipe/1.0 — 또는 옛 blocks[] 형식). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
                          '없으면 설치된 레시피 목록에서 번호로 고름')
     ap.add_argument('--slots', default=None,
                     help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 잡기마다 정한 칸(robot.yaml supply_slots grasp)을 쓴다')
