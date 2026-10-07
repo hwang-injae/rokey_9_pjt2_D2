@@ -61,6 +61,26 @@ def test_출발_때_다시_조회한_설계로_바뀐다():
     assert m.planner is not first and m.state == 'CHECK'
 
 
+def test_출발_요청등록_직전에_선택된_설계와_레시피가_일치한다(monkeypatch):
+    """출발 대상을 먼저 읽고 잠금을 풀던 창에 B 선택을 넣는다. B 로 기록하면서 A 를 조회하면 안 된다."""
+    m, io = make()
+    assert m.command('select_design', 'A') == (True, '')
+    lookup = m._lookup_then
+
+    def select_before_registration(design_id, mode):
+        """다른 스레드의 B 선택이 요청 등록 직전에 끝난 순서를 만든다."""
+        if mode == 'start':
+            t, out = in_thread(lookup, 'B', 'select')
+            t.join(2)
+            assert not t.is_alive() and out == [(True, '')]
+        return lookup(design_id, mode)
+
+    monkeypatch.setattr(m, '_lookup_then', select_before_registration)
+    assert m.command('start') == (True, '')
+    assert io.lookups == ['A', 'B', 'B']
+    assert m.design_id == 'B' and m.state == 'CHECK'
+
+
 def test_음성으로_설계를_포함해_출발하면_조회_뒤_출발한다():
     m, io = make()
     m.on_intent('start', 'bench')

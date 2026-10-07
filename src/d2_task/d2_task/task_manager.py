@@ -7,23 +7,25 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
 바깥 일(이동 · 관측 · 집기 · 방송)은 생성할 때 받은 io 객체로 한다. io 가 갖춰야 할 것(ROS 노드나 시험용 가짜):
   get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/1 dict). 제한 시간은 io 가 건다
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
-  move_to(target, should_abort) -> (ok, reason)
+  move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
   check_progress(block_ids, should_abort) -> (ok, reason, rows)   rows = {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}
   pick_place(goal, should_abort) -> (ok, reason)    goal = TaskPlanner.next_block 의 FOUND dict
+  request_stop(reason) -> (ok, message)             정지 노드에 먼저 세우라고 요청(응답은 접수 여부)
   publish_state(dict) · publish_progress(dict)
-move_to · check_progress · pick_place 는 지금 답을 기다리는 시간 제한을 두지 않는다. 제한 값은 W121에서 정해졌고(IRD 7장 TIMEOUT —
-robot.yaml timeout.service_s 5 · move_to_s 30 · pick_place_s 90) 거는 것은 W119 에서 한다. 대신 기다리는 동안
+move_to · check_progress · pick_place 는 io 가 robot.yaml 의 제한 시간(service_s 3 · move_to_s 45 · pick_place_s 90)을 건다.
+시간 초과 때 request_stop(reason) 으로 정지 노드에 먼저 요청하고, stopped 신호를 확인하기 전에는 복구하지 않는다. 기다리는 동안
 should_abort() 가 참이 되면(정지 신호 · Ctrl+C) 곧바로 빠져나와 (False, 'STOPPED') 로 돌려주고, 진행 중인 pick_place 목표는 취소한다.
 
-범위: 자동 조립 상태 11개 + 기록(CSV · run_id, W065 — RunLogger). 스캔 상태(SCAN_*) · get_design · save_build · 웹 끊김(hmi_lost)은 W119.
-run_id 는 조립을 실제로 출발시킬 때(READY → CHECK) 새로 만든다. 정지 · 복구 · 공급 보충 뒤 계속할 때는 같은 ID 를 쓴다.
+범위: 자동 조립 상태 11개 + 기록(CSV · run_id, W065 — RunLogger), 설계 조회 · 결과 저장 · 시간 제한(W119 일부).
+웹 끊김은 WAIT_HMI 로 기다린다(서기 궤적 아님). 스캔은 촬영 자세 이동 → 점군 수집 → 추론 → 검토 순서다.
+run_id 는 조립 출발(READY → CHECK) 또는 스캔 시작(SCAN_MOVE) 때 새로 만든다. 조립 정지 · 복구 · 공급 보충은 같은 ID 를 쓴다.
 끝난 조립의 build/1 요약은 last_build(최근 결과 표시용)와 pending_builds(run_id 별 미전송 요약)에 둔다.
 /d2/hmi/save_build 로 보내는 일은 task 노드가 하고(네트워크 대기는 이 클래스의 잠금 밖), 이 클래스는 무엇을 보낼지(builds_to_send) ·
 답이 오면 어떻게 할지(build_result)만 정한다. 저장이 확인된 run_id 만 목록에서 지운다 — 실패 · 시간 초과 · 잘못된 답은 요약을 남긴다.
 WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부지만 SDD 5장 상태표에 있어 W044 에서 먼저 구현했다 — **W119 완료가 아니다**
-(W119 는 get_design · 스캔 흐름 · DB 점검 · builds · 웹 끊김이 더 남아 있다).
-아직 구현하지 않은 것(W119): ① 복구(RECOVER) 때 첫 move_to 를 저속으로 — 인터페이스는 W121에서 정해졌다(MoveTo.speed_ratio,
-robot.yaml recover.speed_ratio 0.5) ② 시간 제한(위). 조립 중이 아닐 때(IDLE · READY · DONE) 정지됐다 풀린 뒤 돌아갈 곳은 SDD 에
+(W119 는 스캔 흐름이 더 남아 있다).
+복구(RECOVER) 뒤 첫 성공한 move_to 는 robot.yaml recover.speed_ratio(0.5)로 움직인다. 조립 중이 아닐 때(IDLE · READY · DONE)
+정지됐다 풀린 뒤 돌아갈 곳은 SDD 에
 없어서 가장 가까운 규칙(비조립 RECOVER → IDLE)만 따른다(IRD 12장 W121 다시 확인 대상).
 """
 import copy
@@ -40,7 +42,7 @@ RECIPE_SCHEMAS = ('cad_recipe/1.0', 'assembly.recipe/1.0')   # E-44: 옛 이름�
 LOG = logging.getLogger('d2_task')
 
 # 조립이 진행 중인 상태 — 정지 · 실패 뒤 RECOVER 에서 CHECK 로 이어 간다
-RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'VERIFY', 'RECOVER', 'ERROR')
+RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'WAIT_HMI', 'VERIFY', 'RECOVER', 'ERROR')
 # 로봇이 서야 하는 결과 — 정지 노드가 세웠다(STOPPED · CANCELED) / 그리퍼 피드백이 없어 세웠다(NO_FEEDBACK, IRD 7장 → STOPPED)
 STOP_REASONS = ('STOPPED', 'CANCELED', 'NO_FEEDBACK')
 
@@ -53,10 +55,13 @@ def wait_until(event, should_abort, poll_s=0.05, timeout_s=None):
     정지 처리가 막히지 않게 하려고 task_node 의 모든 기다림이 이것을 거친다.
     """
     deadline = None if timeout_s is None else time.monotonic() + timeout_s
-    while not event.wait(poll_s):
+    while True:
         if should_abort() or (deadline is not None and time.monotonic() >= deadline):
             return False
-    return True
+        wait_s = poll_s if deadline is None else min(poll_s, max(0.0, deadline - time.monotonic()))
+        if event.wait(wait_s):
+            # 이미 켜진 이벤트도 취소 · 시간 초과보다 우선하지 않는다. 경계에서 늦은 성공을 적용하지 않기 위해서다
+            return not should_abort() and (deadline is None or time.monotonic() < deadline)
 
 
 class TaskManager:
@@ -65,13 +70,14 @@ class TaskManager:
     들어오는 것(콜백 스레드): command(HmiCommand) · on_intent(음성) · on_safety(정지 노드) · on_gripper · shutdown.
     나가는 것: io 로 /d2/task/state · /d2/task/progress 방송, move_to · check_progress · pick_place 호출.
     바깥 영향: 로봇은 pick_place · move_to 를 통해서만 움직인다(이 클래스는 팔을 직접 안 건드린다).
-    실패: 알려진 실패 코드(IRD 7장)는 SDD 7.1 표대로 처리한다(TIMEOUT · ERROR · GRIPPER_NO_RESPONSE 는 정식 코드이고 → ERROR).
+    실패: TIMEOUT 은 먼저 정지 요청 후 정지 상태를 기다린다(IRD 7장). ERROR · GRIPPER_NO_RESPONSE 는 ERROR 로 간다.
     IRD 에 없는 reason 도 같은 공통 분기로 일반 실패 → ERROR 로 간다.
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
 
-    def __init__(self, cfg, io, logger=None, clock=time.monotonic):
+    def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False):
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
+        monitor_hmi 는 웹 생존 신호 감시 여부(노드의 remote 모드만 참). 로컬 개발은 웹 없이 동작한다.
         만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
@@ -103,6 +109,14 @@ class TaskManager:
         self._plan_retry = 0                      # PLAN_FAILED 다시 계획 횟수
         self._grasp_stage = 0                     # GRASP_FAILED: 1 = 같은 칸 재시도 중, 2 = 다음 칸 시도 중
         self._shutdown = False
+        self._timeout_pending = False             # 정지 요청의 성공 응답만으로는 서 있다고 볼 수 없다. stopped 신호가 필요하다
+        self._recover_slow = False                # 복구 뒤 첫 이동이 성공할 때까지 저속을 유지한다
+        self._monitor_hmi = monitor_hmi
+        self._hmi_seen_at = None                  # PC 사이 stamp 대신 이 PC 의 단조 시계로 수신 간격을 잰다
+        self._hmi_pause = False                   # 잠깐 끊겼다 다시 붙어도 사람의 start 전에는 풀지 않는다
+        self._hmi_recheck = False                 # WAIT_HMI 의 start 는 SELECT 에서 진행표부터 다시 확인한다
+        self._scan_run = False                    # 스캔 CSV 는 남기되 조립 결과 build/1 로 보내지 않는다
+        self._scan_poses, self._scan_index = (), 0
         for run_id, summary in self.logger.load_pending():
             self.pending_builds[run_id] = summary
             self._build_ready.add(run_id)         # 이미 디스크에 있다
@@ -110,7 +124,8 @@ class TaskManager:
             LOG.warning('디스크에 보관된 미전송 요약 %d개를 되살렸다: %s', len(self.pending_builds), ', '.join(self.pending_builds))
         self._handlers = {'CHECK': self._check, 'SELECT': self._select, 'PICK_PLACE': self._pick_place,
                           'VERIFY': self._verify, 'WAIT_SUPPLY': self._wait_supply, 'STOPPED': self._stopped,
-                          'RECOVER': self._recover, 'ERROR': self._error}
+                          'RECOVER': self._recover, 'ERROR': self._error,
+                          'SCAN_MOVE': self._scan_move, 'SCAN_CAPTURE': self._scan_capture, 'SCAN_INFER': self._scan_infer}
 
     # ---------- 콜백 스레드에서 들어오는 것 ----------
     def on_safety(self, st):
@@ -123,6 +138,27 @@ class TaskManager:
         """그리퍼 노드의 gripper_state/1(dict)을 적는다. grasped 가 참이면 블록을 쥐고 있다."""
         with self._lock:
             self.gripper = st
+
+    def on_hmi_alive(self, body):
+        """웹 생존 JSON 의 alive 가 정확히 true 일 때 수신 시각을 갱신한다. 깨진 값은 무시하고 외부 stamp 는 사용하지 않는다.
+
+        재접속은 대기를 풀지 않는다. 현재 블록 처리 중 끊겼다가 돌아온 경우도 사람의 계속 버튼을 기다린다.
+        """
+        with self._lock:
+            self.poll_hmi()                       # 갱신 전 끊김을 기억해야 빠른 재접속으로 대기 규칙이 사라지지 않는다
+            if isinstance(body, dict) and body.get('alive') is True:
+                self._hmi_seen_at = self._clock()
+
+    def _hmi_fresh(self):
+        """(잠금 안) 웹 생존 신호가 lost_after_s 초 안에 왔는가. 감시 안 하는 로컬 개발은 항상 참."""
+        return not self._monitor_hmi or (self._hmi_seen_at is not None and
+                                         self._clock() - self._hmi_seen_at < self.cfg['mqtt']['lost_after_s'])
+
+    def poll_hmi(self):
+        """타이머가 조립 중 웹 끊김을 기억한다(메모리만, 이동 · 상태 방송 없음). 작업 스레드가 블록을 끝낸 뒤 WAIT_HMI 로 간다."""
+        with self._lock:
+            if self.run_id and self.state in RUN_STATES and not self._hmi_fresh():
+                self._hmi_pause = True
 
     def shutdown(self):
         """Ctrl+C 등 끝낼 때 부른다. 기다리는 중인 호출이 곧바로 빠져나오고 pick_place 목표가 취소된다."""
@@ -205,15 +241,16 @@ class TaskManager:
         return isinstance(body, dict) and body.get('ok') is True
 
     def halted(self):
-        """멈춰야 하면 참 — 정지 노드가 stopped 를 보냈거나 끝내는 중. io 의 기다림이 이것을 should_abort 로 쓴다."""
+        """정지 신호 · 종료 · 시간 초과 뒤 정지 확인 대기면 참. io 가 새 동작을 막고 기다림을 중단할 때 쓴다."""
         st = self.safety
-        return self._shutdown or bool(st and st.get('stopped'))
+        return self._shutdown or self._timeout_pending or bool(st and st.get('stopped'))
 
     def command(self, cmd, design_id=''):
         """화면 버튼 명령(HmiCommand, 다리가 웹 화면 대신 부른다). 반환: (success, reason).
 
         select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 다시 조회하고 출발(점검 한 번 더) → CHECK,
-        WAIT_SUPPLY 에서는 [계속](관측 자세에 도착한 뒤에만, 조회 없음). 그 밖 · 운전 중 · ERROR 중은 거절한다.
+        WAIT_SUPPLY 에서는 [계속](관측 자세 도착 뒤), WAIT_HMI 는 웹 재연결 뒤 진행 확인부터 SELECT 로 이어 간다(조회 없음).
+        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 SCAN_REVIEW 를 IDLE 로 돌린다.
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
         거절한다(로컬 파일로 몰래 대신하지 않는다 — 개발용 로컬은 노드가 design_source=local 로 명시해야 한다).
         reason 은 IRD 7장에 이미 있는 코드만 쓴다: 운전 중 'BUSY', 정지 중 'STOPPED', 조회 시간 초과 'TIMEOUT'. 맞는 코드가 없는 거절(설계 없음 ·
@@ -222,16 +259,21 @@ class TaskManager:
         if cmd == 'select_design':
             return self._lookup_then(design_id, 'select')
         if cmd == 'start':
-            with self._lock:
-                target = self._start_lookup_target(design_id)
-                if target is None:
-                    return self._start()
-            return self._lookup_then(target, 'start')
+            return self._lookup_then(design_id, 'start')
         with self._lock:
-            return self._reject('', '이 명령은 아직 없다(스캔 흐름은 W119)' if cmd == 'scan' else f'모르는 명령: {cmd}')
+            if cmd == 'scan':
+                return self._begin_scan()
+            if cmd == 'cancel':
+                if self.state != 'SCAN_REVIEW':
+                    return self._reject(self._busy_reason(), '스캔 검토 화면에서만 취소할 수 있다')
+                self.planner, self.design_id, self.block_id = None, None, None
+                self._clear_run()
+                self._set('IDLE', None, '스캔을 취소했다')
+                return True, ''
+            return self._reject('', f'모르는 명령: {cmd}')
 
     def on_intent(self, intent, design_id=None):
-        """음성 의도(intent/1, 다리가 ROS 토픽으로 낸다). start · select_design 은 화면 버튼과 똑같이, cancel 은 READY · ERROR 에서만.
+        """음성 의도(intent/1, 다리가 ROS 토픽으로 낸다). start·select_design은 버튼과 같고 cancel은 READY·ERROR·SCAN_REVIEW에서 받는다.
 
         그 밖(request_design 등)은 무시. 출발할 수 없는 때의 음성 start 는 무시하고 알림 voice_start_ignored 만 낸다(IRD 8.5).
         설계 조회가 있는 동작은 잠금 밖에서 command 로 한다.
@@ -240,7 +282,7 @@ class TaskManager:
             self.command('select_design', design_id)
         elif intent == 'start':
             with self._lock:
-                can = self.state in ('READY', 'WAIT_SUPPLY') or (self.state == 'IDLE' and design_id)
+                can = self.state in ('READY', 'WAIT_SUPPLY', 'WAIT_HMI') or (self.state == 'IDLE' and design_id)
                 if not can:
                     self._publish('voice_start_ignored', '지금은 음성 출발을 받을 수 없어 무시했다')
                     return
@@ -250,7 +292,7 @@ class TaskManager:
                     self._publish('voice_start_ignored', '관측 자세로 가는 중이라 음성 출발을 무시했다')
         elif intent == 'cancel':
             with self._lock:
-                if self.state in ('READY', 'ERROR'):
+                if self.state in ('READY', 'ERROR', 'SCAN_REVIEW'):
                     if self.state == 'ERROR':
                         self._finish_run('ERROR')
                     self.planner, self.design_id, self.block_id = None, None, None
@@ -261,10 +303,14 @@ class TaskManager:
     def run_once(self):
         """지금 상태의 일을 한 단계만 하고 돌아온다(작업 스레드가 되풀이해서 부른다).
 
-        정지 신호를 매번 먼저 본다. 기다리는 상태(IDLE · READY · DONE)는 아무것도 안 한다.
+        정지 신호를 매번 먼저 본다. WAIT_HMI 는 서기 정지가 아니므로 현재 액션은 중단하지 않는다.
         단계 안에서 예상 못 한 예외가 나면 로그를 남기고 ERROR 로 간다(팔은 pick_place 가 서 있게 한다).
         """
         self._apply_safety()
+        self.poll_hmi()
+        with self._lock:
+            if self._hmi_pause and self.state in ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY'):
+                self._enter_wait_hmi()
         handler = self._handlers.get(self.state)
         if handler is None:
             return
@@ -277,7 +323,7 @@ class TaskManager:
     # ---------- 상태별 일 ----------
     def _check(self):
         """CHECK: 관측 자세로 → 모든 블록을 진행 확인 → 어긋남이 있으면 ERROR, 없으면 SELECT."""
-        ok, why = self.io.move_to('observe', self.halted)
+        ok, why = self._move_observe()
         if not ok:
             return self._failed(why, '관측 자세 이동')
         if not self._observe([b['block_id'] for b in self.planner.blocks]):
@@ -288,8 +334,34 @@ class TaskManager:
         self._set('SELECT', None, '')
         return None
 
+    def _move_observe(self):
+        """관측 자세 이동 결과(ok, reason). 복구 뒤 첫 이동은 저속을 유지하고 성공한 뒤에만 해제한다."""
+        if self._recover_slow:
+            ok, why = self.io.move_to('observe', self.halted, speed_ratio=self.cfg['recover']['speed_ratio'])
+        else:
+            ok, why = self.io.move_to('observe', self.halted)
+        if ok:
+            self._recover_slow = False
+        return ok, why
+
     def _select(self):
         """SELECT: 작업 판단에 다음 블록을 묻는다. 있으면 PICK_PLACE, 끝이면 DONE, 못 본 블록은 재관측 1번 뒤 ERROR."""
+        if self._hmi_recheck:
+            ok, why = self._move_observe()
+            if not ok:
+                return self._failed(why, '웹 재연결 뒤 관측 자세 이동')
+            if not self._observe([b['block_id'] for b in self.planner.blocks]):
+                return
+            problems = self.planner.judge(expect_present=[self.placed] if self.placed else ())
+            if problems:
+                return self._offset_over(problems)
+            if self.placed:
+                row = self.planner.progress[self.placed]
+                self.logger.record_measure(self.placed, row['dx_m'], row['dy_m'], row['dz_m'])
+            self._hmi_recheck = False
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
         r = self.planner.next_block()
         status = r['status']
         if status == 'FOUND':
@@ -314,6 +386,9 @@ class TaskManager:
         if ok:
             self.placed = self.goal['block_id']
             self.logger.record_placed(self.placed, self.goal['supply_slot'])
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
             self._set('VERIFY', None, f'{self.placed} 를 놓았다. 확인합니다')
             return None
         self.logger.log('fail', self.goal['block_id'], f'pick_place {why}')
@@ -327,8 +402,7 @@ class TaskManager:
         elif why == 'SLOT_EMPTY':
             self._slot_empty()
         else:
-            # 정지류 · BUSY 는 _failed 가 따로 처리한다. TIMEOUT · ERROR · GRIPPER_NO_RESPONSE 는 IRD 7장 정식 코드이고
-            # SDD 7.1 이 ERROR 로 정했다. IRD 에 없는 reason 도 같은 공통 분기(일반 실패 → ERROR)를 탄다
+            # TIMEOUT 은 정지 노드에 요청하고 상태를 확인한다. 그 밖의 정식 코드 · 모르는 코드는 공통 분기를 탄다
             self._failed(why, f'{self.goal["block_id"]} 집기·놓기', log=False)
 
     def _verify(self):
@@ -383,7 +457,7 @@ class TaskManager:
         """RECOVER: 조립 중이었으면 쥔 블록이 없는지 확인(gripper/state)하고 진행 확인부터 다시 한다. 쥐고 있거나 모르면 ERROR.
 
         조립 중이 아니었으면(IDLE · READY · DONE 에서 정지) IDLE 로 간다 — SDD 5장의 비조립 RECOVER → IDLE 규칙(IRD 12장 W121 다시 확인 대상).
-        복구 때의 '저속'(MoveTo.speed_ratio · recover.speed_ratio)은 아직 안 건다(W119).
+        조립 중 복구는 첫 관측 이동에 recover.speed_ratio 를 쓰며, 실패했으면 다음 시도도 저속을 유지한다.
         """
         if not self._assembling:
             self.planner, self.design_id, self.block_id = None, None, None
@@ -393,18 +467,114 @@ class TaskManager:
         grip = self.gripper
         if grip is None or grip.get('grasped'):
             return self._to_error('블록을 쥐고 있거나 그리퍼 상태를 모른다. 사람이 확인한 뒤 [다시 시작]')
+        self._recover_slow = True
         self._set('CHECK', None, '진행 확인부터 다시 합니다')
         return None
 
     def _error(self):
-        """ERROR: 로봇은 서 있다. 들어온 뒤 잠금이 풀린 safety/state 가 새로 오면([다시 시작]) RECOVER 로 간다.
+        """ERROR: 사람이 확인할 때까지 기다린다. 정지 확인 대기 중이면 stopped 신호 전에는 복구를 막는다.
 
         정지 노드의 resume 은 잠겨 있지 않아도 safety/state 를 다시 내보내므로(최신 main safety_stop_node), 그것이 신호다.
         """
         with self._lock:
+            if self._timeout_pending:
+                return                         # 정지 상태를 한 번도 못 받았다면 새 unlocked 신호도 복구 허가가 아니다
             if self._unlocked_since(self._entered_count):
-                self._assembling = True
+                self._assembling = self.planner is not None and not self._scan_run
                 self._set('RECOVER', None, '다시 시작 — 쥔 블록을 확인합니다')
+
+    # ---------- 스캔: 네트워크 대기는 잠금 밖 ----------
+    def _begin_scan(self):
+        """잠금 안에서 IDLE·SCAN_REVIEW의 scan 명령을 점검하고 새 run으로 시작한다. 로봇 이동은 작업 스레드에서 한다.
+
+        설정은 robot.yaml scan.poses, 단위 없음. 점검 실패는 현재 상태·기록을 보존하며 (False, reason)을 반환한다.
+        """
+        if self.state not in ('IDLE', 'SCAN_REVIEW') or self._shutdown:
+            return self._reject(self._busy_reason(), '지금은 스캔을 시작할 수 없다')
+        poses = self.cfg.get('scan', {}).get('poses')
+        if not isinstance(poses, list) or not poses or any(
+                not isinstance(p, str) or f'{p}_pose' not in self.cfg for p in poses) or len(set(poses)) != len(poses):
+            return self._reject('ERROR', 'scan.poses가 없거나 촬영 자세 설정과 맞지 않는다')
+        ok, code, text = self._precheck(scan=True)
+        if not ok:
+            return self._reject(code, f'스캔 시작 점검 실패: {text}')
+        self._clear_run()
+        self.planner, self.design_id, self.block_id, self.placed = None, None, None, None
+        self._scan_run = True
+        self._scan_poses, self._scan_index = tuple(poses), 0
+        self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/1 은 만들지 않는다
+        self.logger.log('scan', None, 'start')
+        self._set('SCAN_MOVE', None, '스캔 촬영 자세로 갑니다')
+        return True, ''
+
+    def _scan_move(self):
+        """현재 scan.poses 자세로 이동한다(m·rad는 motion 담당). 실패는 공통 정지·오류 처리, 성공 뒤에만 촬영 상태로 간다."""
+        pose = self._scan_poses[self._scan_index]
+        ok, why = self.io.move_to(pose, self.halted)
+        if not ok:
+            return self._failed(why, '스캔 자세 이동')
+        with self._lock:
+            if self.halted():
+                return self._failed('STOPPED', '스캔 자세 이동')
+            self._set('SCAN_CAPTURE', None, f'{pose}에서 촬영합니다')
+
+    def _scan_capture(self):
+        """현재 자세·run_id로 점군을 수집한다. points는 비음수 정수. 잘못된 답은 SCAN_FAILED, 정지 뒤 답은 버린다."""
+        pose = self._scan_poses[self._scan_index]
+        ok, why, body = self.io.scan_capture(pose, self.run_id, self.halted)
+        if not ok or self.halted():
+            return self._failed('STOPPED' if self.halted() else why, '스캔 촬영')
+        points = body.get('points') if isinstance(body, dict) else None
+        if not isinstance(body, dict) or body.get('ok') is not True or isinstance(points, bool) or not isinstance(points, int) or points < 0:
+            return self._failed('SCAN_FAILED', '스캔 촬영 응답')
+        with self._lock:
+            if self.halted():
+                return self._failed('STOPPED', '스캔 촬영 결과 적용')
+            self.logger.log('scan_capture', None, f'{pose}: {points}')
+            self._scan_index += 1
+            self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', None, '스캔 촬영을 마쳤습니다')
+
+    def _scan_infer(self):
+        """모은 점군을 추론해 scan_result/1로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
+
+        구조 합격 검사는 HMI의 check_design 요청 때 한다. 여기서는 JSON 형식·필수 값만 확인하며 잘못된 답은 SCAN_FAILED.
+        """
+        ok, why, body = self.io.scan_infer(self.run_id, self.halted)
+        if not ok or self.halted():
+            return self._failed('STOPPED' if self.halted() else why, '스캔 추론')
+        try:
+            blocks = body['blocks']
+            if body.get('ok') is not True or not isinstance(blocks, dict) or blocks.get('schema') != 'blocks/1':
+                raise ValueError('blocks/1 객체가 아니다')
+            if any(not isinstance(blocks.get(k), str) or not blocks[k] for k in ('design_id', 'family')):
+                raise ValueError('design_id · family 가 없다')
+            rows = blocks.get('blocks')
+            if not isinstance(rows, list) or not rows:
+                raise ValueError('추론 블록이 없다')
+            orders = set()
+            for b in rows:
+                order = b['order']
+                if isinstance(order, bool) or not isinstance(order, int) or order <= 0 or order in orders:
+                    raise ValueError('블록 order 가 잘못됐다')
+                orders.add(order)
+                if b.get('ori') not in ('x', 'y', 'xe', 'ye', 'zx', 'zy') or not isinstance(b.get('inferred', False), bool):
+                    raise ValueError('블록 ori · inferred 가 잘못됐다')
+                if any(isinstance(b[k], bool) or not isinstance(b[k], (int, float)) for k in ('x', 'y', 'z')):
+                    raise ValueError('블록 좌표가 숫자가 아니다')
+            count = body['inferred_count']
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(rows) or not isinstance(body['image_path'], str):
+                raise ValueError('inferred_count · image_path 가 잘못됐다')
+            result = dict(schema='scan_result/1', run_id=self.run_id, blocks=copy.deepcopy(blocks),
+                          inferred_count=count, image_path=body['image_path'], poses_used=list(self._scan_poses))
+            json.dumps(result, allow_nan=False)       # NaN · Infinity 를 방송·저장 가능한 결과로 넘기지 않는다
+        except (KeyError, TypeError, ValueError) as e:
+            return self._to_error(f'SCAN_FAILED: 추론 응답이 잘못됐다({e})')
+        with self._lock:
+            if self.halted():
+                return self._failed('STOPPED', '스캔 추론 결과 적용')
+            self.io.publish_scan_result(result)
+            self._finish_run('DONE')
+            self._set('SCAN_REVIEW', None, '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
 
     # ---------- 실패 · 공급 처리 ----------
     def _grasp_failed(self):
@@ -444,13 +614,33 @@ class TaskManager:
             self._pending_start = False        # 이전에 눌린 [계속]은 버린다
             self._set('WAIT_SUPPLY', None, '공급이 필요해요. 관측 자세로 갑니다')
 
+    def _enter_wait_hmi(self):
+        """현재 동작이 끝난 뒤 WAIT_HMI 를 알린다. 정지 요청 · 공급 초기화 · 조립 요약 확정은 하지 않는다."""
+        with self._lock:
+            if self.state != 'WAIT_HMI':
+                self._pending_start = False
+                self._set('WAIT_HMI', 'hmi_lost', '웹 연결이 끊겼어요. 다시 연결한 뒤 [계속]을 누르세요')
+
     def _failed(self, reason, where, log=True):
-        """집기·놓기 말고 이동 · 관측 호출이 실패했을 때. 정지류는 STOPPED, BUSY 는 같은 상태에서 다시, 그 밖은 모두 ERROR.
+        """이동 · 관측 · 집기 실패를 처리한다. TIMEOUT 은 잠금 밖에서 정지 요청 후 상태 확인, 정지류는 STOPPED, BUSY 는 재시도.
 
         모르는 reason(IRD 7장에 없는 문자열)도 이름을 따로 다루지 않고 일반 실패로 ERROR 에 보낸다. 글자는 알림에 그대로 적는다.
         """
         if log:
             self.logger.log('fail', self.block_id, f'{where}: {reason or "이유 없음"}')
+        if reason == 'TIMEOUT':
+            with self._lock:
+                self._timeout_pending = True
+            try:
+                ok, message = self.io.request_stop('TIMEOUT')    # 파일 기록 대기 · 상태 복구보다 먼저, 잠금 밖에서 보낸다
+            except Exception as e:              # 정지 요청 자체가 실패해도 다음 이동을 막고 사람에게 알린다
+                ok, message = False, repr(e)
+            with self._lock:
+                if self.safety and self.safety.get('stopped'):
+                    self._enter_stopped()
+                else:
+                    self._to_error(f'{where}: TIMEOUT — 정지 상태 확인 대기(요청 {"접수" if ok else "실패"}: {message})')
+            return
         if reason in STOP_REASONS:             # 정지 노드의 신호를 기다린다
             self._enter_stopped()
         elif reason == 'BUSY':                 # 기다렸다 다시: 같은 상태에 머무르면 다음 단계가 다시 부른다
@@ -496,7 +686,11 @@ class TaskManager:
         ③ 잠금 안: 더 새 요청이 있거나 · 상태가 바뀌었거나 · 정지 · 종료 중이면 답을 버리고, 아니면 검증해서 적용한다.
         """
         with self._lock:
-            if mode == 'select' and self.state not in ('IDLE', 'READY', 'DONE'):
+            if mode == 'start':
+                design_id = self._start_lookup_target(design_id)
+                if design_id is None:
+                    return self._start()
+            if mode == 'select' and self.state not in ('IDLE', 'READY', 'DONE', 'SCAN_REVIEW'):
                 return self._reject(self._busy_reason(), '지금은 설계를 바꿀 수 없다')
             if not design_id:
                 return self._reject('', f'설계 파일을 못 읽었다: {design_id!r}')
@@ -551,7 +745,7 @@ class TaskManager:
 
     def _apply_select(self, planner, design_id):
         """(잠금 안) 조회한 설계로 시작 점검을 통과하면 READY. IDLE · READY · DONE 에서만."""
-        if self.state not in ('IDLE', 'READY', 'DONE'):
+        if self.state not in ('IDLE', 'READY', 'DONE', 'SCAN_REVIEW'):
             return self._reject(self._busy_reason(), '지금은 설계를 바꿀 수 없다')
         ok, code, text = self._precheck()
         if not ok:
@@ -562,10 +756,18 @@ class TaskManager:
         return True, ''
 
     def _start(self):
-        """(lock 안) READY 에서 출발(→ CHECK), WAIT_SUPPLY 에서 [계속]. 설계 조회는 _lookup_then 이 먼저 한다.
+        """(lock 안) READY 출발(→ CHECK), WAIT_SUPPLY · WAIT_HMI 에서 계속. 설계 조회는 _lookup_then 이 먼저 한다.
 
         WAIT_SUPPLY 에서는 관측 자세에 도착해 supply_empty 를 낸 뒤에만 받는다(도착 전 start 는 BUSY 로 거절, 진행시키지 않는다).
         """
+        if self.state == 'WAIT_HMI':
+            ok, code, text = self._precheck()
+            if not ok:
+                return self._reject(code, f'계속 점검 실패: {text}')
+            self._hmi_pause, self._hmi_recheck = False, True
+            self.logger.log('command', self.block_id, 'continue_hmi')
+            self._set('SELECT', None, '웹이 연결됐어요. 진행 확인부터 이어갑니다')
+            return True, ''
         if self.state == 'WAIT_SUPPLY':
             if not self._supply_moved:
                 return self._reject('BUSY', '아직 관측 자세로 가는 중이에요. 도착한 뒤 [계속]을 누르세요')
@@ -585,15 +787,19 @@ class TaskManager:
         self._set('CHECK', None, '진행 확인을 시작합니다')
         return True, ''
 
-    def _precheck(self):
+    def _precheck(self, scan=False):
         """시작 점검(M-06) 중 숫자 없는 항목. 반환: (통과, 거절 reason, 이유 글자).
 
-        ① 서버 3개가 떠 있다 ② 정지 노드 신호를 받았고 잠기지 않았다 ③ 그리퍼 신호를 받았고 비었다.
+        ① 조립 또는 scan=True의 촬영·추론 서버가 떠 있다 ② 정지 노드 신호를 받았고 잠기지 않았다 ③ 그리퍼가 비었다.
         신호가 몇 초 안에 왔는지(신선도)는 숫자가 필요해서 보지 않는다. 사람이 영역 밖인지는 누르는 사람이 확인한다.
         """
-        missing = self.io.services_ready()
+        missing = self.io.services_ready(scan=True) if scan else self.io.services_ready()
         if missing:
             return False, '', f'서버가 안 떠 있다: {", ".join(missing)}'
+        if self._timeout_pending:
+            return False, 'STOPPED', '시간 초과 뒤 정지 상태 확인을 기다린다'
+        if not self._hmi_fresh():
+            return False, 'BUSY', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'
         st = self.safety
         if st is None:
             return False, '', '정지 노드 신호를 아직 못 받았다'
@@ -621,9 +827,10 @@ class TaskManager:
     def _enter_stopped(self):
         """STOPPED 로 간다. 조립 중이었는지 적어 두고(RECOVER 가 쓴다), 눌려 있던 [계속]은 버린다."""
         with self._lock:
+            self._timeout_pending = False
             if self.state == 'STOPPED':
                 return
-            self._assembling = self.state in RUN_STATES
+            self._assembling = self.state in RUN_STATES and not self._scan_run
             self._entered_count = self.safety_count
             self._pending_start = False
             self.logger.count_stop()
@@ -642,8 +849,10 @@ class TaskManager:
         return bool(st) and self.safety_count > count and not st.get('stopped') and not st.get('locked')
 
     def _finish_run(self, result):
-        """열린 조립 기록을 result(DONE · STOPPED · ERROR)로 닫고 build/1 요약을 last_build 에 둔다. run_id 는 화면에 남긴다."""
+        """열린 CSV를 result로 닫는다. 조립만 build/1 요약을 보존하고 스캔은 DB 조립 목록에 넣지 않는다. run_id는 화면에 남긴다."""
         summary = self.logger.finish(result)
+        if self._scan_run:
+            return                                  # 스캔은 CSV 와 scan_result 로 남기고 조립 build/1 로 저장하지 않는다
         if summary is not None:
             with self._lock:
                 self.last_build = summary
@@ -660,6 +869,9 @@ class TaskManager:
             self._finish_run('STOPPED')
         self.logger.clear()
         self.run_id = None
+        self._recover_slow = False
+        self._hmi_pause = self._hmi_recheck = False
+        self._scan_run = False
 
     def _busy_reason(self):
         """거절할 때 쓰는 기존 코드: 정지 중이면 STOPPED, 그 밖에는 BUSY."""
