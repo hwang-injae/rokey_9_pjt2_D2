@@ -12,7 +12,7 @@ from d2_task.recipe_document import RecipeDocument
 RECIPES = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
 BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000
 IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back', 'chair', 16),
-       '003_DESK_STAND': ('desk_stand', 'desk', 9)}
+       '003_DESK_STAND': ('desk_stand', 'desk', 9), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 11)}
 
 
 def load(model_id):
