@@ -6,10 +6,14 @@ CSV 칸: run_id · design_id · time · module · kind · block_id · value (SDD
 저장 위치는 부르는 쪽(task 노드 파라미터 log_dir)이 정한다. 비어 있으면 파일은 쓰지 않고 run_id · 요약만 만든다.
 저장소 안에는 쓰지 않는다 — 부르는 쪽이 저장소 밖 경로를 준다.
 
+**미전송 build/1 요약은 log_dir/pending_builds/<run_id>.json 으로도 보관한다**(save_pending · delete_pending · load_pending, W119).
+같은 폴더의 임시 파일에 쓰고 flush · fsync 한 뒤 os.replace 로 완성본을 만든다. CSV 의 file_ok 와는 따로 실패를 다룬다.
+
 **파일 쓰기는 전용 스레드 하나가 한다.** 부르는 쪽(상태표 · 정지 · 취소 경로)은 메모리 값을 바꾸고 줄을 큐에 넣기만 하므로
 디스크가 느리거나 멈춰도 정지 · 취소 처리가 기다리지 않는다. run_id 와 build/1 요약은 메모리에서 바로 확정된다.
 """
 import csv
+import json
 import logging
 import math
 import os
@@ -187,6 +191,112 @@ class RunLogger:
                 self._used_ids.add(run_id)
                 return run_id
 
+    # ---------- 미전송 요약 보관 (log_dir/pending_builds) ----------
+    @property
+    def pending_dir(self):
+        """미전송 요약 폴더. log_dir 이 비어 있으면 빈 글자."""
+        return os.path.join(self.log_dir, 'pending_builds') if self.log_dir else ''
+
+    def save_pending(self, run_id, summary, on_done):
+        """요약을 디스크에 보관하라고 쓰기 스레드에 맡긴다(기다리지 않는다). 반환: 맡겼으면 True.
+
+        끝나면 쓰기 스레드가 on_done(ok)를 부른다(ok = 완성본이 디스크에 있다). 파일 기록이 꺼져 있거나 큐가 가득 차 못 맡기면
+        False — on_done 은 안 불린다(부르는 쪽이 디스크 없이 진행). 실패는 CSV 의 file_ok 와 상관없다.
+        """
+        if not self.enabled:
+            return False
+        with self._lock:
+            self._ensure_thread()
+            try:
+                self._queue.put_nowait(('pend_save', run_id, summary, on_done))
+                return True
+            except queue.Full:
+                LOG.warning('기록 쓰기가 밀려 미전송 요약 %s 을 디스크에 못 맡긴다', run_id)
+                return False
+
+    def delete_pending(self, run_id):
+        """저장이 확인된 run_id 의 보관 파일 삭제를 쓰기 스레드에 맡긴다. 다른 run 의 파일은 건드리지 않는다. 기다리지 않는다."""
+        if not self.enabled:
+            return
+        with self._lock:
+            self._ensure_thread()                    # 재시작 뒤 복원한 요약을 지울 때는 아직 스레드가 없다
+            try:
+                self._queue.put_nowait(('pend_del', run_id))
+            except queue.Full:
+                LOG.warning('기록 쓰기가 밀려 %s 의 보관 파일을 못 지웠다 — 다음 시작 때 다시 전송될 수 있다', run_id)
+
+    def load_pending(self):
+        """시작할 때 한 번: 보관된 미전송 요약을 읽는다. 반환: [(run_id, 요약 dict)] (파일 이름순).
+
+        완성본(<run_id>.json)만 읽고 임시 파일(.tmp)은 무시한다. schema · run_id(파일 이름과 같음) · 필수 칸 · 자료형이 틀린 파일은
+        지우지 않고 경고만 남기고 건너뛴다. 폴더가 없거나 log_dir 이 비어 있으면 빈 목록(파일 I/O 오류도 경고 뒤 빈 목록).
+        """
+        found = []
+        folder = self.pending_dir
+        if not folder or not os.path.isdir(folder):
+            return found
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError as e:
+            LOG.warning('미전송 요약 폴더를 못 읽는다(%s): %r', folder, e)
+            return found
+        for name in names:
+            if not name.endswith('.json'):
+                continue
+            path = os.path.join(folder, name)
+            try:
+                with open(path, encoding='utf-8') as f:
+                    summary = json.loads(f.read(), parse_constant=_reject_constant)
+                why = _invalid_summary(summary, name[:-len('.json')])
+            except (OSError, ValueError) as e:
+                why = f'읽을 수 없다: {e!r}'
+            if why:
+                LOG.warning('미전송 요약 파일을 건너뛴다(지우지 않음) %s — %s', path, why)
+            else:
+                found.append((summary['run_id'], summary))
+        return found
+
+    def _pending_op(self, item):
+        """(쓰기 스레드) 미전송 요약 파일 저장 · 삭제. 실패해도 CSV 쪽 상태는 건드리지 않는다."""
+        ok = False
+        try:
+            folder = self.pending_dir
+            final = os.path.join(folder, f'{item[1]}.json')
+            if item[0] == 'pend_save':
+                os.makedirs(folder, exist_ok=True)
+                tmp = final + '.tmp'
+                try:
+                    f = self._opener(tmp, 'w', encoding='utf-8')
+                    try:
+                        f.write(json.dumps(item[2], ensure_ascii=False, allow_nan=False))
+                        f.flush()
+                        if hasattr(f, 'fileno'):
+                            os.fsync(f.fileno())
+                    finally:
+                        f.close()
+                    os.replace(tmp, final)
+                    ok = True
+                except BaseException:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise
+            else:
+                try:
+                    os.remove(final)
+                except FileNotFoundError:
+                    pass
+                ok = True
+        except Exception as e:   # noqa: BLE001
+            LOG.warning('미전송 요약 파일 %s 실패(run %s) — %r%s', '저장' if item[0] == 'pend_save' else '삭제', item[1], e,
+                        ' — 재시작 복구를 보장하지 않는다' if item[0] == 'pend_save' else ' — 다음 시작 때 다시 전송될 수 있다')
+        if item[0] == 'pend_save':
+            try:
+                item[3](ok)
+            except Exception:   # noqa: BLE001
+                LOG.exception('미전송 요약 저장 완료 알림 실패')
+
     # ---------- 큐 · 쓰기 스레드 (잠금 안에서 부른다) ----------
     def _row(self, kind, block_id, value, module='task'):
         """(잠금 안) 줄 하나를 시각과 함께 큐에 넣는다."""
@@ -227,7 +337,9 @@ class RunLogger:
             item = self._queue.get()
             try:
                 kind = item[0]
-                if kind == 'barrier':
+                if kind in ('pend_save', 'pend_del'):
+                    self._pending_op(item)
+                elif kind == 'barrier':
                     item[1].set()
                 elif kind == 'open':
                     if f is not None:
@@ -259,3 +371,40 @@ class RunLogger:
                     with self._lock:
                         if self.run_id == item[1]:
                             self.file_ok = False
+
+
+def _reject_constant(name):
+    """json.loads 가 NaN · Infinity 를 만나면 오류로(표준 JSON 이 아니다)."""
+    raise ValueError(f'유한하지 않은 수({name})')
+
+
+def _num_or_none(v):
+    """측정값 칸: None 이거나 유한한 숫자(bool 아님)."""
+    return v is None or (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v))
+
+
+def _invalid_summary(s, stem):
+    """보관된 build/1 요약이 올바른가. 올바르면 빈 글자, 아니면 이유. stem = 파일 이름(확장자 뺀 것) = run_id."""
+    if not isinstance(s, dict):
+        return '객체가 아니다'
+    if s.get('schema') != SCHEMA_BUILD:
+        return f'schema 가 {SCHEMA_BUILD} 가 아니다'
+    if s.get('run_id') != stem:
+        return 'run_id 가 파일 이름과 다르다'
+    for key in ('design_id', 'result'):
+        if not isinstance(s.get(key), str) or not s[key]:
+            return f'{key} 가 글자가 아니다'
+    if s['result'] not in RESULTS:
+        return f'result 가 {RESULTS} 가 아니다'
+    for key in ('placed', 'total', 'stop_count'):
+        if not isinstance(s.get(key), int) or isinstance(s[key], bool) or s[key] < 0:
+            return f'{key} 가 0 이상 정수가 아니다'
+    if not _num_or_none(s.get('duration_s')) or s.get('duration_s') is None:
+        return 'duration_s 가 숫자가 아니다'
+    if not isinstance(s.get('blocks'), list):
+        return 'blocks 가 목록이 아니다'
+    for b in s['blocks']:
+        if not isinstance(b, dict) or not isinstance(b.get('block_id'), str) or \
+                not all(k in b and _num_or_none(b[k]) for k in ('dz_m', 'dx_m', 'dy_m')):
+            return 'blocks 항목이 올바르지 않다'
+    return ''
