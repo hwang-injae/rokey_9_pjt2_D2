@@ -129,6 +129,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 로봇 PC는 60
 ```
 
 - 바꾼 뒤 새 터미널을 열고 `ros2 daemon stop`을 한 번 한다(예전 설정으로 떠 있던 데몬을 끈다).
+- **🆕 로봇에 붙을 수 있는 PC는 모두(한세교 · 박진용) `.bashrc` 기본값을 위 값으로 둔다(10/7 PL, W029).** 설정 스크립트(`rokey4_set` 등)를 실행해야만 60 · CycloneDDS가 잡히고 새 터미널 기본값이 협동1(Fast DDS · 50)이면, 그 터미널에서 띄운 노드(특히 **정지 노드**)가 다른 노드와 서로 안 보여 정지 명령이 닿지 않는다. 확인: 새 터미널에서 `echo $RMW_IMPLEMENTATION $ROS_DOMAIN_ID` → `rmw_cyclonedds_cpp 60`.
 - 지난 프로젝트 설정(Fast DDS 설정 파일, `ROS_DISCOVERY_SERVER`, 다른 `ROS_DOMAIN_ID`)이 `.bashrc`에 남아 있으면 주석 처리한다. 같은 변수가 두 번 있으면 아래 것이 이긴다.
 - 한 PC 안에서만 돌므로 `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`를 켜 두어도 된다(다른 팀 노드가 섞이는 것을 막음 — 안). 강의실 무선망 멀티캐스트 · `CYCLONEDDS_URI` 걱정은 없어졌다.
 - 다른 팀 노드가 섞이는지: 브링업 뒤 `ros2 node list`에 다른 팀 `/dsr01` 등이 보이면 번호를 다시 본다.
