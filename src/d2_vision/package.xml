@@ -13,7 +13,8 @@
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>d2_interfaces</exec_depend>      <!-- CheckProgress -->
   <exec_depend>d2_motion</exec_depend>          <!-- motion_math.recipe_blocks: 레시피 → base 블록 목록 (노드에서만 import, 시험은 안 씀) -->
-  <exec_depend>dsr_msgs2</exec_depend>          <!-- 두산 posx · TCP 조회 (로봇 PC에만 있음 — CI 는 d2_vision 을 빌드만 한다) -->
+  <!-- dsr_msgs2(두산 posx · TCP 조회)도 wrist_block · capture_scene 이 쓰지만 적지 않는다: CI(ros-base 컨테이너)의 rosdep 이
+       두산 패키지를 못 찾아 실패한다(10/7). 로봇 PC에는 두산 워크스페이스가 있어 실행에는 문제없다. CI rosdep 에 skip-keys 가 들어가면 다시 적는다 -->
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
