@@ -1,30 +1,40 @@
-"""손목 블록 인식 노드 (wrist_block) — IRD 4.2 `/d2/vision/check_progress` · 4.1 `camera_status/1` (W041).
+"""손목 블록 인식 노드 (wrist_block) — IRD 4.2 `/d2/vision/check_progress` · 4.1 `camera_status/1` (W041 · W140 E-52).
 
-작업 관리자가 관측 자세에서 `check_progress`(block_ids)를 부르면:
+작업 관리자가 관측 자세에서 `check_progress`(design_id · block_ids)를 부르면:
   손목 깊이 영상 10장(중앙값) + 두산 posx + hand-eye 보정값 → base 점군 → BlockChecker(block_checker.py)
   → 블록마다 state(present·absent·occluded·unknown) · top_z_m · dz_m (dx·dy 는 1차 NaN) 로 답한다.
 카메라 연결 신호 `/d2/vision/camera_status` 를 2 Hz 로 낸다(마지막 프레임 시각).
 
+설계 · 블록 이름 (E-52, 10/7)
+  요청 design_id 칸으로 설계를 고른다(블록 이름에서 잘라 내지 않는다). block_ids 는 전체 블록 이름
+  `<design_id>_<역할>_<부품 3자리>_<블록 2자리>`(예 001_CHAIR_BENCH_LEG_001_01)를 그대로 받아 레시피가 만든 이름과 맞춘다.
+  design_id 가 비면 옛 방식(10/8 저녁까지만): 첫 block_id 의 '_B' 앞(001_CHAIR_BENCH_B003 → 001_CHAIR_BENCH).
+  한 요청은 한 설계다 — 그 설계 레시피에 없는 블록은 그 블록만 unknown.
+
 입력(파라미터)
-  recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). 요청 block_id 의 앞글자(`001_CHAIR_BENCH_B003` → `001_CHAIR_BENCH`)로
-               `<recipe_dir>/<design_id>.recipe.json` 을 찾아 팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다(설계마다 한 번, 캐시).
-               설계를 `get_design` 으로 받는 길은 W121 뒤.
+  recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). 설계 이름으로
+               `<recipe_dir>/<design_id>_recipe.json`(새, E-52 — 같은 폴더 `_structure.json` 도 읽음), 없으면 `<design_id>.recipe.json`(옛)을 찾아
+               팀 공용 `d2_motion.motion_math.load_recipe()` · `recipe_blocks()` 로 base 블록 목록을 만든다(설계마다 한 번, 캐시).
+               설계를 `get_design` 으로 받는 길(생성 · 스캔 설계)은 아직 없다.
   calib_path   T_gripper2camera.npy(카메라 → TCP 4x4, mm). 비우면 이 패키지 share/config 의 것
   cam_prefix   realsense 토픽 접두 (Jazzy 기본 /camera/camera)
   posx         시험용 posx 6개(mm·deg, **실수로** 예: [460.5, -157.0, 294.8, 154.8, 180.0, 154.5]). 비우면 두산 서비스로 읽는다
   n_frames     중앙값 낼 깊이 프레임 수(10 — V-17 경험: 정지 상태 10장이면 ±0.5 mm)
-robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m 을 읽는다.
+robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_actual_m 을 읽는다.
 
 바깥 영향: 서비스 답과 camera_status 발행뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
 실패 때: 새 프레임이 시간 안에 안 오거나 posx 를 못 받으면 success=false, reason=TIMEOUT.
-         보정값·레시피를 못 읽으면 노드는 뜨되 success=false, reason=ERROR (배열은 요청 길이, state unknown).
-NaN 규칙(IRD 5장): dx·dy 는 1차 늘 NaN. absent·unknown 은 dz·top_z 도 NaN. 가려진 present(위 블록 때문에 못 잼)도 NaN.
+         보정값·레시피를 못 읽거나 설계를 못 고르면 노드는 뜬 채 success=false, reason=ERROR (배열은 요청 길이, state unknown).
+NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_m 은 present 일 때만 값.
+  top_z_m 은 present · occluded(설계 밖 물체 윗면, 참고값) 일 때 값. absent·unknown · 위 블록에 가려진 present 는 dz·top_z 둘 다 NaN.
 보정값은 TCP 기준이라(config/T_gripper2camera.json) 켤 때 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 다르면 경고한다(한 번).
 
 실행 (저장소 맨 위에서):
   ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes
-시험 호출:
+시험 호출 (새 — design_id 칸 + 전체 블록 이름):
+  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH, block_ids: [001_CHAIR_BENCH_LEG_001_01, 001_CHAIR_BENCH_SEAT_001_03]}"
+시험 호출 (옛 — design_id 빈 값, 레시피가 아직 옛 이름일 때. 10/8 저녁까지):
   ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{block_ids: [001_CHAIR_BENCH_B001, 001_CHAIR_BENCH_B002]}"
 """
 import json
@@ -46,8 +56,8 @@ from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress
-from d2_motion.motion_math import recipe_blocks
-from d2_vision.block_checker import BlockChecker, depth_to_base_points
+from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
+from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, recipe_path
 from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp
 
 NAN = float('nan')
@@ -123,21 +133,28 @@ class WristBlock(Node):
             return None
 
     def checker_for(self, design_id):
-        """design_id 의 BlockChecker(캐시). `<recipe_dir>/<design_id>.recipe.json` → recipe_blocks(robot.yaml, 레시피) → BlockChecker.
-        이름에 경로 문자가 있거나 파일 · 형식이 틀리면 None (task 노드 load_recipe 와 같은 규칙)."""
+        """설계 이름 → 그 설계의 BlockChecker (설계마다 한 번 읽어 캐시). 바깥 영향: 로그뿐.
+
+        파일: `<recipe_dir>/<design_id>_recipe.json`(새 — load_recipe 가 옆 `_structure.json` 도 붙임), 없으면 `.recipe.json`(옛).
+        → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 recipe_blocks 가 만든 이름(새 형식은 '<model_id>_<블록 이름>').
+        실패 → None, 부르는 쪽이 ERROR 로 답한다. 파일을 못 찾으면(이름 비었음 · 경로 문자 · 파일 없음) 캐시하지 않아 다음 요청에
+        다시 찾고, 찾은 파일을 못 읽으면(구조 파일 없음 · 형식 틀림 · 블록 크기 다름) None 을 캐시한다(같은 오류를 매번 읽지 않게)."""
+        if not design_id:                     # 설계를 못 고름(design_id 칸이 비었고 '_B' 이름도 없음) — 로그는 on_check 가 남긴다
+            return None
         if design_id in self.checkers:
             return self.checkers[design_id]
         recipe_dir = self.get_parameter('recipe_dir').value
-        if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
+        path = recipe_path(recipe_dir, design_id, RECIPE_SUFFIXES)
+        if path is None:
+            self.get_logger().error('레시피 %r 파일을 못 찾음(recipe_dir=%r, 끝 %s)' % (design_id, recipe_dir, ' · '.join(RECIPE_SUFFIXES)))
             return None
         try:
-            recipe = json.loads((Path(recipe_dir) / f'{design_id}.recipe.json').read_text(encoding='utf-8'))
-            blocks = recipe_blocks(self.cfg, recipe)
+            blocks = recipe_blocks(self.cfg, load_recipe(str(path)))
             o = self.cfg['assembly_origin']
             chk = BlockChecker(blocks, (o['x_m'], o['y_m']), float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
-            self.get_logger().info('레시피 %s: 블록 %d개' % (design_id, len(chk.blocks)))
+            self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.blocks)))
         except (OSError, KeyError, TypeError, ValueError) as e:
-            self.get_logger().error('레시피 %s 를 못 읽음(recipe_dir=%r): %s' % (design_id, recipe_dir, e))
+            self.get_logger().error('레시피 %s 를 못 읽음(%s): %s' % (design_id, path, e))
             chk = None
         self.checkers[design_id] = chk
         return chk
@@ -232,13 +249,17 @@ class WristBlock(Node):
         return res
 
     def on_check(self, req, res):
-        """요청 뒤 새 깊이 프레임 n장 중앙값 + posx → 점군 → BlockChecker → 답. 설정 없음 → ERROR, 프레임 · posx 없음 → TIMEOUT."""
+        """check_progress 콜백. 입력 req.design_id(빈 값 가능) · req.block_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
+
+        설계 고르기 → 요청 뒤 새 깊이 프레임 n장 중앙값 + posx → 점군 → BlockChecker → 답. 바깥 영향: 두산 posx 조회 · 로그.
+        실패: 설계를 못 고름 · 레시피 · 보정값 없음 → ERROR, 프레임 · posx 없음 → TIMEOUT (둘 다 state unknown, 값 NaN)."""
         ids = list(req.block_ids)
-        # block_id = '<design_id>_B<순번>' (IRD 2장) → 앞글자로 설계를 찾는다. 한 요청은 한 설계라고 본다(섞이면 나머지는 unknown)
-        design_ids = [i.rsplit('_B', 1)[0] for i in ids if '_B' in i]
-        checker = self.checker_for(design_ids[0]) if design_ids else None
+        # 설계 = design_id 칸(E-52). 비었으면 옛 방식으로 첫 '_B' block_id 의 앞(10/8 저녁까지).
+        # 한 요청은 한 설계라고 본다 — 그 설계에 없는 블록은 BlockChecker 가 그 블록만 unknown 으로 답한다
+        design_id = next((d for d in (design_of(req.design_id, i) for i in ids) if d), '')
+        checker = self.checker_for(design_id)
         if checker is None or self.T_g2c is None:
-            self.get_logger().error('보정값 또는 레시피(%s)가 없어 답할 수 없다 → ERROR' % (design_ids[:1] or ids[:1]))
+            self.get_logger().error('보정값 또는 레시피(%r, design_id 칸 %r)가 없어 답할 수 없다 → ERROR' % (design_id or ids[:1], req.design_id))
             return self._fill(res, ids, reason='ERROR')
         t_req = self.now()
         posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
@@ -267,8 +288,8 @@ class WristBlock(Node):
         res.top_z_m = [r['top_z_m'] if r['state'] in ('present', 'occluded') else NAN for r in results]
         res.success, res.reason = True, ''
         # 로그에는 absent 때 보이는 면(작업면) 높이도 적는다 — 보정 기울기 진단용(10/7 박진용 실기: 윗면 −2.8 mm). 서비스 답은 IRD 5장대로 NaN
-        self.get_logger().info('check_progress %d개 (점 %d, posx z %.0f mm) → %s' % (
-            len(ids), len(pts), posx[2], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
+        self.get_logger().info('check_progress %s %d개 (점 %d, posx z %.0f mm) → %s' % (
+            design_id, len(ids), len(pts), posx[2], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
         return res
 
 
