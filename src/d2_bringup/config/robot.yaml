@@ -23,12 +23,12 @@ block_tolerance_m: 0.0005      # 실제 블록은 설계 치수보다 이 안에
 # yaw_deg = 블록 긴 쪽 방향 (세우면 25 mm 쪽). tcp_z_m·grip_display_width_m = 10/4 교시 집는 높이 (세운 블록은 더 깊게 문다)
 # grasp = 이 칸에서 쓰는 잡기 하나 (칸마다 고정 — 그리퍼 방향을 찍을 때 그대로 쓴다)
 supply_slots:
-  - {x_m: 0.2822, y_m: 0.1816, surface_z_m: -0.018, yaw_deg: -0.3, block_up: THICKNESS, grasp: FLAT_LONG}   # p1 FLAT_LONG
-  - {x_m: 0.2782, y_m: 0.2612, surface_z_m: -0.018, yaw_deg: -89.8, block_up: THICKNESS, grasp: FLAT_SHORT}   # p2 FLAT_SHORT
-  - {x_m: 0.4006, y_m: 0.1783, surface_z_m: -0.018, yaw_deg: 0.0, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_LONG}   # p3 EDGE_LONG (깊이 = p4, 10/6 실기: 계산식은 윗부분만 물림)
-  - {x_m: 0.4031, y_m: 0.2588, surface_z_m: -0.018, yaw_deg: -89.9, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_SHORT}   # p4 EDGE_SHORT
-  - {x_m: 0.5450, y_m: 0.1698, surface_z_m: -0.018, yaw_deg: 0.3, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344, grasp: STAND_LONG}   # p5 STAND_LONG
-  - {x_m: 0.5445, y_m: 0.2620, surface_z_m: -0.018, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT
+  - {x_m: 0.2822, y_m: 0.1796, surface_z_m: -0.018, yaw_deg: -0.3, block_up: THICKNESS, grasp: FLAT_LONG}   # p1 FLAT_LONG (10/7 잡기 폭 시험 실기로 확정: y -2 mm — 전 0.1816)
+  - {x_m: 0.2772, y_m: 0.2612, surface_z_m: -0.018, yaw_deg: -89.8, block_up: THICKNESS, grasp: FLAT_SHORT}   # p2 FLAT_SHORT (10/7 잡기 폭 시험 실기로 확정: x -1 mm — 전 0.2782)
+  - {x_m: 0.4006, y_m: 0.1783, surface_z_m: -0.018, yaw_deg: 0.0, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_LONG}   # p3 EDGE_LONG (깊이 = p4, 10/6 실기: 계산식은 윗부분만 물림) — 10/7 잡기 폭 시험 그대로 OK
+  - {x_m: 0.4031, y_m: 0.2588, surface_z_m: -0.018, yaw_deg: -89.9, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_SHORT}   # p4 EDGE_SHORT — 10/7 잡기 폭 시험 그대로 OK
+  - {x_m: 0.5450, y_m: 0.1698, surface_z_m: -0.018, yaw_deg: 0.3, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344, grasp: STAND_LONG}   # p5 STAND_LONG — 10/7 잡기 폭 시험 그대로 OK
+  - {x_m: 0.5445, y_m: 0.2620, surface_z_m: -0.018, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT — 10/7 잡기 폭 시험 그대로 OK
 
 observe_pose: {joints_deg: [-18.25, 1.73, 72.73, 0.02, 105.52, 71.44]}   # 관측 자세 (W018, 10/6 실기 확인·민범진 OK): TCP (350.5, -109.0, 294.8) mm 아래 방향, 작업대까지 약 497 mm. 조립 영역(초록 사각형)이 화면 가운데에 다 보임
 home_pose: {joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]}
@@ -53,10 +53,16 @@ grasp_depth_m: 0.011           # 블록 윗면에서 손가락 끝까지 (15 mm 
 # 잡기 6가지 (IRD 2장). 폭은 실제 손가락 끝 사이 거리 (그리퍼 노드가 command_offset_m 을 더해 명령)
 grasp_width_m:                 # 닫힌 폭 = 블록 치수 (잡힘 판정 기준)
   {FLAT_SHORT: 0.025, FLAT_LONG: 0.075, EDGE_SHORT: 0.015, EDGE_LONG: 0.075, STAND_SHORT: 0.015, STAND_LONG: 0.025}
-grasp_open_pick_m:             # 집을 때 열림 — 공급 칸은 주변이 비어 크게 연다
-  {FLAT_SHORT: 0.060, FLAT_LONG: 0.100, EDGE_SHORT: 0.050, EDGE_LONG: 0.100, STAND_SHORT: 0.050, STAND_LONG: 0.060}
-grasp_open_place_m:            # 놓을 때 열림 — LV1 다리 기둥 사이 틈 25 mm: 2 x (37.5 - 손가락 11.4 - 여유 3) = 46 mm 미만
-  {FLAT_SHORT: 0.040, FLAT_LONG: 0.100, EDGE_SHORT: 0.035, EDGE_LONG: 0.100, STAND_SHORT: 0.035, STAND_LONG: 0.040}
+# 집을 때 열림 = 닫는 방향 블록 실측 + 2 x 한쪽 여유. 한쪽 여유 = 위치 오차 e(가정 2 mm, 실기로 확인) + 3.8 mm
+# (안전 3 · yaw 3도 0.6 · 폭 명령 0.2). 좁게 열어 옆 블록을 덜 친다 — 열수록 손가락 끝이 올라가므로(RG2 호) 좁혀도 작업대엔 안 닿음
+# 10/7 튜닝 전 값: FLAT_SHORT 0.060, FLAT_LONG 0.100, EDGE_SHORT 0.050, EDGE_LONG 0.100, STAND_SHORT 0.050, STAND_LONG 0.060
+grasp_open_pick_m:
+  {FLAT_SHORT: 0.0365, FLAT_LONG: 0.0865, EDGE_SHORT: 0.0265, EDGE_LONG: 0.0865, STAND_SHORT: 0.0265, STAND_LONG: 0.0365}
+# 놓을 때 열림 = 집을 때와 같게 (10/7) — 놓는 자리 옆에 쌓인 블록을 덜 치고, 좌판 FLAT_LONG 은 100 mm 로 열어 삐끗하던 것(10/6)을 줄인다.
+# LV1 다리 기둥 사이 틈 25 mm 조건: 2 x (37.5 - 손가락 11.4 - 여유 3) = 46 mm 미만 — SHORT 폭 모두 만족
+# 10/7 튜닝 전 값: FLAT_SHORT 0.040, FLAT_LONG 0.100, EDGE_SHORT 0.035, EDGE_LONG 0.100, STAND_SHORT 0.035, STAND_LONG 0.040
+grasp_open_place_m:
+  {FLAT_SHORT: 0.0365, FLAT_LONG: 0.0865, EDGE_SHORT: 0.0265, EDGE_LONG: 0.0865, STAND_SHORT: 0.0265, STAND_LONG: 0.0365}
 grasp_close_m:                 # 닫기 명령 — 블록보다 5 mm 작게 줘서 힘이 걸리게 한다
   {FLAT_SHORT: 0.020, FLAT_LONG: 0.070, EDGE_SHORT: 0.010, EDGE_LONG: 0.070, STAND_SHORT: 0.010, STAND_LONG: 0.020}
 

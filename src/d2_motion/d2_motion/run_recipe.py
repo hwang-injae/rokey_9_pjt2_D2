@@ -7,6 +7,7 @@
   ros2 run d2_motion run_recipe                                          # 번호로 고름, 시작할 때만 y 확인
   ros2 run d2_motion run_recipe <LV1.recipe.json> --slots 1,3 --auto    # 파일을 직접 주고 확인 없이 (가상 시험)
   ros2 run d2_motion run_recipe <lv2.json> <lv4.json> --auto             # 두 설계를 세트로 (의자 앞에 책상)
+  ros2 run d2_motion run_recipe --grasp-test 1-6 --repeat 3              # 잡기 폭 시험: 칸마다 집어 같은 자리에 다시 놓기 (6가지 잡기)
 시작할 때 한 번만 y 를 묻고 블록 사이에는 기다리지 않는다: 로봇이 놓으러 간 사이에 사람이 같은 공급 칸을 다시 채운다.
 --slots 없음 = 블록 잡기에 정해진 칸(p1~p6)으로, --slots 1,3 = 공급 칸 1, 3, 1, 3 ... 번갈아 (사람이 가져간 칸을 다시 채운다). Ctrl+C = 지금 목표 취소 -> pick_place 가 세운다.
 """
@@ -32,7 +33,6 @@ from d2_motion.motion_math import (close_angle_deg, column, layout_designs, pick
 from d2_safety.safe_stop import init_ros
 
 HOME_TIMEOUT_S = 120.0
-START_OPEN_M = 0.100       # 시작할 때 그리퍼를 여는 폭 (가장 큰 집는 폭 FLAT_LONG·EDGE_LONG 과 같음)
 
 
 def parse_list(spec):
@@ -68,6 +68,22 @@ def plan_jobs(cfg, recipes, slots=None, only=None):
             continue
         center, rot = slot_block_pose(cfg, slot)
         jobs.append((b, slot, center, rot))
+    return jobs
+
+
+def grasp_test_jobs(cfg, slots, repeat):
+    """잡기 폭 시험용 목표: 공급 칸마다 그 칸의 잡기로 집어 같은 자리에 다시 놓는다 (레시피 없이 6가지 잡기를 다 본다).
+
+    입력: slots = 칸 번호 목록(1부터), repeat = 칸마다 반복 횟수. 반환: plan_jobs 와 같은 (블록, 칸, 중심, 회전) 목록.
+    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면 관리가 쥔 블록을 붙이지 않는다(UNKNOWN_BLOCK, 같은 자리로 돌아오므로 괜찮다).
+    """
+    jobs = []
+    for slot in slots:
+        center, rot = slot_block_pose(cfg, slot)
+        for k in range(1, repeat + 1):
+            b = {'block_id': f'GRASP_P{slot}_{k}', 'grasp': cfg['supply_slots'][slot - 1]['grasp'],
+                 'center': center, 'rot': rot, 'quat': quat_from_axes(*(column(rot, i) for i in range(3)))}
+            jobs.append((b, slot, center, rot))
     return jobs
 
 
@@ -127,27 +143,34 @@ def main():
     ap.add_argument('--steps', default=None, help='실행할 순번 (전체 블록 중 몇 번째, 예: 1-3,5). 없으면 전부')
     ap.add_argument('--check', action='store_true', help='목표만 계산해 보여 주고 끝낸다 (로봇 안 움직임)')
     ap.add_argument('--auto', action='store_true', help='시작 y 확인도 없이 (가상 시험용)')
+    ap.add_argument('--grasp-test', default=None,
+                    help='잡기 폭 시험: 이 공급 칸(예: 1-6)에서 집어 같은 자리에 다시 놓는다 (레시피 안 씀)')
+    ap.add_argument('--repeat', type=int, default=1, help='--grasp-test 때 칸마다 반복 횟수')
     args = ap.parse_args()
 
     share = get_package_share_directory('d2_bringup')
     with open(os.path.join(share, 'config', 'robot.yaml')) as f:
         cfg = yaml.safe_load(f)
-    paths = args.recipes
-    if not paths:
-        chosen = choose_recipe(os.path.join(share, 'recipes'))
-        if not chosen:
-            return 1
-        paths = [chosen]
-    print(f'레시피: {", ".join(paths)}')
     recipes = []
-    for path in paths:
-        with open(path) as f:
-            recipes.append(json.load(f))
     try:
-        jobs = plan_jobs(cfg, recipes, parse_list(args.slots) if args.slots else None,
-                         parse_list(args.steps) if args.steps else None)
-    except ValueError as e:
-        print(f'[레시피 계산 실패] {e}')
+        if args.grasp_test:
+            print(f'잡기 폭 시험: 칸 {args.grasp_test}, 칸마다 {args.repeat}번')
+            jobs = grasp_test_jobs(cfg, parse_list(args.grasp_test), args.repeat)
+        else:
+            paths = args.recipes
+            if not paths:
+                chosen = choose_recipe(os.path.join(share, 'recipes'))
+                if not chosen:
+                    return 1
+                paths = [chosen]
+            print(f'레시피: {", ".join(paths)}')
+            for path in paths:
+                with open(path) as f:
+                    recipes.append(json.load(f))
+            jobs = plan_jobs(cfg, recipes, parse_list(args.slots) if args.slots else None,
+                             parse_list(args.steps) if args.steps else None)
+    except (ValueError, IndexError) as e:
+        print(f'[목표 계산 실패] {e}')
         return 1
     if not show(cfg, jobs) or args.check:
         return 0 if args.check else 1
@@ -181,23 +204,21 @@ def main():
             return 1
         if not args.auto and not confirm(f'시작: 공급 칸 {", ".join(sorted({str(s) for _, s, _, _ in jobs}))}번에 블록을 놓았으면'):
             return 1
-        # 블록을 쥔 채 시작하면 홈에서 그리퍼를 열 때 떨어뜨린다 -> 사람이 먼저 빼게 하고 멈춘다
+        # 블록을 쥔 채 시작하면 첫 집기에서 그리퍼를 열 때 떨어뜨린다 -> 사람이 먼저 빼게 하고 멈춘다
         gst = {}
         node.create_subscription(String, '/d2/gripper/state', lambda m: gst.update(json.loads(m.data)), 10)
         end = time.monotonic() + 3.0
         while not gst and time.monotonic() < end:
             rclpy.spin_once(node, timeout_sec=0.1)
+        if not gst:
+            print('[오류] 그리퍼 상태가 안 온다 (gripper 노드 확인)')
+            return 1
         if gst.get('grasped'):
             print('[오류] 그리퍼가 블록을 쥐고 있다. 블록을 손으로 잡고 그리퍼를 연 뒤 다시 실행한다')
             return 1
-        # 시작은 늘 같은 상태에서: 홈 자세 -> 그리퍼를 시작 폭으로 열고 힘을 맞춤 -> 블록 작업
+        # 시작은 홈 자세에서. 그리퍼 폭은 여기서 바꾸지 않는다 — 집는 폭은 늘 집을 블록 바로 위에서 연다(pick_place, 10/7)
         if not go_home():
             return 1
-        r = wait(grip.call_async(GripperCommand.Request(width_m=START_OPEN_M, force_n=float(cfg['gripper']['force_n']))), 15.0)
-        if r is None or not r.success:
-            print(f'[오류] 그리퍼 초기화 실패 ({getattr(r, "reason", "응답 없음")})')
-            return 1
-        print(f'===== 그리퍼 시작 폭 {START_OPEN_M * 1000:.0f} mm, 힘 {cfg["gripper"]["force_n"]:.0f} N')
         for b, slot, center, rot in jobs:
             goal = PickPlace.Goal(block_id=b['block_id'], supply_slot=str(slot), grasp=b['grasp'],
                                   pick_pose=make_pose(center, quat_from_axes(*(column(rot, k) for k in range(3)))),
@@ -222,7 +243,7 @@ def main():
             wait(gh.cancel_goal_async(), 3.0)
     finally:
         if rows:
-            model_id = '_'.join(r['model']['model_id'] if 'model' in r else r['model_id'] for r in recipes)
+            model_id = '_'.join(r['model']['model_id'] if 'model' in r else r['model_id'] for r in recipes) or 'GRASP_TEST'
             out = f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv'
             with open(out, 'w', newline='') as f:
                 w = csv.writer(f)
