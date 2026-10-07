@@ -2,12 +2,13 @@
 # pull_request_target 이 아니라 pull_request 로 PR 코드를 그대로 받아 돌린다.
 # 1. python-tests: tests/ 의 pytest — ROS 없이 도는 계산(motion_math) · 설정(robot.yaml) · 인터페이스 파일 · 문서 규칙(이름·링크) ·
 #    비밀값. + src/d2_task/test 의 pytest(작업 관리자 · 검사 묶음 · 변환기 ② — rclpy 안 씀, 10/7 PL: 두산 의존 때문에 ros-build-test 가
-#    d2_task 를 빌드하지 않아 이 시험이 CI에서 빠져 있었다). 그 뒤 ruff 로 치명 오류만 본다(문법 오류 · 정의 안 된 이름 = E9·F63·F7·F82). 스타일은 보지 않는다.
+#    d2_task 를 빌드하지 않아 이 시험이 CI에서 빠져 있었다). + src/d2_vision/test(손목 블록 인식 계산 — 10/7 민범진: colcon test 가 'NO TESTS RAN'). 그 뒤 ruff 로 치명 오류만 본다(문법 오류 · 정의 안 된 이름 = E9·F63·F7·F82). 스타일은 보지 않는다.
 # 2. ros-build-test: ros:jazzy-ros-base 컨테이너에서 두산 의존이 없는 패키지(CI_PKGS)만 colcon build · test.
 # Claude 검토(pr_check.yml)는 팀원 PR 전부에서 돈다(10/7 01시 PL — '막음'이 없으면 자동 승인 → auto-merge). 이 파일은 토큰을 쓰지 않는다.
 # 로컬에서 같은 시험:
 #   python3 -m pytest tests -q
 #   python3 -m pytest src/d2_task/test -q
+#   PYTHONPATH=src/d2_vision python3 -m pytest src/d2_vision/test -q
 #   ruff check --select E9,F63,F7,F82 src tests tools .github/scripts
 #   source /opt/ros/jazzy/setup.bash && colcon build --packages-select d2_interfaces d2_vision \
 #     && colcon test --packages-select d2_interfaces d2_vision; colcon test-result --verbose
@@ -47,6 +48,12 @@ jobs:
         # d2_task 시험은 rclpy 를 쓰지 않아 여기서 돈다(10/7 PL — PR #46 본문의 'd2_task 49 실패'가 초록불로 지나갈 뻔함).
         # tests/ 와 conftest가 따로라 한 번에 돌리지 않는다. 의존은 tests/requirements.txt(pytest · pyyaml)로 충분하다(10/7 깨끗한 venv에서 254 통과).
         run: python -m pytest src/d2_task/test -q
+      - name: pytest (src/d2_vision/test — 손목 블록 인식 계산 BlockChecker, ROS 없이)
+        # d2_vision 시험은 rclpy · d2_motion 을 import 하지 않는다. ros-build-test 의 colcon test 는 'NO TESTS RAN'으로 빠져 있었다(10/7 민범진).
+        # conftest 가 없어 PYTHONPATH 로 소스 폴더를 넣는다. numpy 필요(tests/requirements.txt). 10/7 깨끗한 venv에서 8 통과.
+        env:
+          PYTHONPATH: src/d2_vision
+        run: python -m pytest src/d2_vision/test -q
       - name: ruff (치명 오류만 — 문법 오류 · 정의 안 된 이름)
         run: ruff check --select E9,F63,F7,F82 src tests tools .github/scripts
 

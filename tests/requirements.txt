@@ -3,4 +3,5 @@
 # ruff 는 치명 오류(문법 오류·정의 안 된 이름)만 본다 — ci.yml 의 --select E9,F63,F7,F82
 pytest
 pyyaml
+numpy          # src/d2_vision/test(BlockChecker) — 10/7
 ruff
