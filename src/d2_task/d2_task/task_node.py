@@ -4,6 +4,7 @@
 웹 화면 · 음성은 웹 PC 에 있고 다리(bridge)가 ROS 이름 그대로 대신 부른다(E-26~E-28). 이 노드는 MQTT 를 모른다.
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
         /d2/gripper/state (JSON gripper_state/1)
+제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
 부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace)
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
 레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0). get_design 은 W119 뒤.
@@ -20,16 +21,17 @@ import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
-from d2_interfaces.srv import CheckProgress, HmiCommand, MoveTo
+from d2_interfaces.srv import CheckProgress, HmiCommand, JsonQuery, MoveTo
 from d2_safety.safe_stop import init_ros
 from geometry_msgs.msg import Pose
 from rclpy.action import ActionClient
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from d2_task.design_checker import DesignChecker
 from d2_task.task_manager import TaskManager, wait_until
 
 LOOP_S = 0.1          # 작업 스레드가 한 단계 하고 쉬는 간격. pick_place_node 의 main 반복과 같다(정책 숫자가 아니다)
@@ -66,7 +68,9 @@ class TaskNode(Node):
         super().__init__('task')
         self.declare_parameter('recipe_dir', '')
         cb = ReentrantCallbackGroup()
-        self.manager = TaskManager(load_robot_yaml(), self)
+        cfg = load_robot_yaml()
+        self.manager = TaskManager(cfg, self)
+        self.checker = DesignChecker(cfg)         # 변환기 ①(한세교 W110)이 정해지면 blocks_to_recipe 인자로 붙인다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
@@ -78,6 +82,9 @@ class TaskNode(Node):
         self.create_subscription(String, '/d2/gripper/state', self._on_gripper, 10, callback_group=cb)
         self.create_subscription(String, '/d2/hmi/intent', self._on_intent, 10, callback_group=cb)
         self.create_service(HmiCommand, '/d2/hmi/command', self._on_command, callback_group=cb)
+        # 검사 요청끼리는 순서대로, 안전 · 그리퍼 · 상태표 콜백과는 따로 — 계산이 길어도 그쪽을 막지 않는다
+        self.create_service(JsonQuery, '/d2/task/check_design', self._on_check_design,
+                            callback_group=MutuallyExclusiveCallbackGroup())
 
     # ---------- 콜백 → TaskManager ----------
     def _json(self, msg):
@@ -109,6 +116,11 @@ class TaskNode(Node):
     def _on_command(self, req, res):
         """/d2/hmi/command 요청을 TaskManager 에 넘기고 바로 답한다."""
         res.success, res.reason = self.manager.command(req.cmd, req.design_id)
+        return res
+
+    def _on_check_design(self, req, res):
+        """/d2/task/check_design 요청을 DesignChecker 에 넘기고 답한다. 작업 관리자 상태 · 로봇에는 손대지 않는다."""
+        res.success, res.reason, res.response_json = self.checker.handle_json(req.request_json)
         return res
 
     # ---------- TaskManager 의 io ----------

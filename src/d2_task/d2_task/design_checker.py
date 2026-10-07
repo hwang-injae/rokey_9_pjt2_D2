@@ -5,10 +5,13 @@
 10/3 jenga_check.py(안정성 계산)를 가져와 내민 구조 버그를 고치고, 받침 · 손가락 틈 · 작업영역을 더했다.
 단위: 블록 JSON · 이 파일 안은 mm(설계 좌표계 — 바닥 외곽 가운데 = (0,0), z = 블록 아랫면 높이, 작업면 z = 0).
 """
+import json
 import math
 
 from d2_task.recipe_to_blocks import ori_extents
 
+SCHEMA_REQUEST = 'blocks/1'       # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장)
+SCHEMA_RECIPE = 'cad_recipe/1.0'  # 변환기 ①이 돌려줘야 하는 레시피 형식 이름 (E-44 — 레시피 안쪽 전체 검증은 W110 계약)
 PENETRATION_MM = 0.1     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 (SDD 6.7 검사 2)
 FLAT, EDGE, STAND = 'FLAT', 'EDGE', 'STAND'
 # 방향 코드 → 위를 향한 면에 따른 잡기 종류 (IRD 2장: 눕힘 = FLAT, 옆세움 = EDGE, 세움 = STAND)
@@ -65,10 +68,42 @@ class DesignChecker:
         result = self._result(True, margin, [])
         if self.blocks_to_recipe is not None:
             try:
-                result['recipe'] = self.blocks_to_recipe(request)
+                recipe = self.blocks_to_recipe(request)
             except Exception as e:   # 변환기는 다른 파트 코드라 어떤 예외든 ERROR 로 알린다
                 return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
+            if not isinstance(recipe, dict) or recipe.get('schema') != SCHEMA_RECIPE:
+                return self._result(False, margin, [{'block': None, 'reason': 'ERROR',
+                                                     'detail': f'변환기 ① 결과가 {SCHEMA_RECIPE} 객체가 아니다'}])
+            result['recipe'] = recipe
         return result
+
+    def handle_json(self, request_json):
+        """`check_design`(JsonQuery) 한 번을 처리한다. 반환: (success, reason, response_json 글자).
+
+        요청은 blocks/1 객체 글자 그대로(schema 가 'blocks/1' 이어야 한다). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
+        설계 불합격은 (True, '', ok:false + errors) — 좌표가 유한한 수가 아닌 것(NaN · Infinity)은 불합격이 아니라 요청 오류다.
+        JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 실패 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
+        변환기 ①이 안 붙은 동안은 검사에 통과해도 레시피가 없어 완성된 합격 응답이 아니므로 (False, 'ERROR') 로 답한다.
+        바깥 영향: 없음(계산만). 시간 제한 5초는 부르는 쪽이 건다 — 이 함수는 계산을 중간에 끊지 못한다.
+        """
+        try:
+            request = json.loads(request_json, parse_constant=self._reject_constant)
+            if not isinstance(request, dict) or request.get('schema') != SCHEMA_REQUEST:
+                raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다')
+            result = self.check(request)
+            if result['ok'] and self.blocks_to_recipe is None:
+                result = self._result(False, result['min_margin_mm'], [{'block': None, 'reason': 'ERROR',
+                                      'detail': '변환기 ① 미연결 — 검사는 통과했지만 레시피를 만들 수 없다'}])
+            failed = any(e['reason'] == 'ERROR' for e in result['errors'])   # ERROR 는 변환기 ① 쪽 실패뿐 — 설계 탓이 아니다
+            return (not failed), ('ERROR' if failed else ''), json.dumps(result, ensure_ascii=False, allow_nan=False)
+        except Exception as e:   # 어떤 예외든 서비스 실패(ERROR)로 알린다 — 검사 때문에 task 노드가 죽으면 안 된다
+            err = self._result(False, None, [{'block': None, 'reason': 'ERROR', 'detail': f'검사 서비스 처리 실패: {e}'}])
+            return False, 'ERROR', json.dumps(err, ensure_ascii=False, allow_nan=False)
+
+    @staticmethod
+    def _reject_constant(name):
+        """json.loads 가 NaN · Infinity · -Infinity 를 만나면 불러서 요청 오류로 만든다(표준 JSON 이 아니다)."""
+        raise ValueError(f'JSON 에 유한하지 않은 수({name})가 있다')
 
     def grasp_options(self, blocks):
         """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {order: [잡기 이름…]}.
