@@ -14,9 +14,9 @@ import logging
 import math
 import os
 import queue
+import secrets
 import threading
 import time
-import uuid
 
 LOG = logging.getLogger('d2_task')
 
@@ -38,18 +38,20 @@ class RunLogger:
     """조립 run 하나의 CSV 와 결과 요약. 한 번에 run 하나만 연다(새 조립은 start_run 으로 새 run_id).
 
     입력: log_dir(저장 폴더 — `~` 는 홈으로 바꾼다. 빈 값이면 파일 없음), clock(시계 — 시험용), opener(파일 열기 — 시험용),
-    new_id(고유 번호 만들기 — 시험용, 기본 uuid4).
-    run_id: `R<YYYYMMDD>_<uuid4 16진수 32자>`. 날짜는 사람이 읽는 부분이고 겹치지 않는 것은 UUID 가 맡는다
-    (프로그램을 다시 켜도 · 저장 폴더가 달라도 · 파일 기록이 꺼져 있어도 같은 ID 가 나오지 않는다).
+    new_suffix(run_id 끝의 무작위 16진 4자를 만드는 함수 — 시험용).
+    run_id: `R<YYYYMMDD>_<HHMMSS>_<무작위 16진 4자>`(IRD 2장, 10/7 PL) 예 R20261010_143512_a3f9. 시각순으로 정렬되고,
+    두 PC 가 같은 초에 시작해도 무작위 4자로 구분한다. 한 프로그램 안에서는 이미 쓴 ID 를 다시 만들지 않고
+    (같은 초에 연달아 시작해도 겹치지 않는다), 같은 이름의 CSV 가 폴더에 있으면 덮어쓰지 않는다.
     바깥 영향: log_dir 아래 `<run_id>.csv` 쓰기(쓰기 스레드가). 그 밖은 없다. 같은 이름의 파일은 덮어쓰지 않는다.
     실패: 폴더를 못 만들거나 쓰다가 실패하면 로그 한 번 남기고 그 run 의 파일 기록만 끈다 — 예외를 밖으로 내지 않고
     부르는 쪽은 기다리지도 않는다. run_id 와 요약은 파일이 꺼져도 계속 만든다. 여러 스레드에서 불러도 된다.
     """
 
-    def __init__(self, log_dir='', clock=time.time, opener=open, new_id=uuid.uuid4):
+    def __init__(self, log_dir='', clock=time.time, opener=open, new_suffix=lambda: secrets.token_hex(2)):
         """아직 run 이 없는 상태로 시작한다. 쓰기 스레드는 첫 start_run 때(log_dir 이 있을 때만) 뜬다."""
         self.log_dir = os.path.expanduser(log_dir) if log_dir else ''
-        self.clock, self._opener, self._new_id = clock, opener, new_id
+        self.clock, self._opener, self._new_suffix = clock, opener, new_suffix
+        self._used_ids = set()               # 이 프로그램에서 이미 쓴 run_id
         self.run_id = None
         self.design_id = None
         self.file_ok = False                 # 지금 run 의 CSV 를 쓰고 있나(쓰기 스레드가 실패하면 꺼진다)
@@ -84,7 +86,7 @@ class RunLogger:
             self.design_id, self._total = design_id, total
             self._stop_count, self._placed = 0, {}
             self._started = self.clock()
-            self.run_id = f'R{time.strftime("%Y%m%d", time.localtime(self._started))}_{self._new_id().hex}'
+            self.run_id = self._make_run_id()
             self._active = True
             self.file_ok = self.enabled
             if self.file_ok:
@@ -175,6 +177,15 @@ class RunLogger:
             self.finish('STOPPED')
         with self._lock:
             self.run_id = None
+
+    def _make_run_id(self):
+        """(잠금 안) R<날짜>_<시각>_<무작위 4자>. 이 프로그램에서 이미 쓴 것과 같으면 무작위 4자를 다시 뽑는다."""
+        stamp = time.strftime('%Y%m%d_%H%M%S', time.localtime(self._started))
+        while True:
+            run_id = f'R{stamp}_{self._new_suffix()}'
+            if run_id not in self._used_ids:
+                self._used_ids.add(run_id)
+                return run_id
 
     # ---------- 큐 · 쓰기 스레드 (잠금 안에서 부른다) ----------
     def _row(self, kind, block_id, value, module='task'):

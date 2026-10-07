@@ -11,7 +11,6 @@ import logging
 import re
 import threading
 import time
-import uuid
 from pathlib import Path
 
 import pytest
@@ -21,7 +20,7 @@ from d2_task.task_manager import TaskManager
 from test_task_manager import CFG, IDS, SAFE_OK, SAFE_STOP, FakeIO, drive
 
 T0 = time.mktime((2026, 10, 10, 12, 0, 0, 0, 0, -1))      # 2026-10-10 12:00
-RUN_ID = r'R20261010_[0-9a-f]{32}'
+RUN_ID = r'R20261010_120000_[0-9a-f]{4}'
 LIVE = []                                                  # 이 시험에서 만든 기록기들 — CSV 를 읽기 전에 모두 flush
 
 
@@ -68,30 +67,40 @@ def test_run_id_모양():
     assert re.fullmatch(RUN_ID, log.start_run('d', 3))
 
 
-def test_run_id는_새_객체_재시작_다른_폴더에서도_겹치지_않는다(tmp_path):
-    ids = set()
-    for _ in range(3):                                       # 재시작처럼 매번 새 객체, 파일 기록 꺼짐(폴더 없음)
-        log = logger(None)
-        for _ in range(3):
-            ids.add(log.start_run('d', 1))
-            log.finish('DONE')
-    for sub in ('a', 'b'):                                   # 저장 폴더가 달라도
-        log = logger(tmp_path / sub)
-        ids.add(log.start_run('d', 1))
-        log.finish('DONE')
-    log = logger(tmp_path / 'a')                             # 같은 폴더를 다시 열어도
-    ids.add(log.start_run('d', 1))
-    assert len(ids) == 9 + 2 + 1
+def test_run_id는_시각순이고_같은_초에도_무작위_4자로_구분된다():
+    clock = Clock()
+    ids = []
+    for _ in range(3):                                       # 새 객체(재시작처럼), 시계는 같은 초
+        log = logger(None, clock, new_suffix=iter(['a3f9', '0001', 'ffff']).__next__)
+        ids.append(log.start_run('d', 1))
+    assert ids == ['R20261010_120000_a3f9'] * 3              # 다른 PC 가 같은 초에 시작하는 경우 — 구분은 무작위 4자의 몫
+    clock.now += 61
+    later = logger(None, clock).start_run('d', 1)
+    assert later > ids[0] and later.startswith('R20261010_120101_')       # 시각순 정렬
+
+
+def test_같은_프로그램에서는_같은_초에_연달아_시작해도_ID가_겹치지_않는다(tmp_path):
+    suffixes = iter(['aaaa', 'aaaa', 'aaaa', 'bbbb', 'cccc'])       # 무작위 4자가 같게 나와도 다시 뽑는다
+    log = logger(tmp_path, new_suffix=lambda: next(suffixes))
+    first = log.start_run('d', 1)
+    second = log.start_run('d', 1)
+    third = log.start_run('d', 1)
+    assert first == 'R20261010_120000_aaaa' and second == 'R20261010_120000_bbbb' and third == 'R20261010_120000_cccc'
+    assert len({first, second, third}) == 3
+
+
+def test_기본_무작위_4자는_16진수_4자():
+    log = RunLogger('')
+    assert re.fullmatch(r'R\d{8}_\d{6}_[0-9a-f]{4}', log.start_run('d', 1))
 
 
 def test_폴더가_같고_이름이_같아도_덮어쓰지_않는다(tmp_path):
-    same = uuid.UUID(int=7)
-    first = logger(tmp_path, new_id=lambda: same)
+    first = logger(tmp_path, new_suffix=lambda: 'a3f9')
     run_id = first.start_run('d', 1)
     first.log('placed', 'B1', '원본')
     first.finish('DONE')
     original = rows(tmp_path / f'{run_id}.csv')
-    again = logger(tmp_path, new_id=lambda: same)            # 같은 ID 가 나오는 극단적인 경우
+    again = logger(tmp_path, new_suffix=lambda: 'a3f9')      # 다른 객체(재시작 · 다른 PC)가 같은 초 같은 4자를 뽑는 극단적인 경우
     assert again.start_run('d', 1) == run_id
     again.log('placed', 'B2', '덮어쓰기')
     again.finish('DONE')
