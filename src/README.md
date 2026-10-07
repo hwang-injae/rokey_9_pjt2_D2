@@ -58,4 +58,4 @@ python3 -m pytest tests -q
 
 - **CI**(`.github/workflows/ci.yml`, 토큰 없음): PR · main push마다 `tests/` pytest + `ros:jazzy` 컨테이너에서 두산 의존이 없는 패키지(`d2_interfaces` · `d2_vision` → 생기면 `d2_task` · `d2_bridge`)만 colcon build · test + ruff 치명 오류. 두산 · OnRobot 패키지가 필요한 `d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety`는 실기 PC에서 빌드한다. 시험을 더하는 규칙은 [tests/README.md](../tests/README.md).
 - 시험 수·결과는 코드가 생기면 이 절에 적는다.
-- 로봇을 움직이는 시험은 펜던트를 든 사람이 있을 때, 저속·짝과 함께, 정지가 되는지부터 본다([팀 협업 규칙](../docs/06_팀협업규칙_v1_100710.md)).
+- 로봇을 움직이는 시험은 펜던트를 든 사람이 있을 때, 저속·짝과 함께, 정지가 되는지부터 본다([팀 협업 규칙](../docs/06_팀협업규칙_v1_100711.md)).

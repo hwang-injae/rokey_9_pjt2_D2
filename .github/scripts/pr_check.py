@@ -2,8 +2,9 @@
 """PR 자동 검사 (팀 규칙 반영). PR 코드는 읽기만 하고 실행하지 않는다.
 
 검사:
-  1. main 반영 — 최신 main이 내 브랜치에 들어 있는가(= main을 merge했는가)
-  2. 충돌 — main과 합칠 때 충돌이 없는가
+  1. main 반영 — 최신 main이 내 브랜치에 들어 있는가. 뒤처지기만 했으면 경고(10/7 PL — main에 문서 push가 잦아
+     충돌 없는 PR까지 계속 막혀서. 브랜치 보호의 'up to date' 요구도 꺼 두었다)
+  2. 충돌 — main과 합칠 때 충돌이 없는가(실패)
   3. 문법 — .py(컴파일만) · .yaml/.yml · .json · .xml/.urdf/.xacro/.srdf/.launch
   4. 비밀값 — OpenAI API 키 모양 · .env · 키 파일 (팀 규칙 4)
   5. 변경 파일 — PR 본문 '변경 파일' 칸이 채워져 있는가(실패). 개별 커밋의 '변경 파일:' 줄은 경고만 (팀 규칙 8)
@@ -50,13 +51,26 @@ class PrCheck:
         return r
 
     def check_main_merged(self):
+        """main 반영 · 충돌. 출력: 충돌이 없으면 True.
+
+        최신 main이 들어 있으면 통과, 뒤처졌지만 합쳐도 충돌이 없으면 경고(merge는 막지 않는다),
+        충돌이 나거나 충돌 여부를 못 보면 실패. git merge-tree --write-tree 는 0 = 깨끗, 1 = 충돌, 그 밖 = 오류.
+        """
         if self.git('merge-base', '--is-ancestor', self.base, 'HEAD', check=False).returncode == 0:
             self.notes.append('main 반영: 최신 main이 들어 있음 → 합칠 때 충돌 없음')
             return True
-        self.fails.append('main 반영: 최신 main이 내 브랜치에 없다. `git fetch origin && git merge origin/main` 으로 합치고(충돌은 내 PC에서 풀고) 다시 push 한다.')
         r = self.git('merge-tree', '--write-tree', self.base, 'HEAD', check=False)
-        if r.returncode != 0:
-            self.fails.append('충돌: main과 합치면 충돌이 난다 — 위 방법으로 합치면서 충돌을 푼다.')
+        if r.returncode == 0:
+            self.notes.append('충돌: main과 합쳐도 충돌 없음')
+            self.warns.append('main 반영: 내 브랜치가 최신 main보다 뒤처졌다(충돌은 없어 merge는 막지 않는다). '
+                              '다음 push 전에 `git fetch origin && git merge origin/main` 으로 합치면 좋다.')
+            return True
+        if r.returncode == 1:
+            self.fails.append('충돌: main과 합치면 충돌이 난다 — `git fetch origin && git merge origin/main` 으로 합치면서 '
+                              '충돌을 내 PC에서 풀고 다시 push 한다.')
+        else:
+            self.fails.append(f'main 반영: 충돌 여부를 확인하지 못했다(git merge-tree: {r.stderr.strip()[:200]}). '
+                              '`git fetch origin && git merge origin/main` 으로 합치고 다시 push 한다.')
         return False
 
     def changed_files(self):
