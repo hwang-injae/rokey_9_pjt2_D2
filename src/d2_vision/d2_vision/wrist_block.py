@@ -29,6 +29,7 @@ NaN 규칙(IRD 5장): dx·dy 는 1차 늘 NaN. absent·unknown 은 dz·top_z 도
 """
 import json
 import threading
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -249,7 +250,9 @@ class WristBlock(Node):
             self.get_logger().error('요청 뒤 새 깊이 프레임이 %.1f초 안에 %d장 안 모임(카메라 끊김?) → TIMEOUT' % (FRESH_WAIT_S, self.n_frames))
             return self._fill(res, ids, reason='TIMEOUT')
 
-        depth_m = np.nanmedian(np.stack(frames), axis=0) / 1000.0        # 구멍(NaN)은 빼고 중앙값. 전부 구멍이면 NaN → 점에서 빠짐
+        with warnings.catch_warnings():                                    # 10장 모두 구멍인 화소는 numpy 가 'All-NaN slice' 를 알리지만 결과(NaN → 점에서 빠짐)는 의도한 것
+            warnings.simplefilter('ignore', RuntimeWarning)
+            depth_m = np.nanmedian(np.stack(frames), axis=0) / 1000.0    # 구멍(NaN)은 빼고 중앙값. 전부 구멍이면 NaN → 점에서 빠짐
         T_b2c = posx_to_matrix(*posx) @ self.T_g2c
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         pts = depth_to_base_points(depth_m, self.intr, T_b2c, stride=2)
@@ -263,8 +266,9 @@ class WristBlock(Node):
         # IRD 5장: absent·unknown 은 top_z 도 NaN (BlockChecker 는 absent 때 보이는 면 높이를 주지만 서비스 답에서는 뺀다)
         res.top_z_m = [r['top_z_m'] if r['state'] in ('present', 'occluded') else NAN for r in results]
         res.success, res.reason = True, ''
+        # 로그에는 absent 때 보이는 면(작업면) 높이도 적는다 — 보정 기울기 진단용(10/7 박진용 실기: 윗면 −2.8 mm). 서비스 답은 IRD 5장대로 NaN
         self.get_logger().info('check_progress %d개 (점 %d, posx z %.0f mm) → %s' % (
-            len(ids), len(pts), posx[2], {r['block_id']: r['state'] for r in results}))
+            len(ids), len(pts), posx[2], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
         return res
 
 
