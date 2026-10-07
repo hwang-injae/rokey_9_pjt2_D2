@@ -1,4 +1,4 @@
-"""pr_verdict.py 의 판정 규칙을 고정한다 — 체크 안 된 'PL 확인' 항목이 있거나 IRD 내용을 바꿨으면 자동 승인하지 않는다(10/7 PL, PR #45).
+"""pr_verdict.py 의 판정 규칙을 고정한다 — 체크 안 된 'PL 확인' 항목이 있거나 IRD 내용 · d2_interfaces를 바꿨으면 자동 승인하지 않는다(10/7 PL, PR #45).
 
 gh 를 부르지 않게 post · approver · pl_checks 를 바꿔 끼운다(네트워크 없음).
 """
@@ -109,3 +109,18 @@ def test_ird_change_holds_approval(mod, monkeypatch):
     monkeypatch.setattr(v, 'ird_waits', lambda: ['IRD(이름 · 칸의 정본)를 바꿈'])
     v.run()
     assert [k for k, _ in posted] == ['comment'] and 'IRD' in posted[0][1]
+
+
+def test_iface_change_is_found(mod):
+    """d2_interfaces 아래 파일은 더함 · 고침 · 지움 · 이름 바꿈 모두 사람 확인 대상이다."""
+    files = [{'filename': 'src/d2_interfaces/srv/CheckProgress.srv', 'status': 'modified'},
+             {'filename': 'src/d2_interfaces/srv/New.srv', 'status': 'added'},
+             {'filename': 'src/d2_task/Old.srv', 'status': 'renamed', 'previous_filename': 'src/d2_interfaces/srv/Old.srv'}]
+    assert mod.iface_changes(files) == [f['filename'] for f in files]
+
+
+def test_other_packages_are_not_iface(mod):
+    """다른 패키지 파일은 대상이 아니다."""
+    files = [{'filename': 'src/d2_task/d2_task/task_node.py', 'status': 'modified'},
+             {'filename': 'docs/d2_interfaces_note.md', 'status': 'added'}]
+    assert mod.iface_changes(files) == []

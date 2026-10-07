@@ -7,6 +7,7 @@
 (10/7 PL — PR #45가 PL 확인 전에 자동 merge됨). PL이 확인한 뒤 직접 승인하면 auto-merge 된다.
 IRD(`docs/02_인터페이스_IRD_*.md`, 이름 · 칸의 정본) 내용을 바꾼 PR도 같다 — 본문과 상관없이 자동 승인하지 않는다(10/7 PL).
 다른 문서 이름이 바뀌어 IRD 안 링크의 월일시만 바뀐 것(docver touch) · 파일 이름만 바뀐 것은 내용 변경으로 보지 않는다.
+`src/d2_interfaces/`(전용 메시지 · 서비스 · 액션)를 바꾼 PR도 같다 — 그 폴더 파일이 하나라도 바뀌면(주석 포함) 자동 승인하지 않는다(10/7 PL).
 
 입력(환경 변수):
   REVIEW_RESULT  검토 job 결과 (success · failure · skipped · cancelled)
@@ -69,6 +70,17 @@ def ird_changes(files):
     return out
 
 
+IFACE_DIR = 'src/d2_interfaces/'
+
+
+def iface_changes(files):
+    """PR 파일 목록에서 d2_interfaces(전용 메시지 · 서비스 · 액션) 아래 바뀐 파일 이름을 고른다.
+    입력: GitHub pulls/{n}/files 항목들(dict — filename · previous_filename). 출력: 사람 확인이 필요한 파일 이름 목록.
+    더함 · 지움 · 고침 · 이름 바꿈(옛 이름이 그 폴더여도) 모두 들어간다."""
+    return [f.get('filename', '') for f in files
+            if f.get('filename', '').startswith(IFACE_DIR) or (f.get('previous_filename') or '').startswith(IFACE_DIR)]
+
+
 APPROVERS = {'hwang-injae': '황인재 @hwang-injae', 'hansaekyo': '한세교 @hansaekyo'}
 
 
@@ -101,7 +113,7 @@ class Verdict:
         return find_pl_checks(r.stdout)
 
     def ird_waits(self):
-        """이 PR이 IRD 내용을 바꿨으면 'PL 확인' 이유 목록. 파일 목록을 못 읽으면 빈 목록(지금까지처럼 판정) — 실패는 로그에만."""
+        """이 PR이 IRD 내용이나 d2_interfaces를 바꿨으면 'PL 확인' 이유 목록. 파일 목록을 못 읽으면 빈 목록(지금까지처럼 판정) — 실패는 로그에만."""
         try:
             r = subprocess.run(['gh', 'api', f'repos/{self.repo}/pulls/{self.pr}/files', '--paginate', '--jq', '.[] | @json'],
                                capture_output=True, text=True)
@@ -112,7 +124,12 @@ class Verdict:
             print(f'PR 파일 목록을 못 읽음: {r.stderr.strip()}')
             return []
         files = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
-        return [f'IRD(이름 · 칸의 정본)를 바꿈 — `{n}` (10/7 PL: IRD를 바꾸는 PR은 사람 확인 뒤 merge)' for n in ird_changes(files)]
+        waits = [f'IRD(이름 · 칸의 정본)를 바꿈 — `{n}` (10/7 PL: IRD를 바꾸는 PR은 사람 확인 뒤 merge)' for n in ird_changes(files)]
+        iface = iface_changes(files)
+        if iface:
+            waits.append('d2_interfaces(전용 메시지 · 서비스 · 액션)를 바꿈 — ' + ' · '.join(f'`{n}`' for n in iface)
+                         + ' (10/7 PL: 받는 파트 모두가 다시 빌드해야 해서 사람 확인 뒤 merge)')
+        return waits
 
     def approver(self):
         r = subprocess.run(['gh', 'api', 'user', '--jq', '.login'], capture_output=True, text=True)
@@ -179,7 +196,7 @@ class Verdict:
         waits = [] if blocked else self.pl_checks() + self.ird_waits()
         if waits:
             head = text.replace('## Claude 검토 결과: 통과 ✅', '## Claude 검토 결과: 통과 ✅ — PL 확인 대기(자동 승인 안 함)', 1)
-            self.post('comment', head + '\n\n⏸ PL 확인이 필요한 것이 있어 **자동 승인하지 않았습니다**(본문의 체크 안 된 PL 확인 항목 · IRD 변경):\n'
+            self.post('comment', head + '\n\n⏸ PL 확인이 필요한 것이 있어 **자동 승인하지 않았습니다**(본문의 체크 안 된 PL 확인 항목 · IRD 변경 · d2_interfaces 변경):\n'
                       + '\n'.join(f'- {w}' for w in waits)
                       + '\n\nPL(황인재 @hwang-injae)이 확인한 뒤 직접 승인(Approve)하면 auto-merge 됩니다. (10/7 PL — PR #45)')
             return
