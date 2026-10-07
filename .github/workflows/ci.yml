@@ -68,7 +68,8 @@ jobs:
         run: |
           rosdep init || true        # ros 이미지는 이미 init 되어 있어 실패해도 된다
           rosdep update
-          rosdep install --from-paths $(for p in $CI_PKGS; do printf 'src/%s ' "$p"; done) --ignore-src -y
+          rosdep install --from-paths $(for p in $CI_PKGS; do printf 'src/%s ' "$p"; done) --ignore-src -y \
+            --skip-keys "dsr_msgs2 d2_motion"
       - name: colcon build
         run: |
           source /opt/ros/jazzy/setup.bash
