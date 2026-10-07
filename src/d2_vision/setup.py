@@ -16,15 +16,12 @@ setup(
     zip_safe=True,
     maintainer='한석형',
     maintainer_email='gkstjrgud19@gmail.com',
-    description='D2 비전 — 웹캠 사람 감지, 손목 손 찾기, 손목 블록 인식 (+ 가짜 노드 mock_*)',
+    description='D2 비전 — 손목 블록 인식 · 흩어진 블록 찾기 · 스캔 추론 (+ 가짜 노드 mock_*)',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
             # 실행 이름은 처음부터 다 적어 둔다 — 각자 .py 파일만 추가 (파일이 생기기 전에는 실행 안 됨)
-            # 한석형
-            'webcam_human = d2_vision.webcam_human:main',
-            'wrist_hand = d2_vision.wrist_hand:main',
-            'mock_webcam_human = d2_vision.mock_webcam_human:main',
+            # 웹캠 사람 감지 · 손목 손 찾기(webcam_human · wrist_hand · mock_webcam_human)는 10/6 개편(E-19)으로 뺌 — W121에서 지움
             # 민범진
             'wrist_block = d2_vision.wrist_block:main',
             'mock_wrist_block = d2_vision.mock_wrist_block:main',

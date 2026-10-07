@@ -6,7 +6,7 @@ string[] block_ids
 string[] states                   # present | absent | occluded | unknown (10/4 확정)
 float64[] dx_m                    # 안 잰 값은 0이 아니라 NaN (0은 '어긋남 0'과 구별 안 됨): 1차 dx·dy는 늘 NaN
 float64[] dy_m
-float64[] dz_m                    # absent·unknown 블록은 NaN
-float64[] top_z_m                 # absent·unknown 블록은 NaN
+float64[] dz_m                    # present 일 때만 값. absent·occluded·unknown 과 위 블록에 가려진 present 는 NaN (W121 C-5)
+float64[] top_z_m                 # present · occluded 일 때 값 (occluded = 설계 밖 물체가 가림 — 그 물체 윗면, 참고값). absent·unknown · 위 블록에 가려진 present 는 NaN
 bool success
 string reason

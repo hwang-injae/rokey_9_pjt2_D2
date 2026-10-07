@@ -3,7 +3,7 @@
 <package format="3">
   <name>d2_interfaces</name>
   <version>0.0.1</version>
-  <description>D2 전용 메시지 — 요청-결과가 있는 서비스·액션 (IRD 5장 + 10/6 S-18·S-20·S-23·S-24·S-25). 상태 방송은 JSON(std_msgs/String)이라 여기 없다</description>
+  <description>D2 전용 메시지 — 요청-결과가 있는 서비스·액션 (IRD 5장 + 10/6 S-18·S-20·S-23·S-24·S-25 + 10/7 W121 JsonQuery). 상태 방송은 JSON(std_msgs/String)이라 여기 없다</description>
   <maintainer email="il1282113@gmail.com">황인재</maintainer>
   <license>Apache-2.0</license>
 
