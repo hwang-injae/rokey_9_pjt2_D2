@@ -135,7 +135,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 로봇 PC는 60
 
 ## 6-1. MQTT (PC 사이 — 웹 PC 브로커 ↔ 로봇 PC 다리)
 
-PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100708.md#10-pc-사이-통신--mqtt-다리-e-27e-30-안)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
+PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100709.md#10-pc-사이-통신--mqtt-다리-e-27e-30-안)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
 
 ```bash
 # 두 PC 모두 — 확인용 클라이언트
