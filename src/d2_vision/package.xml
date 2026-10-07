@@ -3,7 +3,7 @@
 <package format="3">
   <name>d2_vision</name>
   <version>0.0.1</version>
-  <description>D2 비전 — 웹캠 사람 감지, 손목 손 찾기, 손목 블록 인식 (+ 가짜 노드 mock_*)</description>
+  <description>D2 비전 — 손목 블록 인식 · 흩어진 블록 찾기 · 스캔 추론 (+ 가짜 노드 mock_*)</description>
   <maintainer email="gkstjrgud19@gmail.com">한석형</maintainer>
   <license>Apache-2.0</license>
 

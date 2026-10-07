@@ -75,7 +75,7 @@ def grasp_test_jobs(cfg, slots, repeat):
     """잡기 폭 시험용 목표: 공급 칸마다 그 칸의 잡기로 집어 같은 자리에 다시 놓는다 (레시피 없이 6가지 잡기를 다 본다).
 
     입력: slots = 칸 번호 목록(1부터), repeat = 칸마다 반복 횟수. 반환: plan_jobs 와 같은 (블록, 칸, 중심, 회전) 목록.
-    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면 관리가 쥔 블록을 붙이지 않는다(UNKNOWN_BLOCK, 같은 자리로 돌아오므로 괜찮다).
+    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면에 쥔 블록이 안 붙는다(UNKNOWN_BLOCK). 같은 자리로 돌아오므로 pick_place 가 이 앞글자만 예외로 진행한다.
     """
     jobs = []
     for slot in slots:
@@ -133,10 +133,10 @@ def choose_recipe(folder):
 
 
 def main():
-    """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 그리퍼 초기화 -> 블록마다 PickPlace -> 홈, 결과를 CSV 로 남긴다."""
+    """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 블록마다 PickPlace(그리퍼 폭은 블록 위에서 바뀜) -> 홈, 결과를 CSV 로 --log-dir(기본 ~/d2_data/runs, 저장소 밖)에 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipes', nargs='*',
-                    help='레시피 파일 (assembly.recipe/1.0 또는 m0609.jenga.cad_recipe/1.0). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
+                    help='레시피 파일 (cad_recipe/1.0 — 예전 이름 assembly.recipe/1.0 — 또는 옛 blocks[] 형식). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
                          '없으면 설치된 레시피 목록에서 번호로 고름')
     ap.add_argument('--slots', default=None,
                     help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 잡기마다 정한 칸(robot.yaml supply_slots grasp)을 쓴다')
@@ -146,6 +146,8 @@ def main():
     ap.add_argument('--grasp-test', default=None,
                     help='잡기 폭 시험: 이 공급 칸(예: 1-6)에서 집어 같은 자리에 다시 놓는다 (레시피 안 씀)')
     ap.add_argument('--repeat', type=int, default=1, help='--grasp-test 때 칸마다 반복 횟수')
+    ap.add_argument('--log-dir', default=os.path.join('~', 'd2_data', 'runs'),
+                    help='결과 CSV 폴더 — 기본 ~/d2_data/runs(저장소 밖, 작업 관리자 log_dir 과 같음 · 팀 규칙 6). 빈 값 = 안 남김')
     args = ap.parse_args()
 
     share = get_package_share_directory('d2_bringup')
@@ -244,11 +246,16 @@ def main():
     finally:
         if rows:
             model_id = '_'.join(r['model']['model_id'] if 'model' in r else r['model_id'] for r in recipes) or 'GRASP_TEST'
-            out = f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv'
-            with open(out, 'w', newline='') as f:
-                w = csv.writer(f)
-                w.writerow(['block_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
-                w.writerows(rows)
+            # 실기 기록은 원본 자료라 저장소 밖에 둔다(팀 규칙 6 — 예전엔 실행한 폴더에 남아 저장소에 쌓였다, 10/7)
+            out = '(안 남김)'
+            if args.log_dir:
+                folder = os.path.expanduser(args.log_dir)
+                os.makedirs(folder, exist_ok=True)
+                out = os.path.join(folder, f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv')
+                with open(out, 'w', newline='') as f:
+                    w = csv.writer(f)
+                    w.writerow(['block_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
+                    w.writerows(rows)
             ok_n = sum(1 for r in rows if r[3])
             print(f'결과: {ok_n}/{len(jobs)} 성공, 전체 {time.monotonic() - t_start:.0f} s, 기록 {out}')
         node.destroy_node()

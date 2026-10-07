@@ -163,3 +163,99 @@ def test_robot_yaml에_키가_없으면_만들_때_알림():
 
 def test_결과는_JSON으로_직렬화된다():
     json.dumps(check(base_design('002_CHAIR_BACK'), blocks_to_recipe=lambda b: {}))
+
+
+# ---------------- check_design 서비스 한 번 처리(handle_json) ----------------
+def handle(req_text, **kw):
+    ok, reason, text = DesignChecker(CFG, **kw).handle_json(req_text)
+    return ok, reason, json.loads(text)
+
+
+def test_서비스_합격은_success_true와_레시피():
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (True, '') and res['ok'] and res['recipe'] == {'schema': 'cad_recipe/1.0'}
+
+
+def test_서비스_설계_불합격은_success_true_ok_false():
+    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))), blocks_to_recipe=lambda b: {})
+    assert (ok, reason) == (True, '') and not res['ok'] and res['errors']
+
+
+def test_서비스_변환기_미연결이면_합격이어도_success_false():
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')))
+    assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
+    assert res['min_margin_mm'] == 12.5 and '변환기' in res['errors'][0]['detail']
+
+
+def test_서비스_변환기_미연결이어도_불합격은_검사_이유_그대로():
+    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))))
+    assert (ok, reason) == (True, '') and not res['ok'] and res['errors'][0]['reason'] == 'CHECK_FAILED'
+
+
+@pytest.mark.parametrize('text', ['{깨진', '[]', '"글자"', 'null'])
+def test_서비스_JSON이_아니거나_객체가_아니면_ERROR(text):
+    ok, reason, res = handle(text)
+    assert (ok, reason) == (False, 'ERROR') and res['errors'][0]['reason'] == 'ERROR'
+
+
+def test_서비스_안쪽_예외도_ERROR():
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: float('nan'))
+    assert (ok, reason) == (False, 'ERROR')           # NaN 은 allow_nan=False 로 직렬화에서 걸린다
+
+
+def test_서비스_응답은_순수_JSON():
+    _, _, text = DesignChecker(CFG, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'}).handle_json(json.dumps(base_design('002_CHAIR_BACK')))
+    assert json.loads(text, parse_constant=lambda c: pytest.fail(c))['ok']
+
+
+def test_서비스_변환기_예외는_success_false():
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: 1 / 0)
+    assert (ok, reason) == (False, 'ERROR') and not res['ok'] and '변환기' in res['errors'][0]['detail']
+
+
+@pytest.mark.parametrize('bad_recipe', [None, [], 'x', {}, {'schema': 'other/1'}, {'schema': 'assembly.recipe/1.0'}])
+def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_recipe):
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: bad_recipe)
+    assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
+
+
+@pytest.mark.parametrize('schema', ['other/1', 'blocks/2', None, 5])
+def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
+    req = base_design('001_CHAIR_BENCH')
+    req['schema'] = schema
+    ok, reason, _ = handle(json.dumps(req), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (False, 'ERROR')
+
+
+def test_서비스_schema_없으면_ERROR():
+    req = base_design('001_CHAIR_BENCH')
+    del req['schema']
+    assert handle(json.dumps(req), blocks_to_recipe=lambda b: {})[:2] == (False, 'ERROR')
+
+
+@pytest.mark.parametrize('literal', ['NaN', 'Infinity', '-Infinity'])
+def test_서비스_유한하지_않은_수는_불합격이_아니라_ERROR(literal):
+    text = json.dumps(base_design('001_CHAIR_BENCH')).replace('"x": -25', f'"x": {literal}', 1)
+    assert literal in text
+    ok, reason, res = handle(text, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
+
+
+def test_서비스_오류_응답도_순수_JSON():
+    _, _, text = DesignChecker(CFG).handle_json('{"schema":"blocks/1","blocks":[{"x":NaN}]}')
+    json.loads(text, parse_constant=lambda c: pytest.fail(c))
+
+
+def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
+    req = base_design('001_CHAIR_BENCH')
+    req['blocks'][0]['ori'] = []
+    ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (False, 'ERROR') and not res['ok']
+
+
+@pytest.mark.parametrize('literal', ['1e999', '-1e999', '1E400'])
+def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
+    text = json.dumps(base_design('001_CHAIR_BENCH')).replace('"x": -25', f'"x": {literal}', 1)
+    assert literal in text
+    ok, reason, res = handle(text, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']

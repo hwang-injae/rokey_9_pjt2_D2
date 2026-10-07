@@ -20,12 +20,16 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_motion.executor import MoveItExecutor
-from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, pick_place_tcp
+from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, move_speed_scale, pick_open_width, pick_place_tcp
 from d2_safety.safe_stop import SafeStop, init_ros
 
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
 LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도 (Pilz 직선 속도 한계 x 비율)
 GRIPPER_TIMEOUT_S = 10.0
+# move_to 가 받는 자세 이름 (IRD 4.2 MoveTo). 값은 robot.yaml <이름>_pose — 공급 관측 · 스캔 앞 · 옆은 W134 교시
+MOVE_TARGETS = ('observe', 'home', 'observe_supply', 'observe_front', 'observe_side')
+# run_recipe --grasp-test 의 block_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
+TEST_BLOCK_PREFIX = 'GRASP_P'
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
 # 팔 끝까지 약 0.9 m 이므로 관절 0.005 rad 는 TCP 4.5 mm 이하 (10/6 한세교 교차 검증)
 LINE_CHECK_RAD = 0.005
@@ -97,10 +101,10 @@ class PickPlaceNode(Node):
         return None
 
     # ---------- 동작 단위 ----------
-    def go_free(self, goal, halted, keep_down=True, skip_slot=None):
+    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None):
         """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유).
 
-        skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸).
+        skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸). scale = 속도 비율(없으면 robot.yaml speed_scale).
         """
         # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
         if keep_down and not self.exe.valid(self.exe.current(), self.exe.down_constraint())[0]:
@@ -111,7 +115,7 @@ class PickPlaceNode(Node):
         jt = None
         for pad in (clear, clear / 2):
             for planner in PLANNERS:
-                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot)
+                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot, scale=scale)
                 if jt is not None:
                     break
                 self.get_logger().warn(f'길 찾기 실패 ({planner}, 여유 {pad * 1000:.0f} mm): {err}')
@@ -196,6 +200,9 @@ class PickPlaceNode(Node):
     def _execute(self, gh):
         """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
 
+        집기 전 여는 폭은 open_width_m(0 이면 robot.yaml grasp_open_pick_m, 블록 폭 이하면 움직이기 전에 PLAN_FAILED).
+        잡은 뒤 장면에 쥔 블록을 못 붙이면(장면 관리 없음 · 모르는 블록) 그 자리에 다시 내려놓고 올라와 ERROR.
+
         바깥 영향: 로봇 팔·그리퍼가 움직이고, 장면 관리에 쥔 블록 붙이기·떼기를 부탁한다.
         실패·정지·취소 때는 세운 뒤 success=false 와 이유 코드(IRD 7장, 정지면 halt 이유)로 끝낸다.
         """
@@ -224,6 +231,11 @@ class PickPlaceNode(Node):
             return finish(False, 'ERROR')   # IRD 7장: 먼저 세움 → 사람 호출. 자세한 이유는 위 로그
         if g.grasp not in GRASP_AXIS:
             return finish(False, 'PLAN_FAILED')
+        open_pick = pick_open_width(self.cfg, g.grasp, g.open_width_m)
+        if open_pick is None:
+            # 블록 폭 이하로 열면 손가락이 블록 위에 내려앉는다 — 움직이기 전에 거절
+            self.get_logger().error(f'{g.block_id}: open_width_m {g.open_width_m * 1000:.1f} mm 가 블록 폭 이하')
+            return finish(False, 'PLAN_FAILED')
         if not self.busy.acquire(blocking=False):
             return finish(False, 'BUSY')
         try:
@@ -245,7 +257,7 @@ class PickPlaceNode(Node):
             if not ok:
                 return finish(False, why)
             # 집는 폭으로 여는 것은 집을 블록 바로 위에서 한다: 이동 중 벌린 손가락이 다른 것에 걸리지 않게 (10/6 실기)
-            r = self.grip(self.cfg['grasp_open_pick_m'][g.grasp])
+            r = self.grip(open_pick)
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED')
             ok, why = self.go_line(pk['low'], pk['quat'], halted)
@@ -261,7 +273,13 @@ class PickPlaceNode(Node):
             if not r.grasped or (not math.isnan(width) and abs(width - expect) > tol):
                 self.get_logger().error(f'{g.block_id}: 잡힘 실패 (폭 {width * 1000:.1f} mm, 기대 {expect * 1000:.1f})')
                 return finish(False, 'GRASP_FAILED', width)
-            self.scene_attach(g.block_id, True)
+            # 쥔 블록이 장면에 안 붙으면 운반 계획이 들고 가는 블록의 충돌을 못 본다 → 들지 않는다.
+            # 블록은 아직 바닥에 닿아 있으므로 그 자리에서 다시 열면 원래 자리에 그대로 남는다(공중 개방 아님)
+            if not self.scene_attach(g.block_id, True) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+                self.get_logger().error(f'{g.block_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 올라와 멈춘다')
+                self.grip(open_pick)
+                self.go_line(pk['high'], pk['quat'], halted)
+                return finish(False, 'ERROR', width)
             step('lift')
             ok, why = self.go_line(pk['high'], pk['quat'], halted)
             if not ok:
@@ -277,7 +295,9 @@ class PickPlaceNode(Node):
             r = self.grip(self.cfg['grasp_open_place_m'][g.grasp])
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED', width)
-            self.scene_attach(g.block_id, False)
+            if not self.scene_attach(g.block_id, False) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+                # 떼기 실패는 장면에 블록이 남아 다음 계획이 더 조심스러워질 뿐이라 멈추지 않는다
+                self.get_logger().warn(f'{g.block_id}: 장면에서 쥔 블록을 못 뗐다')
             step('retreat')
             ok, why = self.go_line(pl['high'], pl['quat'], halted)
             return finish(ok, why, width)
@@ -312,9 +332,15 @@ class PickPlaceNode(Node):
                 self.get_logger().info(f'제어기 활성 {kind}: {got} (config/{kind}.json 과 같음)')
 
     def _on_move_to(self, req, res):
-        """관측(observe)·홈(home) 자세로 간다. 다 간 뒤 답한다. 자세가 robot.yaml 에 없으면 실패."""
+        """정해진 자세(observe · home · observe_supply · observe_front · observe_side)로 간다. 다 간 뒤 답한다.
+
+        자세 값은 robot.yaml <target>_pose. 이름이 목록 밖이거나 값이 없으면(교시 전) PLAN_FAILED.
+        speed_ratio(0 = 평소, 0 < 값 ≤ 1 = 느리게, 다시 시작 뒤 첫 이동 0.5)를 speed_scale 에 곱한다. 범위 밖이면 PLAN_FAILED.
+        """
         pose = self.cfg.get(f'{req.target}_pose')
-        if req.target not in ('observe', 'home') or not pose:
+        scale = move_speed_scale(self.cfg, req.speed_ratio)
+        if req.target not in MOVE_TARGETS or not pose or scale is None:
+            self.get_logger().error(f'move_to {req.target}: 자세 없음 또는 speed_ratio {req.speed_ratio} 범위 밖')
             res.success, res.reason = False, 'PLAN_FAILED'
             return res
         if self.locked:
@@ -327,7 +353,7 @@ class PickPlaceNode(Node):
             res.success, res.reason = False, 'BUSY'
             return res
         try:
-            ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False)
+            ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False, scale=scale)
             res.success, res.reason = ok, why
             return res
         except Exception as e:            # 예상 못 한 오류: 먼저 세운다

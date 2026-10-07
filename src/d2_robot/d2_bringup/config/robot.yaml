@@ -4,7 +4,7 @@
 # 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 → 10/6 다시 측정 (W011~W016).
 
 frame_id: base_link
-tcp_link: rg2_tcp
+tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
 table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
 table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
   x_m: [-0.2675, 0.9325]
@@ -31,11 +31,19 @@ supply_slots:
   - {x_m: 0.5445, y_m: 0.2620, surface_z_m: -0.018, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT — 10/7 잡기 폭 시험 그대로 OK
 
 observe_pose: {joints_deg: [-18.25, 1.73, 72.73, 0.02, 105.52, 71.44]}   # 관측 자세 (W018, 10/6 실기 확인·민범진 OK): TCP (350.5, -109.0, 294.8) mm 아래 방향, 작업대까지 약 497 mm. 조립 영역(초록 사각형)이 화면 가운데에 다 보임
+observe_supply_pose: {joints_deg: [19.2, 14.19, 58.27, 0.02, 107.53, 18.89]}   # 공급 관측 자세 (W134, 10/7 실기 확인 — 카메라 → 작업대 495.9 mm, 흩뿌릴 영역 x 183~586 · y 142~337 mm 다 보임): observe 와 같은 높이, 카메라 90° 돌림(화면 긴 쪽 = x). TCP (424.5, 154.4, 294.8) mm → 카메라 중심이 흩뿌릴 영역 가운데 (388, 230) mm 위 약 497 mm
+observe_front_pose: {joints_deg: [-67.2, -35.6, 110.6, 26.2, 92.7, 27.7]}   # 스캔 앞 자세 (W134, 10/7 실기 확인 — 원점 위 75 mm 가 화면 가운데 6 px 안, 거리 458 mm, 구조물 225x225x150 mm 다 보임): 로봇 쪽에서 30° 기울여 봄, 카메라 (196, -72, 455) mm
+observe_side_pose: {joints_deg: [-52.9, 32.0, 47.2, 24.4, 128.0, 48.0]}   # 스캔 옆 자세 (W134, 10/7 실기 확인 — 원점 위 75 mm 가 화면 가운데 7 px 안, 거리 458 mm, 구조물 다 보임. 화면은 옆으로 누움): 조립 영역 y- 쪽에서 35° 기울여 봄, 카메라 (426, -336, 434) mm
 home_pose: {joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]}
 
 finger:
   thickness_m: 0.0114          # RG2 모델 메시 값 (캘리퍼스 W011)
   width_m: 0.020
+
+timeout:                       # 작업 관리자가 답을 기다리는 시간 제한(s) — 넘으면 TIMEOUT = 먼저 세움 → 사람 호출 (IRD 7장 · 9장, W121 C-2, 10/7 PL)
+  service_s: 5                 # ROS 서비스 한 번(save_build · get_design 등). 이 값이 save_build 다시 보내기 간격도 정한다
+  move_to_s: 45                # move_to(관측 · 홈 · 촬영 자세) 한 번. pick_place 안 최악(계획 20 s = 5 s x 플래너 2 x 여유 2단계 + 이동 ~10 s + 도착 대기 5 s)보다 길게 — 10/7 PL 30 -> 45
+  pick_place_s: 90             # pick_place 액션 블록 1개(실기 블록당 약 18 s, 최악 계획 · 이동이 두 번). 넘으면 task 가 목표를 취소 → pick_place 가 서기 궤적으로 세움
 
 check:                         # 검사 묶음 DesignChecker (IRD 9장, 10/7 W109)
   margin_mm: 7                 # 쌓는 도중 무게중심이 받침 가장자리에서 이만큼 안쪽이어야 통과 (구조 유지 한계, V-02)

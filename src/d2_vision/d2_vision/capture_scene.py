@@ -2,21 +2,30 @@
 
 Enter 를 누를 때마다 손목 카메라의 **컬러 PNG + 컬러에 맞춘 깊이 16비트 PNG(mm) + 자세 json** 을 같은 번호로 저장한다
 (docs/YOLO데이터_수집라벨링규칙 §2.1 · §2.3: `s<장면 2자리>_<번호 3자리>_<조명 a/b>_<color|depth|pose>`).
+스캔 촬영(기본 설계 × 자세 3곳)은 자세 태그를 켜면 이름에 자세가 붙는다: `s11_001_a_front_color.png`(10/7 민범진 · 한석형 — 번호 약속 대신
+이름으로 구분, PL 10/7 허락 — 규칙 §2.3). 태그를 안 켜면 이름은 그대로다. 장면 번호: 01~10 흩뿌린 장면 · 11~13 스캔(벤치 · 의자 Lv2 · 책상 Lv4) · 21~30 V-52 시험.
+스캔 원본은 드라이브 `1_원본_W114/스캔`에 따로 올린다(Roboflow에 섞이지 않게).
 자세 json = 두산 posx(mm · deg, /dsr_controller2/aux_control/get_current_posx) · 팔 관절값(/joint_states, deg) · 카메라 내부 파라미터
-· hand-eye 로 계산한 T_base2cam(m) · 해상도 · 시각. 브링업이 없으면 `--posx` 로 펜던트 값을 넣는다(관절값은 빈 값).
+· hand-eye 로 계산한 T_base2cam(m) · **그때 쓴 보정값(파일 · 수정 시각 · 카메라 위치 mm · 지문)** · 해상도 · 시각. 브링업이 없으면 `--posx` 로 펜던트 값을 넣는다(관절값은 빈 값).
+보정값은 촬영 중간에 바뀔 수 있다(10/7 수평 약 1 cm 재보정). 그래서 뒤에 쓰는 코드(스캔 추론기 · find_blocks)는 json 의 T_base2cam 을
+그대로 믿지 말고 **posx_mm_deg × 최신 보정값**으로 다시 계산한다(PL 10/7). json 의 calib 칸은 어느 값으로 계산했는지 되짚는 용도.
 
 입력(인자)
   --out      저장 폴더 (예: ~/d2_data/W114). 없으면 만든다. 저장소에는 넣지 않는다(드라이브 YOLO_흩어진블록/1_원본_W114 로 올림)
   --scene    시작 장면 번호(1~), --light a|b 조명 표시, --cam-prefix realsense 토픽 접두, --posx X Y Z A B C 펜던트 값(브링업 없을 때)
-키: Enter = 저장 · s = 다음 장면(번호 1부터) · l = 조명 a/b 바꿈 · q = 끝
+  --pose     시작 자세 태그(observe · front · side, 스캔 촬영용). 비우면 태그 없음(흩뿌린 장면)
+키: Enter = 저장 · s = 다음 장면(번호 1부터) · l = 조명 a/b 바꿈 · p = 자세 태그 돌리기(없음 → observe → front → side) · q = 끝
+    observe · front · side 를 그대로 치면 그 태그로 바로 바뀐다(저장은 안 함)
 바깥 영향: 파일 저장뿐. 실패 때: 프레임이 1초 안에 없거나 posx 를 못 받으면 그 장은 저장하지 않고 이유를 찍는다.
 
 카메라는 규칙대로 **640×480** 으로 띄운다(기본 1280×720 아님):
   ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true rgb_camera.color_profile:=640x480x30 depth_module.depth_profile:=640x480x30
 실행:
   ros2 run d2_vision capture_scene --out ~/d2_data/W114 --scene 1 --light a
+  ros2 run d2_vision capture_scene --out ~/d2_data/W114_scan --scene 11 --pose observe   # 스캔: 11 벤치 · 12 의자 · 13 책상, 자세마다 p → Enter
 """
 import argparse
+import hashlib
 import json
 import sys
 import threading
@@ -36,6 +45,27 @@ from dsr_msgs2.srv import GetCurrentPosx
 
 JOINTS = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']   # 두산 팔 관절 (joint_states 에 그리퍼 관절도 섞여 온다)
 FRESH_S = 1.0
+POSES = ['', 'observe', 'front', 'side']    # 자세 태그 순서(p 키). '' = 태그 없음. robot.yaml 의 observe · observe_front · observe_side 에 대응
+
+
+def calib_info(path, T):
+    """pose json 에 적을 보정값 기록: 파일 이름 · 수정 시각(ISO) · 카메라 위치 mm(T 의 이동) · 4x4 지문(sha1 앞 12자리).
+    T 가 None(보정 파일 없음)이면 None. 같은 지문이면 같은 보정값으로 계산한 사진이다."""
+    if T is None:
+        return None
+    path = Path(path)
+    return {
+        'file': path.name,
+        'mtime': time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(path.stat().st_mtime)) if path.exists() else None,
+        'cam_pos_mm': [round(float(v), 2) for v in T[:3, 3]],
+        'sha1_12': hashlib.sha1(np.ascontiguousarray(T, dtype=np.float64).round(6).tobytes()).hexdigest()[:12],
+    }
+
+
+def stem_for(scene, index, light, pose=''):
+    """파일 이름 줄기. 태그가 없으면 규칙 그대로 `s01_003_a`, 있으면 `s11_001_a_front`(조명 뒤 · 종류 앞)."""
+    stem = f's{scene:02d}_{index:03d}_{light}'
+    return f'{stem}_{pose}' if pose else stem
 
 
 def posx_to_matrix(x, y, z, rx, ry, rz):
@@ -60,6 +90,7 @@ class CaptureScene(Node):
         self.intr = None
         self.joints = None
         p = Path(get_package_share_directory('d2_vision')) / 'config' / 'T_gripper2camera.npy'
+        self.calib_path = p
         self.T_g2c = np.load(p) if p.exists() else None
         if self.T_g2c is None:
             self.get_logger().warn('보정값 %s 없음 — pose json 에 T_base2cam 을 못 넣는다' % p)
@@ -114,8 +145,8 @@ class CaptureScene(Node):
             return None
         return list(r.task_pos_info[0].data[:6])
 
-    def save(self, out, scene, index, light):
-        """최신 컬러 · 깊이 · 자세를 `s<scene>_<index>_<light>_*` 로 저장한다. 성공하면 True, 아니면 이유를 찍고 False.
+    def save(self, out, scene, index, light, pose=''):
+        """최신 컬러 · 깊이 · 자세를 `s<scene>_<index>_<light>[_<pose>]_*` 로 저장한다. 성공하면 True, 아니면 이유를 찍고 False.
         누른 **뒤** 들어온 프레임을 최대 FRESH_S 기다려 쓴다(카메라를 막 켰거나 손을 뺀 직후의 옛 프레임을 피한다)."""
         t_req = self.now()
         while True:
@@ -132,14 +163,15 @@ class CaptureScene(Node):
         if posx is None:
             print('  ✗ 두산 posx 를 못 받음 — 브링업이 없으면 --posx 로 펜던트 값을 넣는다')
             return False
-        stem = f's{scene:02d}_{index:03d}_{light}'
+        stem = stem_for(scene, index, light, pose)
         cv2.imwrite(str(out / f'{stem}_color.png'), color)
         cv2.imwrite(str(out / f'{stem}_depth.png'), depth.astype(np.uint16))
         pose = {
-            'scene': scene, 'index': index, 'light': light, 'stamp': time.time(),
+            'scene': scene, 'index': index, 'light': light, 'pose_id': pose or None, 'stamp': time.time(),
             'posx_mm_deg': posx, 'posj_deg': self.joints, 'intrinsics_px': self.intr,
             'depth_unit': 'mm', 'color_size': [int(color.shape[1]), int(color.shape[0])],
             'T_base2cam_m': None, 'tcp': 'GripperDA_v1 (config/tcp.json)',
+            'calib': calib_info(self.calib_path, self.T_g2c),      # 이 사진의 T_base2cam 을 어느 보정값으로 계산했나(PL 10/7)
         }
         if self.T_g2c is not None:
             T = posx_to_matrix(*posx) @ self.T_g2c
@@ -158,6 +190,7 @@ def main(args=None):
     ap.add_argument('--light', default='a', choices=['a', 'b'], help='조명 표시')
     ap.add_argument('--cam-prefix', default='/camera/camera')
     ap.add_argument('--posx', type=float, nargs=6, metavar=('X', 'Y', 'Z', 'A', 'B', 'C'), help='브링업 없을 때 펜던트 posx')
+    ap.add_argument('--pose', default='', choices=POSES, help='시작 자세 태그(스캔 촬영). 비우면 태그 없음')
     a, ros_args = ap.parse_known_args(args)
     out = Path(a.out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
@@ -166,10 +199,10 @@ def main(args=None):
     node = CaptureScene(a)
     spin = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
     spin.start()
-    scene, light = a.scene, a.light
-    index = 1 + len(list(out.glob(f's{scene:02d}_*_color.png')))     # 같은 장면에 이미 있으면 이어서 번호
-    print(f'저장 폴더 {out}  장면 {scene:02d} 번호 {index:03d} 조명 {light}')
-    print('Enter = 저장 · s = 다음 장면 · l = 조명 바꿈 · q = 끝')
+    scene, light, pose = a.scene, a.light, a.pose
+    index = 1 + len(list(out.glob(f's{scene:02d}_*_color.png')))     # 같은 장면에 이미 있으면 이어서 번호(태그가 있어도 같은 glob 에 걸린다)
+    print(f'저장 폴더 {out}  장면 {scene:02d} 번호 {index:03d} 조명 {light} 자세 태그 {pose or "없음"}')
+    print('Enter = 저장 · s = 다음 장면 · l = 조명 바꿈 · p = 자세 태그 돌리기(observe/front/side 를 쳐도 됨) · q = 끝')
     try:
         while True:
             key = sys.stdin.readline()
@@ -184,8 +217,14 @@ def main(args=None):
             elif key == 'l':
                 light = 'b' if light == 'a' else 'a'
                 print(f'→ 조명 {light}')
+            elif key == 'p':
+                pose = POSES[(POSES.index(pose) + 1) % len(POSES)]
+                print(f'→ 자세 태그 {pose or "없음"}')
+            elif key in POSES[1:]:
+                pose = key
+                print(f'→ 자세 태그 {pose} (로봇을 그 자세로 보낸 뒤 Enter)')
             else:
-                if node.save(out, scene, index, light):
+                if node.save(out, scene, index, light, pose):
                     index += 1
     except KeyboardInterrupt:
         pass

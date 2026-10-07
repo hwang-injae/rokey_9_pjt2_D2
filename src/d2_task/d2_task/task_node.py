@@ -4,9 +4,14 @@
 웹 화면 · 음성은 웹 PC 에 있고 다리(bridge)가 ROS 이름 그대로 대신 부른다(E-26~E-28). 이 노드는 MQTT 를 모른다.
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
         /d2/gripper/state (JSON gripper_state/1)
-부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace)
+제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
+부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace),
+        /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/1 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
-레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0). get_design 은 W119 뒤.
+기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
+설계 조회: 선택 · 출발 때 /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
+        원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
+        recipe_dir 아래 <design_id>.recipe.json 을 읽는다(assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 기다리는 중인 모든 호출이 빠져나오고 진행 중인 pick_place 목표를 취소한다(서기는 pick_place 가 한다).
 """
@@ -15,24 +20,30 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
-from d2_interfaces.srv import CheckProgress, HmiCommand, MoveTo
+from d2_interfaces.srv import CheckProgress, HmiCommand, JsonQuery, MoveTo
 from d2_safety.safe_stop import init_ros
 from geometry_msgs.msg import Pose
 from rclpy.action import ActionClient
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from d2_task.build_sender import BuildSender
+from d2_task.design_checker import DesignChecker
+from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager, wait_until
 
 LOOP_S = 0.1          # 작업 스레드가 한 단계 하고 쉬는 간격. pick_place_node 의 main 반복과 같다(정책 숫자가 아니다)
+SAVE_POLL_S = 1.0       # 보낼 요약이 있는지 · 답이 늦었는지 살피는 간격. 제한 시간(timeout.service_s)이 아니라 확인 주기일 뿐이다
+LOG_FLUSH_S = 2.0      # 끝낼 때 기록 파일에 남은 줄이 쓰일 때까지 기다리는 한도. 취소 요청을 보낸 뒤에만 기다린다
 CANCEL_WAIT_S = 1.0   # Ctrl+C 때 취소 요청이 나갈 때까지 기다리는 시간. pick_place_node 의 executor 종료 대기와 같다
 # 정지 노드 · 다리와 같게: 마지막 값만 의미 있고, 늦게 붙는 쪽도 받는다 (IRD 4.1, MQTT retained 자리)
 LATCHED_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -62,22 +73,40 @@ class TaskNode(Node):
     """
 
     def __init__(self):
-        """설정을 읽고 서비스 · 클라이언트 · 구독 · 방송을 만든다. 파라미터 recipe_dir 은 비어 있으면 설계를 못 고른다."""
+        """설정을 읽고 서비스 · 클라이언트 · 구독 · 방송을 만든다. 파라미터 recipe_dir 은 비어 있으면 설계를 못 고르고, log_dir 이 비면 기록 파일을 안 쓴다."""
         super().__init__('task')
-        self.declare_parameter('recipe_dir', '')
+        self.declare_parameter('recipe_dir', '')         # design_source:=local 일 때만 쓰는 레시피 폴더(개발용)
+        self.declare_parameter('design_source', 'remote')  # remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일(웹 없이 개발할 때 명시)
+        self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
         cb = ReentrantCallbackGroup()
-        self.manager = TaskManager(load_robot_yaml(), self)
+        cfg = load_robot_yaml()
+        logger = RunLogger(self.get_parameter('log_dir').value)
+        if logger.enabled:
+            self.get_logger().info(f'[작업 관리자] 조립 기록 폴더: {logger.log_dir}')
+        else:
+            self.get_logger().warn('[작업 관리자] 조립 기록 파일이 꺼져 있다(log_dir 이 비어 있음) — run_id 와 요약만 만든다')
+        self.manager = TaskManager(cfg, self, logger)
+        self.checker = DesignChecker(cfg)         # 변환기 ①(한세교 W110)이 정해지면 blocks_to_recipe 인자로 붙인다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
         self.check_cli = self.create_client(CheckProgress, '/d2/vision/check_progress', callback_group=cb)
         self.pick_cli = ActionClient(self, PickPlace, '/d2/motion/pick_place', callback_group=cb)
+        self.save_cli = self.create_client(JsonQuery, '/d2/hmi/save_build', callback_group=cb)
+        self.design_cli = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=cb)
+        self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
+        self.sender = BuildSender(self.manager, self._call_save, self.save_cli.remove_pending_request,
+                                  self.save_cli.service_is_ready, self.service_s)
         self.state_pub = self.create_publisher(String, '/d2/task/state', LATCHED_QOS)
         self.progress_pub = self.create_publisher(String, '/d2/task/progress', LATCHED_QOS)
         self.create_subscription(String, '/d2/safety/state', self._on_safety, LATCHED_QOS, callback_group=cb)
         self.create_subscription(String, '/d2/gripper/state', self._on_gripper, 10, callback_group=cb)
         self.create_subscription(String, '/d2/hmi/intent', self._on_intent, 10, callback_group=cb)
         self.create_service(HmiCommand, '/d2/hmi/command', self._on_command, callback_group=cb)
+        self.create_timer(SAVE_POLL_S, self.sender.poll, callback_group=MutuallyExclusiveCallbackGroup())
+        # 검사 요청끼리는 순서대로, 안전 · 그리퍼 · 상태표 콜백과는 따로 — 계산이 길어도 그쪽을 막지 않는다
+        self.create_service(JsonQuery, '/d2/task/check_design', self._on_check_design,
+                            callback_group=MutuallyExclusiveCallbackGroup())
 
     # ---------- 콜백 → TaskManager ----------
     def _json(self, msg):
@@ -111,17 +140,55 @@ class TaskNode(Node):
         res.success, res.reason = self.manager.command(req.cmd, req.design_id)
         return res
 
+    def _on_check_design(self, req, res):
+        """/d2/task/check_design 요청을 DesignChecker 에 넘기고 답한다. 작업 관리자 상태 · 로봇에는 손대지 않는다."""
+        res.success, res.reason, res.response_json = self.checker.handle_json(req.request_json)
+        return res
+
+    # ---------- 결과 저장(save_build) ----------
+    def _call_save(self, summary):
+        """build/1 요약을 /d2/hmi/save_build 로 비동기로 보낸다. 반환: future."""
+        req = JsonQuery.Request()
+        req.request_json = json.dumps(summary, ensure_ascii=False, allow_nan=False)
+        return self.save_cli.call_async(req)
+
     # ---------- TaskManager 의 io ----------
-    def load_recipe(self, design_id):
-        """recipe_dir/<design_id>.recipe.json 을 읽는다. 파라미터가 비었거나 파일이 없거나 이름이 경로를 가리키면 None."""
+    def get_design(self, design_id, should_abort):
+        """설계 조회. 반환: (ok, reason, design dict 또는 None). design_source 에 따라 원격(기본) 또는 로컬 파일 하나만 쓴다.
+
+        원격: /d2/hmi/get_design 에 {"design_id"} 를 보내고 timeout.service_s 안에 답을 기다린다(정지 신호가 오면 바로 빠져나옴).
+        시간이 지나면 요청을 버리고 (False, 'TIMEOUT'). 서버가 없으면 (False, 'ERROR'). 답이 늦게 와도 아무도 받지 않는다.
+        """
+        if self.get_parameter('design_source').value == 'local':
+            return self._local_design(design_id)
+        if not self.design_cli.service_is_ready():
+            return False, 'ERROR', None
+        req = JsonQuery.Request()
+        req.request_json = json.dumps({'design_id': design_id}, ensure_ascii=False)
+        future = self.design_cli.call_async(req)
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        if not wait_until(done, should_abort, timeout_s=self.service_s):
+            self.design_cli.remove_pending_request(future)
+            return False, ('STOPPED' if should_abort() else 'TIMEOUT'), None
+        res = future.result()
+        if not res.success:
+            return False, res.reason or 'ERROR', None
+        try:
+            return True, '', json.loads(res.response_json)
+        except ValueError:
+            return False, 'ERROR', None
+
+    def _local_design(self, design_id):
+        """(개발용) recipe_dir/<design_id>.recipe.json 을 design/1 모양으로 감싼다. 파라미터가 비었거나 파일이 없거나 이름이 경로를 가리키면 실패."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
-            return None
+            return False, '', None
         try:
             with open(os.path.join(recipe_dir, f'{design_id}.recipe.json'), encoding='utf-8') as f:
-                return json.load(f)
+                return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': json.load(f)}
         except (OSError, ValueError):
-            return None
+            return False, '', None
 
     def services_ready(self):
         """아직 안 떠 있는 서버 이름들. 기다리지 않고 지금 보이는 것만 본다."""
@@ -246,9 +313,10 @@ def main():
             node.manager.run_once()
             time.sleep(LOOP_S)
     except KeyboardInterrupt:
-        node.manager.shutdown()
+        node.manager.shutdown()                    # ① 중단 신호 → ② 진행 중인 목표 취소 요청 → ③ 기록 마무리(finally)
         node.cancel_active()
     finally:
+        node.manager.finalize(LOG_FLUSH_S)
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
         if rclpy.ok():
