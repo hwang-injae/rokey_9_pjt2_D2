@@ -9,7 +9,7 @@ import pytest
 
 from d2_motion.motion_math import column, quat_from_axes, slot_block_pose
 from d2_task.block_picker import BlockPicker
-from d2_task.scatter_pick import ScatterFlow, block_pose, contact_phase, failure_action, grasped_now
+from d2_task.scatter_pick import ScatterFlow, StepTracker, block_pose, contact_phase, failure_action, grasped_now
 from test_block_picker import CFG, MIN_GAP, blk
 
 TARGET = {'block_id': '001_CHAIR_BENCH_B004', 'grasp': 'FLAT_LONG',
@@ -366,3 +366,71 @@ def test_믿는_시간이_이상하면_모름(age):
 
 def test_모르면_접촉_전이어도_복구_절차():
     assert failure_action('PLAN_FAILED', 'PRE_CONTACT', grasped_now({'stamp': 900.0, 'grasped': False}, 800.0, NOW, 3.0)) == 'RECOVER'
+
+
+# ---------- 요청별 마지막 step (가짜 액션 · 그리퍼) ----------
+def test_step은_요청마다_따로_기억하고_이전_요청의_늦은_피드백은_버린다():
+    tr = StepTracker()
+    tr.begin(1)
+    assert tr.on_feedback(1, 'approach') and tr.on_feedback(1, 'grasp')
+    assert tr.last_step(1) == 'grasp'
+    tr.begin(2)                                                     # 새 요청 — 이전 step 은 지워진다
+    assert tr.last_step(2) is None and tr.last_step(1) is None
+    assert not tr.on_feedback(1, 'lift')                            # 요청 1 의 늦은 피드백
+    assert tr.last_step(2) is None
+    assert tr.on_feedback(2, 'approach') and tr.last_step(2) == 'approach'
+
+
+@pytest.mark.parametrize('rid, step', [(None, 'approach'), (3, 'approach'), (2, 'SIDE'), (2, None), (2, '')])
+def test_모르는_요청이나_step은_기록하지_않는다(rid, step):
+    tr = StepTracker()
+    tr.begin(2)
+    assert not tr.on_feedback(rid, step) and tr.last_step(2) is None
+
+
+def test_요청이_끝나면_더_받지_않는다():
+    tr = StepTracker()
+    tr.begin(1)
+    tr.on_feedback(1, 'move')
+    tr.end(1)
+    assert not tr.on_feedback(1, 'place') and tr.last_step(1) is None
+    tr.begin(2)
+    tr.end(1)                                                       # 이미 끝난 요청의 end 는 지금 요청에 영향 없음
+    assert tr.on_feedback(2, 'approach')
+
+
+def test_가짜_액션과_그리퍼로_실패_처리_전체_흐름():
+    """요청 1 은 grasp 뒤 실패(쥐고 있음) → 복구, 요청 2 는 approach 의 PLAN_FAILED + 결과 뒤 신선한 그리퍼(쥐지 않음) → 같은 후보 재계획."""
+    f, tr = flow(), StepTracker()
+    run(f, TARGET, resp(blk(length=30)))
+    tr.begin(1)
+    tr.on_feedback(1, 'approach'); tr.on_feedback(1, 'grasp'); tr.on_feedback(1, 'lift')
+    result_time = 500.0                                             # 결과를 받은 시각(time.time 기준)
+    held = grasped_now({'stamp': 500.5, 'grasped': True}, result_time, 501.0, 3.0)
+    assert f.on_failure('PLAN_FAILED', contact_phase(tr.last_step(1), 'PLAN_FAILED'), held) == 'RECOVER'
+    run(f, TARGET, resp(blk(length=30)))
+    tr.begin(2)
+    tr.on_feedback(1, 'lift')                                       # 요청 1 의 늦은 피드백이 요청 2 를 망치지 않는다
+    tr.on_feedback(2, 'approach')
+    free = grasped_now({'stamp': 600.5, 'grasped': False}, 600.0, 601.0, 3.0)
+    assert f.on_failure('PLAN_FAILED', contact_phase(tr.last_step(2), 'PLAN_FAILED'), free) == 'REPLAN_SAME'
+    assert f.reusable_request() is not None
+
+
+def test_결과_뒤의_신선한_그리퍼_상태가_없으면_복구_절차():
+    f, tr = flow(), StepTracker()
+    run(f, TARGET, resp(blk(length=30)))
+    tr.begin(1)
+    tr.on_feedback(1, 'approach')
+    stale = grasped_now({'stamp': 599.0, 'grasped': False}, 600.0, 601.0, 3.0)      # 결과 이전 값
+    assert stale is None
+    assert f.on_failure('PLAN_FAILED', contact_phase(tr.last_step(1), 'PLAN_FAILED'), stale) == 'RECOVER'
+    assert f.reusable_request() is None
+
+
+def test_시계를_섞으면_믿지_않는다():
+    """단조 시계 값(작은 수)을 now 나 result_time 에 섞으면 stamp(로봇 PC 시계)와 어긋나 None 이 된다 — 같은 시계끼리만 쓴다."""
+    wall = 1.79e9
+    assert grasped_now({'stamp': wall, 'grasped': False}, wall - 1, 12345.0, 3.0) is None         # now 가 단조 시계 → stamp 가 미래
+    assert grasped_now({'stamp': 12344.0, 'grasped': False}, wall, wall + 1, 3.0) is None         # stamp 가 단조 시계 → 결과보다 과거
+    assert grasped_now({'stamp': wall, 'grasped': False}, wall - 1, wall + 1, 3.0) is False       # 같은 시계면 믿는다
