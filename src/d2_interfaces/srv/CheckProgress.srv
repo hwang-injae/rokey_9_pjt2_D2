@@ -1,6 +1,7 @@
 # 손목 카메라로 블록 확인 — 작업 관리자 → 손목 블록 인식 (/d2/vision/check_progress)
 # 결과 배열은 모두 같은 길이, 같은 번호끼리 한 블록
-string[] block_ids
+string design_id                  # 블록들이 속한 설계(E-52, 10/7) — 블록 이름에서 잘라 내지 않는다. 빈 값이면 옛 방식(`_B` 앞)으로, 10/8 저녁까지만
+string[] block_ids                # 전체 블록 이름 <design_id 대문자>_<역할>_<부품 3자리>_<블록 2자리> (예 001_CHAIR_BENCH_LEG_001_01)
 ---
 string[] block_ids
 string[] states                   # present | absent | occluded | unknown (10/4 확정)

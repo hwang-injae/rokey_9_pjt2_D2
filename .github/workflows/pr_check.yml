@@ -3,6 +3,8 @@
 # 2. Claude 검토: .claude/commands/pr-review.md 3번의 ①~⑧. 팀원(협업자)이 연 모든 PR에서 돈다(10/7 01시 PL — 황인재·한세교가 직접 보고
 #    승인하는 일이 거의 없어서. 10/6 저녁의 라벨 `claude-review` 조건은 없앴다. 토큰이 모자라면 문서만 바뀐 PR부터 건너뛰기로). 외부 PR에는 돌지 않는다(공개 저장소).
 # 3. 판정: ①~⑧에 '막음'이 없으면 자동 승인, 있으면 '수정 요청' + 이유. 검토가 돌지 않았거나 실패하면 판정도 돌지 않는다(코멘트 없음).
+#    본문에 체크 안 된 '- [ ] … PL 확인' 줄이 있거나 IRD(docs/02_인터페이스_IRD_*.md) 내용을 바꿨으면 막음이 없어도 승인하지 않고
+#    'PL 확인 대기' 코멘트만(10/7 PL, pr_verdict.py) — PL이 확인한 뒤 직접 승인하면 auto-merge.
 # 4. auto-merge: PR이 열리거나 push될 때마다 pr_automerge.py 가 GitHub auto-merge(Squash)를 걸어 둔다(10/6 저녁 PL).
 #    승인(자동이든 사람이든) + 필수 검사(이 파일의 check · ci.yml의 두 job)가 끝나면 GitHub이 merge하고 브랜치를 지운다.
 #    토큰은 D2_AUTOMERGE_TOKEN(황인재 classic PAT, scope repo — 10/6 밤). 그래야 merge 주체가 사람이 되어 main CI가 돌고 브랜치가 지워진다.
