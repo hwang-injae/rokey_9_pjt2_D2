@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-07
+- 공통(16시, PM): **`timeout.service_s` 5 → 3초(PL)** — `get_design`이 화면 요청(MQTT 5초) 안에서 불려, 둘 다 5초면 화면은 실패 · 로봇은 선택됨으로 어긋난다. save_build 다시 보내기 간격도 3초. robot.yaml · IRD 9장.
 - 공통(16시, PM): 결정 기록 E-14에 'E-52 ③으로 4번째 = 가운데 기둥' 표시, E-45의 '책상 벽형' 문장을 가운데 기둥으로(PR #45 · E-52와 맞춤).
 - 공통(16시, PM): **E-52 작명 규칙 v2(PL — 한세교 안 그대로)** — 블록 이름 `<역할>_<부품 3자리>_<블록 2자리>`(예 `LEG_001_01`, 노드 사이 `<design_id>_<블록 이름>`) · 레시피 = `<모델ID>_structure.json`(`cad_structure/1.0`) + `_recipe.json`(`cad_recipe/1.0`) + `_placements.csv`(E-44 파일 이름 고침) · 네 번째 기본 설계 = 책상 가운데 기둥 `004_DESK_PEDESTAL`(한세교 PR #45) · `CheckProgress.srv`에 `design_id`(블록 이름에서 설계를 잘라 내지 않음). 옮기기 마감 **10/8 저녁** — 새 작업 W137(황인재) · W138(박진용) · W139(한세교) · W140(민범진) · W141(한석형). 작명 규칙 v2 저장소에 넣음 · 결정 기록 §18 · IRD 2 · 4 · 5 · 6장 · 01 · SDD · 05 · 06 · AGENTS · 시스템 아키텍처 v6(그림 · 설명) · 프롬프트 · 일정표.
 - 로봇 동작 · 비전(15시, PM): **시간 초과 처리(PL, 박진용 · 한석형 제안)** — `timeout.move_to_s` 30 → **45초**(계획 최악 20초 + 이동 · 도착 대기), `TIMEOUT`이면 **먼저 세움 → 사람 호출**: `pick_place`는 목표 취소, `move_to`는 작업 관리자가 `/d2/safety/stop {source: task, reason: TIMEOUT}`(정지 입력 `source`에 `task` 추가, 정지 노드 코드는 그대로). IRD 2 · 4 · 7 · 9장 · `StopRequest.srv` 주석 · SDD 7.1 · 상태도. robot.yaml `timeout.move_to_s` · `pick_place_s`는 박진용 PR.

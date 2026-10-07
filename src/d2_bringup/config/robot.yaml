@@ -41,7 +41,7 @@ finger:
   width_m: 0.020
 
 timeout:                       # 작업 관리자가 답을 기다리는 시간 제한(s) — 넘으면 TIMEOUT = 먼저 세움 → 사람 호출 (IRD 7장 · 9장, W121 C-2, 10/7 PL)
-  service_s: 5                 # ROS 서비스 한 번(save_build · get_design 등). 이 값이 save_build 다시 보내기 간격도 정한다
+  service_s: 3                 # ROS 서비스 한 번(save_build · get_design 등). 이 값이 save_build 다시 보내기 간격도 정한다. 3초 = get_design이 화면 요청(MQTT 5초) 안에서 끝나게(10/7 PL, 5 → 3)
   move_to_s: 45                # move_to(관측 · 홈 · 촬영 자세) 한 번. pick_place 안 최악(계획 20 s = 5 s x 플래너 2 x 여유 2단계 + 이동 ~10 s + 도착 대기 5 s)보다 길게 — 10/7 PL 30 -> 45
   pick_place_s: 90             # pick_place 액션 블록 1개(실기 블록당 약 18 s, 최악 계획 · 이동이 두 번). 넘으면 task 가 목표를 취소 → pick_place 가 서기 궤적으로 세움
 
