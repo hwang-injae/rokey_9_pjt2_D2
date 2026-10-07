@@ -4,7 +4,7 @@
 # 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 → 10/6 다시 측정 (W011~W016).
 
 frame_id: base_link
-tcp_link: rg2_tcp
+tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
 table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
 table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
   x_m: [-0.2675, 0.9325]

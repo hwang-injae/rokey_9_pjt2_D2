@@ -8,6 +8,9 @@ pick_place 노드·scene_manager 노드·run_recipe 도구가 같이 쓴다. ROS
   - 위치 m, 쿼터니언 (x, y, z, w), 기준 base_link. 설정은 robot.yaml(cfg dict)에서 읽는다.
   - 블록 자세 = 블록 중심 + 블록 자신의 축(x = LENGTH 75, y = WIDTH 25, z = THICKNESS 15 mm 방향).
   - TCP(rg2_tcp, 손가락 끝 중심): 접근 축 +Z 가 아래(base -Z), 닫힘 축 Y 가 블록의 잡는 축과 평행.
+  - rg2_tcp 와 두산 posx(활성 TCP GripperDA_v1) 틀: 위치는 같고(2 mm 안) 방향은 손목 Z 로 -90° 다르다
+    R_rg2tcp = R_posx · Rz(-90°) → x_rg2 = -y_posx, y_rg2 = +x_posx, z 같음. 그래서 닫힘 축 = posx 의 x 축.
+    (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정(T_gripper2camera)은 posx 기준이다.
   - 잡기 이름 6가지(IRD 2장) = <바닥 상태>_<LONG|SHORT>. 그리퍼 폭은 '손가락 사이에 끼우는 블록 축'만으로 정해진다.
 """
 import math
@@ -203,6 +206,33 @@ def tcp_target(cfg, center, rot, grasp, slot_cfg=None):
     held_size = [sum(abs(sum(a * b for a, b in zip(t, cols[i]))) * size[i] for i in range(3)) for t in quat_axes(q)]
     held = {'size_m': held_size, 'offset_m': [0.0, 0.0, -(center[2] - tcp_z)]}
     return (center[0], center[1], tcp_z), q, held
+
+
+def move_speed_scale(cfg, speed_ratio):
+    """move_to 의 speed_ratio -> MoveIt 속도 비율 (robot.yaml speed_scale x speed_ratio, IRD 4.2 MoveTo · W121 C-9).
+
+    입력: speed_ratio 0 = 평소(1.0배), 0 < 값 ≤ 1 = 그만큼 느리게(예: 다시 시작 뒤 첫 이동 0.5).
+    반환: MoveIt 에 넘길 비율, 범위 밖(음수 · 1 초과 · NaN)이면 None — 평소보다 빠르게는 가지 않는다.
+    """
+    if speed_ratio == 0:
+        return cfg['speed_scale']
+    if not 0 < speed_ratio <= 1:          # NaN 도 여기서 걸린다
+        return None
+    return cfg['speed_scale'] * speed_ratio
+
+
+def pick_open_width(cfg, grasp, open_width_m):
+    """집기 전에 여는 실제 폭 (m) (IRD 4.2 PickPlace open_width_m · W121 C-10).
+
+    입력: grasp = 잡기 이름, open_width_m 0 = robot.yaml grasp_open_pick_m.<grasp>, 값이 있으면 그 폭(흩어진 블록 틈에 맞출 때).
+    반환: 열 폭 (m), 닫는 방향 블록 폭(grasp_width_m) 이하이면 None — 손가락이 블록 위에 내려앉는다.
+    너무 큰 값은 그리퍼 노드가 RG2 최대 열림으로 자른다.
+    """
+    if open_width_m == 0:
+        return cfg['grasp_open_pick_m'][grasp]
+    if not open_width_m > cfg['grasp_width_m'][grasp]:   # NaN 도 여기서 걸린다
+        return None
+    return open_width_m
 
 
 def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, slot=None):

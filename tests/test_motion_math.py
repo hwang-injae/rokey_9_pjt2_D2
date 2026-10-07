@@ -167,3 +167,26 @@ def test_recipe_blocks_rejects_wrong_size(robot_cfg):
     """블록 크기가 robot.yaml block_size_m 와 다르면([70, 25, 15]) ValueError."""
     with pytest.raises(ValueError):
         mm.recipe_blocks(robot_cfg, _recipe((70, 25, 15)))
+
+
+@pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])
+def test_move_speed_scale_ok(robot_cfg, ratio, factor):
+    """move_to speed_ratio: 0 = 평소, 0 < 값 ≤ 1 = speed_scale 에 곱함 (W121 C-9)."""
+    assert close(mm.move_speed_scale(robot_cfg, ratio), robot_cfg['speed_scale'] * factor)
+
+
+@pytest.mark.parametrize('ratio', [-0.1, 1.5, float('nan')])
+def test_move_speed_scale_reject(robot_cfg, ratio):
+    """평소보다 빠르거나 음수 · NaN 이면 None (move_to 가 PLAN_FAILED 로 거절)."""
+    assert mm.move_speed_scale(robot_cfg, ratio) is None
+
+
+@pytest.mark.parametrize('grasp', ['FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG'])
+def test_pick_open_width(robot_cfg, grasp):
+    """PickPlace open_width_m: 0 = robot.yaml 기본, 블록 폭보다 크면 그 값, 블록 폭 이하 · NaN 이면 None (W121 C-10)."""
+    width = robot_cfg['grasp_width_m'][grasp]
+    assert mm.pick_open_width(robot_cfg, grasp, 0.0) == robot_cfg['grasp_open_pick_m'][grasp]
+    assert close(mm.pick_open_width(robot_cfg, grasp, width + 0.004), width + 0.004)
+    assert mm.pick_open_width(robot_cfg, grasp, width) is None
+    assert mm.pick_open_width(robot_cfg, grasp, width - 0.005) is None
+    assert mm.pick_open_width(robot_cfg, grasp, float('nan')) is None

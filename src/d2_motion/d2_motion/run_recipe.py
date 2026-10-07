@@ -75,7 +75,7 @@ def grasp_test_jobs(cfg, slots, repeat):
     """잡기 폭 시험용 목표: 공급 칸마다 그 칸의 잡기로 집어 같은 자리에 다시 놓는다 (레시피 없이 6가지 잡기를 다 본다).
 
     입력: slots = 칸 번호 목록(1부터), repeat = 칸마다 반복 횟수. 반환: plan_jobs 와 같은 (블록, 칸, 중심, 회전) 목록.
-    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면 관리가 쥔 블록을 붙이지 않는다(UNKNOWN_BLOCK, 같은 자리로 돌아오므로 괜찮다).
+    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면에 쥔 블록이 안 붙는다(UNKNOWN_BLOCK). 같은 자리로 돌아오므로 pick_place 가 이 앞글자만 예외로 진행한다.
     """
     jobs = []
     for slot in slots:

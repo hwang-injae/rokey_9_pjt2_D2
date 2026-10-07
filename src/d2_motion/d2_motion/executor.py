@@ -250,10 +250,10 @@ class MoveItExecutor:
             out.append(o)
         return out
 
-    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None):
+    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None, scale=None):
         """지금 자세 -> 관절 목표 goal 을 OMPL 로 계획만 한다. 반환: (시간까지 매겨진 JointTrajectory, 결과 이름).
 
-        속도·가속은 robot.yaml speed_scale 을 MoveIt 에 넘겨 MoveIt 이 매긴다 (joint_limits.yaml x 비율).
+        속도·가속은 scale(없으면 robot.yaml speed_scale)을 MoveIt 에 넘겨 MoveIt 이 매긴다 (joint_limits.yaml x 비율).
         pad_m > 0 이면 놓인 블록과 공급 칸 블록(skip_slot 칸 빼고)을 그만큼 부풀린 상자를 이 계획에만 더해
         여유 있는 길을 찾게 한다.
         """
@@ -263,7 +263,7 @@ class MoveItExecutor:
         req.planner_id = planner
         req.num_planning_attempts = 1
         req.allowed_planning_time = plan_time
-        req.max_velocity_scaling_factor = req.max_acceleration_scaling_factor = self.cfg['speed_scale']
+        req.max_velocity_scaling_factor = req.max_acceleration_scaling_factor = scale or self.cfg['speed_scale']
         req.start_state = self._state(self.current())
         req.goal_constraints = [Constraints(joint_constraints=[
             JointConstraint(joint_name=j, position=v, tolerance_above=1e-4, tolerance_below=1e-4, weight=1.0)
