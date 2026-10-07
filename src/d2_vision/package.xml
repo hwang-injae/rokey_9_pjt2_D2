@@ -12,7 +12,8 @@
   <exec_depend>sensor_msgs</exec_depend>        <!-- wrist_block: 깊이 영상 · camera_info -->
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>d2_interfaces</exec_depend>      <!-- CheckProgress -->
-  <exec_depend>d2_motion</exec_depend>          <!-- motion_math.recipe_blocks: 레시피 → base 블록 목록 (노드에서만 import, 시험은 안 씀) -->
+  <!-- d2_motion(motion_math.recipe_blocks: 레시피 → base 블록 목록)도 wrist_block · mock_wrist_block 이 쓰지만, 같은 이유(CI rosdep 이
+       d2_motion 을 못 찾음 — from-paths 에 없음)로 적지 않는다. 시험(pytest)은 d2_motion 을 import 하지 않는다 -->
   <!-- dsr_msgs2(두산 posx · TCP 조회)도 wrist_block · capture_scene 이 쓰지만 적지 않는다: CI(ros-base 컨테이너)의 rosdep 이
        두산 패키지를 못 찾아 실패한다(10/7). 로봇 PC에는 두산 워크스페이스가 있어 실행에는 문제없다. CI rosdep 에 skip-keys 가 들어가면 다시 적는다 -->
   <exec_depend>ament_index_python</exec_depend>
