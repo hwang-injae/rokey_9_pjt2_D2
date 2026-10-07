@@ -11,10 +11,10 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', glob('launch/*')),
-        ('share/' + package_name + '/description', glob('description/*')),
-        # robot.yaml(W031, 황인재)이 config/ 에 생기면 그대로 설치된다
-        ('share/' + package_name + '/config', glob('config/*')),
+        # 확장자로 골라 설치한다: 'launch/*' 는 src 경로로 런치를 실행하면 생기는 __pycache__ 폴더까지 집어 빌드가 깨진다 (10/7)
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py') + glob('launch/*.rviz')),
+        ('share/' + package_name + '/description', glob('description/*.xacro') + glob('description/*.srdf')),
+        ('share/' + package_name + '/config', glob('config/*.yaml') + glob('config/*.json')),
         # 레시피(한세교 recipe_manager, COLCON_IGNORE)를 함께 설치 — run_recipe 번호 선택·장면 관리가 이 폴더를 읽는다
         ('share/' + package_name + '/recipes', glob('../recipe_manager/recipes/*.recipe.json')),
     ],
