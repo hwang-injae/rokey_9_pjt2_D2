@@ -171,6 +171,8 @@ BAD = [
     lambda b: b.update(gap_mm={'LENGTH': float('nan'), 'WIDTH': 30}), lambda b: b.update(gap_mm={'LENGTH': float('inf'), 'WIDTH': 30}),
     lambda b: b.update(gap_mm=None), lambda b: b.update(x_m=float('nan')), lambda b: b.update(y_m=None), lambda b: b.update(top_z_m='1'),
     lambda b: b.update(yaw_deg=float('inf')), lambda b: b.update(x_m=True),
+    lambda b: b.update(x_m=10 ** 1000), lambda b: b.update(top_z_m=-10 ** 1000), lambda b: b.update(gap_mm={'LENGTH': 10 ** 1000, 'WIDTH': 30}),
+    lambda b: b.update(yaw_deg=10 ** 400),
     lambda b: b.update(yaw_deg=90.0), lambda b: b.update(yaw_deg=-90.1), lambda b: b.update(yaw_deg=1e308 * 10), lambda b: b.update(x_m=1e999),
     lambda b: b.update(clear=[]), lambda b: b.update(gap_mm='30'), lambda b: b.update(clear={'LENGTH': True, 'WIDTH': True, 'THICKNESS': 'yes'}),
 ]
@@ -231,3 +233,16 @@ def test_E49_틈_경계_예시_IRD():
     b = blk(length=26.0, width=8.5)
     assert pick([b], axis='LENGTH')['status'] == 'FOUND'
     assert pick([b], axis='WIDTH')['status'] == 'NONE'
+
+
+@pytest.mark.parametrize('same', ['LENGTH', 'WIDTH'])
+def test_잡는_축이_위를_향한_면과_같으면_거절(same):
+    with pytest.raises(ValueError):
+        pick([blk(up=same)], same, same)
+
+
+def test_큰_정수_값_하나가_전체_선택을_중단시키지_않는다():
+    blocks = [blk(x=10 ** 1000, length=90), blk(length=30), blk(top=-10 ** 1000, length=80), blk(length=45)]
+    r = pick(blocks)
+    assert (r['status'], r['index'], r['gap_mm']) == ('FOUND', 3, 45)
+    assert pick(blocks[:1])['counts']['invalid'] == 1
