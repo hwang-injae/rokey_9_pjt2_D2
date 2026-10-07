@@ -110,6 +110,7 @@ def test_pick_place_action_fields():
     assert {'block_id', 'supply_slot', 'pick_pose', 'place_pose', 'grasp'} <= set(goal)
     assert goal['pick_pose'] == goal['place_pose'] == 'geometry_msgs/Pose'
     assert goal.get('open_width_m') == 'float64'          # W121, 0 = robot.yaml grasp_open_pick_m
+    assert goal.get('obstacles') == 'geometry_msgs/Pose[]'   # E-53 B안, 흩뿌림 공중 이동 계획용(빈 목록 = 다른 블록 없음)
     assert 'step' in feedback
 
 
