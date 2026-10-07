@@ -122,6 +122,10 @@ class SceneManagerNode(Node):
             aco = AttachedCollisionObject(link_name=self.cfg['tcp_link'])
             aco.object.id, aco.object.operation = HELD, CollisionObject.REMOVE
             sc.robot_state.attached_collision_objects = [aco]
+            # 떼기만 하면 MoveIt 이 상자를 world 로 내려놓아 그 자리에 남는다(10/7 실기 — 다음 집기가 PLAN_FAILED).
+            # 같은 변경 안에서 robot_state 가 world 보다 먼저 적용되므로 뗀 뒤 world 에서도 지운다(_on_attach 떼기와 같음)
+            if HELD not in world:
+                sc.world.collision_objects.append(self._remove(HELD))
         ok = self.apply(sc)
         self.placed.clear()
         return ok
@@ -190,16 +194,24 @@ class SceneManagerNode(Node):
         return res
 
     def _on_progress(self, msg):
-        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: placed 는 관측 자세로 넣고, empty 는 뺀다. unknown 은 그대로 둔다."""
-        for blk in json.loads(msg.data).get('blocks', []):
+        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: placed 는 관측 자세로 넣고, empty 는 뺀다. unknown 은 그대로 둔다.
+
+        진행표에 없는 놓인 블록(앞 설계 것)도 뺀다 — 진행표는 지금 설계의 블록 전부라, 설계가 바뀌면 앞 설계 블록이
+        조립 영역에 남아 새 설계의 놓기 경로를 막는다(10/7 실기: 벤치 11개가 남아 003 PLAN_FAILED).
+        """
+        blocks = json.loads(msg.data).get('blocks', [])
+        gone = self.placed - {blk.get('block_id') for blk in blocks}
+        for blk in blocks:
             bid, state = blk.get('block_id'), blk.get('state')
             if state == 'placed' and blk.get('center_m') and blk.get('quat'):
                 self.add_placed(bid, blk['center_m'], blk['quat'])
             elif state == 'empty' and bid in self.placed:
-                sc = PlanningScene()
-                sc.world.collision_objects = [self._remove(f'blk_{bid}')]
-                if self.apply(sc):
-                    self.placed.discard(bid)
+                gone.add(bid)
+        if gone:
+            sc = PlanningScene()
+            sc.world.collision_objects = [self._remove(f'blk_{bid}') for bid in sorted(gone)]
+            if self.apply(sc):
+                self.placed -= gone
 
 
 def main():

@@ -24,6 +24,8 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
 from d2_interfaces.srv import GripperCommand, MoveTo
+from moveit_msgs.msg import PlanningSceneComponents
+from moveit_msgs.srv import GetPlanningScene
 from rclpy.action import ActionClient
 from std_msgs.msg import String
 
@@ -132,6 +134,23 @@ def choose_recipe(folder):
     return os.path.join(folder, files[int(k) - 1])
 
 
+def stale_scene_objects(node, block_ids, wait):
+    """MoveIt 장면에서 이번 실행과 무관한 물체 이름 목록 — 다른 블록 blk_*, 쥔 상자 held (world·붙은 것 모두).
+
+    입력: block_ids = 이번 목표의 block_id 집합, wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
+    빈 목록(점검을 건너뛴다 — 장면 관리가 없으면 pick_place 가 따로 알린다). 장면은 읽기만 한다.
+    """
+    cli = node.create_client(GetPlanningScene, 'get_planning_scene')
+    if not cli.wait_for_service(timeout_sec=3.0):
+        return []
+    comp = PlanningSceneComponents.WORLD_OBJECT_NAMES | PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
+    r = wait(cli.call_async(GetPlanningScene.Request(components=PlanningSceneComponents(components=comp))), 5.0)
+    if r is None:
+        return []
+    names = [o.id for o in r.scene.world.collision_objects] + [a.object.id for a in r.scene.robot_state.attached_collision_objects]
+    return sorted({n for n in names if n == 'held' or (n.startswith('blk_') and n[4:] not in block_ids)})
+
+
 def main():
     """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 블록마다 PickPlace(그리퍼 폭은 블록 위에서 바뀜) -> 홈, 결과를 CSV 로 --log-dir(기본 ~/d2_data/runs, 저장소 밖)에 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
@@ -217,6 +236,13 @@ def main():
             return 1
         if gst.get('grasped'):
             print('[오류] 그리퍼가 블록을 쥐고 있다. 블록을 손으로 잡고 그리퍼를 연 뒤 다시 실행한다')
+            return 1
+        # 앞 실행의 블록·쥔 상자가 장면에 남아 있으면 놓기 경로가 막혀 중간에 PLAN_FAILED 로 선다(10/7 003 실기)
+        # -> 움직이기 전에 멈춘다. 이번 목표의 블록(--steps 로 앞 순번을 이미 쌓은 경우)은 괜찮다
+        stale = stale_scene_objects(node, {b['block_id'] for b, _, _, _ in jobs}, wait)
+        if stale:
+            print(f'[오류] 장면에 앞 실행 물체가 남아 있다: {", ".join(stale)}\n'
+                  '   조립 영역을 비우고 robot_nodes.launch.py 를 다시 띄운 뒤 실행한다(장면 관리가 시작할 때 지운다)')
             return 1
         # 시작은 홈 자세에서. 그리퍼 폭은 여기서 바꾸지 않는다 — 집는 폭은 늘 집을 블록 바로 위에서 연다(pick_place, 10/7)
         if not go_home():
