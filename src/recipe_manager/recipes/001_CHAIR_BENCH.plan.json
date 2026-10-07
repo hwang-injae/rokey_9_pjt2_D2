@@ -4,7 +4,7 @@
   "revision": "1",
   "model_id": "001_CHAIR_BENCH",
   "model_revision": "1",
-  "source_cad_sha256": "13bc23f81abc790dd1ef682fed4ae498b8b80a024dd19b44b783a81a0007ad9e",
+  "source_cad_sha256": "342a50a4228311877e05b2833b457587a6447a19d600be1654921ededd928c3e",
   "steps": [
     {
       "step_id": "PLACE_DXF_INSERT_3E",

@@ -4,7 +4,7 @@
   "revision": "1",
   "model_id": "003_DESK_STAND",
   "model_revision": "1",
-  "source_cad_sha256": "d1109c2bd0bb0c65f21051235fdaf887f47a91387adb06c329dae4586252096d",
+  "source_cad_sha256": "ae66dcb45b87a45f81afc5772970ea51b0df84032fe220ceb7a6f4995cf7229f",
   "steps": [
     {
       "step_id": "PLACE_DXF_INSERT_3E",
