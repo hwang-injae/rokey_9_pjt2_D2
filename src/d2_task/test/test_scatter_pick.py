@@ -2,6 +2,8 @@
 """흩뿌림 집기 준비 ScatterFlow 시험 (W130) — 가짜 find_blocks 응답으로 '목표 유지 → 후보 선택 → 집기 요청 준비'까지. 로봇 호출 없음."""
 import copy
 import math
+import threading
+import time
 
 import pytest
 
@@ -20,6 +22,14 @@ def flow(**kw):
     return ScatterFlow(CFG, BlockPicker(MIN_GAP), **kw)
 
 
+def run(f, target, response, epoch=1):
+    """begin → prepare(계산) → commit(적용)까지 한 번에. 반환: prepare 결과."""
+    ticket = f.begin(epoch)
+    r = f.prepare(target, response)
+    assert f.commit(ticket, lambda: (epoch, False), r)
+    return r
+
+
 def resp(*blocks, ok=True):
     return {'ok': ok, 'blocks': list(blocks)}
 
@@ -27,7 +37,7 @@ def resp(*blocks, ok=True):
 def test_FOUND는_목표_block_id_놓을_자세_잡기를_유지한다():
     f = flow()
     target = copy.deepcopy(TARGET)
-    r = f.prepare(target, resp(blk(length=30)))
+    r = run(f, target, resp(blk(length=30)))
     req = r['request']
     assert r['status'] == 'PICK'
     assert (req['block_id'], req['grasp'], req['supply_slot']) == (TARGET['block_id'], 'FLAT_LONG', '')
@@ -37,7 +47,7 @@ def test_FOUND는_목표_block_id_놓을_자세_잡기를_유지한다():
 
 def test_선택한_후보와_요청은_복사본():
     f = flow()
-    r = f.prepare(TARGET, resp(blk(length=30)))
+    r = run(f, TARGET, resp(blk(length=30)))
     r['candidate']['gap_mm']['LENGTH'] = -1
     r['request']['place_pose'] = None
     again = f.reusable_request()
@@ -53,13 +63,13 @@ def test_후보가_여럿이면_BlockPicker_규칙대로_틈이_넓은_것():
 
 def test_EMPTY는_채우기_안내이고_요청을_만들지_않는다():
     f = flow()
-    r = f.prepare(TARGET, resp())
+    r = run(f, TARGET, resp())
     assert r == {'status': 'EMPTY', 'guide': 'REFILL'} and f.candidate is None
 
 
 def test_NO_MATCH는_제외_이유를_안내하고_요청을_만들지_않는다():
     f = flow()
-    r = f.prepare(TARGET, resp(blk(up='WIDTH', length=90), blk(overlap='under'), blk(tilted=True), blk(length=10)))
+    r = run(f, TARGET, resp(blk(up='WIDTH', length=90), blk(overlap='under'), blk(tilted=True), blk(length=10)))
     assert r['status'] == 'NO_MATCH' and r['guide'] == 'CHECK_BLOCKS' and 'request' not in r and f.candidate is None
     assert r['counts']['other_up'] == 1 and r['counts']['under'] == 1 and r['counts']['tilted'] == 1 and r['counts']['no_clear'] == 1
     for text in ('다른 블록에 덮임 1개', '기울어짐 1개', '필요한 자세가 아님 1개', '손가락 틈 부족 1개'):
@@ -109,7 +119,7 @@ def test_정지_종료_새_요청_상태_변화_뒤_도착한_이전_응답은_�
 
 def test_새_요청을_시작하면_이전_후보를_버린다():
     f = flow()
-    f.prepare(TARGET, resp(blk(length=30)))
+    run(f, TARGET, resp(blk(length=30)))
     assert f.reusable_request() is not None
     f.begin(epoch=1)
     assert f.reusable_request() is None
@@ -118,35 +128,151 @@ def test_새_요청을_시작하면_이전_후보를_버린다():
 # ---------- 흩뿌림 대기 후 start ----------
 def test_흩뿌림_대기_뒤_start는_재관측하고_공급_칸을_초기화하지_않는다():
     f = flow()
-    f.prepare(TARGET, resp(blk(length=30)))
+    run(f, TARGET, resp(blk(length=30)))
     r = f.after_wait_start()
     assert r == {'reobserve': True, 'reset_supply_slots': False} and f.reusable_request() is None
 
 
-# ---------- 실패 뒤 재관측 / 재계획 ----------
-@pytest.mark.parametrize('reason, action', [
-    ('PLAN_FAILED', 'REPLAN_SAME'), ('BUSY', 'WAIT'),
-    ('GRASP_FAILED', 'REOBSERVE'), ('SLOT_EMPTY', 'REOBSERVE'), ('TIMEOUT', 'REOBSERVE'), ('STOPPED', 'REOBSERVE'),
-    ('CANCELED', 'REOBSERVE'), ('NO_FEEDBACK', 'REOBSERVE'), ('LOOKUP_FAILED', 'REOBSERVE'),
-    ('ERROR', 'ERROR'), ('GRIPPER_NO_RESPONSE', 'ERROR'), ('이상한_이유', 'ERROR'), ('', 'ERROR'), (None, 'ERROR')])
-def test_실패_이유별_다음_동작(reason, action):
-    assert failure_action(reason) == action
+# ---------- 실패 뒤: 이유만으로 정하지 않는다 ----------
+PRE = dict(phase='PRE_CONTACT', grasped=False)
 
 
-@pytest.mark.parametrize('reason', ['PLAN_FAILED', 'BUSY'])
-def test_계획만_실패했으면_같은_관측의_후보를_다시_쓴다(reason):
+@pytest.mark.parametrize('args, action', [
+    (('PLAN_FAILED',), 'RECOVER'),                                          # 단계를 모르면 복구 절차
+    (('PLAN_FAILED', 'LIFT'), 'RECOVER'),                                   # 들어 올리기 · 운반 · 놓기 단계
+    (('PLAN_FAILED', 'PRE_CONTACT', None), 'RECOVER'),                      # 잡힘 상태를 모르면
+    (('PLAN_FAILED', 'PRE_CONTACT', True), 'RECOVER'),                      # 이미 쥐었다
+    (('PLAN_FAILED', 'PRE_CONTACT', False), 'REPLAN_SAME'),                 # 접촉 전이 확인된 때만 재사용
+    (('BUSY', None, False), 'REOBSERVE'),                                   # 공급 영역이 그대로인지 모르면 후보를 안 쓴다
+    (('BUSY', None, False, False), 'REOBSERVE'),
+    (('BUSY', None, False, True), 'WAIT'),                                  # 안 바뀌었음이 확인된 때만 유지
+    (('BUSY', None, None, True), 'RECOVER'),
+    (('GRASP_FAILED', None, False), 'REOBSERVE'),                           # 손에 없음이 확인되면 재관측
+    (('GRASP_FAILED', None, True), 'RECOVER'),
+    (('GRASP_FAILED',), 'RECOVER'),
+    (('SLOT_EMPTY', None, False), 'REOBSERVE'),
+    (('SLOT_EMPTY', None, None), 'RECOVER'),
+    (('TIMEOUT', 'PRE_CONTACT', False), 'RECOVER'),                         # 중간에 멈춘 것은 늘 기존 정지 · 복구
+    (('STOPPED', 'PRE_CONTACT', False), 'RECOVER'),
+    (('CANCELED', 'PRE_CONTACT', False), 'RECOVER'),
+    (('NO_FEEDBACK', 'PRE_CONTACT', False), 'RECOVER'),
+    (('LOOKUP_FAILED',), 'REOBSERVE'),                                      # 조회만 실패 — 로봇은 안 움직임
+    (('ERROR', 'PRE_CONTACT', False), 'ERROR'),
+    (('GRIPPER_NO_RESPONSE', 'PRE_CONTACT', False), 'ERROR'),
+    (('이상한_이유', 'PRE_CONTACT', False), 'ERROR'),
+    (('', 'PRE_CONTACT', False), 'ERROR'),
+    ((None, 'PRE_CONTACT', False), 'ERROR'),
+    (('이상한_이유',), 'ERROR'),
+])
+def test_실패_이유_단계_잡힘_상태로_다음_동작을_정한다(args, action):
+    assert failure_action(*args) == action
+
+
+def test_접촉_전이_확인된_PLAN_FAILED만_후보를_다시_쓴다():
     f = flow()
-    first = f.prepare(TARGET, resp(blk(length=30)))['request']
-    f.on_failure(reason)
-    assert f.reusable_request() == first
+    first = run(f, TARGET, resp(blk(length=30)))['request']
+    assert f.on_failure('PLAN_FAILED', **PRE) == 'REPLAN_SAME' and f.reusable_request() == first
+    assert f.on_failure('PLAN_FAILED', phase='LIFT', grasped=True) == 'RECOVER' and f.reusable_request() is None
+
+
+def test_BUSY는_공급_영역이_그대로라는_확인이_있을_때만_후보를_유지():
+    f = flow()
+    first = run(f, TARGET, resp(blk(length=30)))['request']
+    assert f.on_failure('BUSY', grasped=False, area_unchanged=True) == 'WAIT' and f.reusable_request() == first
+    assert f.on_failure('BUSY', grasped=False) == 'REOBSERVE' and f.reusable_request() is None
 
 
 @pytest.mark.parametrize('reason', ['GRASP_FAILED', 'SLOT_EMPTY', 'TIMEOUT', 'STOPPED', 'CANCELED', 'NO_FEEDBACK', 'LOOKUP_FAILED', 'ERROR', '모름'])
 def test_블록이_움직였을_수_있으면_이전_후보를_다시_쓰지_않는다(reason):
     f = flow()
-    f.prepare(TARGET, resp(blk(length=30)))
-    f.on_failure(reason)
+    run(f, TARGET, resp(blk(length=30)))
+    f.on_failure(reason, **PRE)
     assert f.reusable_request() is None
+
+
+# ---------- prepare 실패 · 전부 잘못된 응답 · 확인과 적용 ----------
+@pytest.mark.parametrize('second', [
+    lambda f: (f, resp()), lambda f: (f, resp(blk(length=1))), lambda f: (f, None), lambda f: (f, {'ok': True, 'blocks': [{}]}),
+    lambda f: (ScatterFlow(CFG, BlockPicker(MIN_GAP)), resp(blk(length=30)))])
+def test_prepare가_실패하면_이전_후보를_지운다(second):
+    f = flow()
+    run(f, TARGET, resp(blk(length=30)))
+    assert f.reusable_request() is not None
+    g, response = second(f)
+    if g is not f:                                                 # NOT_CONFIGURED 는 설정이 다른 흐름이라 같은 객체 설정을 바꿔서 확인
+        f.supply_mode = None
+    run(f, TARGET, response)
+    assert f.reusable_request() is None
+
+
+@pytest.mark.parametrize('blocks', [[{}], [{}, {}], ['글자'], [None], [blk(yaw_deg=float('nan')), blk(x_m=1e999)]])
+def test_쓸_수_있는_블록이_하나도_없는_응답은_조회_오류(blocks):
+    r = flow().prepare(TARGET, resp(*blocks))
+    assert r == {'status': 'LOOKUP_FAILED', 'reason': 'ALL_INVALID'}
+
+
+def test_정상과_잘못된_후보가_섞이면_정상_후보에서_고른다():
+    r = flow().prepare(TARGET, resp({}, blk(length=33), None))
+    assert r['status'] == 'PICK' and r['gap_mm'] == 33
+
+
+def test_잘못된_후보와_맞지_않는_정상_후보가_섞이면_NO_MATCH():
+    r = flow().prepare(TARGET, resp({}, blk(length=5)))
+    assert r['status'] == 'NO_MATCH'
+
+
+def test_prepare는_계산만_하고_후보를_정하지_않는다():
+    f = flow()
+    f.prepare(TARGET, resp(blk(length=30)))
+    assert f.reusable_request() is None
+
+
+def test_확인과_적용_사이에_정지가_끼어들지_못한다():
+    """TaskManager 잠금을 잡은 채 commit 하면, 그 사이 들어온 정지는 commit 이 끝난 뒤에야 반영되고 후보를 비운다."""
+    f = flow()
+    ticket = f.begin(epoch=1)
+    result = f.prepare(TARGET, resp(blk(length=30)))
+    manager_lock, state = threading.Lock(), {'halted': False}
+    started = threading.Event()
+
+    def slow_state():
+        started.set()
+        time.sleep(0.3)                                            # 확인을 읽은 뒤 적용하기 전에 정지가 도착하는 순간을 만든다
+        return 1, state['halted']
+
+    def committer():
+        with manager_lock:
+            assert f.commit(ticket, slow_state, result)
+
+    def stopper():
+        started.wait(5)
+        with manager_lock:                                         # 정지 반영도 같은 잠금을 얻어야 한다
+            state['halted'] = True
+            f.invalidate()
+
+    t1, t2 = threading.Thread(target=committer), threading.Thread(target=stopper)
+    t1.start(); t2.start(); t1.join(5); t2.join(5)
+    assert state['halted'] and f.reusable_request() is None        # 정지 뒤에 후보가 되살아나지 않는다
+
+
+def test_commit은_정지_종료_새_요청_상태_변화이면_적용하지_않는다():
+    f = flow()
+    result = f.prepare(TARGET, resp(blk(length=30)))
+    t = f.begin(epoch=2)
+    assert not f.commit(t, lambda: (2, True), result)              # 정지
+    assert not f.commit(t, lambda: (3, False), result)             # 상태 변화
+    f.begin(epoch=2)
+    assert not f.commit(t, lambda: (2, False), result)             # 더 새 요청
+    assert f.reusable_request() is None
+    t2 = f.begin(epoch=2)
+    assert f.commit(t2, lambda: (2, False), result) and f.reusable_request() is not None
+
+
+def test_commit이_PICK이_아니면_후보를_비운다():
+    f = flow()
+    run(f, TARGET, resp(blk(length=30)))
+    t = f.begin(epoch=1)
+    assert f.commit(t, lambda: (1, False), {'status': 'EMPTY', 'guide': 'REFILL'}) and f.reusable_request() is None
 
 
 # ---------- 자세 계산: 공급 칸 자세 계산과 같은 규약 ----------
