@@ -30,4 +30,4 @@ Closes #
 ## 추가로 확인이 필요한 사항
 -
 
-<!-- PR을 올리면 'PR 검사'(문법·main 반영·충돌·키·변경 파일·문서 이름·정지 설정)와 'CI'(pytest·colcon)가 자동으로 돈다. 실패하면 Checks의 이유대로 고쳐 다시 push 한다. Claude 검토(①~⑧)가 필요하면 라벨 `claude-review`를 붙인다. -->
+<!-- PR을 올리면 'PR 검사'(문법·main 반영·충돌·키·변경 파일·문서 이름·정지 설정)와 'CI'(pytest·colcon)가 자동으로 돈다. 실패하면 Checks의 이유대로 고쳐 다시 push 한다. Claude 검토(①~⑧)는 팀원 PR 전부에서 돌고 '막음'이 없으면 자동 승인 → auto-merge 된다(10/7). -->
