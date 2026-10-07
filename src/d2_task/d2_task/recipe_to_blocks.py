@@ -8,11 +8,15 @@
 SCHEMA_IN = 'assembly.recipe/1.0'      # src/recipe_manager 가 만드는 정본 형식 (문서의 cad_recipe/1.0 표기는 W121 확인)
 SCHEMA_OUT = 'blocks/1'                # IRD 3장 blocks/1 (안)
 
-# 블록 방향 코드 → (x, y, z 방향 길이). IRD 2장 `ori` 표 · jenga_check.py SIZE 와 같은 값이다.
-_L, _W, _T = 75.0, 25.0, 15.0
-ORI_EXTENT = {'x': (_L, _W, _T), 'y': (_W, _L, _T),
-              'xe': (_L, _T, _W), 'ye': (_T, _L, _W),
-              'zx': (_T, _W, _L), 'zy': (_W, _T, _L)}
+
+
+def ori_extents(block_mm):
+    """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). IRD 2장 `ori` 표 · jenga_check.py SIZE 와 같은 규칙.
+
+    크기는 robot.yaml 의 block_size_m 한 곳에서 온다(검사 묶음과 같은 값을 쓰려고 이 함수를 같이 쓴다).
+    """
+    L, W, T = block_mm
+    return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 
 
 class RecipeToBlocks:
@@ -23,12 +27,16 @@ class RecipeToBlocks:
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
     """
 
-    def __init__(self, design_id, family):
-        """design_id · family 는 레시피에 없으므로 부르는 쪽이 정해서 넣는다(규칙을 새로 만들지 않는다)."""
+    def __init__(self, design_id, family, block_mm):
+        """design_id · family 는 레시피에 없으므로 부르는 쪽이 정해서 넣는다(규칙을 새로 만들지 않는다).
+
+        block_mm: 블록 크기 [길이, 폭, 두께] mm — robot.yaml block_size_m × 1000. 방향 코드 표를 만드는 데 쓴다.
+        """
         if not design_id or not family:
             raise ValueError('design_id 와 family 가 필요하다')
         self.design_id = design_id
         self.family = family
+        self.extent = ori_extents(block_mm)
 
     def convert(self, recipe):
         """레시피를 blocks/1 로 바꾼다. order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
@@ -79,10 +87,9 @@ class RecipeToBlocks:
             raise ValueError(f'sequence {seq}: 회전 R 의 행렬식이 {det} 이다(거울 반사는 쓸 수 없다) {R}')
         return [sum(abs(R[i][k]) * size[k] for k in range(3)) for i in range(3)]
 
-    @staticmethod
-    def _ori(seq, extent):
-        """x · y · z 방향 길이가 ORI_EXTENT 의 정확히 한 코드와 같으면 그 코드. 아니면 ValueError."""
-        hits = [o for o, e in ORI_EXTENT.items() if tuple(extent) == e]
+    def _ori(self, seq, extent):
+        """x · y · z 방향 길이가 방향 코드 표(self.extent)의 정확히 한 코드와 같으면 그 코드. 아니면 ValueError."""
+        hits = [o for o, e in self.extent.items() if tuple(extent) == e]
         if len(hits) != 1:
             raise ValueError(f'sequence {seq}: 크기 {extent} 에 맞는 방향 코드가 {len(hits)}개다(x·y·xe·ye·zx·zy 중 하나여야 함)')
         return hits[0]
