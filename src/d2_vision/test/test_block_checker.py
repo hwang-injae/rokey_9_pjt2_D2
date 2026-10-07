@@ -1,15 +1,19 @@
 """BlockChecker 시험 (pytest, ROS · 로봇 없음) — SDD 9장 "블록 빼기 · 더 놓기 · 어긋남" + W140(E-52) 설계 · 레시피 파일 고르기.
 
 블록 목록은 recipe_blocks() 출력 형식(block_id · center m base · rot)을 여기서 직접 만든다(벤치 11개 — 001_CHAIR_BENCH 와 같은 배치).
-d2_motion 을 import 하지 않는다: CI 는 d2_vision 만 빌드한다.
+d2_motion 을 import 하지 않는다: CI 는 d2_vision 만 빌드한다. 예외 하나 — 로컬 · get_design 두 길 비교 시험은 d2_motion · d2_task 를
+pytest.importorskip 으로 읽어, 없으면(CI) 건너뛴다.
 가짜 점군: 놓인 블록의 윗면 + 작업면만(2 mm 간격 — 손목 카메라가 위에서 볼 때 보이는 면).
 """
+import json
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, height_map, recipe_path
+from d2_vision.block_checker import (BlockChecker, depth_to_base_points, design_of, height_map, recipe_from_design,
+                                     recipe_path)
 
 ORIGIN = {'x_m': 0.4261, 'y_m': -0.0725, 'z_m': -0.018, 'yaw_deg': 0.3}
 HALF_M = 0.15
@@ -197,3 +201,80 @@ def test_new_full_names_match_and_foreign_ids_unknown():
     assert [r['block_id'] for r in res] == ask
     assert [r['state'] for r in res] == ['present', 'unknown', 'unknown', 'absent']
     assert all(math.isnan(r['top_z_m']) and math.isnan(r['dz_m']) for r in res[1:3])
+
+
+# ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/1) → recipe_blocks 에 넣을 레시피 ----------------
+NEW_RECIPE = {'schema': 'cad_recipe/1.0', 'model_id': '001_CHAIR_BENCH', 'structure_sha256': '0' * 64, 'steps': []}
+NEW_STRUCT = {'schema': 'cad_structure/1.0', 'model_id': '001_CHAIR_BENCH', 'parts': [], 'blocks': []}
+OLD_RECIPE = {'schema': 'cad_recipe/1.0', 'model': {'model_id': '001_CHAIR_BENCH'}, 'steps': []}
+
+
+def design(recipe, structure=None, design_id='001_CHAIR_BENCH', **extra):
+    """시험용 design/1 dict. structure 가 None 이면 칸을 넣지 않는다(옛 한 파일 레시피의 design/1 모양)."""
+    d = {'schema': 'design/1', 'design_id': design_id, 'recipe': recipe, **extra}
+    if structure is not None:
+        d['structure'] = structure
+    return d
+
+
+def test_recipe_from_design_new_attaches_structure():
+    """새 형식(E-52): structure 를 레시피 'structure' 칸에 붙인다(load_recipe 와 같은 모양). 입력 design 은 바꾸지 않는다."""
+    d = design(NEW_RECIPE, NEW_STRUCT, family='chair', blocks={'schema': 'blocks/1'})
+    out = recipe_from_design(d, '001_CHAIR_BENCH')
+    assert out['structure'] is NEW_STRUCT
+    assert {k: v for k, v in out.items() if k != 'structure'} == NEW_RECIPE
+    assert 'structure' not in d['recipe'] and 'structure' not in NEW_RECIPE
+
+
+def test_recipe_from_design_old_as_is():
+    """옛 한 파일(model 칸): 그대로(load_recipe 도 그대로 읽는다). 옛 이름 schema assembly.recipe/1.0 도 받는다(task 와 같음)."""
+    assert recipe_from_design(design(OLD_RECIPE), '001_CHAIR_BENCH') == OLD_RECIPE
+    old_name = dict(OLD_RECIPE, schema='assembly.recipe/1.0')
+    assert recipe_from_design(design(old_name), '001_CHAIR_BENCH') == old_name
+
+
+@pytest.mark.parametrize('bad', [
+    None, [], {'schema': 'blocks/1'},                                            # design/1 아님
+    design(NEW_RECIPE, NEW_STRUCT, design_id='002_CHAIR_BACK'),                  # 요청한 설계와 다른 답
+    design(None), design(dict(NEW_RECIPE, schema='m0609.jenga.cad_recipe/1.0'), NEW_STRUCT),   # recipe 가 아니거나 schema 다름
+    design(NEW_RECIPE), design(NEW_RECIPE, dict(NEW_STRUCT, schema='x')),        # 새 형식인데 structure 없음 · 형식 다름
+    design(NEW_RECIPE, dict(NEW_STRUCT, model_id='002_CHAIR_BACK')),             # model_id 다름
+    design(OLD_RECIPE, NEW_STRUCT),                                              # 옛 형식에 structure (task RecipeDocument 도 거절)
+])
+def test_recipe_from_design_rejects(bad):
+    """형식이 틀린 get_design 답은 ValueError — wrist_block 은 ERROR 로 답하고 로컬 파일로 대신하지 않는다."""
+    with pytest.raises(ValueError):
+        recipe_from_design(bad, '001_CHAIR_BENCH')
+
+
+@pytest.mark.parametrize('design_id, n', [('001_CHAIR_BENCH', 11), ('002_CHAIR_BACK', 16), ('003_DESK_STAND', 9)])
+def test_local_and_get_design_paths_give_same_blocks(design_id, n):
+    """한석형 부탁(10/7): 로컬 파일 길(load_recipe)과 get_design 길(task 의 RecipeDocument.load(...).design() 으로 만든 design/1 →
+    recipe_from_design)이 같은 블록 이름 · 자리를 낸다. 작업 관리자(TaskPlanner)가 쓰는 블록 이름과도 같다.
+    d2_motion · d2_task 가 import 되지 않으면(CI 의 d2_vision 시험은 d2_vision 만 경로에 넣는다) 건너뛴다 — 로컬에서 colcon 빌드 뒤 돈다."""
+    mm = pytest.importorskip('d2_motion.motion_math')
+    rd = pytest.importorskip('d2_task.recipe_document')
+    tp = pytest.importorskip('d2_task.task_planner')
+    yaml = pytest.importorskip('yaml')
+    root = Path(__file__).resolve().parents[3]
+    # robot.yaml 은 10/7 #51 부터 src/d2_robot/ 아래 — 옛 자리도 같이 찾아 둔다(브랜치가 섞여 있어도 돌게)
+    cfg_path = next((p for p in (root / 'src/d2_robot/d2_bringup/config/robot.yaml', root / 'src/d2_bringup/config/robot.yaml') if p.exists()), None)
+    if cfg_path is None:
+        pytest.skip('robot.yaml 이 없다')
+    cfg = yaml.safe_load(cfg_path.read_text(encoding='utf-8'))
+    folders = [root / 'src/recipe_manager/recipes']                       # 기본 설계(이름은 _recipe.json, 내용은 한 파일 형식)
+    if design_id == '001_CHAIR_BENCH':
+        folders.append(root / 'src/d2_task/test/fixtures')                # 새 두 파일(_recipe · _structure) — 벤치만 있다
+    for folder in folders:
+        path = recipe_path(str(folder), design_id, mm.RECIPE_SUFFIXES)
+        if path is None:
+            pytest.skip(f'{folder} 에 {design_id} 레시피가 없다')
+        local = mm.recipe_blocks(cfg, mm.load_recipe(str(path)))
+        d = json.loads(json.dumps(rd.RecipeDocument.load(folder, design_id).design(design_id)))   # 서비스로 오가는 JSON 글자를 한 번 거친다
+        remote = mm.recipe_blocks(cfg, recipe_from_design(d, design_id))
+        names = [b['block_id'] for b in local]
+        assert len(names) == len(set(names)) == n, path.name
+        assert [b['block_id'] for b in remote] == names, path.name
+        assert all(np.allclose(a['center'], b['center']) and np.allclose(a['rot'], b['rot']) for a, b in zip(local, remote))
+        planner = tp.TaskPlanner(cfg, d['recipe'], d.get('structure'))
+        assert [b['block_id'] for b in planner.blocks] == names, path.name

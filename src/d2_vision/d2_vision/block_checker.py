@@ -6,9 +6,10 @@
 입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_blocks(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-52 두 파일 ·
 옛 cad_recipe/1.0 · assembly.recipe/1.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(block_id · center(m, base) · rot 3x3)만 받는다.
 block_id 는 글자 그대로 맞춘다 — 새 전체 이름(001_CHAIR_BENCH_LEG_001_01)이든 옛 이름(001_CHAIR_BENCH_B001)이든 레시피가 만든 이름과 같으면 된다.
-check_progress 요청이 어느 설계 · 어느 레시피 파일인지 고르는 것(design_of · recipe_path)도 여기 둔다 — wrist_block · mock_wrist_block 이
+check_progress 요청이 어느 설계 · 어느 레시피 파일인지 고르는 것(design_of · recipe_path)과 get_design 답(design/1)을
+recipe_blocks 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
-단위: 이 파일 안은 모두 m · rad. 좌표: base_link.
+단위: 이 파일 안은 모두 m · rad(레시피 dict 는 파일과 같은 mm 그대로 넘긴다). 좌표: base_link.
 높이 지도는 스캔 추론기(StructureScanner, W115)도 같은 함수를 쓴다.
 """
 from pathlib import Path
@@ -16,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 NAN = float('nan')
+RECIPE_SCHEMAS = ('cad_recipe/1.0', 'assembly.recipe/1.0')   # task_manager.RECIPE_SCHEMAS 와 같은 값(E-44 ③ 전까지 옛 이름도) — d2_task 를 import 하지 않으려고 여기 적는다
 CELL_M = 0.005          # 높이 지도 셀 (SDD §6.9 ②: 5 mm)
 ROI_SHRINK_M = 0.004    # 블록 자리를 사방 4 mm 줄여서 본다 — 가장자리 깊이 튐 · 1~3 mm 어긋남을 피한다
 MIN_CELLS = 6           # 이보다 적은 셀이면 unknown (가려짐 · 깊이 구멍)
@@ -78,6 +80,39 @@ def recipe_path(recipe_dir, design_id, suffixes):
         if p.is_file():
             return p
     return None
+
+
+def recipe_from_design(design, design_id):
+    """get_design 답(design/1 dict) → motion_math.recipe_blocks 에 넣을 레시피 dict. 바깥 영향 없음(입력을 바꾸지 않는다).
+
+    로컬 파일 길(motion_math.load_recipe)과 같은 모양을 만든다: 새 형식(E-52 — 조립 레시피에 model · blocks 칸이 없음)이면
+    design/1 의 structure(cad_structure/1.0)를 레시피의 'structure' 칸에 붙이고, 옛 한 파일 형식(model 또는 blocks 칸)이면 그대로.
+    레시피 내용(블록 · 크기 · 받침)은 여기서 다시 읽지 않는다 — recipe_blocks 가 읽고, 틀리면 예외를 낸다.
+    입력: design = get_design 응답 JSON 을 읽은 dict · design_id = 요청한 설계 이름. 레시피 단위는 파일과 같은 mm.
+    출력: 레시피 dict(얕은 복사 + 새 형식이면 'structure' 칸).
+    실패: ValueError — 봉투 검사는 작업 관리자(task_manager._planner_from)와 같다: schema design/1 · design_id 가 요청과 같음 ·
+      recipe 가 객체이고 schema 가 RECIPE_SCHEMAS. 더해 새 형식인데 structure 가 cad_structure/1.0 객체가 아니거나 model_id 가 다를 때,
+      옛 형식인데 structure 가 붙어 올 때(task 의 RecipeDocument 와 같은 거절).
+      structure_sha256 은 원본 바이트가 없어 비교하지 않는다(task 의 RecipeDocument 도 dict 입력은 비교하지 않음).
+    """
+    if not isinstance(design, dict) or design.get('schema') != 'design/1':
+        raise ValueError('get_design 답이 design/1 이 아니다')
+    if design.get('design_id') != design_id:
+        raise ValueError(f'get_design 답의 design_id({design.get("design_id")!r})가 요청({design_id!r})과 다르다')
+    recipe, structure = design.get('recipe'), design.get('structure')
+    if not isinstance(recipe, dict) or recipe.get('schema') not in RECIPE_SCHEMAS:
+        raise ValueError(f'get_design 답의 recipe 가 {" 또는 ".join(RECIPE_SCHEMAS)} 객체가 아니다')
+    out = dict(recipe)
+    if 'model' in recipe or 'blocks' in recipe:          # 옛 한 파일 — load_recipe 도 읽은 그대로 쓴다
+        if structure is not None:
+            raise ValueError('옛 레시피(model · blocks 칸)에는 structure 를 함께 쓰지 않는다')
+        return out
+    if not isinstance(structure, dict) or structure.get('schema') != 'cad_structure/1.0':
+        raise ValueError('새 레시피(E-52)에는 cad_structure/1.0 structure 객체가 필요하다')
+    if structure.get('model_id') != recipe.get('model_id'):
+        raise ValueError('structure 와 recipe 의 model_id 가 다르다')
+    out['structure'] = structure
+    return out
 
 
 class BlockChecker:
