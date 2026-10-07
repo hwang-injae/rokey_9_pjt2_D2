@@ -3,12 +3,38 @@
 노드가 켜진 뒤에야 알게 되는 '키 없음'·'잡기 폭 순서 뒤집힘' 같은 실수를 PR 때 잡는다. 숫자는 파일에서 읽고, 관계만 본다.
 """
 import pytest
+import yaml
 
 from conftest import ROBOT_YAML
 
 GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG')   # IRD 2장 잡기 6가지
 BLOCK_AXES = ('LENGTH', 'WIDTH', 'THICKNESS')
 BLOCK_SIZE_M = (0.075, 0.025, 0.015)                                                            # 젠가 블록 설계 치수
+
+
+def duplicate_keys(text):
+    """YAML 글에서 같은 덩어리 안에 두 번 나온 키를 찾는다. 입력: YAML 글자. 출력: ['find (57행)', …] — 없으면 빈 목록.
+
+    PyYAML(yaml.safe_load)은 같은 키가 두 번 나오면 오류 없이 뒤의 값으로 덮어써, 앞 덩어리의 키가 소리 없이 사라진다
+    (10/7 PR #53 — 두 사람이 따로 `find:`를 더할 수 있었다). 실패 때: YAML 문법이 틀리면 예외.
+    """
+    found = []
+
+    class Loader(yaml.SafeLoader):
+        """키가 겹치는지 보는 읽개(SafeLoader 와 같고 덩어리 만들기만 바꿈)."""
+
+    def mapping(loader, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = loader.construct_object(key_node, deep=True)
+            if key in seen:
+                found.append(f'{key} ({key_node.start_mark.line + 1}행)')
+            seen.add(key)
+        return loader.construct_mapping(node, deep)
+
+    Loader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+    yaml.load(text, Loader=Loader)
+    return found
 
 
 def num(v):
@@ -105,3 +131,14 @@ def test_motion_and_stop(robot_cfg):
 def test_no_personal_paths():
     """robot.yaml 에 개인 절대 경로(/home/)가 없다 (팀 규칙 — 경로는 패키지 share 로)."""
     assert '/home/' not in ROBOT_YAML.read_text(encoding='utf-8')
+
+
+def test_no_duplicate_keys():
+    """robot.yaml 의 같은 덩어리 안에 같은 키가 두 번 없다 — 있으면 앞의 값이 조용히 사라진다. 키를 더할 땐 있는 덩어리(`find:` 등) 아래에 넣는다."""
+    assert duplicate_keys(ROBOT_YAML.read_text(encoding='utf-8')) == []
+
+
+def test_duplicate_key_detector_works():
+    """검사 자체가 맨 위(`find` 두 번)와 안쪽(`check.b` 두 번) 겹침을 모두 잡는다."""
+    text = 'find:\n  a: 1\ncheck:\n  b: 2\n  b: 3\nfind:\n  c: 4\n'
+    assert sorted(duplicate_keys(text)) == ['b (5행)', 'find (6행)']

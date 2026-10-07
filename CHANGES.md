@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-07
+- 공통(18시, PM): **robot.yaml 같은 키 두 번 막기 시험(PL)** — YAML은 같은 덩어리(`find:` 등)가 두 번 나오면 오류 없이 뒤의 것으로 덮어써 앞의 키가 소리 없이 사라진다(PR #53 본문 경고). `tests/test_robot_yaml.py` 시험 2개 — 키를 더할 땐 있는 덩어리 아래에.
 - 공통(17시, PM): **CI에 `src/d2_vision/test` pytest 추가(민범진 요청)** — colcon test가 'NO TESTS RAN'으로 비전 시험을 안 돌리고 있었다. 파이썬 시험 job에서 `PYTHONPATH=src/d2_vision`으로, `tests/requirements.txt`에 numpy. 깨끗한 venv에서 8 통과. ci.yml · AGENTS · 06.
 - 비전 · HMI(17시, PM): **화면 명령 늦은 실행 금지(PL, 한석형 질문)** — 작업 관리자는 명령을 받은 뒤 `timeout.command_s` 4초(화면 MQTT 5초보다 먼저) 안에 확정 못 하면 실행하지 않고 `TIMEOUT`. 웹은 시간 초과 때 자동 재전송 없이 `state/1`로 실제 상태. [출발]은 [설계 선택] 때 받은 설계를 씀(권장). robot.yaml 키는 한석형 PR. IRD 4 · 7 · 9 · 10장 · SDD 7.1.
 - 공통(17시, PM): **CI 파이썬 시험에 `src/d2_task/test` 추가(PL)** — 두산 의존 때문에 ROS 빌드 job이 d2_task를 빌드하지 않아 이 시험이 CI에서 빠져 있었다(PR #46의 'd2_task 49 실패'가 초록불). rclpy를 안 써서 파이썬 시험 job에서 돈다(254개). d2_task 시험을 깨는 PR은 이제 빨간불.
