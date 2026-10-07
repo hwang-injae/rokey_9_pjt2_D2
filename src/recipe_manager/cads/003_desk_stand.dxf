@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461321.4431944443
+2461321.8834606484
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461321.4431944443
+2461321.8834606484
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-D9
+EB
   9
 $SURFTAB1
  70
@@ -937,7 +937,7 @@ $FINGERPRINTGUID
   9
 $VERSIONGUID
   2
-{B894C121-37A3-4B47-BE0F-67A780EF56F7}
+{BE89676F-342A-4F0A-9619-750CDB7029F7}
   9
 $EXTNAMES
 290
@@ -2033,7 +2033,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B001
+LEG_001_01
 340
 0
  70
@@ -2053,7 +2053,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B002
+LEG_002_01
 340
 0
  70
@@ -2073,7 +2073,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B003
+LEG_003_01
 340
 0
  70
@@ -2093,7 +2093,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B004
+LEG_004_01
 340
 0
  70
@@ -2113,7 +2113,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B005
+BEAM_001_01
 340
 0
  70
@@ -2133,7 +2133,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B006
+BEAM_002_01
 340
 0
  70
@@ -2153,7 +2153,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B007
+TOP_001_01
 340
 0
  70
@@ -2173,7 +2173,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B008
+TOP_001_02
 340
 0
  70
@@ -2193,7 +2193,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-003_DESK_STAND_B009
+TOP_001_03
 340
 0
  70
@@ -2299,7 +2299,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B001
+LEG_001_01
  70
 2
  10
@@ -2309,7 +2309,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B001
+LEG_001_01
   1
 
   0
@@ -2655,7 +2655,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B002
+LEG_002_01
  70
 2
  10
@@ -2665,7 +2665,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B002
+LEG_002_01
   1
 
   0
@@ -3011,7 +3011,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B003
+LEG_003_01
  70
 2
  10
@@ -3021,7 +3021,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B003
+LEG_003_01
   1
 
   0
@@ -3367,7 +3367,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B004
+LEG_004_01
  70
 2
  10
@@ -3377,7 +3377,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B004
+LEG_004_01
   1
 
   0
@@ -3723,7 +3723,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B005
+BEAM_001_01
  70
 2
  10
@@ -3733,7 +3733,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B005
+BEAM_001_01
   1
 
   0
@@ -4079,7 +4079,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B006
+BEAM_002_01
  70
 2
  10
@@ -4089,7 +4089,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B006
+BEAM_002_01
   1
 
   0
@@ -4435,7 +4435,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B007
+TOP_001_01
  70
 2
  10
@@ -4445,7 +4445,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B007
+TOP_001_01
   1
 
   0
@@ -4791,7 +4791,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B008
+TOP_001_02
  70
 2
  10
@@ -4801,7 +4801,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B008
+TOP_001_02
   1
 
   0
@@ -5147,7 +5147,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-003_DESK_STAND_B009
+TOP_001_03
  70
 2
  10
@@ -5157,7 +5157,7 @@ AcDbBlockBegin
  30
 0.0
   3
-003_DESK_STAND_B009
+TOP_001_03
   1
 
   0
@@ -5511,7 +5511,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B001
+LEG_001_01
  10
 -30.0
  20
@@ -5521,11 +5521,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B001","sequence":1,"stage":1,"role":"front_left_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"THICKNESS_15","grasp_validation":"RE
+{"block_id":"LEG_001_01","sequence":1,"stage":1,"role":"front_left_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"STAND_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"o
 1000
-QUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUC
-1000
-TURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
+pen_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
   0
 ATTRIB
   5
@@ -5635,7 +5633,7 @@ AcDbText
  40
 2.0
   1
-THICKNESS_15
+STAND_SHORT
  11
 -30.0
  21
@@ -5683,7 +5681,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B002
+LEG_002_01
  10
 30.0
  20
@@ -5693,11 +5691,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B002","sequence":2,"stage":1,"role":"front_right_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"THICKNESS_15","grasp_validation":"R
+{"block_id":"LEG_002_01","sequence":2,"stage":1,"role":"front_right_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"STAND_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"
 1000
-EQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRU
-1000
-CTURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
+open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
   0
 ATTRIB
   5
@@ -5807,7 +5803,7 @@ AcDbText
  40
 2.0
   1
-THICKNESS_15
+STAND_SHORT
  11
 30.0
  21
@@ -5855,7 +5851,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B003
+LEG_003_01
  10
 -30.0
  20
@@ -5865,11 +5861,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B003","sequence":3,"stage":1,"role":"rear_left_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"THICKNESS_15","grasp_validation":"REQ
+{"block_id":"LEG_003_01","sequence":3,"stage":1,"role":"rear_left_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"STAND_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"op
 1000
-UIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCT
-1000
-URE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
+en_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
   0
 ATTRIB
   5
@@ -5979,7 +5973,7 @@ AcDbText
  40
 2.0
   1
-THICKNESS_15
+STAND_SHORT
  11
 -30.0
  21
@@ -6027,7 +6021,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B004
+LEG_004_01
  10
 30.0
  20
@@ -6037,11 +6031,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B004","sequence":4,"stage":1,"role":"rear_right_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"THICKNESS_15","grasp_validation":"RE
+{"block_id":"LEG_004_01","sequence":4,"stage":1,"role":"rear_right_leg","orientation_name":"UPRIGHT_LEG","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"STAND_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"o
 1000
-QUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUC
-1000
-TURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
+pen_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,0,-1],[0,1,0],[1,0,0]]}
   0
 ATTRIB
   5
@@ -6151,7 +6143,7 @@ AcDbText
  40
 2.0
   1
-THICKNESS_15
+STAND_SHORT
  11
 30.0
  21
@@ -6199,7 +6191,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B005
+BEAM_001_01
  10
 0.0
  20
@@ -6209,11 +6201,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B005","sequence":5,"stage":2,"role":"front_beam","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20"
+{"block_id":"BEAM_001_01","sequence":5,"stage":2,"role":"front_beam","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width
 1000
-,"source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","d
-1000
-efinition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
+_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
   0
 ATTRIB
   5
@@ -6323,7 +6313,7 @@ AcDbText
  40
 2.0
   1
-END_75
+FLAT_SHORT
  11
 0.0
  21
@@ -6371,7 +6361,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B006
+BEAM_002_01
  10
 0.0
  20
@@ -6381,11 +6371,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B006","sequence":6,"stage":2,"role":"rear_beam","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20",
+{"block_id":"BEAM_002_01","sequence":6,"stage":2,"role":"rear_beam","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_
 1000
-"source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","de
-1000
-finition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
+mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
   0
 ATTRIB
   5
@@ -6495,7 +6483,7 @@ AcDbText
  40
 2.0
   1
-END_75
+FLAT_SHORT
  11
 0.0
  21
@@ -6543,7 +6531,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B007
+TOP_001_01
  10
 -25.0
  20
@@ -6553,11 +6541,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B007","sequence":7,"stage":3,"role":"left_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20","
+{"block_id":"TOP_001_01","sequence":7,"stage":3,"role":"left_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm
 1000
-source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","def
-1000
-inition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
@@ -6667,7 +6653,7 @@ AcDbText
  40
 2.0
   1
-END_75
+FLAT_SHORT
  11
 -25.0
  21
@@ -6715,7 +6701,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B008
+TOP_001_02
  10
 0.0
  20
@@ -6725,11 +6711,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B008","sequence":8,"stage":3,"role":"middle_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20"
+{"block_id":"TOP_001_02","sequence":8,"stage":3,"role":"middle_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_LONG","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_m
 1000
-,"source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","d
-1000
-efinition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+m":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
@@ -6839,7 +6823,7 @@ AcDbText
  40
 2.0
   1
-END_75
+FLAT_LONG
  11
 0.0
  21
@@ -6887,7 +6871,7 @@ AcDbBlockReference
  66
 1
   2
-003_DESK_STAND_B009
+TOP_001_03
  10
 25.0
  20
@@ -6897,11 +6881,9 @@ AcDbBlockReference
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"003_DESK_STAND_B009","sequence":9,"stage":3,"role":"right_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20",
+{"block_id":"TOP_001_03","sequence":9,"stage":3,"role":"right_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_LONG","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm
 1000
-"source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","de
-1000
-finition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
@@ -7011,7 +6993,7 @@ AcDbText
  40
 2.0
   1
-END_75
+FLAT_LONG
  11
 25.0
  21
@@ -8083,7 +8065,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-10-07T01:38:12.779628+00:00
+1.4.4 @ 2026-10-07T12:12:11.586575+00:00
   0
 ENDSEC
   0
