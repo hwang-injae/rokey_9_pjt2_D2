@@ -89,6 +89,7 @@ class TaskManager:
         self._build_ready = set()                 # 디스크 보관이 끝났거나(성공 · 실패) 보관하지 않는 run_id — 이것만 보낸다
         self._build_queued = {}                   # run_id → 대기 목록에 들어온 시각(monotonic). 디스크가 늦으면 이 시각으로 기다림을 끊는다
         self._clock = clock
+        self.command_s = cfg['timeout']['command_s']   # 화면 명령(선택 · 출발)을 받은 뒤 확정해야 하는 시간(s) — 넘으면 실행하지 않고 TIMEOUT
         self._epoch = 0                           # 상태가 바뀔 때마다 +1 — 설계 조회 중에 상태가 바뀌었는지 알아보는 표
         self._lookup_token = 0                    # 가장 최근 설계 조회 요청 번호 — 이전 요청의 늦은 답을 버리는 데 쓴다
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
@@ -248,7 +249,7 @@ class TaskManager:
     def command(self, cmd, design_id=''):
         """화면 버튼 명령(HmiCommand, 다리가 웹 화면 대신 부른다). 반환: (success, reason).
 
-        select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 다시 조회하고 출발(점검 한 번 더) → CHECK,
+        select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 [설계 선택] 때 받아 둔 설계로 출발(점검 한 번 더) → CHECK(다시 조회하지 않는다),
         WAIT_SUPPLY 에서는 [계속](관측 자세 도착 뒤), WAIT_HMI 는 웹 재연결 뒤 진행 확인부터 SELECT 로 이어 간다(조회 없음).
         scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 SCAN_REVIEW 를 IDLE 로 돌린다.
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
@@ -671,10 +672,9 @@ class TaskManager:
     def _start_lookup_target(self, design_id):
         """(잠금 안) 출발 명령이 설계 조회부터 해야 하면 그 design_id, 아니면 None(바로 _start 가 처리: [계속] · 거절).
 
-        READY 에서는 고른 설계를 다시 조회하고(IRD: 선택 · 출발 때 각각), IDLE 에서 설계를 포함한 음성 start 는 그 설계를 조회한다.
+        READY 에서는 [설계 선택] 때 받아 둔 설계를 그대로 쓴다(E-55 ①, 10/7 PL — 다시 조회하지 않는다). IDLE 에서 설계를 포함한 음성 start 만
+        그 설계를 조회한다.
         """
-        if self.state == 'READY':
-            return self.design_id
         if self.state == 'IDLE' and design_id:
             return design_id
         return None
@@ -685,6 +685,7 @@ class TaskManager:
         ① 잠금 안: 지금 가능한 상태인지 보고 요청 번호 · 상태 표(epoch)를 적는다 ② **잠금 밖**: io.get_design 으로 기다린다
         ③ 잠금 안: 더 새 요청이 있거나 · 상태가 바뀌었거나 · 정지 · 종료 중이면 답을 버리고, 아니면 검증해서 적용한다.
         """
+        received = self._clock()                       # 명령을 받은 순간 — timeout.command_s 안에 확정 못 하면 실행하지 않는다
         with self._lock:
             if mode == 'start':
                 design_id = self._start_lookup_target(design_id)
@@ -706,6 +707,8 @@ class TaskManager:
                 return self._reject('STOPPED', '정지 · 종료 중이라 설계 조회 결과를 버렸다')
             if token != self._lookup_token or epoch != self._epoch:
                 return self._reject('BUSY', '조회하는 동안 다른 요청이나 상태 변화가 있어 이 조회 결과를 버렸다')
+            if self._clock() - received > self.command_s:      # 늦은 출발 · 선택은 허용하지 않는다(웹은 이미 시간 초과로 보였다)
+                return self._reject('TIMEOUT', f'명령을 받은 뒤 {self.command_s} 초 안에 확정하지 못해 실행하지 않았다')
             if not ok:
                 return self._reject(why, f'설계를 못 가져왔다: {design_id!r} ({why or "이유 없음"})')
             planner, problem = self._planner_from(design, design_id)
@@ -717,8 +720,6 @@ class TaskManager:
                 ok, why = self._apply_select(planner, design_id)
                 if not ok:
                     return ok, why
-            elif self.state == 'READY':
-                self.planner = planner                  # 출발 때 다시 조회한 설계로 바꾼다(그 사이 DB 가 바뀌었을 수 있다)
             return self._start()
 
     def _planner_from(self, design, design_id):
