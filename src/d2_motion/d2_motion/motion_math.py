@@ -233,12 +233,13 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 
 # ---------------- 설계도(레시피) ----------------
 def recipe_blocks(cfg, recipe):
-    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식 두 가지를 읽는다.
+    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식은 이름(schema)이 아니라 blocks 칸 유무로 가른다.
 
-    - assembly.recipe/1.0 (CAD_to_Recipe 출력, 예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json): model.instances + steps.
+    - cad_recipe/1.0 (팀 레시피, recipe_manager 출력 — 예전 이름 assembly.recipe/1.0, 10/7 E-44로 이름만 바뀌고 구조 그대로):
+      model.instances + steps (예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json).
       steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
       block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
-    - m0609.jenga.cad_recipe/1.0 (한세교 Advanced, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
+    - 옛 blocks[] 형식 (한세교 Advanced m0609.jenga.cad_recipe/1.0, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
       block_id 그대로, 끼우는 축은 closing_axis_cad 와 나란한 블록 축.
     조립 원점은 robot.yaml assembly_origin 하나만 쓴다 (레시피 T_base_from_cad 는 null — 10/4 합의).
     가로 위치는 설계 그대로, 높이는 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
@@ -270,13 +271,13 @@ def recipe_blocks(cfg, recipe):
                 'rot': rot, 'quat': quat_from_axes(*(column(rot, k) for k in range(3)))}
 
     out = []
-    if 'blocks' in recipe:                          # m0609.jenga.cad_recipe/1.0
+    if 'blocks' in recipe:                          # 옛 blocks[] 형식 (Advanced)
         for b in sorted(recipe['blocks'], key=lambda k: k['sequence']):
             R, ca = b['R_cad_from_block'], b['closing_axis_cad']
             axis = ['LENGTH', 'WIDTH', 'THICKNESS'][max(range(3), key=lambda k: abs(sum(R[i][k] * ca[i] for i in range(3))))]
             out.append(block(b['block_id'], b['sequence'], b.get('stage'), b['size_lwt_mm'], b['center_cad_mm'], R, axis,
                              b.get('support_block_ids') or []))
-    else:                                           # assembly.recipe/1.0
+    else:                                           # cad_recipe/1.0 (예전 이름 assembly.recipe/1.0) — model + steps
         model = recipe['model']
         sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
         inst = {i['instance_id']: i for i in model['instances']}
