@@ -3,6 +3,9 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-07
+- 공통(17시, PM): **CI에 `src/d2_vision/test` pytest 추가(민범진 요청)** — colcon test가 'NO TESTS RAN'으로 비전 시험을 안 돌리고 있었다. 파이썬 시험 job에서 `PYTHONPATH=src/d2_vision`으로, `tests/requirements.txt`에 numpy. 깨끗한 venv에서 8 통과. ci.yml · AGENTS · 06.
+- 비전 · HMI(17시, PM): **화면 명령 늦은 실행 금지(PL, 한석형 질문)** — 작업 관리자는 명령을 받은 뒤 `timeout.command_s` 4초(화면 MQTT 5초보다 먼저) 안에 확정 못 하면 실행하지 않고 `TIMEOUT`. 웹은 시간 초과 때 자동 재전송 없이 `state/1`로 실제 상태. [출발]은 [설계 선택] 때 받은 설계를 씀(권장). robot.yaml 키는 한석형 PR. IRD 4 · 7 · 9 · 10장 · SDD 7.1.
+- 공통(17시, PM): **CI 파이썬 시험에 `src/d2_task/test` 추가(PL)** — 두산 의존 때문에 ROS 빌드 job이 d2_task를 빌드하지 않아 이 시험이 CI에서 빠져 있었다(PR #46의 'd2_task 49 실패'가 초록불). rclpy를 안 써서 파이썬 시험 job에서 돈다(254개). d2_task 시험을 깨는 PR은 이제 빨간불.
 - 공통(16시, PM): **`d2_interfaces`를 바꾸는 PR도 사람 확인 뒤 merge(PL)** — `src/d2_interfaces/` 파일이 하나라도 바뀌면(주석 포함 · 더함 · 지움 · 이름 바꿈) 자동 승인하지 않고 'PL 확인 대기'. `pr_verdict.py` · 시험 2개 · 06 · CONTRIBUTING · PR 양식 · AGENTS · pr_check.yml.
 - 비전(16시 50분, PM): **E-47 고침(PL) — 윤곽 따기 예비 = 엣지 + 깊이**(처음엔 깊이만). 높이 지도로 층을 나누고, 같은 높이에 붙은 블록은 컬러 엣지로 가름. W114 사진 빠른 시험 그림 `docs/images/W114_엣지검출_빠른시험_v1_100716.png`(컬러 엣지만 · 깊이만은 각각 붙은 블록이 뭉침). **W114 흩뿌린 장면 촬영 5장면 · 67장(조명 a, 장면 1 = 쉬운 장면) → 드라이브 1_원본_W114/흩뿌림/s01~s05/{color,depth,pose}**, 학습 노트북 드라이브 `YOLO_흩어진블록/D2_YOLOseg_흩어진블록_학습_v1.ipynb`. 결정 기록 · 01 · SDD · 05 · YOLO 규칙 · 프롬프트 · 일정표 W086 글.
 - 공통(16시, PM): **IRD를 바꾸는 PR은 사람 확인 뒤 merge(PL)** — `pr_verdict.py`가 PR 파일 목록에서 `docs/02_인터페이스_IRD_*.md` 내용 변경을 찾으면 막음이 없어도 자동 승인하지 않고 'PL 확인 대기' 코멘트만(링크 월일시만 바뀐 것 · 이름만 바뀐 것은 빼고). PL이 직접 승인하면 auto-merge. 시험 5개 추가 · 06 · CONTRIBUTING · PR 양식 · AGENTS(=CLAUDE=GEMINI) · pr_check.yml 머리글.

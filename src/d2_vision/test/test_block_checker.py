@@ -1,4 +1,4 @@
-"""BlockChecker 시험 (pytest, ROS · 로봇 없음) — SDD 9장 "블록 빼기 · 더 놓기 · 어긋남".
+"""BlockChecker 시험 (pytest, ROS · 로봇 없음) — SDD 9장 "블록 빼기 · 더 놓기 · 어긋남" + W140(E-52) 설계 · 레시피 파일 고르기.
 
 블록 목록은 recipe_blocks() 출력 형식(block_id · center m base · rot)을 여기서 직접 만든다(벤치 11개 — 001_CHAIR_BENCH 와 같은 배치).
 d2_motion 을 import 하지 않는다: CI 는 d2_vision 만 빌드한다.
@@ -9,7 +9,7 @@ import math
 import numpy as np
 import pytest
 
-from d2_vision.block_checker import BlockChecker, depth_to_base_points, height_map
+from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, height_map, recipe_path
 
 ORIGIN = {'x_m': 0.4261, 'y_m': -0.0725, 'z_m': -0.018, 'yaw_deg': 0.3}
 HALF_M = 0.15
@@ -139,3 +139,61 @@ def test_depth_to_base_roundtrip():
     assert np.allclose(pts[:, 2], ORIGIN['z_m'], atol=1e-6)
     grid, x0, y0 = height_map(pts, (0.4, 0.0), 0.1)
     assert np.nanmax(grid) - np.nanmin(grid) < 1e-6
+
+
+# ---------------- W140 (E-52): check_progress 요청 → 설계 · 레시피 파일 ----------------
+SUFFIXES = ('_recipe.json', '.recipe.json')     # motion_math.RECIPE_SUFFIXES 와 같은 값 — d2_motion 을 import 하지 않으려고 여기 적는다
+NEW_IDS = ['001_CHAIR_BENCH_' + n for n in [f'LEG_00{w}_0{k}' for k in range(1, 5) for w in (1, 2)]
+           + [f'SEAT_001_0{k}' for k in range(1, 4)]]     # 작명 규칙 v2 4장 — 벤치 sequence 순서(B001 → LEG_001_01, B002 → LEG_002_01 …)
+
+
+def test_design_of_uses_design_id_field():
+    """design_id 칸이 있으면 블록 이름을 보지 않는다(E-52 ④) — 새 이름에 옛 '_B' 규칙을 쓰면 설계가 틀린다(아래 옛 결과)."""
+    cases = [('001_CHAIR_BENCH', '001_CHAIR_BENCH_LEG_001_01', '001_CHAIR'),       # BENCH 의 '_B'
+             ('002_CHAIR_BACK', '002_CHAIR_BACK_SEAT_001_01', '002_CHAIR'),        # BACK 의 '_B'
+             ('003_DESK_STAND', '003_DESK_STAND_TOP_001_01', ''),                  # '_B' 없음
+             ('004_DESK_PEDESTAL', '004_DESK_PEDESTAL_COLUMN_001_03', ''),
+             ('001_CHAIR_BENCH', '001_CHAIR_BENCH_B001', '001_CHAIR_BENCH')]       # 옛 이름이 와도 칸이 먼저
+    for design, bid, old in cases:
+        assert design_of(design, bid) == design
+        assert design_of('', bid) == old
+
+
+def test_design_of_old_rule_when_empty():
+    """design_id 가 비면 옛 방식(10/8 저녁까지): 마지막 '_B' 앞. '_B' 가 없으면 빈 글자(부르는 쪽 ERROR · unknown)."""
+    assert design_of('', '001_CHAIR_BENCH_B003') == '001_CHAIR_BENCH'
+    assert design_of('', '003_DESK_STAND_B009') == '003_DESK_STAND'
+    assert design_of('', 'LEG_001_01') == ''
+    assert design_of('', '') == ''
+
+
+def test_recipe_path_prefers_new_name(tmp_path):
+    """새 이름 _recipe.json 이 있으면 그것, 없으면 옛 .recipe.json. 둘 다 없으면 None."""
+    (tmp_path / '001_CHAIR_BENCH.recipe.json').write_text('{}')
+    assert recipe_path(str(tmp_path), '001_CHAIR_BENCH', SUFFIXES) == tmp_path / '001_CHAIR_BENCH.recipe.json'
+    (tmp_path / '001_CHAIR_BENCH_recipe.json').write_text('{}')
+    assert recipe_path(str(tmp_path), '001_CHAIR_BENCH', SUFFIXES) == tmp_path / '001_CHAIR_BENCH_recipe.json'
+    assert recipe_path(str(tmp_path), '002_CHAIR_BACK', SUFFIXES) is None
+
+
+def test_recipe_path_rejects_bad_input(tmp_path):
+    """폴더 · 이름이 비었거나 이름이 경로를 가리키면 파일을 보지 않고 None (task 노드 로컬 읽기와 같은 규칙)."""
+    (tmp_path / 'x_recipe.json').write_text('{}')
+    sub = tmp_path / 'sub'
+    sub.mkdir()
+    assert recipe_path('', 'x', SUFFIXES) is None
+    assert recipe_path(str(tmp_path), '', SUFFIXES) is None
+    for bad in ('../x', 'sub/../x', '..\\x', '.x'):
+        assert recipe_path(str(sub), bad, SUFFIXES) is None
+    assert recipe_path(str(tmp_path), 'x_recipe.json', ('',)) == tmp_path / 'x_recipe.json'     # 끝 후보는 부르는 쪽이 정한다
+
+
+def test_new_full_names_match_and_foreign_ids_unknown():
+    """레시피가 새 전체 이름을 만들면 같은 이름으로 판정하고, 그 설계에 없는 이름(옛 이름 · 다른 설계)은 그 블록만 unknown."""
+    blocks = [dict(b, block_id=n) for b, n in zip(bench_blocks(), NEW_IDS)]
+    chk = BlockChecker(blocks, (ORIGIN['x_m'], ORIGIN['y_m']), HALF_M, SIZE)
+    ask = [NEW_IDS[0], IDS[0], '002_CHAIR_BACK_BACK_001_01', NEW_IDS[10]]
+    res = chk.check(scene_points(blocks, set(NEW_IDS[:2])), ask)
+    assert [r['block_id'] for r in res] == ask
+    assert [r['state'] for r in res] == ['present', 'unknown', 'unknown', 'absent']
+    assert all(math.isnan(r['top_z_m']) and math.isnan(r['dz_m']) for r in res[1:3])

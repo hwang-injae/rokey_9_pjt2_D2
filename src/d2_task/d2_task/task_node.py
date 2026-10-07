@@ -11,7 +11,7 @@
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
 설계 조회: 선택 · 출발 때 /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
-        recipe_dir 아래 <design_id>.recipe.json 을 읽는다(assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44).
+        recipe_dir 아래 <design_id>_recipe.json · _structure.json 을 읽는다. 옮기는 동안 옛 .recipe.json 도 받는다(E-52).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 기다리는 중인 모든 호출이 빠져나오고 진행 중인 pick_place 목표를 취소한다(서기는 pick_place 가 한다).
 """
@@ -38,6 +38,7 @@ from std_msgs.msg import String
 
 from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
+from d2_task.recipe_document import RecipeDocument
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager, wait_until
 
@@ -180,13 +181,12 @@ class TaskNode(Node):
             return False, 'ERROR', None
 
     def _local_design(self, design_id):
-        """(개발용) recipe_dir/<design_id>.recipe.json 을 design/1 모양으로 감싼다. 파라미터가 비었거나 파일이 없거나 이름이 경로를 가리키면 실패."""
+        """개발용 레시피를 design/1 로 읽는다. 새 _recipe/_structure 우선, 없으면 옛 .recipe. 파일·형식 오류는 실패 반환."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
             return False, '', None
         try:
-            with open(os.path.join(recipe_dir, f'{design_id}.recipe.json'), encoding='utf-8') as f:
-                return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': json.load(f)}
+            return True, '', RecipeDocument.load(recipe_dir, design_id).design(design_id)
         except (OSError, ValueError):
             return False, '', None
 
@@ -221,6 +221,7 @@ class TaskNode(Node):
     def check_progress(self, block_ids, should_abort):
         """/d2/vision/check_progress. 반환: (성공, reason, {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}). 중단되면 (False, 'STOPPED', {})."""
         req = CheckProgress.Request()
+        req.design_id = self.manager.design_id     # E-52: BACK · BEAM 이름에서 설계 ID 를 잘라 내지 않는다
         req.block_ids = list(block_ids)
         res = self._call(self.check_cli, req, should_abort)
         if res is None:

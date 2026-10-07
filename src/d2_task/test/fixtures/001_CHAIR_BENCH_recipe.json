@@ -1,0 +1,116 @@
+{
+  "schema": "cad_recipe/1.0",
+  "model_id": "001_CHAIR_BENCH",
+  "structure_sha256": "4112557b15b29cb5e01633823c3c976842fc565d4033a84bca0348f37472043e",
+  "steps": [
+    {
+      "block": "LEG_001_01",
+      "sequence": 1,
+      "stage": 1,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": []
+    },
+    {
+      "block": "LEG_002_01",
+      "sequence": 2,
+      "stage": 1,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": []
+    },
+    {
+      "block": "LEG_001_02",
+      "sequence": 3,
+      "stage": 2,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_001_01"
+      ]
+    },
+    {
+      "block": "LEG_002_02",
+      "sequence": 4,
+      "stage": 2,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_002_01"
+      ]
+    },
+    {
+      "block": "LEG_001_03",
+      "sequence": 5,
+      "stage": 3,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_001_02"
+      ]
+    },
+    {
+      "block": "LEG_002_03",
+      "sequence": 6,
+      "stage": 3,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_002_02"
+      ]
+    },
+    {
+      "block": "LEG_001_04",
+      "sequence": 7,
+      "stage": 4,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_001_03"
+      ]
+    },
+    {
+      "block": "LEG_002_04",
+      "sequence": 8,
+      "stage": 4,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_002_03"
+      ]
+    },
+    {
+      "block": "SEAT_001_01",
+      "sequence": 9,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
+      ]
+    },
+    {
+      "block": "SEAT_001_02",
+      "sequence": 10,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
+      ]
+    },
+    {
+      "block": "SEAT_001_03",
+      "sequence": 11,
+      "stage": 5,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
+      ]
+    }
+  ]
+}

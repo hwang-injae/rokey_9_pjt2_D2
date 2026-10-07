@@ -13,7 +13,10 @@ pick_place 노드·scene_manager 노드·run_recipe 도구가 같이 쓴다. ROS
     (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정(T_gripper2camera)은 posx 기준이다.
   - 잡기 이름 6가지(IRD 2장) = <바닥 상태>_<LONG|SHORT>. 그리퍼 폭은 '손가락 사이에 끼우는 블록 축'만으로 정해진다.
 """
+import hashlib
+import json
 import math
+import os
 
 AXES = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}
 # 잡기 이름 -> 손가락 사이에 끼우는 블록 축
@@ -262,11 +265,60 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 
 
 # ---------------- 설계도(레시피) ----------------
-def recipe_blocks(cfg, recipe):
-    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식은 이름(schema)이 아니라 blocks 칸 유무로 가른다.
+RECIPE_SUFFIXES = ('_recipe.json', '.recipe.json')   # 새 이름(E-52, <모델ID>_recipe.json) · 옛 이름(<모델ID>.recipe.json)
+STRUCTURE_SUFFIX = '_structure.json'
 
-    - cad_recipe/1.0 (팀 레시피, recipe_manager 출력 — 예전 이름 assembly.recipe/1.0, 10/7 E-44로 이름만 바뀌고 구조 그대로):
-      model.instances + steps (예 src/recipe_manager/recipes/001_CHAIR_BENCH_recipe.json).
+
+def recipe_files(folder):
+    """folder 안의 조립 레시피 파일 경로 목록 (이름 순). 새 이름 _recipe.json · 옛 이름 .recipe.json 둘 다 (W138, 옛 이름은 W139 뒤 뺌).
+    구조 파일(_structure.json)은 조립 파일이 읽으므로 목록에 넣지 않는다. 폴더가 없으면 빈 목록."""
+    if not os.path.isdir(folder):
+        return []
+    return sorted(os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(RECIPE_SUFFIXES))
+
+
+def recipe_name(path):
+    """레시피 파일 경로 -> 보여 줄 이름 (모델 ID, 예 001_CHAIR_BENCH)."""
+    name = os.path.basename(path)
+    for suf in RECIPE_SUFFIXES:
+        if name.endswith(suf):
+            return name[:-len(suf)]
+    return name
+
+
+def load_recipe(path):
+    """레시피 파일을 읽는다. 새 형식(E-52 — cad_recipe/1.0 조립 파일, steps[].block)이면 같은 폴더의
+    <model_id>_structure.json(cad_structure/1.0)을 읽어 'structure' 칸에 붙인다 — recipe_blocks 가 두 파일을 블록 이름으로 잇는다.
+    옛 형식은 읽은 그대로. 구조 파일이 없으면 FileNotFoundError.
+    조립 파일에 structure_sha256 이 있으면 구조 파일 바이트 그대로의 sha256 과 비교해, 다르면 ValueError — 구조가 바뀌었는데
+    옛 조립 순서로 쌓으면 받침 · 잡기가 어긋난다(한세교 10/7: source_cad.sha256 과 같은 방식)."""
+    with open(path) as f:
+        recipe = json.load(f)
+    if 'model' not in recipe and 'blocks' not in recipe and 'structure' not in recipe:
+        sp = os.path.join(os.path.dirname(path), recipe['model_id'] + STRUCTURE_SUFFIX)
+        with open(sp, 'rb') as f:
+            raw = f.read()
+        want = recipe.get('structure_sha256')
+        if want and hashlib.sha256(raw).hexdigest() != want:
+            raise ValueError(f'{os.path.basename(sp)} 가 조립 파일의 structure_sha256 과 다르다 (구조 파일이 바뀜 — 레시피 도구로 다시 만든다)')
+        recipe['structure'] = json.loads(raw)
+    return recipe
+
+
+def recipe_model_id(recipe):
+    """레시피의 모델 ID (= 기본 설계 design_id). 설계 이름은 블록 이름에서 잘라 내지 않는다(E-52 ④ — BACK · BEAM 에도 _B 가 있다).
+    옛 blocks[] 형식처럼 모델 ID 가 없으면 빈 글자."""
+    return recipe['model']['model_id'] if 'model' in recipe else recipe.get('model_id', '')
+
+
+def recipe_blocks(cfg, recipe):
+    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식은 이름(schema)이 아니라 칸 유무로 가른다.
+
+    - 새 형식 (E-52, W138): 조립 파일 cad_recipe/1.0 steps[](block · sequence · stage · grasp_axis · supports — 블록 이름)
+      + 구조 파일 cad_structure/1.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
+      block_id = '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_LEG_001_01 — 노드 사이 전체 블록 이름).
+    - 옛 cad_recipe/1.0 (예전 이름 assembly.recipe/1.0, W139 전 recipe_manager 출력): model.instances + steps
+      (예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json).
       steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
       block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
     - 옛 blocks[] 형식 (한세교 Advanced m0609.jenga.cad_recipe/1.0, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
@@ -307,7 +359,16 @@ def recipe_blocks(cfg, recipe):
             axis = ['LENGTH', 'WIDTH', 'THICKNESS'][max(range(3), key=lambda k: abs(sum(R[i][k] * ca[i] for i in range(3))))]
             out.append(block(b['block_id'], b['sequence'], b.get('stage'), b['size_lwt_mm'], b['center_cad_mm'], R, axis,
                              b.get('support_block_ids') or []))
-    else:                                           # cad_recipe/1.0 (예전 이름 assembly.recipe/1.0) — model + steps
+    elif 'structure' in recipe:                     # 새 형식 (E-52) — 조립 steps + 구조 blocks, 블록 이름으로 잇는다
+        struct = recipe['structure']
+        sizes = {p['part_id']: p['size_mm'] for p in struct['parts']}
+        geo = {b['block']: b for b in struct['blocks']}
+        full = {st['block']: f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
+        for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
+            g = geo[st['block']]
+            out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['part_id']], g['center_mm'], g['R'],
+                             st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
+    else:                                           # 옛 cad_recipe/1.0 (예전 이름 assembly.recipe/1.0) — model + steps
         model = recipe['model']
         sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
         inst = {i['instance_id']: i for i in model['instances']}
@@ -344,6 +405,7 @@ def layout_designs(cfg, recipes):
     같은 레시피 목록이면 같은 자리를 쓴다. 조립 작업공간(중심 ± assembly_area_half_m)을 넘으면 ValueError.
     """
     designs = [recipe_blocks(cfg, r) for r in recipes]
+    names = [recipe_model_id(r) or f'{k + 1}번' for k, r in enumerate(recipes)]
     fps = [footprint(cfg, b) for b in designs]
     shifts, y_top = [], None
     for fp in fps:                           # 앞 설계의 −y 끝에서 SET_GAP_M 띄워 다음 설계의 +y 끝을 둔다
@@ -357,10 +419,10 @@ def layout_designs(cfg, recipes):
         shifts = [dy + mid for dy in shifts]
     o, half = cfg['assembly_origin'], cfg['assembly_area_half_m']
     out = []
-    for blocks, fp, dy in zip(designs, fps, shifts):
+    for blocks, fp, dy, name in zip(designs, fps, shifts, names):
         if (fp[0] < o['x_m'] - half - 1e-6 or fp[2] > o['x_m'] + half + 1e-6
                 or fp[1] + dy < o['y_m'] - half - 1e-6 or fp[3] + dy > o['y_m'] + half + 1e-6):
-            raise ValueError(f'설계 {blocks[0]["block_id"].split("_")[0]} 가 조립 작업공간(중심 ± {half * 1000:.0f} mm)을 넘는다')
+            raise ValueError(f'설계 {name} 가 조립 작업공간(중심 ± {half * 1000:.0f} mm)을 넘는다')
         for b in blocks:
             b['center'] = (b['center'][0], b['center'][1] + dy, b['center'][2])
         out.append((blocks, (0.0, dy)))

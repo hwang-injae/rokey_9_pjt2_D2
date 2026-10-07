@@ -4,6 +4,5 @@ import sys
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[2]
-for pkg in ('d2_task', 'd2_motion'):
-    package_dir = SRC / 'd2_robot' / pkg if pkg == 'd2_motion' else SRC / pkg
-    sys.path.insert(0, str(package_dir))
+for pkg in ('d2_task', 'd2_motion', 'd2_robot/d2_motion'):
+    sys.path.insert(0, str(SRC / pkg))
