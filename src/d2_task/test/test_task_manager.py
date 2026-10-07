@@ -45,9 +45,12 @@ class FakeIO:
         """부른 일만 순서대로: ('load', id) · ('move_to', target) · ('check', ids) · ('pick', block, slot)."""
         return [e[1:] for e in self.events if e[0] == 'call']
 
-    def load_recipe(self, design_id):
+    def get_design(self, design_id, should_abort):
+        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/1 dict."""
         self.events.append(('call', 'load', design_id))
-        return self.recipe if design_id == 'bench' else None
+        if design_id != 'bench':
+            return False, '', None
+        return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': self.recipe}
 
     def services_ready(self):
         return list(self.missing)
@@ -155,7 +158,7 @@ def test_벤치_11개_정상_흐름():
     drive(m, 'DONE')
     assert io.world == set(IDS)
     assert picks(io) == [(b, '2') for b in IDS[:8]] + [(b, '1') for b in IDS[8:]]      # 벽 FLAT_SHORT 칸 2, 좌판 FLAT_LONG 칸 1
-    assert io.calls[:6] == [('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),
+    assert io.calls[:7] == [('load', 'bench'), ('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),     # 선택 · 출발 때 각각 조회
                             ('pick', IDS[0], '2'), ('move_to', 'observe'), ('check', (IDS[0],))]
     assert ('check', (IDS[2], IDS[0])) in io.calls                                   # 3번째: 놓은 블록 + 받침
     assert len(io.progress) == 12 and all(json.dumps(p, allow_nan=False) for p in io.progress)

@@ -9,7 +9,9 @@
         /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/1 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
-레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44). get_design 은 W119 에서.
+설계 조회: 선택 · 출발 때 /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
+        원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
+        recipe_dir 아래 <design_id>.recipe.json 을 읽는다(assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 기다리는 중인 모든 호출이 빠져나오고 진행 중인 pick_place 목표를 취소한다(서기는 pick_place 가 한다).
 """
@@ -73,7 +75,8 @@ class TaskNode(Node):
     def __init__(self):
         """설정을 읽고 서비스 · 클라이언트 · 구독 · 방송을 만든다. 파라미터 recipe_dir 은 비어 있으면 설계를 못 고르고, log_dir 이 비면 기록 파일을 안 쓴다."""
         super().__init__('task')
-        self.declare_parameter('recipe_dir', '')
+        self.declare_parameter('recipe_dir', '')         # design_source:=local 일 때만 쓰는 레시피 폴더(개발용)
+        self.declare_parameter('design_source', 'remote')  # remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일(웹 없이 개발할 때 명시)
         self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
@@ -90,6 +93,7 @@ class TaskNode(Node):
         self.check_cli = self.create_client(CheckProgress, '/d2/vision/check_progress', callback_group=cb)
         self.pick_cli = ActionClient(self, PickPlace, '/d2/motion/pick_place', callback_group=cb)
         self.save_cli = self.create_client(JsonQuery, '/d2/hmi/save_build', callback_group=cb)
+        self.design_cli = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=cb)
         self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
         self.sender = BuildSender(self.manager, self._call_save, self.save_cli.remove_pending_request,
                                   self.save_cli.service_is_ready, self.service_s)
@@ -149,16 +153,42 @@ class TaskNode(Node):
         return self.save_cli.call_async(req)
 
     # ---------- TaskManager 의 io ----------
-    def load_recipe(self, design_id):
-        """recipe_dir/<design_id>.recipe.json 을 읽는다. 파라미터가 비었거나 파일이 없거나 이름이 경로를 가리키면 None."""
+    def get_design(self, design_id, should_abort):
+        """설계 조회. 반환: (ok, reason, design dict 또는 None). design_source 에 따라 원격(기본) 또는 로컬 파일 하나만 쓴다.
+
+        원격: /d2/hmi/get_design 에 {"design_id"} 를 보내고 timeout.service_s 안에 답을 기다린다(정지 신호가 오면 바로 빠져나옴).
+        시간이 지나면 요청을 버리고 (False, 'TIMEOUT'). 서버가 없으면 (False, 'ERROR'). 답이 늦게 와도 아무도 받지 않는다.
+        """
+        if self.get_parameter('design_source').value == 'local':
+            return self._local_design(design_id)
+        if not self.design_cli.service_is_ready():
+            return False, 'ERROR', None
+        req = JsonQuery.Request()
+        req.request_json = json.dumps({'design_id': design_id}, ensure_ascii=False)
+        future = self.design_cli.call_async(req)
+        done = threading.Event()
+        future.add_done_callback(lambda _f: done.set())
+        if not wait_until(done, should_abort, timeout_s=self.service_s):
+            self.design_cli.remove_pending_request(future)
+            return False, ('STOPPED' if should_abort() else 'TIMEOUT'), None
+        res = future.result()
+        if not res.success:
+            return False, res.reason or 'ERROR', None
+        try:
+            return True, '', json.loads(res.response_json)
+        except ValueError:
+            return False, 'ERROR', None
+
+    def _local_design(self, design_id):
+        """(개발용) recipe_dir/<design_id>.recipe.json 을 design/1 모양으로 감싼다. 파라미터가 비었거나 파일이 없거나 이름이 경로를 가리키면 실패."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
-            return None
+            return False, '', None
         try:
             with open(os.path.join(recipe_dir, f'{design_id}.recipe.json'), encoding='utf-8') as f:
-                return json.load(f)
+                return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': json.load(f)}
         except (OSError, ValueError):
-            return None
+            return False, '', None
 
     def services_ready(self):
         """아직 안 떠 있는 서버 이름들. 기다리지 않고 지금 보이는 것만 본다."""
