@@ -434,3 +434,7 @@ def test_시계를_섞으면_믿지_않는다():
     assert grasped_now({'stamp': wall, 'grasped': False}, wall - 1, 12345.0, 3.0) is None         # now 가 단조 시계 → stamp 가 미래
     assert grasped_now({'stamp': 12344.0, 'grasped': False}, wall, wall + 1, 3.0) is None         # stamp 가 단조 시계 → 결과보다 과거
     assert grasped_now({'stamp': wall, 'grasped': False}, wall - 1, wall + 1, 3.0) is False       # 같은 시계면 믿는다
+
+
+def test_robot_yaml_공급_방식_스위치_기본은_slots():
+    assert CFG['supply_mode'] == 'slots' and CFG['supply_mode'] in ('slots', 'scatter')       # E-55

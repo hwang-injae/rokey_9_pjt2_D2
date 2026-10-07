@@ -3,6 +3,10 @@
 # 틀: 황인재 (W031). 측정값: 로봇 동작 (W033).
 # 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 → 10/6 다시 측정 (W011~W016).
 
+# 공급 방식 스위치 (E-55, 10/7 21시 PL): slots = 공급 칸 6개(칸 좌표로 바로 집음, 기본) · scatter = 흩뿌린 공급(find_blocks → 고르기 → supply_slot 빈 값).
+# 작업 관리자만 읽는다. W132 흩어진 집기 실기부터 scatter, 10/12 저녁까지 안 되면 slots (E-36 대비책). 값을 바꾸기 전에 열림 폭 · 위치 오차 확인(W130).
+supply_mode: slots
+
 frame_id: base_link
 tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
 table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
