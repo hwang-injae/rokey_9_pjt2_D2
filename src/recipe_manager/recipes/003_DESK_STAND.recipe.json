@@ -3,7 +3,7 @@
   "recipe_id": "003_DESK_STAND_ASSEMBLY",
   "revision": "1",
   "model": {
-    "schema": "assembly.model/1.0",
+    "schema": "cad_model/1.0",
     "model_id": "003_DESK_STAND",
     "revision": "1",
     "frame": {
@@ -265,42 +265,51 @@
   },
   "steps": [
     {
+      "block_id": "003_DESK_STAND_B001",
       "step_id": "PLACE_DXF_INSERT_3E",
       "instance_id": "DXF_INSERT_3E",
       "sequence": 1,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "003_DESK_STAND_B002",
       "step_id": "PLACE_DXF_INSERT_4F",
       "instance_id": "DXF_INSERT_4F",
       "sequence": 2,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "003_DESK_STAND_B003",
       "step_id": "PLACE_DXF_INSERT_60",
       "instance_id": "DXF_INSERT_60",
       "sequence": 3,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "003_DESK_STAND_B004",
       "step_id": "PLACE_DXF_INSERT_71",
       "instance_id": "DXF_INSERT_71",
       "sequence": 4,
       "stage": 1,
       "grasp": "STAND_SHORT",
       "grasp_axis": "THICKNESS",
-      "support_instance_ids": []
+      "support_instance_ids": [],
+      "support_block_ids": []
     },
     {
+      "block_id": "003_DESK_STAND_B005",
       "step_id": "PLACE_DXF_INSERT_83",
       "instance_id": "DXF_INSERT_83",
       "sequence": 5,
@@ -310,9 +319,14 @@
       "support_instance_ids": [
         "DXF_INSERT_3E",
         "DXF_INSERT_4F"
+      ],
+      "support_block_ids": [
+        "003_DESK_STAND_B001",
+        "003_DESK_STAND_B002"
       ]
     },
     {
+      "block_id": "003_DESK_STAND_B006",
       "step_id": "PLACE_DXF_INSERT_94",
       "instance_id": "DXF_INSERT_94",
       "sequence": 6,
@@ -322,9 +336,14 @@
       "support_instance_ids": [
         "DXF_INSERT_60",
         "DXF_INSERT_71"
+      ],
+      "support_block_ids": [
+        "003_DESK_STAND_B003",
+        "003_DESK_STAND_B004"
       ]
     },
     {
+      "block_id": "003_DESK_STAND_B007",
       "step_id": "PLACE_DXF_INSERT_A6",
       "instance_id": "DXF_INSERT_A6",
       "sequence": 7,
@@ -334,9 +353,14 @@
       "support_instance_ids": [
         "DXF_INSERT_83",
         "DXF_INSERT_94"
+      ],
+      "support_block_ids": [
+        "003_DESK_STAND_B005",
+        "003_DESK_STAND_B006"
       ]
     },
     {
+      "block_id": "003_DESK_STAND_B008",
       "step_id": "PLACE_DXF_INSERT_B7",
       "instance_id": "DXF_INSERT_B7",
       "sequence": 8,
@@ -346,9 +370,14 @@
       "support_instance_ids": [
         "DXF_INSERT_83",
         "DXF_INSERT_94"
+      ],
+      "support_block_ids": [
+        "003_DESK_STAND_B005",
+        "003_DESK_STAND_B006"
       ]
     },
     {
+      "block_id": "003_DESK_STAND_B009",
       "step_id": "PLACE_DXF_INSERT_C8",
       "instance_id": "DXF_INSERT_C8",
       "sequence": 9,
@@ -358,6 +387,10 @@
       "support_instance_ids": [
         "DXF_INSERT_83",
         "DXF_INSERT_94"
+      ],
+      "support_block_ids": [
+        "003_DESK_STAND_B005",
+        "003_DESK_STAND_B006"
       ]
     }
   ]

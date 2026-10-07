@@ -32,12 +32,21 @@ class Step:
     # 사람이 쓰지 않는다. Recipe.build_from_plan가 형상과 순서로 계산한다. 책상 위에 놓으면 빈 목록.
     support_instance_ids: list[str] = field(default_factory=list)
 
+    # 팀이 부르는 블록 이름 '<모델ID>_B<sequence 3자리>'(예: 001_CHAIR_BENCH_B001, 10/7 한세교 W105).
+    # instance_id(DXF 핸들)는 CAD를 다시 저장하면 바뀌므로 노드·사람 사이에서는 이 이름을 쓴다.
+    # 사람이 쓰지 않는다. Recipe.build_from_plan가 sequence로 붙인다.
+    block_id: str | None = None
+    support_block_ids: list[str] = field(default_factory=list)
+
     def convert_to_dict(self):
         """JSON으로 저장할 형태로 바꾼다. Enum은 이름 문자열로 쓴다.
 
-        출력: dict
+        출력: dict. block_id가 없으면(계획 단계) block_id·support_block_ids 칸을 쓰지 않는다.
         """
+        names = {} if self.block_id is None else {'block_id': self.block_id}
+        support_names = {} if self.block_id is None else {'support_block_ids': list(self.support_block_ids)}
         return {
+            **names,
             'step_id': self.step_id,
             'instance_id': self.instance_id,
             'sequence': self.sequence,
@@ -45,4 +54,5 @@ class Step:
             'grasp': self.grasp.name if self.grasp else None,
             'grasp_axis': self.grasp_axis.name if self.grasp_axis else None,
             'support_instance_ids': list(self.support_instance_ids),
+            **support_names,
         }

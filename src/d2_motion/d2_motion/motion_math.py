@@ -236,7 +236,8 @@ def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식 두 가지를 읽는다.
 
     - assembly.recipe/1.0 (CAD_to_Recipe 출력, 예 output/LV1.recipe.json): model.instances + steps.
-      block_id 칸이 없어서 '<model_id>_B<sequence 3자리>' 로 만든다 (IRD 2장 예: LV1_B001).
+      steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
+      block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
     - m0609.jenga.cad_recipe/1.0 (한세교 Advanced, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
       block_id 그대로, 끼우는 축은 closing_axis_cad 와 나란한 블록 축.
     조립 원점은 robot.yaml assembly_origin 하나만 쓴다 (레시피 T_base_from_cad 는 null — 10/4 합의).
@@ -279,7 +280,7 @@ def recipe_blocks(cfg, recipe):
         model = recipe['model']
         sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
         inst = {i['instance_id']: i for i in model['instances']}
-        bid = {st['instance_id']: f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
+        bid = {st['instance_id']: st.get('block_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
             out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['part_id']], i['center_mm'], i['R'],

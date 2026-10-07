@@ -4,7 +4,7 @@ from recipe.defined.GraspAxis import GraspAxis
 from recipe.defined.GraspMethod import GraspMethod
 from recipe.defined.Step import Step
 
-PLAN_SCHEMA = 'assembly.plan/1.0'
+PLAN_SCHEMA = 'cad_plan/1.0'
 
 # 이전 DXF의 GRASP 속성은 명목 치수가 들어간 이름을 쓴다(75×25×15 블록 기준).
 # 그 이름이 뜻하는 닫힘 축으로 먼저 바꾸고, CAD 배치 방향을 보고 파지 방법으로 바꾼다.
