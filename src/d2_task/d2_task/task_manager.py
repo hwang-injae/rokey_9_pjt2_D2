@@ -67,8 +67,9 @@ class TaskManager:
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
 
-    def __init__(self, cfg, io, logger=None):
-        """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다). 처음 상태는 IDLE."""
+    def __init__(self, cfg, io, logger=None, clock=time.monotonic):
+        """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
+        만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
         self.run_id = None                        # 지금(또는 방금 끝난) 조립의 run_id. 새 설계를 고르거나 IDLE 로 가면 비운다
@@ -76,6 +77,9 @@ class TaskManager:
         self.pending_builds = {}                  # run_id → 아직 DB 저장이 확인 안 된 build/1 요약(복사본)
         self._build_inflight = set()              # 지금 save_build 요청을 보내고 답을 기다리는 run_id
         self._build_last_try = {}                 # run_id → 마지막으로 보낸 시각(monotonic, 다시 보내기 간격 계산)
+        self._build_ready = set()                 # 디스크 보관이 끝났거나(성공 · 실패) 보관하지 않는 run_id — 이것만 보낸다
+        self._build_queued = {}                   # run_id → 대기 목록에 들어온 시각(monotonic). 디스크가 늦으면 이 시각으로 기다림을 끊는다
+        self._clock = clock
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
         self.state = 'IDLE'
         self.planner = None
@@ -94,6 +98,11 @@ class TaskManager:
         self._plan_retry = 0                      # PLAN_FAILED 다시 계획 횟수
         self._grasp_stage = 0                     # GRASP_FAILED: 1 = 같은 칸 재시도 중, 2 = 다음 칸 시도 중
         self._shutdown = False
+        for run_id, summary in self.logger.load_pending():
+            self.pending_builds[run_id] = summary
+            self._build_ready.add(run_id)         # 이미 디스크에 있다
+        if self.pending_builds:
+            LOG.warning('디스크에 보관된 미전송 요약 %d개를 되살렸다: %s', len(self.pending_builds), ', '.join(self.pending_builds))
         self._handlers = {'CHECK': self._check, 'SELECT': self._select, 'PICK_PLACE': self._pick_place,
                           'VERIFY': self._verify, 'WAIT_SUPPLY': self._wait_supply, 'STOPPED': self._stopped,
                           'RECOVER': self._recover, 'ERROR': self._error}
@@ -142,6 +151,8 @@ class TaskManager:
                 last = self._build_last_try.get(run_id)
                 if run_id in self._build_inflight or (last is not None and now - last < retry_s):
                     continue
+                if run_id not in self._build_ready and self._clock() - self._build_queued.get(run_id, 0.0) < retry_s:
+                    continue                      # 디스크 보관이 끝나길 잠깐 기다린다. 디스크가 늦으면 retry_s 뒤에는 기다리지 않고 보낸다
                 self._build_inflight.add(run_id)
                 self._build_last_try[run_id] = now
                 out.append((run_id, copy.deepcopy(summary)))
@@ -162,7 +173,15 @@ class TaskManager:
                 return False
             del self.pending_builds[run_id]
             self._build_last_try.pop(run_id, None)
+            self._build_ready.discard(run_id)
+            self._build_queued.pop(run_id, None)
+            self.logger.delete_pending(run_id)      # 저장이 확인된 그 run 의 보관 파일만 지운다(기록 스레드가)
             return True
+
+    def _pending_persisted(self, run_id, ok):
+        """(기록 스레드가 부른다) 미전송 요약의 디스크 보관이 끝났다. 성공 · 실패 모두 보낼 수 있게 한다(실패하면 메모리 재전송만)."""
+        with self._lock:
+            self._build_ready.add(run_id)
 
     def build_failed(self, run_id, why):
         """save_build 요청이 못 나갔거나 시간 안에 답이 없었다. 요약은 남기고 다시 보낼 수 있게 한다."""
@@ -551,7 +570,12 @@ class TaskManager:
         if summary is not None:
             with self._lock:
                 self.last_build = summary
-                self.pending_builds[summary['run_id']] = copy.deepcopy(summary)    # 저장이 확인될 때까지 run_id 별로 남긴다
+                run_id = summary['run_id']
+                self.pending_builds[run_id] = copy.deepcopy(summary)    # 저장이 확인될 때까지 run_id 별로 남긴다
+                self._build_queued[run_id] = self._clock()
+                # 디스크 보관이 끝난 것만 보낸다(재시작 복구를 위해). 보관을 안 쓰는 설정이면 바로 보낼 수 있다(재시작 복구 안 됨)
+                if not self.logger.save_pending(run_id, copy.deepcopy(summary), lambda ok, r=run_id: self._pending_persisted(r, ok)):
+                    self._build_ready.add(run_id)
 
     def _clear_run(self):
         """run_id 를 비운다(새 설계 · IDLE). 닫히지 않은 기록이 있으면 STOPPED 로 닫는다."""
