@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents
+from d2_task.recipe_document import RecipeDocument
 
 RECIPES = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
 BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000
@@ -15,7 +16,8 @@ IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back
 
 
 def load(model_id):
-    return json.loads((RECIPES / f'{model_id}.recipe.json').read_text(encoding='utf-8'))
+    """main 레시피의 옛·새 파일 이름과 두 파일 형식을 읽는다. 형식 오류는 시험 실패로 알린다."""
+    return RecipeDocument.load(RECIPES, model_id).geometry
 
 
 def convert(model_id):

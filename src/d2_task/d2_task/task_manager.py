@@ -531,7 +531,8 @@ class TaskManager:
         """조회 답(design/1)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
 
         검증: 객체 · schema design/1 · 요청한 design_id 와 같음 · recipe 가 객체이고 schema 가 cad_recipe/1.0(E-44 ③ 전까지는
-        옛 이름 assembly.recipe/1.0 도) · 레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다.
+        옛 이름 assembly.recipe/1.0 도) · 새 두 파일은 structure 와 block 이름으로 연결한다.
+        레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
         """
         if not isinstance(design, dict) or design.get('schema') != 'design/1':
             return None, '설계 조회 답이 design/1 이 아니다'
@@ -541,7 +542,7 @@ class TaskManager:
         if not isinstance(recipe, dict) or recipe.get('schema') not in RECIPE_SCHEMAS:
             return None, f'조회 답의 recipe 가 {" 또는 ".join(RECIPE_SCHEMAS)} 객체가 아니다'
         try:
-            planner = TaskPlanner(self.cfg, recipe)
+            planner = TaskPlanner(self.cfg, recipe, design.get('structure'))
         except (ValueError, KeyError, TypeError) as e:
             return None, f'레시피를 못 읽는다: {e}'
         if not planner.blocks:

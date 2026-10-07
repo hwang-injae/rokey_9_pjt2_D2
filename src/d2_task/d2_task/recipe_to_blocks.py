@@ -6,6 +6,8 @@
 """
 
 # E-44: 형식 이름이 cad_recipe/1.0 으로 바뀌는 중 — 레시피 도구 출력이 바뀌기 전후를 모두 받는다(3단계 중 ①, 옛 이름은 ③에서 지움)
+from d2_task.recipe_document import RecipeDocument
+
 SCHEMA_IN = ('assembly.recipe/1.0', 'cad_recipe/1.0')
 SCHEMA_OUT = 'blocks/1'                # IRD 3장 blocks/1 (안)
 
@@ -39,13 +41,16 @@ class RecipeToBlocks:
         self.family = family
         self.extent = ori_extents(block_mm)
 
-    def convert(self, recipe):
-        """레시피를 blocks/1 로 바꾼다. order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
+    def convert(self, recipe, structure=None):
+        """옛 레시피 또는 새 recipe + structure(mm)를 blocks/1 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
+
+        order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
 
         반환: {"schema","design_id","family","blocks":[{"order","x","y","z","ori","inferred"}]} (order 오름차순).
         """
         if not isinstance(recipe, dict) or recipe.get('schema') not in SCHEMA_IN:
             raise ValueError(f'레시피 schema 가 {' · '.join(SCHEMA_IN)} 중 하나가 아니다: {recipe.get("schema") if isinstance(recipe, dict) else recipe!r}')
+        recipe = RecipeDocument(recipe, structure).geometry
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':
             raise ValueError('model.frame.units 가 mm 가 아니다')

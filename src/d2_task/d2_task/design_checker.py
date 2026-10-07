@@ -9,6 +9,7 @@ import json
 import math
 
 from d2_task.recipe_to_blocks import ori_extents
+from d2_task.recipe_document import RecipeDocument
 
 SCHEMA_REQUEST = 'blocks/1'       # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장)
 SCHEMA_RECIPE = 'cad_recipe/1.0'  # 변환기 ①이 돌려줘야 하는 레시피 형식 이름 (E-44 — 레시피 안쪽 전체 검증은 W110 계약)
@@ -28,7 +29,7 @@ class DesignChecker:
     """
 
     def __init__(self, cfg, blocks_to_recipe=None):
-        """cfg 의 값을 mm 로 바꿔 둔다. blocks_to_recipe(blocks/1 dict) → 레시피 dict 는 변환기 ①(한세교 W110) — 없으면 recipe 를 안 낸다."""
+        """cfg 를 mm 로 바꾼다. 변환기 ①은 옛 recipe dict 또는 {structure, recipe} 를 반환한다. 미연결이면 레시피를 안 낸다."""
         try:
             self.block_mm = [v * 1000.0 for v in cfg['block_size_m']]
             self.extent = ori_extents(self.block_mm)
@@ -68,13 +69,21 @@ class DesignChecker:
         result = self._result(True, margin, [])
         if self.blocks_to_recipe is not None:
             try:
-                recipe = self.blocks_to_recipe(request)
+                converted = self.blocks_to_recipe(request)
+                if isinstance(converted, dict) and 'recipe' in converted:
+                    document = RecipeDocument(converted['recipe'], converted.get('structure'))
+                    if document.structure is None:
+                        raise ValueError('두 파일 변환 결과에 structure 가 없다')
+                    result.update(structure=document.structure, recipe=document.recipe)
+                else:
+                    if not isinstance(converted, dict) or converted.get('schema') != SCHEMA_RECIPE:
+                        raise ValueError(f'변환기 ① 결과가 {SCHEMA_RECIPE} 객체가 아니다')
+                    if 'model_id' in converted and 'model' not in converted:
+                        raise ValueError('새 recipe 에는 structure 가 필요하다')
+                    # 출력 전환 전의 한 파일 계약도 유지한다. 새 두 파일은 위에서 참조 관계까지 검증한다.
+                    result['recipe'] = converted
             except Exception as e:   # 변환기는 다른 파트 코드라 어떤 예외든 ERROR 로 알린다
                 return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
-            if not isinstance(recipe, dict) or recipe.get('schema') != SCHEMA_RECIPE:
-                return self._result(False, margin, [{'block': None, 'reason': 'ERROR',
-                                                     'detail': f'변환기 ① 결과가 {SCHEMA_RECIPE} 객체가 아니다'}])
-            result['recipe'] = recipe
         return result
 
     def handle_json(self, request_json):
