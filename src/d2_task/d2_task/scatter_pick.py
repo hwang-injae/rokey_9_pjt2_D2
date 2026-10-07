@@ -58,7 +58,8 @@ def contact_phase(step, reason):
     """PickPlace 피드백의 마지막 step 과 실패 이유 → 접촉 전후(박진용 확인, 10/7).
 
     approach 안에는 '블록 위에서 그리퍼 열기 → 블록 옆으로 수직 하강'이 들어 있어서 step 만으로 접촉 전이라고 확정하지 않는다:
-    approach + PLAN_FAILED = 움직이기 전에 거른 것이라 접촉 없음(PRE_CONTACT) · approach + 그 밖의 실패 = 접촉 여부 모름(CONTACT_UNKNOWN) ·
+    approach + PLAN_FAILED = 접촉 전 실패로 확인된 조합(PRE_CONTACT — 전체 동작에서 안 움직였다는 뜻이 아니다) ·
+    approach + 그 밖의 실패 = 접촉 여부 모름(CONTACT_UNKNOWN) ·
     grasp 이후(grasp · lift · move · place · retreat) = 접촉 후(POST_CONTACT). 모르는 step · 없으면 CONTACT_UNKNOWN.
     """
     if step == 'approach':
@@ -71,7 +72,8 @@ def contact_phase(step, reason):
 def grasped_now(state, result_time, now, max_age_s):
     """gripper/state 로 '지금 쥐고 있나'. 믿을 수 없으면 None(모름 — 복구 절차로 간다).
 
-    state = 마지막 gripper_state/1 dict(stamp = 로봇 PC 시계 초 · grasped). 믿는 조건(박진용 확인): 값이 PickPlace 결과를 받은 뒤 시각
+    state = 마지막 gripper_state/1 dict(stamp = 로봇 PC 시계 초 · grasped). stamp · result_time · now 는 **같은 시계(time.time())** 로 잰 값이어야
+    한다 — 시간 제한용 단조 시계(time.monotonic)와 섞지 않는다. 믿는 조건(박진용 확인): 값이 PickPlace 결과를 받은 뒤 시각
     (stamp ≥ result_time)이고 now − stamp ≤ max_age_s(1초마다 + 바뀔 때 보내므로 3초). max_age_s 는 부르는 쪽이 명시로 준다(여기서 정하지 않는다).
     """
     try:
@@ -85,6 +87,44 @@ def grasped_now(state, result_time, now, max_age_s):
     if stamp < result_time or now - stamp > max_age_s or stamp > now:
         return None
     return grasped
+
+
+class StepTracker:
+    """집기 요청마다 PickPlace 피드백의 마지막 step 을 따로 기억한다(ROS 없음).
+
+    begin(request_id) 로 새 요청을 시작하면 이전 요청의 step 은 지워지고, 이전 요청의 늦은 피드백(request_id 가 다름)은 버린다.
+    request_id 는 부르는 쪽이 요청마다 새로 만드는 번호(예: 증가하는 정수)다. 모르는 step 도 기록하지 않는다.
+    """
+
+    def __init__(self):
+        """요청 없음으로 시작한다."""
+        self._lock = threading.Lock()
+        self._current = None
+        self._step = None
+
+    def begin(self, request_id):
+        """새 요청을 시작한다. 마지막 step 을 비운다."""
+        with self._lock:
+            self._current, self._step = request_id, None
+
+    def on_feedback(self, request_id, step):
+        """피드백을 받았다. 지금 요청의 것이고 알려진 step 일 때만 기록한다. 반환: 기록했으면 True."""
+        with self._lock:
+            if request_id != self._current or request_id is None or step not in STEPS:
+                return False
+            self._step = step
+            return True
+
+    def last_step(self, request_id):
+        """그 요청의 마지막 step. 지금 요청이 아니거나 피드백이 없었으면 None."""
+        with self._lock:
+            return self._step if request_id == self._current and request_id is not None else None
+
+    def end(self, request_id):
+        """요청이 끝났다(결과 처리 뒤). 더 이상 그 요청의 피드백을 받지 않는다."""
+        with self._lock:
+            if request_id == self._current:
+                self._current = self._step = None
 
 
 def block_pose(cfg, up, yaw_deg, x_m, y_m, top_z_m):
