@@ -1,0 +1,8 @@
+# JSON 덩어리를 주고받는 요청-결과 하나로 (IRD 1장 원칙 2 — 칸마다 srv를 만들지 않는다, W121 10/7)
+# 쓰는 곳: /d2/task/check_design · /d2/hmi/get_design · /d2/hmi/save_build · /d2/vision/scan_capture · scan_infer · find_blocks
+# JSON 칸은 IRD 4.2 · 6장. 다리(d2_bridge)는 MQTT에서 request_json 의 객체 자체에 req_id 를 더해 보낸다(IRD 10장)
+string request_json               # 요청 JSON 글자 (예: {"design_id": "001_CHAIR_BENCH"})
+---
+bool success                      # 서비스가 요청을 처리했나. 검사 불합격(ok:false)처럼 '답은 나왔는데 결과가 나쁨'은 true + response_json 안 ok
+string reason                     # IRD 7장 실패 코드 (success false 일 때)
+string response_json              # 응답 JSON 글자. 맨 앞 "schema": "<이름>/1" (blocks/1 · check_result/1 · design/1 …)

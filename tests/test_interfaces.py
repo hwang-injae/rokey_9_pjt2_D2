@@ -85,9 +85,10 @@ def test_stop_request_fields():
 
 
 def test_move_to_fields():
-    """MoveTo.srv — 요청 target (observe | home)."""
+    """MoveTo.srv — 요청 target (observe | home | 촬영 · 공급 관측 자세) · speed_ratio (W121, 0 = 평소 속도)."""
     req, _ = (fields(s) for s in sections(IFACE / 'srv' / 'MoveTo.srv'))
     assert 'target' in req
+    assert req.get('speed_ratio') == 'float64'
 
 
 def test_check_progress_fields():
@@ -108,15 +109,13 @@ def test_pick_place_action_fields():
     goal, _, feedback = (fields(s) for s in sections(IFACE / 'action' / 'PickPlace.action'))
     assert {'block_id', 'supply_slot', 'pick_pose', 'place_pose', 'grasp'} <= set(goal)
     assert goal['pick_pose'] == goal['place_pose'] == 'geometry_msgs/Pose'
+    assert goal.get('open_width_m') == 'float64'          # W121, 0 = robot.yaml grasp_open_pick_m
     assert 'step' in feedback
 
 
-def test_json_query_fields_if_present():
-    """JsonQuery.srv(W121, 있을 때만) — 요청 request_json, 응답 success·reason·response_json. 없으면 건너뛴다."""
-    path = IFACE / 'srv' / 'JsonQuery.srv'
-    if not path.exists():
-        pytest.skip('JsonQuery.srv 가 아직 없다 (W121)')
-    req, res = (fields(s) for s in sections(path))
+def test_json_query_fields():
+    """JsonQuery.srv(W121) — 요청 request_json, 응답 success·reason·response_json."""
+    req, res = (fields(s) for s in sections(IFACE / 'srv' / 'JsonQuery.srv'))
     assert 'request_json' in req
     assert {'success', 'reason', 'response_json'} <= set(res)
 

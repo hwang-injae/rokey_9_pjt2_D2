@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/SceneAttach.srv"
   "srv/StopRequest.srv"
   "srv/MoveTo.srv"
+  "srv/JsonQuery.srv"
   DEPENDENCIES geometry_msgs
 )
 
