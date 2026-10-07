@@ -6,7 +6,7 @@ from model.defined.BoundingBox import TOL
 from model.defined.CADPartInstance import CADPartInstance
 from model.defined.CADPartDefinition import CADPartDefinition
 
-MODEL_SCHEMA = 'assembly.model/1.0'
+MODEL_SCHEMA = 'cad_model/1.0'
 
 
 @dataclass

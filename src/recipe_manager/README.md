@@ -24,7 +24,7 @@ cad/*.dxf ──inspect──▶ recipes/<ID>.plan.json ──(사람이 순서�
 
 ## 쓰는 레시피 — 의자 2 · 책상 2 (10/6 한세교 결정)
 
-레시피 형식은 `assembly.recipe/1.0`(이 도구의 출력, `src/d2_motion` `run_recipe`가 읽음)이다. 10/4 결정 D-16의 옛 형식 `m0609.jenga.cad_recipe/1.0`은 쓰지 않는다.
+레시피 형식은 `assembly.recipe/1.0`(이 도구의 출력, `src/d2_motion` `run_recipe`가 읽음)이다 — `assembly`(조립)는 너무 넓은 말이라 `cad_recipe/1.0`으로 바꾼다(10/7 한세교, 변환기 ②와 W121에서 시점을 정해 같이 바꿈). 레시피 안 모델 · 계획 형식은 10/7에 `cad_model/1.0` · `cad_plan/1.0`으로 바꿨다. 10/4 결정 D-16의 옛 형식 `m0609.jenga.cad_recipe/1.0`(`blocks[]` 구조)은 쓰지 않는다.
 
 | 가구 | 모델 ID (파일 이름) | CAD (`design_id`) | 블록 | 층 | 크기 (mm) | 파지 방법 | 상태 |
 |---|---|---|---|---|---|---|---|
@@ -62,5 +62,5 @@ python3 src/recipe_manager/CAD_to_Recipe/main.py build src/recipe_manager/cad/00
 
 ## W104 합의 뒤 남은 일 (W105 · W106)
 
-- 팀 형식으로 내보내기(W105): `block_id` = `001_CHAIR_BENCH_B001`…(레시피 안은 아직 DXF 이름 — `run_recipe`는 모델 ID + 순서로 만들어 씀), `design_id` = `001_chair_bench`, `grasp`·`supports`, 블록 중심 x·y + `bottom_z_mm` + `size_mm`(CAD 명목값). yaw는 `size_mm`로 계산(긴 변이 CAD x면 0°).
+- 팀 형식으로 내보내기(W105): `block_id` = `<모델ID>_B<sequence 3자리>`(`001_CHAIR_BENCH_B001`…) — 10/7부터 레시피 `steps[]`에 `block_id`·`support_block_ids`로 적는다. `instance_id`(DXF 핸들)는 CAD를 다시 저장하면 바뀌어 CAD 추적용으로만 남긴다. 남은 것: `design_id` = `001_chair_bench`, `grasp`·`supports`, 블록 중심 x·y + `bottom_z_mm` + `size_mm`(CAD 명목값). yaw는 `size_mm`로 계산(긴 변이 CAD x면 0°).
 - task 노드가 레시피를 읽는 경로(ROS 패키지 경로로 읽을 곳) — W106에서 정한다.
