@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-07
+- 로봇 동작(22시, 한세교): **E-52 레시피 교체 W139 · 변환기 ① W110 · 004 책상 W074** — recipe_manager 출력 = `<ID>_structure.json`(`cad_structure/1.0`) + `_recipe.json`(`cad_recipe/1.0`, `structure_sha256`) + `_placements.csv`, 계획 파일 · `inspect` 없앰(순서 · 단계 · 잡기 = DXF 속성), CAD 4종 블록 이름 = 역할 이름(`LEG_001_01` …, 핸들 · 좌표 그대로). **잡기 = 짧은 쪽 우선**(긴 쪽에서 놓기 오차가 컸다) → CAD GRASP 12개 LONG → SHORT(위치 · 순서 같음, **W118 실기 재확인**). 변환기 ① `BlocksToRecipe`(blocks/1 → 두 파일, `BLOCK_001_<번호>`) — 4종 블록 JSON 레시피 = CAD 레시피(V-45). task 연결 · 실행 중 import 경로 남음.
 - 공통(21시, PM): **E-56(PL)** — ① 다리 노드 `d2_bridge`(W127) 담당 = 황인재 ② AC-1은 '부분' → 10/10 W113 때 벤치 1번을 화면 출발 + 블록마다 손목 확인으로 돌려 마무리 ③ 배치 확인(V-26) 시험 = 10/8 오후 W118 때 같이(비전 1명) ④ FR-M08 '놓기 직전 옆 블록 재서 2 mm 넘으면 멈춤' 뺌 ⑤ 스캔 설계는 사람이 비교 화면에서 [저장]을 누를 때만 저장(검사 → 저장은 그 뒤) ⑥ W109 · W117 · W119 담당 한석형, W090 보류. 결정 기록 §21 · 01 · IRD · SDD · 04 · 05 · 설명 · README · AGENTS · 프롬프트 · 일정표 · 기술 스택 그림.
 - 비전 · HMI(21시, PM): **E-55(PL, 한석형 · 민범진 질문)** — ① 저장한 설계는 바뀌지 않음(고치면 새 버전), 기본 설계 4개만 레시피로 다시 등록될 수 있어 `get_design` 캐시는 한 run 안에서만 ② `robot.yaml` `supply_mode`: `slots` 또는 `scatter`(기본 `slots`, W132부터 `scatter` — 키는 한석형 PR) ③ `find_blocks` `clear` · `gap_mm` 키 = 블록의 수평인 두 축(옆세움 · 세움은 `THICKNESS` 포함 — 코드는 민범진 W086). 결정 기록 · IRD 4.2 · 6 · 9 · 12장 · 01 · SDD · 프롬프트.
 - 로봇 동작 · 비전(20시, PM): **촬영 · 공급 관측 자세 = 정함(PL)** — `observe_front` · `observe_side` · `observe_supply`는 W134 교시값(robot.yaml) 그대로, 스캔 촬영은 3곳(`scan.poses`). IRD 머리표 · 9장 · 12장 · 01 · README의 남은 '안'에서 뺌(남은 '안' = 다리 담당 · 세우기 표현).

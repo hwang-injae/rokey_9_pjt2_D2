@@ -1,87 +1,84 @@
 # recipe_manager — CAD 설계에서 조립 레시피까지
 
-젠가 가구의 CAD 설계를 **조립 레시피**(어떤 블록을, 어떤 순서로, 어떻게 잡아서 놓는가)로 바꾼다. ROS 노드가 아니라 **미리 돌리는 도구**다. 담당: 한세교(CAD).
+젠가 가구의 CAD 설계를 **레시피**(무엇을 어디에 + 어떤 순서로 어떻게 잡아 놓는가)로 바꾼다. ROS 노드가 아니라 **미리 돌리는 도구**다. 담당: 한세교(CAD).
 
 - 같은 폴더의 `COLCON_IGNORE` 때문에 `colcon build`는 이 폴더를 건너뛴다(ROS 패키지가 아님).
 - 레시피를 로봇 목표(TCP)로 바꾸는 일은 집기·놓기 노드(`src/d2_robot/d2_motion`)가 한다. 작업 폴더의 `Recipe_to_Robot`(두산 직접 실행)은 이 저장소에 넣지 않았다 — W104 합의(pose = 블록 중심)로 역할이 집기·놓기에 있고, 로봇을 움직이는 코드는 팀 정지 규칙(서기 궤적·`SignalHandlerOptions.NO`)을 따라야 하기 때문.
+- 형식은 **E-52**(작명 규칙 v2, `docs/작명규칙_설계_레시피_블록_v2_*.md`) · IRD 3장 `cad_structure/1.0` · `cad_recipe/1.0`을 따른다(10/7 W139).
 
 ```
-cads/<id>.dxf ──inspect──▶ cads/<ID>_plan.json ──(사람이 순서·단계·파지 방법 확인)──▶ build
-                                                                                    │
-           recipes/<ID>_recipe.json + _placements.csv ◀───────────────────────────────┘
+cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
+      └── build(검증) ──▶ recipes/<ID>_structure.json  무엇을 어디에 (블록 이름 · 부품 규격 · 중심 · 방향 · CAD 핸들)
+                          recipes/<ID>_recipe.json     어떻게 (순서 · 단계 · 잡기 · 받침, structure_sha256)
+                          recipes/<ID>_placements.csv  사람이 보는 배치표
                      │
-                     └──▶ 작업 판단(d2_task)이 읽음 → PickPlace(pose = 블록 중심) → 집기·놓기(d2_motion)
+                     └──▶ 작업 판단(d2_task) · 손목 블록 인식(d2_vision) · 집기·놓기 · 장면(d2_motion)이 읽음
 ```
 
 ## 폴더
 
 | 폴더·파일 | 내용 |
 |---|---|
-| `cads/` | **입력.** 설계 원본(DXF = 도구가 읽는 조립 정의, STEP = 검사기용 치수) + `<ID>_plan.json`(**사람이 쓴 순서·단계·파지 방법** — CAD와 함께 레시피의 원본) |
-| `recipes/` | **결과.** 모형마다 `<ID>_recipe.json`(로봇·task·비전이 읽음) + `<ID>_placements.csv`(사람이 보는 배치표) 2개만 |
+| `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(검사기용 치수, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
+| `recipes/` | **결과.** 모형마다 `<ID>_structure.json` · `<ID>_recipe.json` · `<ID>_placements.csv` + `<ID>_blocks.json`(W117 변환기 ②가 레시피에서 만든 blocks/1 — 아래 절). 손으로 고치지 않는다 — CAD를 고치고 `build` → `base_blocks`를 다시 |
 | `recipe_manager/` | 코드(아래 '코드 구조') |
-| `requirements.txt` | `ezdxf`, `numpy`(필수), `cadquery`(STEP 읽기·검사기) |
+| `requirements.txt` | `ezdxf`, `numpy`(필수), `cadquery`(STEP 검사기) |
 
 ## 쓰는 레시피 — 의자 2 · 책상 2 (10/6 한세교 결정, 004는 10/7 추가)
 
-레시피 형식은 `assembly.recipe/1.0`(이 도구의 출력, `src/d2_robot/d2_motion` `run_recipe`가 읽음)이다 — `assembly`(조립)는 너무 넓은 말이라 `cad_recipe/1.0`으로 바꾼다(10/7 한세교, 변환기 ②와 W121에서 시점을 정해 같이 바꿈). 레시피 안 모델 · 계획 형식은 10/7에 `cad_model/1.0` · `cad_plan/1.0`으로 바꿨다. 10/4 결정 D-16의 옛 형식 `m0609.jenga.cad_recipe/1.0`(`blocks[]` 구조)은 쓰지 않는다.
-
-| 가구 | 모델 ID (파일 이름) | CAD (`design_id`) | 블록 | 층 | 크기 (mm) | 파지 방법 | 상태 |
-|---|---|---|---|---|---|---|---|
-| 의자 | `001_CHAIR_BENCH` (옛 LV1) | `001_chair_bench` | 11 | 5 | 75 × 75 × 75 | FLAT_SHORT 8, FLAT_LONG 3 | 1차 (10/6 실기 11/11, 시제품 코드) |
-| 의자 | `002_CHAIR_BACK` (옛 LV2) | `002_chair_back` | 16 | 10 | 75 × 75 × 150 | FLAT_SHORT 8, FLAT_LONG 8 | 계획은 DXF 힌트 초안 — 순서·잡기 사람 확인 필요 |
-| 책상 | `003_DESK_STAND` (옛 LV4) | `003_desk_stand` | 9 | 3 | 75 × 75 × 105 | STAND_SHORT 4, FLAT_LONG 5 | 계획은 DXF 힌트 초안 — **세운 블록 공급 칸 필요** |
-| 책상 | `004_DESK_PEDESTAL` (A안 가운데 기둥, 工자) | `004_desk_pedestal` | 11 | 7 | 75 × 75 × 105 | FLAT_LONG 6, FLAT_SHORT 5 | 받은 DXF(`A안_가운데기둥_책상_11블록.dxf`)를 001~003과 같은 꼴로 정리해 `cads/004_desk_pedestal.dxf`(10/7 — 원점 십자선 · 번호 글자 층 뺌, 블록마다 `004_DESK_PEDESTAL_B###` + SEQ · STAGE · GRASP 속성, 핸들 그대로). 순서 · 잡기는 받은 옛 레시피(`desk_a_pedestal.recipe.json`)와 같음. STEP은 이 DXF에서 Open CASCADE 7.9로 변환(10/7 한세교) 뒤 제품 이름을 `004_desk_pedestal` · `004_DESK_PEDESTAL_B###`로 맞춤. 검사 묶음 통과(최소 여유 12.5 mm), 실기 전 |
+| 가구 | 모델 ID (파일 이름) | CAD (`design_id`) | 블록 | 층 | 크기 (mm) | 파지 방법 | 블록 이름 | 상태 |
+|---|---|---|---|---|---|---|---|---|
+| 의자 | `001_CHAIR_BENCH` (옛 LV1) | `001_chair_bench` | 11 | 5 | 75 × 75 × 75 | FLAT_SHORT 9, FLAT_LONG 2 | `LEG_001_01~04` · `LEG_002_01~04` · `SEAT_001_01~03` | 1차 (10/6 실기 11/11) |
+| 의자 | `002_CHAIR_BACK` (옛 LV2) | `002_chair_back` | 16 | 10 | 75 × 75 × 150 | FLAT_SHORT 14, FLAT_LONG 2 | 벤치 + `BACK_001_01~05` | 10/6 실기 16/16 |
+| 책상 | `003_DESK_STAND` (옛 LV4) | `003_desk_stand` | 9 | 3 | 75 × 75 × 105 | STAND_SHORT 4, FLAT_SHORT 3, FLAT_LONG 2 | `LEG_001~004_01` · `BEAM_001~002_01` · `TOP_001_01~03` | 10/6 실기 9/9 — **세운 블록 공급 칸 필요** |
+| 책상 | `004_DESK_PEDESTAL` (가운데 기둥, 工자) | `004_desk_pedestal` | 11 | 7 | 75 × 75 × 105 | FLAT_SHORT 7, FLAT_LONG 4 | `BASE_001_01~03` · `COLUMN_001_01~05` · `TOP_001_01~03` | 받은 DXF(`A안_가운데기둥_책상_11블록.dxf`)를 001~003과 같은 꼴로 정리(10/7 — 원점 십자선 · 번호 글자 층 뺌, SEQ · STAGE · GRASP 속성, 핸들 그대로). STEP은 이 DXF에서 Open CASCADE 7.9로 변환. 검사 묶음 통과(최소 여유 12.5 mm), 실기 전 |
 
 - 크기는 레시피 CAD 치수(명목 블록 75 × 25 × 15 mm)로 계산한 바깥 크기다. 실측 블록은 74.5 × 24.8 × 14.75 mm다. 조립 작업 영역은 30 × 30 × 30 cm다.
 - 세운 블록(STAND_*)은 같은 자세로 놓인 공급 칸에서 집어야 한다(재파지 없음). `003_DESK_STAND`를 쓰기 전에 세운 블록 칸을 교시하고 집기·놓기를 실기 확인한다.
-- 이름 = `<번호 3자리>_<가구>_<모양>`(번호 = 의자 먼저, 책상 다음, 새로 만들면 004부터): 모델 ID(대문자)가 레시피 파일 이름(`<모델ID>_recipe.json` — 이름 안 구분은 `_`, 점은 확장자 앞 하나만, 10/7 한세교)과 `block_id` 앞글자(`001_CHAIR_BENCH_B001`)가 되고, CAD 파일 이름(소문자)이 `design_id`다(10/6 한세교, 옛 `LV1`·`lv1_bench`에서 바꿈).
+- 모델 ID = `<번호 3자리>_<가구>_<모양>`(의자 먼저, 책상 다음, 새로 만들면 다음 번호). CAD 파일 이름 = 모델 ID 소문자(= `design_id`), 레시피 파일 = `<모델ID>_structure.json` · `_recipe.json` · `_placements.csv`(이름 안 구분은 `_`, 점은 확장자 앞 하나만).
+- **블록 이름**(E-52) = `<역할>[_<옵션>]_<부품 3자리>_<블록 2자리>` — 역할 `LEG` · `SEAT` · `BACK` · `BEAM` · `TOP` · `BASE` · `COLUMN`. 부품 번호는 같은 역할 부품을 앞(−y)→뒤, 왼(−x)→오른 순, 블록 번호는 부품 안에서 아래층부터 · 앞→뒤 · 왼→오른(`build`가 위치와 대조해 틀리면 거부). 노드 사이 `block_id` = `<모델ID>_<블록 이름>`(예 `001_CHAIR_BENCH_LEG_001_01`) — 레시피 파일 안에는 블록 이름만 쓴다. 놓는 순서는 이름이 아니라 `sequence`.
+- **잡기는 짧은 쪽 우선**(10/7 한세교 — 긴 쪽 잡기에서 놓기 오차가 더 컸다): 놓는 순간 두 손가락이 들어가면 `*_SHORT`, 막히면 `*_LONG`(손가락 판단은 task 검사 묶음 `grasp_options`). CAD 4종의 GRASP 속성도 이 규칙으로 맞춰 12개 블록이 긴 쪽 → 짧은 쪽으로 바뀌었다(001 `SEAT_001_01`, 002 `SEAT_001_01` · `BACK_001_01~05`, 003 `BEAM_001_01` · `BEAM_002_01` · `TOP_001_01`, 004 `BASE_001_01` · `TOP_001_01`) — 10/6 실기는 긴 쪽이었으므로 **W118에서 실기 재확인**.
+- 10/7 W139: CAD 4종 안 블록 이름을 `<모델ID>_B<순서>` → 역할 이름으로 바꿈(DXF INSERT · 블록 정의 · XDATA, STEP 제품 이름 — 핸들 · 좌표 · 속성 그대로). 블록 중심 · 회전 · 순서 · 받침 높이는 4종 모두 바꾸기 전과 같다(잡기만 위 12개가 바뀜).
 - 책장(LV3)·아치(LV5)·세운 의자(LV6)는 쓰지 않아 뺐다. 원본은 한세교 작업 폴더에 있다.
-- 이 폴더의 DXF와 계획으로 `build`를 다시 돌리면 같은 레시피가 나온다(10/7 시험 `tests/test_recipe_manager.py`).
 
 ## 명령 (저장소 루트에서)
 
 ```bash
 pip install -r src/recipe_manager/requirements.txt
-
-# 1) CAD → 블록 표(화면) + 계획 양식 cads/<ID>_plan.json (DXF 속성 SEQ/STAGE/GRASP가 있으면 미리 채움)
-python3 src/recipe_manager/recipe_manager/main.py inspect src/recipe_manager/cads/001_chair_bench.dxf --model-id 001_CHAIR_BENCH
-# 2) cads/001_CHAIR_BENCH_plan.json의 sequence·stage·grasp 확인
-# 3) 검증 → recipes/ 에 레시피 + 배치표
-python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench.dxf src/recipe_manager/cads/001_CHAIR_BENCH_plan.json
+python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench.dxf
 ```
 
-같은 이름의 출력 파일이 있으면 `inspect`·`build`는 덮어쓰기 / 다른 이름으로 저장 / 취소를 묻는다. 입력을 받을 수 없는 환경에서는 기존 파일을 지키려고 취소한다.
+모델 ID는 CAD 파일 이름을 대문자로 바꿔 정한다. 순서 · 단계 · 잡기를 바꾸려면 **CAD 속성(SEQ · STAGE · GRASP)을 고치고** 다시 `build` 한다. 같은 이름의 출력 파일이 있으면 덮어쓰기 / 다른 이름으로 저장 / 취소를 묻는다(입력을 받을 수 없는 환경에서는 기존 파일을 지키려고 취소).
 
-| 계획 값 | 입력 내용 |
+| CAD 속성 | 입력 내용 |
 |---|---|
-| `sequence` | 놓는 순서 1..N, 빠짐·중복 없음 |
-| `stage` | 1부터 시작하고, 순서를 따라 같거나 1씩 증가 |
-| `grasp` | 파지 방법 6가지(아래 약속). 닫힘 축 `grasp_axis`는 `build`가 계산한다 |
-
-`build`는 CAD를 다시 읽는다. 계획의 CAD 해시(`source_cad_sha256`)가 다르면 거부하므로, CAD가 바뀌었으면 `inspect`부터 다시 한다.
+| `SEQ` | 놓는 순서 1..N, 빠짐·중복 없음 |
+| `STAGE` | 1부터 시작하고, 순서를 따라 같거나 1씩 증가 |
+| `GRASP` | 파지 방법 6가지(아래 약속). 옛 이름 `SIDE_25` · `END_75` · `THICKNESS_15` · 축 이름(`WIDTH` 등)도 받아 CAD 배치로 바꾼다. 닫힘 축 `grasp_axis`는 `build`가 계산한다 |
 
 ### build 검사 항목
 
+- 블록 이름이 규칙에 맞고 겹치지 않으며, 번호가 위치 순서와 맞다.
 - 블록이 축에 평행한 직육면체이고, 서로 겹치지 않고, 책상 아래에 있지 않다.
-- 모든 블록을 정확히 한 번 놓고, `sequence`·`stage` 규칙을 지킨다.
+- 모든 블록에 SEQ · STAGE · GRASP가 있고(빠진 블록은 한 번에 알린다) 순서 · 단계 규칙을 지킨다.
 - 파지 방법의 상태(눕힘·옆세움·세움)가 CAD 배치와 같다 → 닫힘 축은 늘 수평.
-- 책상 위가 아닌 블록은 먼저 놓인 블록 위에 놓인다(받침 = `support_block_ids`).
-- 실제 파지·충돌·안정성·로봇 도달은 보지 않는다(안정성은 task의 검사 묶음).
+- 책상 위가 아닌 블록은 먼저 놓인 블록 위에 놓인다(받침 = `supports`).
+- 실제 파지·충돌·안정성·로봇 도달은 보지 않는다(안정성 · 손가락 틈은 task의 검사 묶음).
 
-입력 조건: DXF는 `INSUNITS=4`(mm), 블록마다 3DFACE 6개로 된 블록의 INSERT(스케일 1, 배열 아님). STEP은 블록마다 평면 6면 솔리드. `instance_id`는 CAD 원본 ID(`DXF_INSERT_<handle>`, `STEP_SOLID_0001`).
+입력 조건: DXF는 `INSUNITS=4`(mm), 블록마다 3DFACE 6개로 된 블록의 INSERT(스케일 1, 배열 아님). STEP은 이름 · 속성이 없어 레시피 원본으로 쓰지 않는다.
 
 ## 코드 구조
 
-모델·계획·레시피는 처음부터 **저장할 JSON 모양의 dict**로 다룬다(객체 ↔ JSON 변환 층 없음, 10/7 간소화).
+구조 · 조립 방법은 처음부터 **저장할 JSON 모양의 dict**로 다룬다(객체 ↔ JSON 변환 층 없음).
 
 | 파일 | 클래스 | 하는 일 |
 |---|---|---|
-| `recipe_manager/cad_reader.py` | `CadReader` | DXF·STEP → 블록 목록 `[{'id', 'vertices', 'hints'}]` |
-| `recipe_manager/recipe_builder.py` | `RecipeBuilder` | 블록 → 모델(`make_model`) → 계획 양식(`make_plan_template`) → 검증된 레시피(`build_recipe`) · 배치표 줄. 파지 방법 6가지 · 겹침 · 받침 · `block_id` 계산. ROS·파일 없음 — 다른 코드가 `from recipe_manager.recipe_builder import RecipeBuilder`로 쓴다 |
-| `recipe_manager/main.py` | `RecipeManager` | 명령(`inspect`·`build`) · 파일 저장(덮어쓰기 질문) |
+| `recipe_manager/cad_reader.py` | `CadReader` | DXF → 블록 목록 `[{'block', 'handle', 'vertices', 'hints'}]` |
+| `recipe_manager/recipe_builder.py` | `RecipeBuilder` | 블록 → 구조(`make_structure` — 이름 · 번호 · 겹침 검사) → 조립 방법(`make_recipe` — 순서 · 잡기 · 받침) · 배치표 줄. ROS·파일 없음 — 다른 코드가 `from recipe_manager.recipe_builder import RecipeBuilder`로 쓴다 |
+| `recipe_manager/blocks_to_recipe.py` | `BlocksToRecipe` | **변환기 ①**(W110): 블록 JSON(blocks/1) → `{structure, recipe}` 두 파일. 이름 `BLOCK_001_<번호>`(역할을 모름, 위치 순서), 순서 = order, 단계 = 바닥 높이가 바뀔 때마다 +1, 잡기 = task `DesignChecker.grasp_options` 후보 중 짧은 쪽 우선. task 에서 `checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, block_mm).convert` 로 붙인다 |
+| `recipe_manager/main.py` | `RecipeManager` | 명령(`build`) · `structure_sha256`(저장할 구조 글자의 UTF-8 바이트) · 파일 저장(덮어쓰기 질문) |
 
-시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 3종을 DXF에서 다시 만들어 저장된 레시피와 같은지 + 겹침·뜬 블록·순서·잡기 상태 오류 거부.
+시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 4종을 DXF에서 다시 만들어 저장 파일과 같은지 + 이름 · 번호 · 겹침 · 뜬 블록 · 순서 · 잡기 상태 · 빠진 속성 거부 + **변환기 ①: 4종 블록 JSON → 레시피가 CAD 레시피와 같은 로봇 목표(V-45)**.
 
 ## 기본 설계 블록 JSON (`<모델ID>_blocks.json`, W117)
 
@@ -98,10 +95,11 @@ PYTHONPATH=src/d2_task python3 -m d2_task.base_blocks
 
 - 단위 mm, 설계 원점 = 바닥 외곽 가운데, X 오른쪽·Y 뒤쪽·Z 위, 책상면 Z = 0.
 - **잡기 이름은 파지 방법 6가지** `<FLAT|EDGE|STAND>_<LONG|SHORT>`(IRD 2장, S-25). 다리 벽 `FLAT_SHORT`, 좌판 `FLAT_LONG`. 상태(눕힘·옆세움·세움)는 CAD 배치와 같아야 하고, 공급 블록도 놓을 때와 같은 상태여야 한다(재파지 없음).
-- 순서와 잡기는 형상으로 추론하지 않는다. 사람이 계획 파일에 쓰거나 CAD 속성 힌트를 초안으로 가져온다.
+- CAD 레시피의 순서와 잡기는 사람이 CAD 속성에 적는다(잡기는 짧은 쪽 우선 규칙대로). 변환기 ①은 같은 규칙으로 자동으로 정한다.
 - 레시피에는 로봇·현장 값(TCP, 조립 원점, 그리퍼 명령값)을 넣지 않는다. 조립 원점은 `src/d2_robot/d2_bringup/config/robot.yaml`의 `assembly_origin` 하나만 쓴다.
+- CAD 핸들(`cad.handle`) · `source_cad.sha256`은 CAD 대응 검증용이다 — 사람 · 노드 사이에서는 블록 이름만 쓴다.
 
-## W104 합의 뒤 남은 일 (W105 · W106)
+## 남은 일
 
-- 팀 형식으로 내보내기(W105): `block_id` = `<모델ID>_B<sequence 3자리>`(`001_CHAIR_BENCH_B001`…) — 10/7부터 레시피 `steps[]`에 `block_id`·`support_block_ids`로 적는다. `instance_id`(DXF 핸들)는 CAD를 다시 저장하면 바뀌어 CAD 추적용으로만 남긴다. 남은 것: `design_id` = `001_chair_bench`, `grasp`·`supports`, 블록 중심 x·y + `bottom_z_mm` + `size_mm`(CAD 명목값). yaw는 `size_mm`로 계산(긴 변이 CAD x면 0°).
-- task 노드가 레시피를 읽는 경로(ROS 패키지 경로로 읽을 곳) — W106에서 정한다.
+- 변환기 ①을 task 노드에 붙이기(한석형 — `task_node.py`의 `DesignChecker(cfg)` 다음 한 줄). 실행 중 import 경로: 이 폴더는 `COLCON_IGNORE`라 설치되지 않는다 — 로봇 PC에서 task 가 `recipe_manager`를 찾을 방법(패키지로 설치할지)을 정해야 한다(W110).
+- 옛 형식(`.recipe.json` · `assembly.recipe/1.0`) 읽기 빼기는 읽는 쪽 각 파트(W138 · W140 · W141).

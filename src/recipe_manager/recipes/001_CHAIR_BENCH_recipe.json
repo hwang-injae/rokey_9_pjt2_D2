@@ -1,482 +1,115 @@
 {
-  "schema": "assembly.recipe/1.0",
-  "recipe_id": "001_CHAIR_BENCH_ASSEMBLY",
-  "revision": "1",
-  "model": {
-    "schema": "cad_model/1.0",
-    "model_id": "001_CHAIR_BENCH",
-    "revision": "1",
-    "frame": {
-      "units": "mm",
-      "handedness": "right",
-      "z": "up",
-      "table_z_mm": 0
-    },
-    "source_cad": {
-      "filename": "001_chair_bench.dxf",
-      "sha256": "342a50a4228311877e05b2833b457587a6447a19d600be1654921ededd928c3e"
-    },
-    "parts": [
-      {
-        "part_id": "PART_001",
-        "size_mm": [
-          75.0,
-          25.0,
-          15.0
-        ]
-      }
-    ],
-    "instances": [
-      {
-        "instance_id": "DXF_INSERT_3E",
-        "part_id": "PART_001",
-        "center_mm": [
-          -25.0,
-          0.0,
-          7.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_4F",
-        "part_id": "PART_001",
-        "center_mm": [
-          25.0,
-          0.0,
-          7.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_61",
-        "part_id": "PART_001",
-        "center_mm": [
-          -25.0,
-          0.0,
-          22.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_72",
-        "part_id": "PART_001",
-        "center_mm": [
-          25.0,
-          0.0,
-          22.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_84",
-        "part_id": "PART_001",
-        "center_mm": [
-          -25.0,
-          0.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_95",
-        "part_id": "PART_001",
-        "center_mm": [
-          25.0,
-          0.0,
-          37.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_A7",
-        "part_id": "PART_001",
-        "center_mm": [
-          -25.0,
-          0.0,
-          52.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_B8",
-        "part_id": "PART_001",
-        "center_mm": [
-          25.0,
-          0.0,
-          52.5
-        ],
-        "R": [
-          [
-            0.0,
-            -1.0,
-            0.0
-          ],
-          [
-            1.0,
-            -0.0,
-            0.0
-          ],
-          [
-            0.0,
-            -0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_CA",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          -25.0,
-          67.5
-        ],
-        "R": [
-          [
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_DB",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          0.0,
-          67.5
-        ],
-        "R": [
-          [
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            1.0
-          ]
-        ]
-      },
-      {
-        "instance_id": "DXF_INSERT_EC",
-        "part_id": "PART_001",
-        "center_mm": [
-          0.0,
-          25.0,
-          67.5
-        ],
-        "R": [
-          [
-            1.0,
-            0.0,
-            0.0
-          ],
-          [
-            0.0,
-            1.0,
-            0.0
-          ],
-          [
-            0.0,
-            0.0,
-            1.0
-          ]
-        ]
-      }
-    ]
-  },
+  "schema": "cad_recipe/1.0",
+  "model_id": "001_CHAIR_BENCH",
+  "structure_sha256": "779b849adad0b4c8b2b5a0b494ae87690d3761e348e45d62835771d4bdd874ea",
   "steps": [
     {
-      "block_id": "001_CHAIR_BENCH_B001",
-      "step_id": "PLACE_DXF_INSERT_3E",
-      "instance_id": "DXF_INSERT_3E",
+      "block": "LEG_001_01",
       "sequence": 1,
       "stage": 1,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "001_CHAIR_BENCH_B002",
-      "step_id": "PLACE_DXF_INSERT_4F",
-      "instance_id": "DXF_INSERT_4F",
+      "block": "LEG_002_01",
       "sequence": 2,
       "stage": 1,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [],
-      "support_block_ids": []
+      "supports": []
     },
     {
-      "block_id": "001_CHAIR_BENCH_B003",
-      "step_id": "PLACE_DXF_INSERT_61",
-      "instance_id": "DXF_INSERT_61",
+      "block": "LEG_001_02",
       "sequence": 3,
       "stage": 2,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_3E"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B001"
+      "supports": [
+        "LEG_001_01"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B004",
-      "step_id": "PLACE_DXF_INSERT_72",
-      "instance_id": "DXF_INSERT_72",
+      "block": "LEG_002_02",
       "sequence": 4,
       "stage": 2,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_4F"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B002"
+      "supports": [
+        "LEG_002_01"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B005",
-      "step_id": "PLACE_DXF_INSERT_84",
-      "instance_id": "DXF_INSERT_84",
+      "block": "LEG_001_03",
       "sequence": 5,
       "stage": 3,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_61"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B003"
+      "supports": [
+        "LEG_001_02"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B006",
-      "step_id": "PLACE_DXF_INSERT_95",
-      "instance_id": "DXF_INSERT_95",
+      "block": "LEG_002_03",
       "sequence": 6,
       "stage": 3,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_72"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B004"
+      "supports": [
+        "LEG_002_02"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B007",
-      "step_id": "PLACE_DXF_INSERT_A7",
-      "instance_id": "DXF_INSERT_A7",
+      "block": "LEG_001_04",
       "sequence": 7,
       "stage": 4,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_84"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B005"
+      "supports": [
+        "LEG_001_03"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B008",
-      "step_id": "PLACE_DXF_INSERT_B8",
-      "instance_id": "DXF_INSERT_B8",
+      "block": "LEG_002_04",
       "sequence": 8,
       "stage": 4,
       "grasp": "FLAT_SHORT",
       "grasp_axis": "WIDTH",
-      "support_instance_ids": [
-        "DXF_INSERT_95"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B006"
+      "supports": [
+        "LEG_002_03"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B009",
-      "step_id": "PLACE_DXF_INSERT_CA",
-      "instance_id": "DXF_INSERT_CA",
+      "block": "SEAT_001_01",
       "sequence": 9,
       "stage": 5,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_A7",
-        "DXF_INSERT_B8"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B007",
-        "001_CHAIR_BENCH_B008"
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B010",
-      "step_id": "PLACE_DXF_INSERT_DB",
-      "instance_id": "DXF_INSERT_DB",
+      "block": "SEAT_001_02",
       "sequence": 10,
       "stage": 5,
       "grasp": "FLAT_LONG",
       "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_A7",
-        "DXF_INSERT_B8"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B007",
-        "001_CHAIR_BENCH_B008"
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
       ]
     },
     {
-      "block_id": "001_CHAIR_BENCH_B011",
-      "step_id": "PLACE_DXF_INSERT_EC",
-      "instance_id": "DXF_INSERT_EC",
+      "block": "SEAT_001_03",
       "sequence": 11,
       "stage": 5,
       "grasp": "FLAT_LONG",
       "grasp_axis": "LENGTH",
-      "support_instance_ids": [
-        "DXF_INSERT_A7",
-        "DXF_INSERT_B8"
-      ],
-      "support_block_ids": [
-        "001_CHAIR_BENCH_B007",
-        "001_CHAIR_BENCH_B008"
+      "supports": [
+        "LEG_001_04",
+        "LEG_002_04"
       ]
     }
   ]
