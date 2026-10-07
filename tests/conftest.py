@@ -12,12 +12,12 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]                        # 저장소 루트
-ROBOT_YAML = ROOT / 'src' / 'd2_bringup' / 'config' / 'robot.yaml'
+ROBOT_YAML = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 PR_CHECK_PY = ROOT / '.github' / 'scripts' / 'pr_check.py'
 SKIP_DIRS = {'build', 'install', 'log', 'node_modules', '.git'}   # git 이 없을 때 rglob 에서 빼는 폴더
 
 # d2_motion.motion_math 는 `import math` 뿐이라 ROS 없이 돈다 (d2_motion/__init__.py 는 비어 있다)
-_D2_MOTION = str(ROOT / 'src' / 'd2_motion')
+_D2_MOTION = str(ROOT / 'src' / 'd2_robot' / 'd2_motion')
 if _D2_MOTION not in sys.path:
     sys.path.insert(0, _D2_MOTION)
 
@@ -37,7 +37,7 @@ def pr_check_mod():
 
 @pytest.fixture(scope='session')
 def robot_cfg():
-    """src/d2_bringup/config/robot.yaml 을 dict 로 읽는다 — 시험의 숫자·좌표는 지어내지 않고 여기서 읽는다.
+    """src/d2_robot/d2_bringup/config/robot.yaml 을 dict 로 읽는다 — 시험의 숫자·좌표는 지어내지 않고 여기서 읽는다.
 
     입력: 없음. 출력: dict. 실패 때: 파일이 없거나 YAML 문법이 틀리면 예외로 실패.
     """

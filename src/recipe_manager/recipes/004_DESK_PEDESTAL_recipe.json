@@ -1,0 +1,477 @@
+{
+  "schema": "assembly.recipe/1.0",
+  "recipe_id": "004_DESK_PEDESTAL_ASSEMBLY",
+  "revision": "1",
+  "model": {
+    "schema": "cad_model/1.0",
+    "model_id": "004_DESK_PEDESTAL",
+    "revision": "1",
+    "frame": {
+      "units": "mm",
+      "handedness": "right",
+      "z": "up",
+      "table_z_mm": 0
+    },
+    "source_cad": {
+      "filename": "004_desk_pedestal.dxf",
+      "sha256": "45ce04e4f1b88aa13502124bc513b05f5e0e8d309ea4c86bfdb33e90784d62b2"
+    },
+    "parts": [
+      {
+        "part_id": "PART_001",
+        "size_mm": [
+          75.0,
+          25.0,
+          15.0
+        ]
+      }
+    ],
+    "instances": [
+      {
+        "instance_id": "DXF_INSERT_9E",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          -25.0,
+          7.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_A1",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          7.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_A4",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          25.0,
+          7.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_A7",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          22.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_AA",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          37.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_AD",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          52.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_B0",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          67.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_B3",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          82.5
+        ],
+        "R": [
+          [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          [
+            1.0,
+            -0.0,
+            0.0
+          ],
+          [
+            0.0,
+            -0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_B6",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          -25.0,
+          97.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_B9",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          0.0,
+          97.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "instance_id": "DXF_INSERT_BC",
+        "part_id": "PART_001",
+        "center_mm": [
+          0.0,
+          25.0,
+          97.5
+        ],
+        "R": [
+          [
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "block_id": "004_DESK_PEDESTAL_B001",
+      "step_id": "PLACE_DXF_INSERT_9E",
+      "instance_id": "DXF_INSERT_9E",
+      "sequence": 1,
+      "stage": 1,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [],
+      "support_block_ids": []
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B002",
+      "step_id": "PLACE_DXF_INSERT_A1",
+      "instance_id": "DXF_INSERT_A1",
+      "sequence": 2,
+      "stage": 1,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [],
+      "support_block_ids": []
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B003",
+      "step_id": "PLACE_DXF_INSERT_A4",
+      "instance_id": "DXF_INSERT_A4",
+      "sequence": 3,
+      "stage": 1,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [],
+      "support_block_ids": []
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B004",
+      "step_id": "PLACE_DXF_INSERT_A7",
+      "instance_id": "DXF_INSERT_A7",
+      "sequence": 4,
+      "stage": 2,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_9E",
+        "DXF_INSERT_A1",
+        "DXF_INSERT_A4"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B001",
+        "004_DESK_PEDESTAL_B002",
+        "004_DESK_PEDESTAL_B003"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B005",
+      "step_id": "PLACE_DXF_INSERT_AA",
+      "instance_id": "DXF_INSERT_AA",
+      "sequence": 5,
+      "stage": 3,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_A7"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B004"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B006",
+      "step_id": "PLACE_DXF_INSERT_AD",
+      "instance_id": "DXF_INSERT_AD",
+      "sequence": 6,
+      "stage": 4,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_AA"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B005"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B007",
+      "step_id": "PLACE_DXF_INSERT_B0",
+      "instance_id": "DXF_INSERT_B0",
+      "sequence": 7,
+      "stage": 5,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_AD"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B006"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B008",
+      "step_id": "PLACE_DXF_INSERT_B3",
+      "instance_id": "DXF_INSERT_B3",
+      "sequence": 8,
+      "stage": 6,
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
+      "support_instance_ids": [
+        "DXF_INSERT_B0"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B007"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B009",
+      "step_id": "PLACE_DXF_INSERT_B6",
+      "instance_id": "DXF_INSERT_B6",
+      "sequence": 9,
+      "stage": 7,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_B3"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B008"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B010",
+      "step_id": "PLACE_DXF_INSERT_B9",
+      "instance_id": "DXF_INSERT_B9",
+      "sequence": 10,
+      "stage": 7,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_B3"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B008"
+      ]
+    },
+    {
+      "block_id": "004_DESK_PEDESTAL_B011",
+      "step_id": "PLACE_DXF_INSERT_BC",
+      "instance_id": "DXF_INSERT_BC",
+      "sequence": 11,
+      "stage": 7,
+      "grasp": "FLAT_LONG",
+      "grasp_axis": "LENGTH",
+      "support_instance_ids": [
+        "DXF_INSERT_B3"
+      ],
+      "support_block_ids": [
+        "004_DESK_PEDESTAL_B008"
+      ]
+    }
+  ]
+}

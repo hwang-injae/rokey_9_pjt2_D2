@@ -30,7 +30,7 @@
 feat: MoveIt 실행기에 서기 정지 추가
 
 - 실행 중 '서라'를 받으면 현재 자리 0.3초 궤적을 보냄
-변경 파일: src/d2_motion/d2_motion/executor.py, src/d2_bringup/config/robot.yaml
+변경 파일: src/d2_robot/d2_motion/d2_motion/executor.py, src/d2_robot/d2_bringup/config/robot.yaml
 영향: 로봇 동작(실행기)
 ```
 | 접두어 | 쓸 때 |

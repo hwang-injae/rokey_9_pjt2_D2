@@ -6,12 +6,13 @@
 |---|---|
 | `test_pr_check_rules.py` | `.github/scripts/pr_check.py` 정규식 — 키 모양 · 문서 이름 · 비밀 파일 · 로봇 이동 코드 · 정지 설정 단어 |
 | `test_docs_rules.py` | `docs/` 문서 이름 규칙(팀 규칙 9) · 저장소 `.md` 의 상대 링크가 깨지지 않음(깨진 것은 모두 모아 보여 줌) |
-| `test_robot_yaml.py` | `src/d2_bringup/config/robot.yaml` 필수 키 · 형식 · 공급 칸 6개 · 잡기 폭 순서(닫기 < 폭 < 놓기 열림 ≤ 집기 열림) · 개인 경로 없음 |
+| `test_robot_yaml.py` | `src/d2_robot/d2_bringup/config/robot.yaml` 필수 키 · 형식 · 공급 칸 6개 · 잡기 폭 순서(닫기 < 폭 < 놓기 열림 ≤ 집기 열림) · 개인 경로 없음 |
 | `test_interfaces.py` | `d2_interfaces` 의 `.srv`/`.action` 구분선 수 · 칸 줄 형식 · 약속한 칸 이름(IRD 5장) · CMakeLists 등록 |
 | `test_motion_math.py` | `d2_motion.motion_math` — 회전 왕복 · TCP 자세 · 잡기 이름 · robot.yaml 공급 칸 자세와 잡기가 맞음 · RG2 손가락 끝 높이 · 집기·놓기 TCP · 레시피(실측 두께로 쌓기) |
+| `test_recipe_manager.py` | `src/recipe_manager` — 기본 설계 4종을 DXF에서 다시 만들면 저장된 계획 · 레시피와 같음 · `recipes/`엔 결과 2개만 · 겹침 · 책상 아래 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · CAD 해시 오류 거부 · 옛 잡기 이름(SIDE_25 · END_75) 변환 |
 | `test_no_secrets.py` | 텍스트 파일에 키 모양 없음 · `.env`/`.pem` 등 비밀 파일 없음 · `src/` 에 `/home/` 경로 없음 |
 
-`conftest.py` 가 저장소 루트(`ROOT`)·`robot.yaml`(`robot_cfg`)·`pr_check.py`(`pr_check_mod`)·저장소 파일 목록(`repo_files`)을 fixture 로 준다. `src/d2_motion` 을 `sys.path` 에 넣어 `d2_motion.motion_math` 를 ROS 없이 import 한다.
+`conftest.py` 가 저장소 루트(`ROOT`)·`robot.yaml`(`robot_cfg`)·`pr_check.py`(`pr_check_mod`)·저장소 파일 목록(`repo_files`)을 fixture 로 준다. `src/d2_robot/d2_motion` 을 `sys.path` 에 넣어 `d2_motion.motion_math` 를 ROS 없이 import 한다.
 
 ## 새 시험을 더할 때
 
