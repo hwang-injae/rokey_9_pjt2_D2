@@ -50,6 +50,43 @@ def failure_action(reason, phase=None, grasped=None, area_unchanged=None):
     return ERROR                                 # 모르는 이유는 조용히 재사용하지 않는다
 
 
+STEPS = ('approach', 'grasp', 'lift', 'move', 'place', 'retreat')     # PickPlace 피드백 step
+CONTACT_UNKNOWN, POST_CONTACT = 'CONTACT_UNKNOWN', 'POST_CONTACT'
+
+
+def contact_phase(step, reason):
+    """PickPlace 피드백의 마지막 step 과 실패 이유 → 접촉 전후(박진용 확인, 10/7).
+
+    approach 안에는 '블록 위에서 그리퍼 열기 → 블록 옆으로 수직 하강'이 들어 있어서 step 만으로 접촉 전이라고 확정하지 않는다:
+    approach + PLAN_FAILED = 움직이기 전에 거른 것이라 접촉 없음(PRE_CONTACT) · approach + 그 밖의 실패 = 접촉 여부 모름(CONTACT_UNKNOWN) ·
+    grasp 이후(grasp · lift · move · place · retreat) = 접촉 후(POST_CONTACT). 모르는 step · 없으면 CONTACT_UNKNOWN.
+    """
+    if step == 'approach':
+        return PRE_CONTACT if reason == 'PLAN_FAILED' else CONTACT_UNKNOWN
+    if step in STEPS:
+        return POST_CONTACT
+    return CONTACT_UNKNOWN
+
+
+def grasped_now(state, result_time, now, max_age_s):
+    """gripper/state 로 '지금 쥐고 있나'. 믿을 수 없으면 None(모름 — 복구 절차로 간다).
+
+    state = 마지막 gripper_state/1 dict(stamp = 로봇 PC 시계 초 · grasped). 믿는 조건(박진용 확인): 값이 PickPlace 결과를 받은 뒤 시각
+    (stamp ≥ result_time)이고 now − stamp ≤ max_age_s(1초마다 + 바뀔 때 보내므로 3초). max_age_s 는 부르는 쪽이 명시로 준다(여기서 정하지 않는다).
+    """
+    try:
+        stamp, grasped = state['stamp'], state['grasped']
+    except (KeyError, TypeError):
+        return None
+    ok = all(isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float('inf')
+             for v in (stamp, result_time, now, max_age_s))
+    if not ok or not isinstance(grasped, bool) or max_age_s <= 0:
+        return None
+    if stamp < result_time or now - stamp > max_age_s or stamp > now:
+        return None
+    return grasped
+
+
 def block_pose(cfg, up, yaw_deg, x_m, y_m, top_z_m):
     """관측한 블록의 중심 자세 (xyz m, 쿼터니언 xyzw). 공급 칸 자세 계산(slot_block_pose)과 같은 규약이다.
 

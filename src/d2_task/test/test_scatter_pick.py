@@ -9,7 +9,7 @@ import pytest
 
 from d2_motion.motion_math import column, quat_from_axes, slot_block_pose
 from d2_task.block_picker import BlockPicker
-from d2_task.scatter_pick import ScatterFlow, block_pose, failure_action
+from d2_task.scatter_pick import ScatterFlow, block_pose, contact_phase, failure_action, grasped_now
 from test_block_picker import CFG, MIN_GAP, blk
 
 TARGET = {'block_id': '001_CHAIR_BENCH_B004', 'grasp': 'FLAT_LONG',
@@ -311,3 +311,58 @@ def test_두께_잡는_축의_목표는_틈_정보가_없으면_요청을_만들
     f = flow()
     r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(blk(up='WIDTH', length=80, width=80)))
     assert r['status'] == 'NO_MATCH' and r['counts']['no_gap_info'] == 1 and 'request' not in r
+
+
+# ---------- 접촉 전후와 그리퍼 상태 (박진용 확인) ----------
+@pytest.mark.parametrize('step, reason, phase', [
+    ('approach', 'PLAN_FAILED', 'PRE_CONTACT'),
+    ('approach', 'STOPPED', 'CONTACT_UNKNOWN'), ('approach', 'CANCELED', 'CONTACT_UNKNOWN'), ('approach', 'TIMEOUT', 'CONTACT_UNKNOWN'),
+    ('approach', 'GRASP_FAILED', 'CONTACT_UNKNOWN'),
+    ('grasp', 'PLAN_FAILED', 'POST_CONTACT'), ('lift', 'PLAN_FAILED', 'POST_CONTACT'), ('move', 'PLAN_FAILED', 'POST_CONTACT'),
+    ('place', 'PLAN_FAILED', 'POST_CONTACT'), ('retreat', 'ERROR', 'POST_CONTACT'),
+    (None, 'PLAN_FAILED', 'CONTACT_UNKNOWN'), ('이상한', 'PLAN_FAILED', 'CONTACT_UNKNOWN')])
+def test_step_과_실패_이유로_접촉_전후를_정한다(step, reason, phase):
+    assert contact_phase(step, reason) == phase
+
+
+def test_approach의_PLAN_FAILED만_접촉_전으로_재계획():
+    f = flow()
+    first = run(f, TARGET, resp(blk(length=30)))['request']
+    assert f.on_failure('PLAN_FAILED', phase=contact_phase('approach', 'PLAN_FAILED'), grasped=False) == 'REPLAN_SAME'
+    assert f.reusable_request() == first
+    assert f.on_failure('PLAN_FAILED', phase=contact_phase('lift', 'PLAN_FAILED'), grasped=False) == 'RECOVER'
+    assert f.reusable_request() is None
+
+
+def test_approach의_그_밖_실패는_접촉을_모르므로_후보를_버린다():
+    f = flow()
+    run(f, TARGET, resp(blk(length=30)))
+    assert f.on_failure('GRASP_FAILED', phase=contact_phase('approach', 'GRASP_FAILED'), grasped=False) == 'REOBSERVE'
+    assert f.reusable_request() is None
+
+
+NOW = 1000.0
+
+
+@pytest.mark.parametrize('state, result_time, expect', [
+    ({'stamp': 999.0, 'grasped': False}, 998.0, False),          # 결과 뒤 시각 · 3초 이내
+    ({'stamp': 999.0, 'grasped': True}, 998.0, True),
+    ({'stamp': 997.0, 'grasped': False}, 996.0, False),          # 정확히 3초는 믿는다
+    ({'stamp': 996.9, 'grasped': False}, 996.0, None),           # 3초 넘음
+    ({'stamp': 997.5, 'grasped': False}, 998.0, None),           # 결과를 받기 전 값(과거 메시지)
+    ({'stamp': 1001.0, 'grasped': False}, 998.0, None),          # 미래 시각(시계 이상)
+    (None, 998.0, None), ({}, 998.0, None), ({'stamp': 999.0}, 998.0, None), ({'grasped': False}, 998.0, None),
+    ({'stamp': 'x', 'grasped': False}, 998.0, None), ({'stamp': float('nan'), 'grasped': False}, 998.0, None),
+    ({'stamp': 999.0, 'grasped': 'no'}, 998.0, None), ({'stamp': 999.0, 'grasped': None}, 998.0, None),
+    ({'stamp': True, 'grasped': False}, 998.0, None)])
+def test_그리퍼_상태는_결과_뒤_3초_이내_값만_믿는다(state, result_time, expect):
+    assert grasped_now(state, result_time, NOW, 3.0) is expect
+
+
+@pytest.mark.parametrize('age', [0, -1, None, float('nan'), 'x'])
+def test_믿는_시간이_이상하면_모름(age):
+    assert grasped_now({'stamp': 999.0, 'grasped': False}, 998.0, NOW, age) is None
+
+
+def test_모르면_접촉_전이어도_복구_절차():
+    assert failure_action('PLAN_FAILED', 'PRE_CONTACT', grasped_now({'stamp': 900.0, 'grasped': False}, 800.0, NOW, 3.0)) == 'RECOVER'
