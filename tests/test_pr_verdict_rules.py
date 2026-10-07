@@ -1,4 +1,4 @@
-"""pr_verdict.py 의 판정 규칙을 고정한다 — 체크 안 된 'PL 확인' 항목이 있으면 자동 승인하지 않는다(10/7 PL, PR #45).
+"""pr_verdict.py 의 판정 규칙을 고정한다 — 체크 안 된 'PL 확인' 항목이 있거나 IRD 내용을 바꿨으면 자동 승인하지 않는다(10/7 PL, PR #45).
 
 gh 를 부르지 않게 post · approver · pl_checks 를 바꿔 끼운다(네트워크 없음).
 """
@@ -49,6 +49,7 @@ def _verdict(mod, monkeypatch, results, waits):
     posted = []
     monkeypatch.setattr(v, 'approver', lambda: 'hwang-injae')
     monkeypatch.setattr(v, 'pl_checks', lambda: waits)
+    monkeypatch.setattr(v, 'ird_waits', lambda: [])
     monkeypatch.setattr(v, 'post', lambda kind, text: posted.append((kind, text)) or True)
     return v, posted
 
@@ -72,3 +73,39 @@ def test_blocked_still_requests_changes(mod, monkeypatch):
     v, posted = _verdict(mod, monkeypatch, ['막음'] + ['통과'] * 7, ['PL 확인 필요'])
     v.run()
     assert [k for k, _ in posted] == ['request-changes']
+
+
+IRD = 'docs/02_인터페이스_IRD_v3_100716.md'
+
+
+def test_ird_content_change_is_found(mod):
+    """IRD 내용(이름 · 칸)이 바뀌면 사람 확인 대상이다."""
+    patch = '@@ -52 +52 @@\n-| 블록 번호 `block_id` | `LV1_B001` |\n+| 블록 이름 `block_id` | `LEG_001_01` |'
+    assert mod.ird_changes([{'filename': IRD, 'status': 'modified', 'patch': patch}]) == [IRD]
+
+
+def test_ird_link_stamp_only_is_ignored(mod):
+    """다른 문서 이름이 바뀌어 IRD 안 링크의 월일시만 바뀐 것은 내용 변경이 아니다(docver touch)."""
+    patch = ('@@ -3 +3 @@\n-[SDD](03_설계_SDD_v3_100714.md) · [05](05_작업분류_파트별_v2_100714.md)\n'
+             '+[SDD](03_설계_SDD_v3_100716.md) · [05](05_작업분류_파트별_v2_100716.md)')
+    assert mod.ird_changes([{'filename': IRD, 'status': 'modified', 'patch': patch}]) == []
+
+
+def test_ird_rename_only_and_other_files_are_ignored(mod):
+    """IRD 파일 이름만 바뀐 것 · IRD가 아닌 파일은 대상이 아니다."""
+    files = [{'filename': IRD, 'status': 'renamed', 'previous_filename': 'docs/02_인터페이스_IRD_v3_100715.md'},
+             {'filename': 'docs/03_설계_SDD_v3_100716.md', 'status': 'modified', 'patch': '-a\n+b'}]
+    assert mod.ird_changes(files) == []
+
+
+def test_ird_without_patch_counts_as_change(mod):
+    """diff가 너무 커서 patch가 없으면 내용이 바뀐 것으로 본다."""
+    assert mod.ird_changes([{'filename': IRD, 'status': 'modified'}]) == [IRD]
+
+
+def test_ird_change_holds_approval(mod, monkeypatch):
+    """막음이 없고 본문 체크도 없어도 IRD를 바꿨으면 승인 대신 코멘트를 남긴다."""
+    v, posted = _verdict(mod, monkeypatch, ['통과'] * 8, [])
+    monkeypatch.setattr(v, 'ird_waits', lambda: ['IRD(이름 · 칸의 정본)를 바꿈'])
+    v.run()
+    assert [k for k, _ in posted] == ['comment'] and 'IRD' in posted[0][1]

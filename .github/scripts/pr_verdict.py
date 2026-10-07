@@ -5,6 +5,8 @@
 8개 항목이 다 오지 않았거나 검토가 돌지 못했으면 승인하지 않고 사람에게 넘긴다.
 막음이 없어도 PR 본문에 체크 안 된 'PL(황인재) 확인' 항목(`- [ ] … PL 확인 필요`)이 있으면 승인하지 않고 코멘트만 남긴다
 (10/7 PL — PR #45가 PL 확인 전에 자동 merge됨). PL이 확인한 뒤 직접 승인하면 auto-merge 된다.
+IRD(`docs/02_인터페이스_IRD_*.md`, 이름 · 칸의 정본) 내용을 바꾼 PR도 같다 — 본문과 상관없이 자동 승인하지 않는다(10/7 PL).
+다른 문서 이름이 바뀌어 IRD 안 링크의 월일시만 바뀐 것(docver touch) · 파일 이름만 바뀐 것은 내용 변경으로 보지 않는다.
 
 입력(환경 변수):
   REVIEW_RESULT  검토 job 결과 (success · failure · skipped · cancelled)
@@ -39,6 +41,34 @@ def find_pl_checks(body):
     return [m.group(1).strip()[:120] for m in PL_CHECK.finditer(body or '')]
 
 
+# IRD 파일과 문서 이름 안의 버전 · 월일시(_v3_100716) — 링크만 바뀐 줄을 내용 변경에서 빼려고
+IRD_FILE = re.compile(r'^docs/02_인터페이스_IRD_[^/]*\.md$')
+DOC_STAMP = re.compile(r'_v\d+(?:-\d+)?_\d{6}')
+
+
+def ird_changes(files):
+    """PR 파일 목록에서 내용이 바뀐 IRD 파일 이름을 고른다.
+    입력: GitHub pulls/{n}/files 항목들(dict — filename · status · patch). 출력: 사람 확인이 필요한 IRD 파일 이름 목록.
+    이름만 바뀌었거나(patch 없음 + renamed), 지운 줄과 더한 줄이 문서 이름의 월일시만 다르면 뺀다.
+    patch가 없으면(너무 큰 diff) 내용이 바뀐 것으로 본다."""
+    out = []
+    for f in files:
+        name = f.get('filename', '')
+        if not IRD_FILE.match(name):
+            continue
+        patch = f.get('patch')
+        if patch is None:
+            if f.get('status') != 'renamed':
+                out.append(name)
+            continue
+        lines = patch.split('\n')
+        minus = sorted(DOC_STAMP.sub('_v#', ln[1:]) for ln in lines if ln.startswith('-') and not ln.startswith('---'))
+        plus = sorted(DOC_STAMP.sub('_v#', ln[1:]) for ln in lines if ln.startswith('+') and not ln.startswith('+++'))
+        if minus != plus:
+            out.append(name)
+    return out
+
+
 APPROVERS = {'hwang-injae': '황인재 @hwang-injae', 'hansaekyo': '한세교 @hansaekyo'}
 
 
@@ -69,6 +99,20 @@ class Verdict:
             print(f'PR 본문을 못 읽음: {r.stderr.strip()}')
             return []
         return find_pl_checks(r.stdout)
+
+    def ird_waits(self):
+        """이 PR이 IRD 내용을 바꿨으면 'PL 확인' 이유 목록. 파일 목록을 못 읽으면 빈 목록(지금까지처럼 판정) — 실패는 로그에만."""
+        try:
+            r = subprocess.run(['gh', 'api', f'repos/{self.repo}/pulls/{self.pr}/files', '--paginate', '--jq', '.[] | @json'],
+                               capture_output=True, text=True)
+        except OSError as e:
+            print(f'PR 파일 목록을 못 읽음: {e}')
+            return []
+        if r.returncode != 0:
+            print(f'PR 파일 목록을 못 읽음: {r.stderr.strip()}')
+            return []
+        files = [json.loads(ln) for ln in r.stdout.splitlines() if ln.strip()]
+        return [f'IRD(이름 · 칸의 정본)를 바꿈 — `{n}` (10/7 PL: IRD를 바꾸는 PR은 사람 확인 뒤 merge)' for n in ird_changes(files)]
 
     def approver(self):
         r = subprocess.run(['gh', 'api', 'user', '--jq', '.login'], capture_output=True, text=True)
@@ -132,10 +176,10 @@ class Verdict:
             self.post('comment', text + f'\n\n올린 사람이 자동 승인 계정과 같아서 자동 판정을 남기지 못합니다. '
                                         f'다른 승인자({self.approvers})가 승인해 주세요.')
             return
-        waits = [] if blocked else self.pl_checks()
+        waits = [] if blocked else self.pl_checks() + self.ird_waits()
         if waits:
             head = text.replace('## Claude 검토 결과: 통과 ✅', '## Claude 검토 결과: 통과 ✅ — PL 확인 대기(자동 승인 안 함)', 1)
-            self.post('comment', head + '\n\n⏸ 본문에 체크 안 된 PL 확인 항목이 있어 **자동 승인하지 않았습니다**:\n'
+            self.post('comment', head + '\n\n⏸ PL 확인이 필요한 것이 있어 **자동 승인하지 않았습니다**(본문의 체크 안 된 PL 확인 항목 · IRD 변경):\n'
                       + '\n'.join(f'- {w}' for w in waits)
                       + '\n\nPL(황인재 @hwang-injae)이 확인한 뒤 직접 승인(Approve)하면 auto-merge 됩니다. (10/7 PL — PR #45)')
             return
