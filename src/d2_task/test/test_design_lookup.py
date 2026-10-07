@@ -44,41 +44,30 @@ def make():
     return m, io
 
 
-def test_정상_선택과_출발은_각각_조회한다():
+def test_선택_때_한_번_조회하고_출발은_받아_둔_설계를_쓴다():
+    """E-55 ①: [출발]은 [설계 선택] 때 받아 둔 설계로 — 다시 조회하지 않는다."""
     m, io = make()
     assert m.command('select_design', 'bench') == (True, '') and m.state == 'READY'
     assert io.lookups == ['bench']
+    planner = m.planner
     assert m.command('start') == (True, '') and m.state == 'CHECK'
-    assert io.lookups == ['bench', 'bench'] and m.run_id
+    assert io.lookups == ['bench'] and m.planner is planner and m.run_id             # 출발에 조회 없음
     drive(m, 'DONE')
 
 
-def test_출발_때_다시_조회한_설계로_바뀐다():
+def test_마지막으로_선택한_설계로_출발한다():
+    m, io = make()
+    assert m.command('select_design', 'A') == (True, '') and m.command('select_design', 'B') == (True, '')
+    assert m.command('start') == (True, '')
+    assert io.lookups == ['A', 'B'] and m.design_id == 'B' and m.state == 'CHECK'
+
+
+def test_출발은_조회가_망가져도_받아_둔_설계로_간다():
+    """선택 뒤 조회가 실패하는 상태가 되어도 출발은 조회하지 않으므로 영향이 없다(출발 시간 초과가 조회 시간에 안 걸림)."""
     m, io = make()
     m.command('select_design', 'bench')
-    first = m.planner
-    m.command('start')
-    assert m.planner is not first and m.state == 'CHECK'
-
-
-def test_출발_요청등록_직전에_선택된_설계와_레시피가_일치한다(monkeypatch):
-    """출발 대상을 먼저 읽고 잠금을 풀던 창에 B 선택을 넣는다. B 로 기록하면서 A 를 조회하면 안 된다."""
-    m, io = make()
-    assert m.command('select_design', 'A') == (True, '')
-    lookup = m._lookup_then
-
-    def select_before_registration(design_id, mode):
-        """다른 스레드의 B 선택이 요청 등록 직전에 끝난 순서를 만든다."""
-        if mode == 'start':
-            t, out = in_thread(lookup, 'B', 'select')
-            t.join(2)
-            assert not t.is_alive() and out == [(True, '')]
-        return lookup(design_id, mode)
-
-    monkeypatch.setattr(m, '_lookup_then', select_before_registration)
-    assert m.command('start') == (True, '')
-    assert io.lookups == ['A', 'B', 'B']
-    assert m.design_id == 'B' and m.state == 'CHECK'
+    io.lookup_script = [(False, 'TIMEOUT', None)] * 3
+    assert m.command('start') == (True, '') and m.state == 'CHECK' and io.lookups == ['bench']
 
 
 def test_음성으로_설계를_포함해_출발하면_조회_뒤_출발한다():
@@ -107,12 +96,11 @@ def test_잘못된_응답이면_거절하고_상태는_그대로(kind):
         assert io.states[-1]['message']
 
 
-def test_출발_때_잘못된_응답이면_출발하지_않고_READY_그대로():
+def test_음성_출발의_잘못된_응답이면_출발하지_않는다():
     m, io = make()
-    m.command('select_design', 'bench')
     io.lookup_script = [(True, '', design(design_id='다른설계'))]
-    assert m.command('start')[0] is False
-    assert m.state == 'READY' and m.run_id is None and m.logger.active is False
+    m.on_intent('start', 'bench')
+    assert m.state == 'IDLE' and m.run_id is None and m.logger.active is False
 
 
 @pytest.mark.parametrize('why', ['TIMEOUT', 'ERROR', ''])
@@ -120,9 +108,9 @@ def test_조회_실패나_시간_초과면_새_조립을_시작하지_않는다(
     m, io = make()
     io.lookup_script = [(False, why, None)]
     assert m.command('select_design', 'bench') == (False, why) and m.state == 'IDLE'
-    m.command('select_design', 'bench')
     io.lookup_script = [(False, why, None)]
-    assert m.command('start') == (False, why) and m.state == 'READY' and m.run_id is None
+    m.on_intent('start', 'bench')                                   # 설계를 포함한 음성 출발도 조회가 실패하면 시작하지 않는다
+    assert m.state == 'IDLE' and m.run_id is None
     assert 'CHECK' not in [s['state'] for s in io.states]
 
 
@@ -189,24 +177,22 @@ def test_이전_요청의_늦은_답은_버린다():
 
 def test_조회_중_상태가_바뀌면_답을_버린다():
     m, io = make()
-    m.command('select_design', 'bench')
     slow = Blocked((True, '', design()))
     io.lookup_script = [slow]
-    t, out = in_thread(m.command, 'start')                          # READY 에서 출발하려고 다시 조회하는 중
+    t, out = in_thread(m.command, 'start', 'bench')                 # IDLE 에서 설계를 포함한 출발 — 조회하는 중
     assert slow.entered.wait(5)
-    m.on_intent('cancel')                                           # 그 사이 사람이 취소 → IDLE
-    assert m.state == 'IDLE'
+    io.lookup_script = []
+    assert m.command('select_design', 'bench') == (True, '')        # 그 사이 다른 선택이 끝나 READY
     slow.gate.set()
     t.join(5)
-    assert out == [(False, 'BUSY')] and m.state == 'IDLE' and m.run_id is None
+    assert out == [(False, 'BUSY')] and m.state == 'READY' and m.run_id is None
 
 
 def test_조회_중_정지_신호가_오면_출발하지_않는다():
     m, io = make()
-    m.command('select_design', 'bench')
     slow = Blocked((True, '', design()))
     io.lookup_script = [slow]
-    t, out = in_thread(m.command, 'start')
+    t, out = in_thread(m.command, 'start', 'bench')
     assert slow.entered.wait(5)
     m.on_safety(SAFE_STOP)
     m.run_once()                                                    # STOPPED 로
@@ -279,3 +265,41 @@ def test_보관이_늦어_저장_성공한_run_id는_뒤늦은_보관_알림이_
     gate.set()                                                      # 이제서야 보관이 끝난다
     assert log.flush(5.0)
     assert run_id not in m._build_ready and m.pending_builds == {}
+
+
+# ---------- 명령 제한 시간(timeout.command_s) — 늦은 선택 · 출발은 실행하지 않는다 ----------
+def timed(clock):
+    io = LookupIO()
+    m = TaskManager(CFG, io, RunLogger(''), lambda: clock[0])
+    io.manager = m
+    m.on_safety(SAFE_OK)
+    m.on_gripper({'grasped': False})
+    return m, io
+
+
+def test_설정에_명령_제한이_있다():
+    assert CFG['timeout']['command_s'] == 4 and CFG['timeout']['command_s'] > CFG['timeout']['service_s']
+
+
+def test_조회가_command_s를_넘기면_선택하지_않고_TIMEOUT():
+    now = [100.0]
+    m, io = timed(now)
+    io.lookup_script = [lambda *_: (now.__setitem__(0, now[0] + CFG['timeout']['command_s'] + 0.1), (True, '', design()))[1]]
+    assert m.command('select_design', 'bench') == (False, 'TIMEOUT')
+    assert m.state == 'IDLE' and m.planner is None and io.states[-1]['message']
+
+
+def test_command_s_안에_끝나면_선택한다():
+    now = [100.0]
+    m, io = timed(now)
+    io.lookup_script = [lambda *_: (now.__setitem__(0, now[0] + CFG['timeout']['command_s']), (True, '', design()))[1]]   # 정확히 제한 시간
+    assert m.command('select_design', 'bench') == (True, '') and m.state == 'READY'
+
+
+def test_늦은_음성_출발도_실행하지_않는다():
+    now = [100.0]
+    m, io = timed(now)
+    io.lookup_script = [lambda *_: (now.__setitem__(0, now[0] + 10), (True, '', design()))[1]]
+    m.on_intent('start', 'bench')
+    assert m.state == 'IDLE' and m.run_id is None and m.logger.active is False
+    assert 'CHECK' not in [s['state'] for s in io.states]
