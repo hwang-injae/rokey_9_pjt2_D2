@@ -20,7 +20,7 @@ cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
 | 폴더·파일 | 내용 |
 |---|---|
 | `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(검사기용 치수, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
-| `recipes/` | **결과.** 모형마다 `<ID>_structure.json` · `<ID>_recipe.json` · `<ID>_placements.csv` 3개만. 손으로 고치지 않는다 — CAD를 고치고 `build`를 다시 |
+| `recipes/` | **결과.** 모형마다 `<ID>_structure.json` · `<ID>_recipe.json` · `<ID>_placements.csv` + `<ID>_blocks.json`(W117 변환기 ②가 레시피에서 만든 blocks/1 — 아래 절). 손으로 고치지 않는다 — CAD를 고치고 `build` → `base_blocks`를 다시 |
 | `recipe_manager/` | 코드(아래 '코드 구조') |
 | `requirements.txt` | `ezdxf`, `numpy`(필수), `cadquery`(STEP 검사기) |
 
@@ -79,6 +79,17 @@ python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/
 | `recipe_manager/main.py` | `RecipeManager` | 명령(`build`) · `structure_sha256`(저장할 구조 글자의 UTF-8 바이트) · 파일 저장(덮어쓰기 질문) |
 
 시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 4종을 DXF에서 다시 만들어 저장 파일과 같은지 + 이름 · 번호 · 겹침 · 뜬 블록 · 순서 · 잡기 상태 · 빠진 속성 거부 + **변환기 ①: 4종 블록 JSON → 레시피가 CAD 레시피와 같은 로봇 목표(V-45)**.
+
+## 기본 설계 블록 JSON (`<모델ID>_blocks.json`, W117)
+
+HMI 가 DB 기본 설계를 등록할 때(W111) 이 폴더 하나만 읽도록, 같은 설계의 `_structure` · `_recipe` · `_placements` 옆에 변환기 ②가 만든 `blocks/1` 파일을 둔다.
+**레시피가 바뀌면 다시 만든다**(저장소 맨 위에서 한 줄 — 변환 · `DesignChecker` 검사에 하나라도 실패하면 아무것도 쓰지 않는다):
+
+```bash
+PYTHONPATH=src/d2_task python3 -m d2_task.base_blocks
+```
+
+레시피를 고치고 이 파일을 안 고치면 `src/d2_task/test/test_base_blocks.py`가 실패한다.
 
 ## 지켜야 할 약속
 

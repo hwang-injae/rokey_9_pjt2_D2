@@ -38,7 +38,7 @@
 
 <p align="center">
   <img src="docs/images/시스템아키텍처_v6_100719.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
-  <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100719.md">시스템 아키텍처 설명</a></sub>
+  <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100721.md">시스템 아키텍처 설명</a></sub>
 </p>
 
 **PC 2대(10/6 18시 E-26~E-31).** **로봇 PC**에 ROS 2 노드 전부(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기 · **task** · **다리 `bridge`**)가 호스트로 돈다. **웹 PC**에는 ROS가 없다 — docker compose로 `mosquitto`(MQTT 브로커) · `db`(DB) · `web`(backend FastAPI — 설계 생성 · 저장소 + frontend 화면 정적 파일)을 띄우고, 음성은 호스트. 화면(frontend)은 사람의 브라우저에서 돌고 backend와 REST · WebSocket으로만 주고받는다(10/7 E-41). 두 PC는 **MQTT**로 잇는다(다리 노드가 ROS ↔ MQTT 변환).
@@ -50,7 +50,7 @@
 | 웹 PC — 호스트 | 음성(마이크 → Whisper API → MQTT) | 호스트 |
 
 
-ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, 요청-결과는 전용 메시지(`d2_interfaces` 7개 + JSON 공용 `JsonQuery`), 상태는 JSON 토픽이다. 웹 PC와는 MQTT 토픽 `d2/…`(요청은 `…/req` · `…/res`)로 다리가 잇는다. 새 인터페이스는 10/7 13시 W121에서 '임시 정함'으로 했다(남은 '안': 다리 담당 · 세우기 표현. 촬영 · 공급 관측 자세는 W134 교시값으로 정함 — 10/7 20시 PL).
+ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, 요청-결과는 전용 메시지(`d2_interfaces` 7개 + JSON 공용 `JsonQuery`), 상태는 JSON 토픽이다. 웹 PC와는 MQTT 토픽 `d2/…`(요청은 `…/req` · `…/res`)로 다리가 잇는다. 새 인터페이스는 10/7 13시 W121에서 '임시 정함'으로 했다(남은 '안': 세우기 표현. 다리 담당 = 황인재(E-56) · 촬영 · 공급 관측 자세 = W134 교시값 — 10/7 PL 정함).
 
 | 통신 | 종류 | 방향 | 내용 |
 |---|---|---|---|
@@ -67,11 +67,11 @@ ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, �
 | 서기 궤적 | 토픽 `/dsr_moveit_controller/joint_trajectory` | 정지 노드 → 두산 제어기 | 지금 관절값 0.3초 — 제어기에 직접 |
 | `/d2/gripper/command` · `/d2/gripper/state` | 서비스 · 토픽 | 집기 · 놓기 → 그리퍼 → 모두 | 폭 · 힘 → 잡힘 · 폭 |
 
-좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_robot/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v3_100720.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v3_100720.md).
+좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_robot/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v3_100721.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v3_100721.md).
 
 ### 동작 흐름
 
-**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v3_100719.md))
+**설계 생성 · 튜닝 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v3_100721.md))
 
 ```
 ① 요청        웹 글상자 "2인용 벤치 만들어 줘" [생성]  /  "hello rokey" → 음성 → 받아 적은 문장을 화면에서 확인 → [생성]
@@ -88,7 +88,7 @@ ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, �
 ```
 ① 사람이 완성한 구조물을 조립 작업영역에 두고 나감 → [스캔]
 ② 로봇이 관측 자세 2~3곳에서 깊이 촬영 → 점군 → 15·25·75 mm 격자에 맞춰 블록 자리·방향 → 가려진 블록은 받침 규칙으로 추정
-③ 검사 통과 → 저장(made_by scan) → 화면에 실물 사진 ↔ 추론 설계 비교
+③ 화면에 실물 사진 ↔ 추론 설계 비교 → 사람이 [저장] → 검사 통과면 저장(made_by scan, E-56)
 ④ 사람이 구조물을 치움 → [출발] → 같은 자리에 복제 조립
 ```
 
@@ -109,7 +109,7 @@ ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, �
 
 ## 결과
 
-**아직 1차 구현 중이라 최종 결과는 없다.** 주제 확정 때 쓴 10/3 사전 검증 값과 10/4 · 10/6 실기다. 근거는 [결과표](docs/04_결과_결과표_v2_100720.md).
+**아직 1차 구현 중이라 최종 결과는 없다.** 주제 확정 때 쓴 10/3 사전 검증 값과 10/4 · 10/6 실기다. 근거는 [결과표](docs/04_결과_결과표_v2_100721.md).
 
 | 항목 | 결과 | 판정 |
 |---|---|---|
@@ -170,7 +170,7 @@ cd rokey_9_pjt2_D2
 | [`src/`](src/README.md) | ROS 2 패키지(작성 중). `d2_interfaces`(전용 메시지 7개 + `JsonQuery`) · **`d2_robot/`**(로봇 패키지 4개 — `d2_bringup`(브링업 · `robot.yaml`) · `d2_motion`(집기 · 놓기 + 실행기 · 장면 관리) · `d2_gripper` · `d2_safety`(정지 노드), 10/7 PR #51) · `d2_vision`(손목 블록 인식 · 스캔 추론기) · `d2_task`(작업 관리자 · 작업 판단 · 검사 묶음 · 변환기 ②) · **`d2_bridge`(MQTT 다리, 예정)** · `recipe_manager`(레시피 도구 — CAD → `_structure.json` + `_recipe.json` · 변환기 ①) |
 | `web/`(예정, E-32) | 웹 PC 코드(ROS 아님) — `backend/`(FastAPI · paho-mqtt · WebSocket · AI 설계 생성 · 저장소 · 음성) · `frontend/`(Next.js 정적 + three.js — 브라우저에서 실행) · `compose.yaml`(`mosquitto` · `db` · `web`) · `mosquitto/` — 황인재 |
 | [`tests/`](tests/) | ROS 없는 자동 시험(pytest) — `motion_math` · `robot.yaml` 형식 · srv/action 형식 · 문서 이름 · 링크 · 키 모양 · 개인 경로. CI가 PR마다 돈다. 규칙은 [tests/README.md](tests/README.md) |
-| `src/d2_robot/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v3_100720.md) |
+| `src/d2_robot/d2_bringup/config/robot.yaml` | 설정 파일 하나 — 작업면 · 조립 원점 · 공급 칸 · 관측 · 촬영 자세 · TCP · 그리퍼 값 · 검사 · 스캔 격자. 키는 [IRD 9장](docs/02_인터페이스_IRD_v3_100721.md) |
 | `docs/` | 문서 지도는 [docs/README.md](docs/README.md) — 요구사항 · 인터페이스 · 설계 · 결과표 · 작업 분류 · 팀 규칙 · 결정 기록 · 시험 기록 · 트러블슈팅 · 환경 · 조사 · 그림 · 에이전트 프롬프트 |
 | `docs/research/ref_1003/작업4/` | 10/3 검증 코드 — **`prompt_v09*` · `run_v09.py`(AI 설계 생성 · 재생성) · `jenga_check.py`(안정성 검사기 · 템플릿 생성기 · 그림)** → `web/backend` · `d2_task`의 바탕 |
 | `tools/docver.py` | 문서 파일 이름(`이름_v버전_MMDDHH`)과 링크를 한 번에 바꾸는 도구 |

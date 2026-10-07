@@ -168,7 +168,7 @@ def test_벤치_11개_정상_흐름():
     drive(m, 'DONE')
     assert io.world == set(IDS)
     assert picks(io) == [(b, '2') for b in IDS[:8]] + [(b, '1') for b in IDS[8:]]      # 벽 FLAT_SHORT 칸 2, 좌판 FLAT_LONG 칸 1
-    assert io.calls[:7] == [('load', 'bench'), ('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),     # 선택 · 출발 때 각각 조회
+    assert io.calls[:6] == [('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),     # 선택 때 한 번 조회(출발은 받아 둔 설계)
                             ('pick', IDS[0], '2'), ('move_to', 'observe'), ('check', (IDS[0],))]
     assert ('check', (IDS[2], IDS[0])) in io.calls                                   # 3번째: 놓은 블록 + 받침
     assert len(io.progress) == 12 and all(json.dumps(p, allow_nan=False) for p in io.progress)
