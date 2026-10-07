@@ -37,10 +37,47 @@ def test_잡기_이름에서_자세와_잡는_축():
     assert grasp_target('STAND_LONG', CFG) == ('LENGTH', 'WIDTH')
 
 
-@pytest.mark.parametrize('grasp', ['EDGE_SHORT', 'STAND_SHORT'])
-def test_닫는_치수가_두께면_틈_방향을_모르므로_추측하지_않는다(grasp):
-    with pytest.raises(ValueError):
-        grasp_target(grasp, CFG)
+def test_닫는_치수가_두께인_잡기도_기하로_정해진다():
+    assert grasp_target('EDGE_SHORT', CFG) == ('WIDTH', 'THICKNESS')
+    assert grasp_target('STAND_SHORT', CFG) == ('LENGTH', 'THICKNESS')
+
+
+def test_여섯_잡기_전부_자세와_축이_정해진다():
+    got = {g: grasp_target(g, CFG) for g in CFG['grasp_width_m']}
+    assert got == {'FLAT_SHORT': ('THICKNESS', 'WIDTH'), 'FLAT_LONG': ('THICKNESS', 'LENGTH'),
+                   'EDGE_SHORT': ('WIDTH', 'THICKNESS'), 'EDGE_LONG': ('WIDTH', 'LENGTH'),
+                   'STAND_SHORT': ('LENGTH', 'THICKNESS'), 'STAND_LONG': ('LENGTH', 'WIDTH')}
+
+
+def test_두께_틈이_응답에_없으면_NONE이고_있으면_고른다():
+    up, axis = grasp_target('EDGE_SHORT', CFG)
+    no_info = blk(up=up, length=80, width=80)                 # 두께 틈 칸이 없는 응답
+    r = pick([no_info], up, axis)
+    assert r['status'] == 'NONE' and r['counts']['no_gap_info'] == 1
+    with_info = blk(up=up, length=80, width=80)
+    with_info['gap_mm']['THICKNESS'], with_info['clear']['THICKNESS'] = 30.0, True
+    r = pick([no_info, with_info], up, axis)
+    assert (r['status'], r['index'], r['gap_mm']) == ('FOUND', 1, 30.0)
+    narrow = copy.deepcopy(with_info)
+    narrow['gap_mm']['THICKNESS'], narrow['clear']['THICKNESS'] = 10.0, False
+    assert pick([narrow], up, axis)['counts']['no_clear'] == 1
+
+
+def test_두께_틈_칸_형식이_틀리면_잘못된_값():
+    up, axis = grasp_target('STAND_SHORT', CFG)
+    b = blk(up=up)
+    b['gap_mm']['THICKNESS'], b['clear']['THICKNESS'] = 'x', True
+    assert pick([b], up, axis)['counts']['invalid'] == 1
+
+
+def test_FLAT_LONG_이름에서_구한_자세와_축으로_FOUND와_거부():
+    up, axis = grasp_target('FLAT_LONG', CFG)
+    ok = blk(up=up, length=40)
+    assert pick([ok], up, axis)['status'] == 'FOUND'
+    assert pick([blk(up='WIDTH', length=40)], up, axis)['status'] == 'NONE'            # 다른 자세는 거부
+    assert pick([blk(up=up, length=10)], up, axis)['status'] == 'NONE'                # 틈 부족은 거부
+    up2, axis2 = grasp_target('EDGE_LONG', CFG)
+    assert pick([blk(up='WIDTH', length=40)], up2, axis2)['status'] == 'FOUND'
 
 
 def test_모르는_잡기():
@@ -117,9 +154,14 @@ def test_후보가_없으면_다른_자세를_바로_집지_않는다():
     assert r == {'status': 'NONE', 'reason': 'NO_MATCH', 'counts': dict(r['counts'])} and r['counts']['other_up'] == 2
 
 
-@pytest.mark.parametrize('blocks', [[], None, 'x', {}])
-def test_블록이_없거나_목록이_아니면_EMPTY(blocks):
-    assert pick(blocks) == {'status': 'NONE', 'reason': 'EMPTY', 'counts': {}}
+def test_블록이_빈_목록이면_EMPTY():
+    assert pick([]) == {'status': 'NONE', 'reason': 'EMPTY', 'counts': {}}
+
+
+@pytest.mark.parametrize('blocks', [None, 'x', {}, 5, (blk(),)])
+def test_블록이_목록이_아니면_부르는_쪽_실수로_ValueError(blocks):
+    with pytest.raises(ValueError):
+        pick(blocks)
 
 
 BAD = [
@@ -129,6 +171,8 @@ BAD = [
     lambda b: b.update(gap_mm={'LENGTH': float('nan'), 'WIDTH': 30}), lambda b: b.update(gap_mm={'LENGTH': float('inf'), 'WIDTH': 30}),
     lambda b: b.update(gap_mm=None), lambda b: b.update(x_m=float('nan')), lambda b: b.update(y_m=None), lambda b: b.update(top_z_m='1'),
     lambda b: b.update(yaw_deg=float('inf')), lambda b: b.update(x_m=True),
+    lambda b: b.update(yaw_deg=90.0), lambda b: b.update(yaw_deg=-90.1), lambda b: b.update(yaw_deg=1e308 * 10), lambda b: b.update(x_m=1e999),
+    lambda b: b.update(clear=[]), lambda b: b.update(gap_mm='30'), lambda b: b.update(clear={'LENGTH': True, 'WIDTH': True, 'THICKNESS': 'yes'}),
 ]
 
 
@@ -139,6 +183,22 @@ def test_잘못된_값의_블록은_건너뛰고_나머지로_고른다(mutate):
     r = pick([bad, blk(length=30)])
     assert (r['status'], r['index']) == ('FOUND', 1)
     assert pick([bad])['counts']['invalid'] == 1
+
+
+def test_yaw_경계는_음수_90_포함_90_제외():
+    assert pick([blk(yaw_deg=-90.0)])['status'] == 'FOUND'
+    assert pick([blk(yaw_deg=89.999)])['status'] == 'FOUND'
+    assert pick([blk(yaw_deg=90.0)])['counts']['invalid'] == 1
+
+
+def test_잘못된_값이_섞여도_남은_후보_선택은_안정적():
+    good = [blk(length=30, top=0.0), blk(length=45, top=-0.01), blk(length=45, top=0.02)]
+    bad = [blk(yaw_deg=float('nan')), blk(yaw_deg=200), '글자', None, blk(x_m=float('inf'))]
+    blocks = [bad[0], good[0], bad[1], good[1], bad[2], good[2], bad[3], bad[4]]
+    r = pick(blocks)
+    assert (r['status'], r['index'], r['gap_mm']) == ('FOUND', 5, 45)
+    assert pick(list(reversed(blocks)))['block'] == r['block']
+    assert pick(blocks)['index'] == r['index']                      # 같은 입력은 같은 결과
 
 
 def test_블록이_객체가_아니어도_건너뛴다():
@@ -160,7 +220,7 @@ def test_기준_틈이_이상하면_설정_오류(gap):
         BlockPicker(gap)
 
 
-@pytest.mark.parametrize('up, axis', [('FLAT', 'LENGTH'), ('THICKNESS', 'THICKNESS'), (None, 'LENGTH')])
+@pytest.mark.parametrize('up, axis', [('FLAT', 'LENGTH'), ('THICKNESS', 'DEPTH'), (None, 'LENGTH')])
 def test_목표_자세나_축이_틀리면_오류(up, axis):
     with pytest.raises(ValueError):
         pick([blk()], up, axis)

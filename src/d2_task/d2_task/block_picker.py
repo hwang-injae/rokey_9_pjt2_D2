@@ -14,27 +14,29 @@ import copy
 import math
 
 UPS = ('THICKNESS', 'WIDTH', 'LENGTH')
-AXES = ('LENGTH', 'WIDTH')                       # find_blocks 가 틈을 주는 방향(IRD 4.2). 두께(THICKNESS) 방향은 응답에 없다
+AXES = ('LENGTH', 'WIDTH', 'THICKNESS')            # 잡는 축 = 손가락이 닫히는 블록 치수. IRD 4.2 예시는 LENGTH · WIDTH 만 보여 주므로 THICKNESS 틈은 응답에 있을 때만 쓴다
 OVERLAPS = ('none', 'top', 'under')
 # 잡기 종류 → 위를 향한 블록 면(IRD 2장: 눕힘 FLAT = 두께가 위, 옆세움 EDGE = 폭이 위, 세움 STAND = 길이가 위)
 UP_OF_GRASP = {'FLAT': 'THICKNESS', 'EDGE': 'WIDTH', 'STAND': 'LENGTH'}
 
 
 def grasp_target(grasp, cfg):
-    """잡기 이름(예 FLAT_LONG) → (up, 잡는 축). 잡는 축 = 손가락이 닫히는 블록 치수(grasp_width_m)가 길이 · 폭 중 어느 것인지.
+    """잡기 이름(예 FLAT_LONG) → (up, 잡는 축). 잡는 축 = 손가락이 닫히는 블록 치수(grasp_width_m)가 길이 · 폭 · 두께 중 어느 것인지.
 
-    cfg = robot.yaml dict(block_size_m [길이, 폭, 두께] · grasp_width_m). 닫는 치수가 두께(15 mm)이면 find_blocks 가 그 방향 틈을
-    주지 않으므로 ValueError — 알 수 없는 것을 추측하지 않는다(EDGE_SHORT · STAND_SHORT, 민범진 확인 대기).
+    cfg = robot.yaml dict(block_size_m [길이, 폭, 두께] · grasp_width_m). 기하로 정해지는 값이다:
+    FLAT_SHORT = (THICKNESS, WIDTH) · FLAT_LONG = (THICKNESS, LENGTH) · EDGE_SHORT = (WIDTH, THICKNESS) · EDGE_LONG = (WIDTH, LENGTH) ·
+    STAND_SHORT = (LENGTH, THICKNESS) · STAND_LONG = (LENGTH, WIDTH). 잡는 축이 THICKNESS 인 잡기는 find_blocks 응답에
+    그 방향 틈이 있을 때만 후보가 되고, 없으면 pick 이 NONE(NO_GAP_INFO)으로 처리한다 — 틈 값을 만들어 쓰지 않는다.
     """
     kind = grasp.split('_')[0]
     if kind not in UP_OF_GRASP or grasp not in cfg['grasp_width_m']:
         raise ValueError(f'모르는 잡기: {grasp!r}')
-    length, width, _thick = cfg['block_size_m']
+    length, width, thick = cfg['block_size_m']
     close = cfg['grasp_width_m'][grasp]
-    for axis, size in (('LENGTH', length), ('WIDTH', width)):
+    for axis, size in (('LENGTH', length), ('WIDTH', width), ('THICKNESS', thick)):
         if abs(close - size) < 1e-6:
             return UP_OF_GRASP[kind], axis
-    raise ValueError(f'{grasp}: 닫는 치수 {close} m 가 길이 · 폭이 아니라 find_blocks 틈 방향을 알 수 없다')
+    raise ValueError(f'{grasp}: 닫는 치수 {close} m 가 블록 길이 · 폭 · 두께 어느 것과도 다르다')
 
 
 def _num(v):
@@ -60,16 +62,21 @@ class BlockPicker:
         반환: {'status': 'FOUND', 'index': 입력 번호, 'block': 그 dict(복사), 'overlap': 'none'|'top', 'gap_mm': 그 축 틈}
               또는 {'status': 'NONE', 'reason': 이유 글자, 'counts': {거른 이유: 개수}}.
         reason: EMPTY(블록 없음) · NO_MATCH(맞는 후보 없음). 잘못된 입력 블록은 건너뛰고 counts['invalid'] 에 센다.
+        blocks 가 목록이 아니거나 up · axis 가 틀리면 ValueError(부르는 쪽 실수). yaw_deg 는 −90 ≤ yaw < 90 밖이면 잘못된 값이다(IRD 4.2).
         """
         if up not in UPS or axis not in AXES:
             raise ValueError(f'up={up!r} axis={axis!r}')
-        if not isinstance(blocks, list) or not blocks:
+        if not isinstance(blocks, list):
+            raise ValueError(f'blocks 가 목록이 아니다: {type(blocks).__name__}')     # 부르는 쪽 실수 — 빈 공급(EMPTY)과 섞지 않는다
+        if not blocks:
             return {'status': 'NONE', 'reason': 'EMPTY', 'counts': {}}
-        counts = {'invalid': 0, 'under': 0, 'tilted': 0, 'other_up': 0, 'no_clear': 0, 'narrow': 0}
+        counts = {'invalid': 0, 'under': 0, 'tilted': 0, 'other_up': 0, 'no_gap_info': 0, 'no_clear': 0, 'narrow': 0}
         cands = []
         for i, b in enumerate(blocks):
             gap = self._gap(b, axis)
-            if gap is None:
+            if gap == 'no_info':
+                counts['no_gap_info'] += 1
+            elif gap is None:
                 counts['invalid'] += 1
             elif b['overlap'] == 'under':
                 counts['under'] += 1
@@ -91,14 +98,26 @@ class BlockPicker:
 
     @staticmethod
     def _gap(b, axis):
-        """블록 하나의 형식이 맞으면 axis 방향 틈(mm), 아니면 None. 위치 · yaw · 높이 · 틈은 유한한 숫자, 나머지 칸은 정해진 값이어야 한다."""
+        """블록 하나의 형식이 맞으면 axis 방향 틈(mm), 잡는 축 THICKNESS 인데 응답에 그 방향 틈이 없으면 'no_info', 형식이 틀리면 None.
+
+        위치 · yaw · 높이 · 틈은 유한한 숫자(yaw 는 −90 ≤ yaw < 90), 나머지 칸은 정해진 값이어야 한다.
+        """
         try:
-            if not all(_num(b[k]) for k in ('x_m', 'y_m', 'top_z_m', 'yaw_deg')):
+            if not all(_num(b[k]) for k in ('x_m', 'y_m', 'top_z_m', 'yaw_deg')) or not -90.0 <= b['yaw_deg'] < 90.0:
                 return None
             if b['up'] not in UPS or b['overlap'] not in OVERLAPS or not isinstance(b['tilted'], bool):
                 return None
-            if not all(isinstance(b['clear'][a], bool) for a in AXES) or not all(_num(b['gap_mm'][a]) for a in AXES):
+            clear, gap = b['clear'], b['gap_mm']
+            if not isinstance(clear, dict) or not isinstance(gap, dict):
                 return None
-            return b['gap_mm'][axis]
-        except (KeyError, TypeError):
+            for a in AXES:
+                if a in clear or a in gap:                 # 있는 칸은 형식이 맞아야 한다(LENGTH · WIDTH 는 꼭 있어야 한다)
+                    if not isinstance(clear.get(a), bool) or not _num(gap.get(a)):
+                        return None
+            if not all(a in clear and a in gap for a in ('LENGTH', 'WIDTH')):
+                return None
+            if axis not in gap or axis not in clear:
+                return 'no_info'
+            return gap[axis]
+        except (KeyError, TypeError, AttributeError):
             return None
