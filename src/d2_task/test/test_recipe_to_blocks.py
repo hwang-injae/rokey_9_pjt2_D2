@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from d2_task.recipe_to_blocks import ORI_EXTENT, RecipeToBlocks
+from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents
 
 RECIPES = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
+BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000
 IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back', 'chair', 16),
        '003_DESK_STAND': ('desk_stand', 'desk', 9)}
 
@@ -19,7 +20,7 @@ def load(model_id):
 
 def convert(model_id):
     design_id, family, _ = IDS[model_id]
-    return RecipeToBlocks(design_id, family).convert(load(model_id))
+    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(load(model_id))
 
 
 @pytest.mark.parametrize('model_id', IDS)
@@ -28,7 +29,7 @@ def test_3종_블록_수와_머리말(model_id):
     design_id, family, n = IDS[model_id]
     assert (out['schema'], out['design_id'], out['family']) == ('blocks/1', design_id, family)
     assert [b['order'] for b in out['blocks']] == list(range(1, n + 1))
-    assert all(b['inferred'] is False and b['ori'] in ORI_EXTENT for b in out['blocks'])
+    assert all(b['inferred'] is False and b['ori'] in ori_extents(BLOCK_MM) for b in out['blocks'])
 
 
 def test_벤치_실제_레시피와_같다():
@@ -54,7 +55,7 @@ def test_의자_등받이_위층():
 def test_steps_순서가_섞여도_sequence_순():
     r = load('001_CHAIR_BENCH')
     r['steps'].reverse()
-    out = RecipeToBlocks('bench', 'chair').convert(r)
+    out = RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
     assert [b['order'] for b in out['blocks']] == list(range(1, 12))
     assert out == convert('001_CHAIR_BENCH')
 
@@ -62,7 +63,7 @@ def test_steps_순서가_섞여도_sequence_순():
 def test_원본_레시피를_바꾸지_않는다():
     r = load('001_CHAIR_BENCH')
     before = copy.deepcopy(r)
-    RecipeToBlocks('bench', 'chair').convert(r)
+    RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
     assert r == before
 
 
@@ -73,20 +74,20 @@ def test_출력은_JSON으로_직렬화된다():
 def test_design_id_family_는_명시_입력():
     for args in (('', 'chair'), ('bench', ''), (None, None)):
         with pytest.raises(ValueError):
-            RecipeToBlocks(*args)
+            RecipeToBlocks(*args, BLOCK_MM)
 
 
 def bad(mutate):
     r = load('001_CHAIR_BENCH')
     mutate(r)
     with pytest.raises(ValueError):
-        RecipeToBlocks('bench', 'chair').convert(r)
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
 
 
 def test_잘못된_schema():
     bad(lambda r: r.update(schema='m0609.jenga.cad_recipe/1.0'))
     with pytest.raises(ValueError):
-        RecipeToBlocks('bench', 'chair').convert({})
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert({})
 
 
 def test_단위가_mm_아님():
@@ -124,7 +125,7 @@ def test_거울_반사_회전은_거부():
 
 def test_좌표는_레시피_원본_값_그대로():
     r = load('003_DESK_STAND')
-    out = RecipeToBlocks('desk_stand', 'desk').convert(r)
+    out = RecipeToBlocks('desk_stand', 'desk', BLOCK_MM).convert(r)
     inst = {i['instance_id']: i for i in r['model']['instances']}
     for step, b in zip(sorted(r['steps'], key=lambda s: s['sequence']), out['blocks']):
         cx, cy, _ = inst[step['instance_id']]['center_mm']
