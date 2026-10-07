@@ -65,7 +65,7 @@ ROS 노드는 **8개**(+ 다리 `bridge`)다. 이름은 모두 `/d2/` 아래, �
 | 서기 궤적 | 토픽 `/dsr_moveit_controller/joint_trajectory` | 정지 노드 → 두산 제어기 | 지금 관절값 0.3초 — 제어기에 직접 |
 | `/d2/gripper/command` · `/d2/gripper/state` | 서비스 · 토픽 | 집기 · 놓기 → 그리퍼 → 모두 | 폭 · 힘 → 잡힘 · 폭 |
 
-좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v3_100711.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v3_100711.md).
+좌표 · 그리퍼 값 · 시간 기준은 설정 파일 하나(`src/d2_bringup/config/robot.yaml`)에 둔다. 이름 · 칸 · 단위의 정본은 [인터페이스 문서](docs/02_인터페이스_IRD_v3_100711.md), 패키지 · 절차는 [설계 문서](docs/03_설계_SDD_v3_100712.md).
 
 ### 동작 흐름
 
@@ -192,7 +192,7 @@ cd rokey_9_pjt2_D2
 
 ## 협업 규칙
 
-- [팀 협업 규칙](docs/06_팀협업규칙_v1_100711.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
+- [팀 협업 규칙](docs/06_팀협업규칙_v1_100712.md) — 팀 규칙 10개 · 브랜치 · 커밋 · PR · 보안 · 컨테이너 · 로봇 안전 · 문서 파일 이름
 - [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) — GitHub에서 일하는 순서
 - [AGENTS.md](AGENTS.md) — AI 에이전트 읽기 규칙
 - [팀원별 에이전트 프롬프트](docs/에이전트_프롬프트/) — v4(10/6 개편 + PC 배치)를 저장소 맨 위 `CLAUDE.local.md`로 복사
