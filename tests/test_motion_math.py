@@ -2,6 +2,7 @@
 
 실기로 확인한 식(10/4~10/6)이 리팩터링으로 바뀌지 않게 한다. 좌표·칸 자세는 지어내지 않고 robot.yaml 에서 읽는다.
 """
+import json
 import math
 
 import pytest
@@ -167,6 +168,47 @@ def test_recipe_blocks_rejects_wrong_size(robot_cfg):
     """블록 크기가 robot.yaml block_size_m 와 다르면([70, 25, 15]) ValueError."""
     with pytest.raises(ValueError):
         mm.recipe_blocks(robot_cfg, _recipe((70, 25, 15)))
+
+
+def _recipe_v2(model_id='001_CHAIR_BENCH'):
+    """E-52 새 형식 두 파일(조립 · 구조)을 _recipe() 와 같은 두 블록으로 — 구조는 load_recipe 처럼 'structure' 칸에 붙인 꼴."""
+    structure = {'schema': 'cad_structure/1.0', 'model_id': model_id,
+                 'parts': [{'part_id': 'PART_001', 'size_mm': [75, 25, 15]}],
+                 'blocks': [{'block': 'SEAT_001_01', 'part_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
+                            {'block': 'SEAT_001_02', 'part_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
+    recipe = {'schema': 'cad_recipe/1.0', 'model_id': model_id,
+              'steps': [{'block': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
+                         'supports': ['SEAT_001_01']},
+                        {'block': 'SEAT_001_01', 'sequence': 1, 'stage': 1, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
+                         'supports': []}]}
+    return recipe, structure
+
+
+def test_recipe_blocks_v2_two_files_same_as_old(robot_cfg):
+    """새 형식(E-52, W138): sequence 순서, block_id = '<model_id>_<블록 이름>', 자리 · 잡기는 같은 블록의 옛 형식과 같다."""
+    recipe, structure = _recipe_v2()
+    new = mm.recipe_blocks(robot_cfg, dict(recipe, structure=structure))
+    old = mm.recipe_blocks(robot_cfg, _recipe())
+    assert [b['block_id'] for b in new] == ['001_CHAIR_BENCH_SEAT_001_01', '001_CHAIR_BENCH_SEAT_001_02']
+    for a, b in zip(new, old):
+        assert a['grasp'] == b['grasp'] and close(a['center'], b['center']) and close(a['quat'], b['quat'])
+
+
+def test_load_recipe_reads_structure_next_to_it(tmp_path, robot_cfg):
+    """load_recipe: 새 조립 파일이면 같은 폴더의 <model_id>_structure.json 을 붙이고, 없으면 FileNotFoundError.
+    recipe_files 는 새 이름 · 옛 이름 조립 파일만 (구조 파일은 빼고) 이름 순으로."""
+    recipe, structure = _recipe_v2()
+    (tmp_path / '001_CHAIR_BENCH_recipe.json').write_text(json.dumps(recipe))
+    (tmp_path / '003_DESK_STAND.recipe.json').write_text(json.dumps(_recipe()))
+    with pytest.raises(FileNotFoundError):
+        mm.load_recipe(str(tmp_path / '001_CHAIR_BENCH_recipe.json'))
+    (tmp_path / '001_CHAIR_BENCH_structure.json').write_text(json.dumps(structure))
+    files = mm.recipe_files(str(tmp_path))
+    assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH', '003_DESK_STAND']
+    loaded = [mm.load_recipe(f) for f in files]
+    assert loaded[0]['structure'] == structure and 'structure' not in loaded[1]
+    assert len(mm.recipe_blocks(robot_cfg, loaded[0])) == 2
+    assert mm.recipe_model_id(loaded[0]) == '001_CHAIR_BENCH'
 
 
 @pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])

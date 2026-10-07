@@ -5,7 +5,7 @@
 
   ros2 run d2_motion run_recipe --check                                  # 설치된 레시피 목록에서 번호로 고름, 목표만 보여 줌 (ROS·로봇 없음)
   ros2 run d2_motion run_recipe                                          # 번호로 고름, 시작할 때만 y 확인
-  ros2 run d2_motion run_recipe <001_CHAIR_BENCH.recipe.json> --slots 1,3 --auto    # 파일을 직접 주고 확인 없이 (가상 시험)
+  ros2 run d2_motion run_recipe <001_CHAIR_BENCH_recipe.json> --slots 1,3 --auto    # 파일을 직접 주고 확인 없이 (가상 시험)
   ros2 run d2_motion run_recipe <lv2.json> <lv4.json> --auto             # 두 설계를 세트로 (의자 앞에 책상)
   ros2 run d2_motion run_recipe --grasp-test 1-6 --repeat 3              # 잡기 폭 시험: 칸마다 집어 같은 자리에 다시 놓기 (6가지 잡기)
 시작할 때 한 번만 y 를 묻고 블록 사이에는 기다리지 않는다: 로봇이 놓으러 간 사이에 사람이 같은 공급 칸을 다시 채운다.
@@ -24,12 +24,14 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
 from d2_interfaces.srv import GripperCommand, MoveTo
+from moveit_msgs.msg import PlanningSceneComponents
+from moveit_msgs.srv import GetPlanningScene
 from rclpy.action import ActionClient
 from std_msgs.msg import String
 
 from d2_motion.executor import make_pose
-from d2_motion.motion_math import (close_angle_deg, column, layout_designs, pick_place_tcp, quat_from_axes,
-                                   slot_block_pose, up_axis)
+from d2_motion.motion_math import (close_angle_deg, column, layout_designs, load_recipe, pick_place_tcp, quat_from_axes,
+                                   recipe_files, recipe_model_id, recipe_name, slot_block_pose, up_axis)
 from d2_safety.safe_stop import init_ros
 
 HOME_TIMEOUT_S = 120.0
@@ -112,16 +114,16 @@ def confirm(what):
 
 
 def choose_recipe(folder):
-    """folder 안의 레시피(*.recipe.json)를 번호로 보여 주고 사람이 고른 파일 경로를 돌려준다.
+    """folder 안의 레시피(*_recipe.json · 옛 *.recipe.json)를 번호로 보여 주고 사람이 고른 파일 경로를 돌려준다.
 
     입력: folder = 레시피 폴더 경로. 반환: 고른 파일 경로, 레시피가 없거나 번호가 틀리면 None.
     """
-    files = sorted(f for f in os.listdir(folder) if f.endswith('.recipe.json')) if os.path.isdir(folder) else []
+    files = recipe_files(folder)
     if not files:
         print(f'[오류] 레시피가 없다: {folder} (src/recipe_manager/recipes/ 에 넣고 d2_bringup 을 다시 빌드)')
         return None
     for i, f in enumerate(files, 1):
-        print(f'  {i}. {f[:-len(".recipe.json")]}')
+        print(f'  {i}. {recipe_name(f)}')
     try:
         k = input('레시피 번호: ').strip()
     except EOFError:
@@ -129,14 +131,31 @@ def choose_recipe(folder):
     if not k.isdigit() or not 1 <= int(k) <= len(files):
         print(f'[오류] 번호가 틀렸다: {k!r}')
         return None
-    return os.path.join(folder, files[int(k) - 1])
+    return files[int(k) - 1]
+
+
+def stale_scene_objects(node, block_ids, wait):
+    """MoveIt 장면에서 이번 실행과 무관한 물체 이름 목록 — 다른 블록 blk_*, 쥔 상자 held (world·붙은 것 모두).
+
+    입력: block_ids = 이번 목표의 block_id 집합, wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
+    빈 목록(점검을 건너뛴다 — 장면 관리가 없으면 pick_place 가 따로 알린다). 장면은 읽기만 한다.
+    """
+    cli = node.create_client(GetPlanningScene, 'get_planning_scene')
+    if not cli.wait_for_service(timeout_sec=3.0):
+        return []
+    comp = PlanningSceneComponents.WORLD_OBJECT_NAMES | PlanningSceneComponents.ROBOT_STATE_ATTACHED_OBJECTS
+    r = wait(cli.call_async(GetPlanningScene.Request(components=PlanningSceneComponents(components=comp))), 5.0)
+    if r is None:
+        return []
+    names = [o.id for o in r.scene.world.collision_objects] + [a.object.id for a in r.scene.robot_state.attached_collision_objects]
+    return sorted({n for n in names if n == 'held' or (n.startswith('blk_') and n[4:] not in block_ids)})
 
 
 def main():
     """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 블록마다 PickPlace(그리퍼 폭은 블록 위에서 바뀜) -> 홈, 결과를 CSV 로 --log-dir(기본 ~/d2_data/runs, 저장소 밖)에 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipes', nargs='*',
-                    help='레시피 파일 (cad_recipe/1.0 — 예전 이름 assembly.recipe/1.0 — 또는 옛 blocks[] 형식). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
+                    help='조립 레시피 파일 (<모델ID>_recipe.json — 구조 파일 _structure.json 은 같은 폴더에서 읽음 · 옛 .recipe.json · 옛 blocks[] 형식). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
                          '없으면 설치된 레시피 목록에서 번호로 고름')
     ap.add_argument('--slots', default=None,
                     help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 잡기마다 정한 칸(robot.yaml supply_slots grasp)을 쓴다')
@@ -166,12 +185,10 @@ def main():
                     return 1
                 paths = [chosen]
             print(f'레시피: {", ".join(paths)}')
-            for path in paths:
-                with open(path) as f:
-                    recipes.append(json.load(f))
+            recipes = [load_recipe(path) for path in paths]
             jobs = plan_jobs(cfg, recipes, parse_list(args.slots) if args.slots else None,
                              parse_list(args.steps) if args.steps else None)
-    except (ValueError, IndexError) as e:
+    except (ValueError, IndexError, KeyError, OSError) as e:
         print(f'[목표 계산 실패] {e}')
         return 1
     if not show(cfg, jobs) or args.check:
@@ -218,6 +235,13 @@ def main():
         if gst.get('grasped'):
             print('[오류] 그리퍼가 블록을 쥐고 있다. 블록을 손으로 잡고 그리퍼를 연 뒤 다시 실행한다')
             return 1
+        # 앞 실행의 블록·쥔 상자가 장면에 남아 있으면 놓기 경로가 막혀 중간에 PLAN_FAILED 로 선다(10/7 003 실기)
+        # -> 움직이기 전에 멈춘다. 이번 목표의 블록(--steps 로 앞 순번을 이미 쌓은 경우)은 괜찮다
+        stale = stale_scene_objects(node, {b['block_id'] for b, _, _, _ in jobs}, wait)
+        if stale:
+            print(f'[오류] 장면에 앞 실행 물체가 남아 있다: {", ".join(stale)}\n'
+                  '   조립 영역을 비우고 robot_nodes.launch.py 를 다시 띄운 뒤 실행한다(장면 관리가 시작할 때 지운다)')
+            return 1
         # 시작은 홈 자세에서. 그리퍼 폭은 여기서 바꾸지 않는다 — 집는 폭은 늘 집을 블록 바로 위에서 연다(pick_place, 10/7)
         if not go_home():
             return 1
@@ -245,7 +269,7 @@ def main():
             wait(gh.cancel_goal_async(), 3.0)
     finally:
         if rows:
-            model_id = '_'.join(r['model']['model_id'] if 'model' in r else r['model_id'] for r in recipes) or 'GRASP_TEST'
+            model_id = '_'.join(recipe_model_id(r) for r in recipes) or 'GRASP_TEST'
             # 실기 기록은 원본 자료라 저장소 밖에 둔다(팀 규칙 6 — 예전엔 실행한 폴더에 남아 저장소에 쌓였다, 10/7)
             out = '(안 남김)'
             if args.log_dir:

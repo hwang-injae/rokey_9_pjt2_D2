@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """장면 관리 노드 scene_manager — MoveIt2 장면을 고치는 유일한 노드. 1차 장면 = 작업대 + 쌓인 블록 + 쥔 블록 (W036)."""
-import glob
 import json
 import os
 import threading
@@ -20,7 +19,7 @@ from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, String
 
 from d2_motion.executor import make_pose
-from d2_motion.motion_math import layout_designs, pick_place_tcp, slot_block_pose, tcp_target
+from d2_motion.motion_math import layout_designs, load_recipe, pick_place_tcp, recipe_files, slot_block_pose, tcp_target
 
 HELD = 'held'
 TABLE_THICK_M = 0.02
@@ -39,7 +38,7 @@ class SceneManagerNode(Node):
              /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
     파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
-                    비우면 share/d2_bringup/recipes/*.recipe.json 을 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
+                    비우면 share/d2_bringup/recipes/ 의 레시피(*_recipe.json · 옛 *.recipe.json)를 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
     """
 
     def __init__(self):
@@ -51,19 +50,15 @@ class SceneManagerNode(Node):
         paths = [p for p in self.declare_parameter('recipe', '').value.split(',') if p.strip()]
         self.blocks = {}
         if paths:
-            recipes = []
-            for path in paths:
-                with open(path.strip()) as f:
-                    recipes.append(json.load(f))
+            recipes = [load_recipe(path.strip()) for path in paths]
             # 여러 레시피면 run_recipe 와 같은 세트 배치 (layout_designs 는 계산만으로 정해져 같은 자리가 나온다)
             self.blocks = {b['block_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
             self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
         else:
-            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_B001) 한 사전에 넣어도 겹치지 않는다.
+            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_LEG_001_01 · 옛 001_CHAIR_BENCH_B001) 한 사전에 넣어도 겹치지 않는다.
             # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
-            for path in sorted(glob.glob(os.path.join(share, 'recipes', '*.recipe.json'))):
-                with open(path) as f:
-                    self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [json.load(f)]) for b in design})
+            for path in recipe_files(os.path.join(share, 'recipes')):
+                self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})
                 self.get_logger().info(f'레시피: {path}')
             if not self.blocks:
                 self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
@@ -122,6 +117,10 @@ class SceneManagerNode(Node):
             aco = AttachedCollisionObject(link_name=self.cfg['tcp_link'])
             aco.object.id, aco.object.operation = HELD, CollisionObject.REMOVE
             sc.robot_state.attached_collision_objects = [aco]
+            # 떼기만 하면 MoveIt 이 상자를 world 로 내려놓아 그 자리에 남는다(10/7 실기 — 다음 집기가 PLAN_FAILED).
+            # 같은 변경 안에서 robot_state 가 world 보다 먼저 적용되므로 뗀 뒤 world 에서도 지운다(_on_attach 떼기와 같음)
+            if HELD not in world:
+                sc.world.collision_objects.append(self._remove(HELD))
         ok = self.apply(sc)
         self.placed.clear()
         return ok
@@ -190,16 +189,24 @@ class SceneManagerNode(Node):
         return res
 
     def _on_progress(self, msg):
-        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: placed 는 관측 자세로 넣고, empty 는 뺀다. unknown 은 그대로 둔다."""
-        for blk in json.loads(msg.data).get('blocks', []):
+        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: placed 는 관측 자세로 넣고, empty 는 뺀다. unknown 은 그대로 둔다.
+
+        진행표에 없는 놓인 블록(앞 설계 것)도 뺀다 — 진행표는 지금 설계의 블록 전부라, 설계가 바뀌면 앞 설계 블록이
+        조립 영역에 남아 새 설계의 놓기 경로를 막는다(10/7 실기: 벤치 11개가 남아 003 PLAN_FAILED).
+        """
+        blocks = json.loads(msg.data).get('blocks', [])
+        gone = self.placed - {blk.get('block_id') for blk in blocks}
+        for blk in blocks:
             bid, state = blk.get('block_id'), blk.get('state')
             if state == 'placed' and blk.get('center_m') and blk.get('quat'):
                 self.add_placed(bid, blk['center_m'], blk['quat'])
             elif state == 'empty' and bid in self.placed:
-                sc = PlanningScene()
-                sc.world.collision_objects = [self._remove(f'blk_{bid}')]
-                if self.apply(sc):
-                    self.placed.discard(bid)
+                gone.add(bid)
+        if gone:
+            sc = PlanningScene()
+            sc.world.collision_objects = [self._remove(f'blk_{bid}') for bid in sorted(gone)]
+            if self.apply(sc):
+                self.placed -= gone
 
 
 def main():
