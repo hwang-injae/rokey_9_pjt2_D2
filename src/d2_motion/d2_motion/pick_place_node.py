@@ -26,6 +26,8 @@ from d2_safety.safe_stop import SafeStop, init_ros
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
 LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도 (Pilz 직선 속도 한계 x 비율)
 GRIPPER_TIMEOUT_S = 10.0
+# move_to 가 받는 자세 이름 (IRD 4.2 MoveTo). 값은 robot.yaml <이름>_pose — 공급 관측 · 스캔 앞 · 옆은 W134 교시
+MOVE_TARGETS = ('observe', 'home', 'observe_supply', 'observe_front', 'observe_side')
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
 # 팔 끝까지 약 0.9 m 이므로 관절 0.005 rad 는 TCP 4.5 mm 이하 (10/6 한세교 교차 검증)
 LINE_CHECK_RAD = 0.005
@@ -312,9 +314,12 @@ class PickPlaceNode(Node):
                 self.get_logger().info(f'제어기 활성 {kind}: {got} (config/{kind}.json 과 같음)')
 
     def _on_move_to(self, req, res):
-        """관측(observe)·홈(home) 자세로 간다. 다 간 뒤 답한다. 자세가 robot.yaml 에 없으면 실패."""
+        """정해진 자세(observe · home · observe_supply · observe_front · observe_side)로 간다. 다 간 뒤 답한다.
+
+        자세 값은 robot.yaml <target>_pose. 이름이 목록 밖이거나 값이 없으면(교시 전) PLAN_FAILED.
+        """
         pose = self.cfg.get(f'{req.target}_pose')
-        if req.target not in ('observe', 'home') or not pose:
+        if req.target not in MOVE_TARGETS or not pose:
             res.success, res.reason = False, 'PLAN_FAILED'
             return res
         if self.locked:
