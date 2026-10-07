@@ -45,6 +45,15 @@ timeout:                       # 작업 관리자가 답을 기다리는 시간 
   move_to_s: 45                # move_to(관측 · 홈 · 촬영 자세) 한 번. pick_place 안 최악(계획 20 s = 5 s x 플래너 2 x 여유 2단계 + 이동 ~10 s + 도착 대기 5 s)보다 길게 — 10/7 PL 30 -> 45
   pick_place_s: 90             # pick_place 액션 블록 1개(실기 블록당 약 18 s, 최악 계획 · 이동이 두 번). 넘으면 task 가 목표를 취소 → pick_place 가 서기 궤적으로 세움
 
+recover:
+  speed_ratio: 0.5             # 정지 해제 뒤 첫 관측 이동은 평소 속도의 절반. 성공 뒤 평소 속도로 돌아감 (IRD W121 C-1)
+
+mqtt:
+  lost_after_s: 3              # 웹 생존 신호 수신 간격. task 는 MQTT 를 직접 쓰지 않고 /d2/hmi/alive 만 본다 (IRD 10.3)
+
+scan:
+  poses: [observe, observe_front, observe_side]  # 촬영·poses_used 모두 이 순서. 자세 값은 W134 교시값을 사용한다(SDD 5장)
+
 check:                         # 검사 묶음 DesignChecker (IRD 9장, 10/7 W109)
   margin_mm: 7                 # 쌓는 도중 무게중심이 받침 가장자리에서 이만큼 안쪽이어야 통과 (구조 유지 한계, V-02)
   max_blocks: 54               # 설계 한 개의 블록 수 상한 (젠가 1세트)
