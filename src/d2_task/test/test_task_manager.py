@@ -6,6 +6,7 @@
 """
 import copy
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -141,9 +142,10 @@ def two_flat_short_slots():
 
 
 def assert_ird_only(io):
-    """방송한 state/1 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null, mode 는 auto."""
+    """방송한 state/1 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null 또는 R<날짜>_<시각>_<무작위 4자>, mode 는 auto."""
     for s in io.states:
-        assert s['schema'] == 'state/1' and s['mode'] == 'auto' and s['run_id'] is None
+        assert s['schema'] == 'state/1' and s['mode'] == 'auto'
+        assert s['run_id'] is None or re.fullmatch(r'R\d{8}_\d{6}_[0-9a-f]{4}', s['run_id']), s
         assert s['message_id'] is None or s['message_id'] in IRD_MESSAGE_IDS, s
 
 

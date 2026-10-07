@@ -5,25 +5,30 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
 이 클래스는 MQTT 를 전혀 모른다. task 노드(task_node.py)가 콜백에서 on_* · command 를 부르고,
 작업 스레드 하나가 run_once() 를 되풀이한다.
 바깥 일(이동 · 관측 · 집기 · 방송)은 생성할 때 받은 io 객체로 한다. io 가 갖춰야 할 것(ROS 노드나 시험용 가짜):
-  load_recipe(design_id) -> dict | None            레시피(assembly.recipe/1.0)를 읽는다. 없으면 None
+  load_recipe(design_id) -> dict | None            레시피(assembly.recipe/1.0 또는 cad_recipe/1.0)를 읽는다. 없으면 None
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort) -> (ok, reason)
   check_progress(block_ids, should_abort) -> (ok, reason, rows)   rows = {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}
   pick_place(goal, should_abort) -> (ok, reason)    goal = TaskPlanner.next_block 의 FOUND dict
   publish_state(dict) · publish_progress(dict)
-move_to · check_progress · pick_place 는 답을 기다리는 시간 제한이 없다(제한 시간은 W121에서 정함). 대신 기다리는 동안
+move_to · check_progress · pick_place 는 지금 답을 기다리는 시간 제한을 두지 않는다. 제한 값은 W121에서 정해졌고(IRD 7장 TIMEOUT —
+robot.yaml timeout.service_s 5 · move_to_s 30 · pick_place_s 90) 거는 것은 W119 에서 한다. 대신 기다리는 동안
 should_abort() 가 참이 되면(정지 신호 · Ctrl+C) 곧바로 빠져나와 (False, 'STOPPED') 로 돌려주고, 진행 중인 pick_place 목표는 취소한다.
 
-범위: 자동 조립 상태 11개. 스캔 상태(SCAN_*) · get_design · save_build · 웹 끊김(hmi_lost)은 W119, 기록(CSV · run_id)은 W065.
+범위: 자동 조립 상태 11개 + 기록(CSV · run_id, W065 — RunLogger). 스캔 상태(SCAN_*) · get_design · save_build · 웹 끊김(hmi_lost)은 W119.
+run_id 는 조립을 실제로 출발시킬 때(READY → CHECK) 새로 만든다. 정지 · 복구 · 공급 보충 뒤 계속할 때는 같은 ID 를 쓴다.
+끝난 조립의 build/1 요약은 last_build 에 둔다(/d2/hmi/save_build 로 보내는 것은 W119).
 WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부지만 SDD 5장 상태표에 있어 W044 에서 먼저 구현했다 — **W119 완료가 아니다**
 (W119 는 get_design · 스캔 흐름 · DB 점검 · builds · 웹 끊김이 더 남아 있다).
-W121 확인사항(구현하지 않음): ① 복구(RECOVER) 때 '저속' 이동 — MoveTo 에 속도 칸이 없다 ② 조립 중이 아닐 때(IDLE · READY · DONE)
-정지됐다 풀린 뒤 돌아갈 곳 — SDD 에 없어서 가장 가까운 규칙(비조립 RECOVER → IDLE)만 따른다.
+아직 구현하지 않은 것(W119): ① 복구(RECOVER) 때 첫 move_to 를 저속으로 — 인터페이스는 W121에서 정해졌다(MoveTo.speed_ratio,
+robot.yaml recover.speed_ratio 0.5) ② 시간 제한(위). 조립 중이 아닐 때(IDLE · READY · DONE) 정지됐다 풀린 뒤 돌아갈 곳은 SDD 에
+없어서 가장 가까운 규칙(비조립 RECOVER → IDLE)만 따른다(IRD 12장 W121 다시 확인 대상).
 """
 import logging
 import threading
 import time
 
+from d2_task.run_logger import RunLogger
 from d2_task.task_planner import TaskPlanner
 
 LOG = logging.getLogger('d2_task')
@@ -58,9 +63,12 @@ class TaskManager:
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
 
-    def __init__(self, cfg, io):
-        """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당. 처음 상태는 IDLE."""
+    def __init__(self, cfg, io, logger=None):
+        """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
+        self.logger = logger if logger is not None else RunLogger()
+        self.run_id = None                        # 지금(또는 방금 끝난) 조립의 run_id. 새 설계를 고르거나 IDLE 로 가면 비운다
+        self.last_build = None                    # 가장 최근에 끝난 조립의 build/1 요약. 새 출발로는 지우지 않는다(save_build 로 보내는 것은 W119)
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
         self.state = 'IDLE'
         self.planner = None
@@ -99,6 +107,19 @@ class TaskManager:
         """Ctrl+C 등 끝낼 때 부른다. 기다리는 중인 호출이 곧바로 빠져나오고 pick_place 목표가 취소된다."""
         self._shutdown = True
 
+    def finalize(self, flush_s=2.0):
+        """끝낼 때(Ctrl+C · 종료) 맨 마지막에 부른다 — 진행 중인 목표 취소를 요청한 **뒤에**. 조립 중이었으면 기록을 닫고
+        (ERROR 중이면 ERROR, 그 밖은 STOPPED) 큐에 남은 줄이 파일에 쓰일 때까지 flush_s 초 안에서 기다린다.
+
+        요약 확정은 메모리에서 바로 되고, 기다리는 것은 파일 쓰기뿐이라 디스크가 멈춰도 flush_s 를 넘기지 않는다.
+        시간 안에 못 끝나면 경고를 남긴다(flush 의 True 는 '다 처리했다'이지 '저장 성공'이 아니라서 file_ok 도 함께 본다).
+        """
+        with self._lock:
+            if self.logger.active:
+                self._finish_run('ERROR' if self.state == 'ERROR' else 'STOPPED')
+        if not self.logger.flush(flush_s):
+            LOG.warning('기록 파일에 아직 다 안 써졌다(%.1f초 안에 못 끝냄) — 마지막 줄이 CSV 에 없을 수 있다. 요약(last_build)은 메모리에 있다', flush_s)
+
     def halted(self):
         """멈춰야 하면 참 — 정지 노드가 stopped 를 보냈거나 끝내는 중. io 의 기다림이 이것을 should_abort 로 쓴다."""
         st = self.safety
@@ -135,7 +156,10 @@ class TaskManager:
                 else:
                     self._publish('voice_start_ignored', '지금은 음성 출발을 받을 수 없어 무시했다')
             elif intent == 'cancel' and self.state in ('READY', 'ERROR'):
+                if self.state == 'ERROR':
+                    self._finish_run('ERROR')
                 self.planner, self.design_id, self.block_id = None, None, None
+                self._clear_run()
                 self._set('IDLE', None, '취소했다')
 
     # ---------- 작업 스레드 ----------
@@ -177,8 +201,10 @@ class TaskManager:
             self._start_goal(r)
             self._set('PICK_PLACE', None, f'{r["block_id"]} 를 집으러 갑니다')
         elif status == 'DONE':
-            self.block_id = None
-            self._set('DONE', 'done', '조립이 끝났어요')
+            with self._lock:               # DONE 방송과 요약 확정 사이에 새 설계 선택 · 출발이 끼어들지 못하게 한 잠금 안에서(파일 I/O 없음)
+                self.block_id = None
+                self._set('DONE', 'done', '조립이 끝났어요')
+                self._finish_run('DONE')
         elif status == 'UNKNOWN_BLOCK' and not self._reobserved:
             self._reobserved = True
             self._set('CHECK', None, f'{r["block_id"]} 가 있는지 못 봐서 한 번 더 봅니다')
@@ -192,8 +218,11 @@ class TaskManager:
         ok, why = self.io.pick_place(self.goal, self.halted)
         if ok:
             self.placed = self.goal['block_id']
+            self.logger.record_placed(self.placed, self.goal['supply_slot'])
             self._set('VERIFY', None, f'{self.placed} 를 놓았다. 확인합니다')
-        elif why == 'PLAN_FAILED':
+            return None
+        self.logger.log('fail', self.goal['block_id'], f'pick_place {why}')
+        if why == 'PLAN_FAILED':
             if self._plan_retry < 1:           # 같은 목표로 다시 계획 1번
                 self._plan_retry += 1
             else:
@@ -205,7 +234,7 @@ class TaskManager:
         else:
             # 정지류 · BUSY 는 _failed 가 따로 처리한다. TIMEOUT · ERROR · GRIPPER_NO_RESPONSE 는 IRD 7장 정식 코드이고
             # SDD 7.1 이 ERROR 로 정했다. IRD 에 없는 reason 도 같은 공통 분기(일반 실패 → ERROR)를 탄다
-            self._failed(why, f'{self.goal["block_id"]} 집기·놓기')
+            self._failed(why, f'{self.goal["block_id"]} 집기·놓기', log=False)
 
     def _verify(self):
         """VERIFY: 관측 자세에서 방금 놓은 블록과 그 받침만 다시 보고, 없거나 어긋났으면 ERROR."""
@@ -215,6 +244,8 @@ class TaskManager:
         block = next(b for b in self.planner.blocks if b['block_id'] == self.placed)
         if not self._observe([self.placed] + block['supports']):
             return None
+        row = self.planner.progress[self.placed]      # 판정 전에 측정값부터 남긴다(어긋나서 ERROR 가 되어도 값은 기록)
+        self.logger.record_measure(self.placed, row['dx_m'], row['dy_m'], row['dz_m'])
         problems = self.planner.judge(expect_present=[self.placed])
         if problems:
             return self._offset_over(problems)
@@ -256,11 +287,12 @@ class TaskManager:
     def _recover(self):
         """RECOVER: 조립 중이었으면 쥔 블록이 없는지 확인(gripper/state)하고 진행 확인부터 다시 한다. 쥐고 있거나 모르면 ERROR.
 
-        조립 중이 아니었으면(IDLE · READY · DONE 에서 정지) IDLE 로 간다 — SDD 5장의 비조립 RECOVER → IDLE 규칙(W121 확인).
-        복구 때의 '저속'은 구현하지 않는다(MoveTo 에 속도 칸이 없다, W121 확인).
+        조립 중이 아니었으면(IDLE · READY · DONE 에서 정지) IDLE 로 간다 — SDD 5장의 비조립 RECOVER → IDLE 규칙(IRD 12장 W121 다시 확인 대상).
+        복구 때의 '저속'(MoveTo.speed_ratio · recover.speed_ratio)은 아직 안 건다(W119).
         """
         if not self._assembling:
             self.planner, self.design_id, self.block_id = None, None, None
+            self._clear_run()
             self._set('IDLE', None, '정지가 풀렸어요. 설계를 다시 고르세요')
             return None
         grip = self.gripper
@@ -317,11 +349,13 @@ class TaskManager:
             self._pending_start = False        # 이전에 눌린 [계속]은 버린다
             self._set('WAIT_SUPPLY', None, '공급이 필요해요. 관측 자세로 갑니다')
 
-    def _failed(self, reason, where):
+    def _failed(self, reason, where, log=True):
         """집기·놓기 말고 이동 · 관측 호출이 실패했을 때. 정지류는 STOPPED, BUSY 는 같은 상태에서 다시, 그 밖은 모두 ERROR.
 
         모르는 reason(IRD 7장에 없는 문자열)도 이름을 따로 다루지 않고 일반 실패로 ERROR 에 보낸다. 글자는 알림에 그대로 적는다.
         """
+        if log:
+            self.logger.log('fail', self.block_id, f'{where}: {reason or "이유 없음"}')
         if reason in STOP_REASONS:             # 정지 노드의 신호를 기다린다
             self._enter_stopped()
         elif reason == 'BUSY':                 # 기다렸다 다시: 같은 상태에 머무르면 다음 단계가 다시 부른다
@@ -345,7 +379,7 @@ class TaskManager:
         except ValueError as e:
             self._to_error(f'진행 확인 답이 이상하다: {e}')
             return False
-        self.io.publish_progress(self.planner.progress_message(None, time.time()))
+        self.io.publish_progress(self.planner.progress_message(self.run_id, time.time()))
         return True
 
     # ---------- 설계 고르기 · 출발 · 시작 점검 ----------
@@ -364,6 +398,7 @@ class TaskManager:
         if not ok:
             return self._reject(code, f'시작 점검 실패: {text}')
         self.planner, self.design_id, self.block_id, self.placed = planner, design_id, None, None
+        self._clear_run()
         self._set('READY', 'ready_to_start', f'{design_id} 준비됐어요. 출발을 누르세요')
         return True, ''
 
@@ -376,6 +411,7 @@ class TaskManager:
             if not self._supply_moved:
                 return self._reject('BUSY', '아직 관측 자세로 가는 중이에요. 도착한 뒤 [계속]을 누르세요')
             self._pending_start = True
+            self.logger.log('command', self.block_id, 'continue')    # 같은 run_id 로 이어 간다
             return True, ''
         if self.state == 'IDLE' and design_id:
             ok, why = self._select_design(design_id)
@@ -390,6 +426,7 @@ class TaskManager:
             return self._reject(code, f'시작 점검 실패: {text}')
         self._reobserved = False
         self.placed = self.block_id = None
+        self.run_id = self.logger.start_run(self.design_id, len(self.planner.blocks))   # 실제 출발 때만 새 run_id
         self._set('CHECK', None, '진행 확인을 시작합니다')
         return True, ''
 
@@ -434,18 +471,33 @@ class TaskManager:
             self._assembling = self.state in RUN_STATES
             self._entered_count = self.safety_count
             self._pending_start = False
+            self.logger.count_stop()
             self._set('STOPPED', 'stopped', '멈췄어요. 원인을 없앤 뒤 [다시 시작]을 누르세요')
 
     def _to_error(self, message, message_id=None):
         """ERROR 로 간다. 로봇은 서 있고 사람을 부른다. message_id 는 IRD 값만 쓰고 맞는 것이 없으면 null."""
         with self._lock:
             self._entered_count = self.safety_count
+            self.logger.log('error', self.block_id, message)
             self._set('ERROR', message_id, message)
 
     def _unlocked_since(self, count):
         """(lock 안) count 번째 이후에 잠금이 풀린 safety/state 가 새로 왔나. [다시 시작]을 알아보는 규칙."""
         st = self.safety
         return bool(st) and self.safety_count > count and not st.get('stopped') and not st.get('locked')
+
+    def _finish_run(self, result):
+        """열린 조립 기록을 result(DONE · STOPPED · ERROR)로 닫고 build/1 요약을 last_build 에 둔다. run_id 는 화면에 남긴다."""
+        summary = self.logger.finish(result)
+        if summary is not None:
+            self.last_build = summary
+
+    def _clear_run(self):
+        """run_id 를 비운다(새 설계 · IDLE). 닫히지 않은 기록이 있으면 STOPPED 로 닫는다."""
+        if self.logger.active:
+            self._finish_run('STOPPED')
+        self.logger.clear()
+        self.run_id = None
 
     def _busy_reason(self):
         """거절할 때 쓰는 기존 코드: 정지 중이면 STOPPED, 그 밖에는 BUSY."""
@@ -462,10 +514,11 @@ class TaskManager:
         with self._lock:
             LOG.info('%s → %s %s', self.state, state, message)
             self.state = state
+            self.logger.log('state', self.block_id, state)
             self._publish(message_id, message)
 
     def _publish(self, message_id, message):
-        """state/1 한 건을 보낸다. run_id 는 W065 에서 정하므로 null, message_id 는 IRD 2장 값 또는 null."""
+        """state/1 한 건을 보낸다. run_id 는 조립 중(끝난 직후 포함)에만 값, message_id 는 IRD 2장 값 또는 null."""
         self.io.publish_state({'schema': 'state/1', 'stamp': time.time(), 'mode': 'auto', 'state': self.state,
-                               'run_id': None, 'design_id': self.design_id, 'block_id': self.block_id,
+                               'run_id': self.run_id, 'design_id': self.design_id, 'block_id': self.block_id,
                                'message_id': message_id, 'message': message})

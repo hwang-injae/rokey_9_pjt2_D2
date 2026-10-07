@@ -7,7 +7,8 @@
 제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
 부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace)
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
-레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0). get_design 은 W119 뒤.
+기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
+레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44). get_design 은 W119 에서.
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 기다리는 중인 모든 호출이 빠져나오고 진행 중인 pick_place 목표를 취소한다(서기는 pick_place 가 한다).
 """
@@ -16,6 +17,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 import rclpy
 import yaml
@@ -32,9 +34,11 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_task.design_checker import DesignChecker
+from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager, wait_until
 
 LOOP_S = 0.1          # 작업 스레드가 한 단계 하고 쉬는 간격. pick_place_node 의 main 반복과 같다(정책 숫자가 아니다)
+LOG_FLUSH_S = 2.0      # 끝낼 때 기록 파일에 남은 줄이 쓰일 때까지 기다리는 한도. 취소 요청을 보낸 뒤에만 기다린다
 CANCEL_WAIT_S = 1.0   # Ctrl+C 때 취소 요청이 나갈 때까지 기다리는 시간. pick_place_node 의 executor 종료 대기와 같다
 # 정지 노드 · 다리와 같게: 마지막 값만 의미 있고, 늦게 붙는 쪽도 받는다 (IRD 4.1, MQTT retained 자리)
 LATCHED_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -64,12 +68,18 @@ class TaskNode(Node):
     """
 
     def __init__(self):
-        """설정을 읽고 서비스 · 클라이언트 · 구독 · 방송을 만든다. 파라미터 recipe_dir 은 비어 있으면 설계를 못 고른다."""
+        """설정을 읽고 서비스 · 클라이언트 · 구독 · 방송을 만든다. 파라미터 recipe_dir 은 비어 있으면 설계를 못 고르고, log_dir 이 비면 기록 파일을 안 쓴다."""
         super().__init__('task')
         self.declare_parameter('recipe_dir', '')
+        self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
-        self.manager = TaskManager(cfg, self)
+        logger = RunLogger(self.get_parameter('log_dir').value)
+        if logger.enabled:
+            self.get_logger().info(f'[작업 관리자] 조립 기록 폴더: {logger.log_dir}')
+        else:
+            self.get_logger().warn('[작업 관리자] 조립 기록 파일이 꺼져 있다(log_dir 이 비어 있음) — run_id 와 요약만 만든다')
+        self.manager = TaskManager(cfg, self, logger)
         self.checker = DesignChecker(cfg)         # 변환기 ①(한세교 W110)이 정해지면 blocks_to_recipe 인자로 붙인다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
@@ -258,9 +268,10 @@ def main():
             node.manager.run_once()
             time.sleep(LOOP_S)
     except KeyboardInterrupt:
-        node.manager.shutdown()
+        node.manager.shutdown()                    # ① 중단 신호 → ② 진행 중인 목표 취소 요청 → ③ 기록 마무리(finally)
         node.cancel_active()
     finally:
+        node.manager.finalize(LOG_FLUSH_S)
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
         if rclpy.ok():
