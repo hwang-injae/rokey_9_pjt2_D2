@@ -5,7 +5,8 @@
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
         /d2/gripper/state (JSON gripper_state/1)
 제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
-부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace)
+부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace),
+        /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/1 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
 내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
 레시피(1차): ROS 파라미터 recipe_dir 아래 <design_id>.recipe.json (assembly.recipe/1.0 또는 cad_recipe/1.0 — E-44). get_design 은 W119 에서.
@@ -33,11 +34,13 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager, wait_until
 
 LOOP_S = 0.1          # 작업 스레드가 한 단계 하고 쉬는 간격. pick_place_node 의 main 반복과 같다(정책 숫자가 아니다)
+SAVE_POLL_S = 1.0       # 보낼 요약이 있는지 · 답이 늦었는지 살피는 간격. 제한 시간(timeout.service_s)이 아니라 확인 주기일 뿐이다
 LOG_FLUSH_S = 2.0      # 끝낼 때 기록 파일에 남은 줄이 쓰일 때까지 기다리는 한도. 취소 요청을 보낸 뒤에만 기다린다
 CANCEL_WAIT_S = 1.0   # Ctrl+C 때 취소 요청이 나갈 때까지 기다리는 시간. pick_place_node 의 executor 종료 대기와 같다
 # 정지 노드 · 다리와 같게: 마지막 값만 의미 있고, 늦게 붙는 쪽도 받는다 (IRD 4.1, MQTT retained 자리)
@@ -86,12 +89,17 @@ class TaskNode(Node):
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
         self.check_cli = self.create_client(CheckProgress, '/d2/vision/check_progress', callback_group=cb)
         self.pick_cli = ActionClient(self, PickPlace, '/d2/motion/pick_place', callback_group=cb)
+        self.save_cli = self.create_client(JsonQuery, '/d2/hmi/save_build', callback_group=cb)
+        self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
+        self.sender = BuildSender(self.manager, self._call_save, self.save_cli.remove_pending_request,
+                                  self.save_cli.service_is_ready, self.service_s)
         self.state_pub = self.create_publisher(String, '/d2/task/state', LATCHED_QOS)
         self.progress_pub = self.create_publisher(String, '/d2/task/progress', LATCHED_QOS)
         self.create_subscription(String, '/d2/safety/state', self._on_safety, LATCHED_QOS, callback_group=cb)
         self.create_subscription(String, '/d2/gripper/state', self._on_gripper, 10, callback_group=cb)
         self.create_subscription(String, '/d2/hmi/intent', self._on_intent, 10, callback_group=cb)
         self.create_service(HmiCommand, '/d2/hmi/command', self._on_command, callback_group=cb)
+        self.create_timer(SAVE_POLL_S, self.sender.poll, callback_group=MutuallyExclusiveCallbackGroup())
         # 검사 요청끼리는 순서대로, 안전 · 그리퍼 · 상태표 콜백과는 따로 — 계산이 길어도 그쪽을 막지 않는다
         self.create_service(JsonQuery, '/d2/task/check_design', self._on_check_design,
                             callback_group=MutuallyExclusiveCallbackGroup())
@@ -132,6 +140,13 @@ class TaskNode(Node):
         """/d2/task/check_design 요청을 DesignChecker 에 넘기고 답한다. 작업 관리자 상태 · 로봇에는 손대지 않는다."""
         res.success, res.reason, res.response_json = self.checker.handle_json(req.request_json)
         return res
+
+    # ---------- 결과 저장(save_build) ----------
+    def _call_save(self, summary):
+        """build/1 요약을 /d2/hmi/save_build 로 비동기로 보낸다. 반환: future."""
+        req = JsonQuery.Request()
+        req.request_json = json.dumps(summary, ensure_ascii=False, allow_nan=False)
+        return self.save_cli.call_async(req)
 
     # ---------- TaskManager 의 io ----------
     def load_recipe(self, design_id):

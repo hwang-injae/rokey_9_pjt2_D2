@@ -17,13 +17,17 @@ should_abort() 가 참이 되면(정지 신호 · Ctrl+C) 곧바로 빠져나와
 
 범위: 자동 조립 상태 11개 + 기록(CSV · run_id, W065 — RunLogger). 스캔 상태(SCAN_*) · get_design · save_build · 웹 끊김(hmi_lost)은 W119.
 run_id 는 조립을 실제로 출발시킬 때(READY → CHECK) 새로 만든다. 정지 · 복구 · 공급 보충 뒤 계속할 때는 같은 ID 를 쓴다.
-끝난 조립의 build/1 요약은 last_build 에 둔다(/d2/hmi/save_build 로 보내는 것은 W119).
+끝난 조립의 build/1 요약은 last_build(최근 결과 표시용)와 pending_builds(run_id 별 미전송 요약)에 둔다.
+/d2/hmi/save_build 로 보내는 일은 task 노드가 하고(네트워크 대기는 이 클래스의 잠금 밖), 이 클래스는 무엇을 보낼지(builds_to_send) ·
+답이 오면 어떻게 할지(build_result)만 정한다. 저장이 확인된 run_id 만 목록에서 지운다 — 실패 · 시간 초과 · 잘못된 답은 요약을 남긴다.
 WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부지만 SDD 5장 상태표에 있어 W044 에서 먼저 구현했다 — **W119 완료가 아니다**
 (W119 는 get_design · 스캔 흐름 · DB 점검 · builds · 웹 끊김이 더 남아 있다).
 아직 구현하지 않은 것(W119): ① 복구(RECOVER) 때 첫 move_to 를 저속으로 — 인터페이스는 W121에서 정해졌다(MoveTo.speed_ratio,
 robot.yaml recover.speed_ratio 0.5) ② 시간 제한(위). 조립 중이 아닐 때(IDLE · READY · DONE) 정지됐다 풀린 뒤 돌아갈 곳은 SDD 에
 없어서 가장 가까운 규칙(비조립 RECOVER → IDLE)만 따른다(IRD 12장 W121 다시 확인 대상).
 """
+import copy
+import json
 import logging
 import threading
 import time
@@ -68,7 +72,10 @@ class TaskManager:
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
         self.run_id = None                        # 지금(또는 방금 끝난) 조립의 run_id. 새 설계를 고르거나 IDLE 로 가면 비운다
-        self.last_build = None                    # 가장 최근에 끝난 조립의 build/1 요약. 새 출발로는 지우지 않는다(save_build 로 보내는 것은 W119)
+        self.last_build = None                    # 가장 최근에 끝난 조립의 build/1 요약(표시용). 새 출발로는 지우지 않는다
+        self.pending_builds = {}                  # run_id → 아직 DB 저장이 확인 안 된 build/1 요약(복사본)
+        self._build_inflight = set()              # 지금 save_build 요청을 보내고 답을 기다리는 run_id
+        self._build_last_try = {}                 # run_id → 마지막으로 보낸 시각(monotonic, 다시 보내기 간격 계산)
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
         self.state = 'IDLE'
         self.planner = None
@@ -119,6 +126,58 @@ class TaskManager:
                 self._finish_run('ERROR' if self.state == 'ERROR' else 'STOPPED')
         if not self.logger.flush(flush_s):
             LOG.warning('기록 파일에 아직 다 안 써졌다(%.1f초 안에 못 끝냄) — 마지막 줄이 CSV 에 없을 수 있다. 요약(last_build)은 메모리에 있다', flush_s)
+
+    # ---------- 결과 저장(save_build) — 보내는 일은 task 노드, 정하는 일은 여기 ----------
+    def builds_to_send(self, now, retry_s):
+        """지금 /d2/hmi/save_build 로 보낼 요약들 [(run_id, 요약 복사본)]. 보내는 것으로 적어 두므로 호출한 쪽이 꼭 보내야 한다.
+
+        답을 기다리는 중인 것 · 마지막으로 보낸 지 retry_s(monotonic 초)가 안 된 것 · 끝내는 중이면 내지 않는다.
+        now = time.monotonic(). 잠금 안에서 메모리만 만진다(네트워크 대기 없음).
+        """
+        with self._lock:
+            if self._shutdown:
+                return []
+            out = []
+            for run_id, summary in self.pending_builds.items():
+                last = self._build_last_try.get(run_id)
+                if run_id in self._build_inflight or (last is not None and now - last < retry_s):
+                    continue
+                self._build_inflight.add(run_id)
+                self._build_last_try[run_id] = now
+                out.append((run_id, copy.deepcopy(summary)))
+            return out
+
+    def build_result(self, run_id, success, response_json):
+        """save_build 의 답을 그 요청의 run_id 에만 적용한다. 반환: 저장이 확인돼 대기 목록에서 지웠으면 True.
+
+        서비스 success 가 참이고 응답 JSON 이 객체이며 ok 가 참(true)일 때만 지운다. 그 밖(실패 · 깨진 JSON · ok 거짓)은 요약을 남긴다.
+        이미 지워졌거나 모르는 run_id 의 늦은 답은 아무것도 안 바꾼다 — 다른 조립의 요약은 건드리지 않는다.
+        """
+        with self._lock:
+            self._build_inflight.discard(run_id)
+            if run_id not in self.pending_builds:
+                return False
+            if success is not True or not self._response_ok(response_json):
+                LOG.warning('결과 저장 실패(run %s) — 요약을 남기고 나중에 다시 보낸다: success=%r %.80r', run_id, success, response_json)
+                return False
+            del self.pending_builds[run_id]
+            self._build_last_try.pop(run_id, None)
+            return True
+
+    def build_failed(self, run_id, why):
+        """save_build 요청이 못 나갔거나 시간 안에 답이 없었다. 요약은 남기고 다시 보낼 수 있게 한다."""
+        with self._lock:
+            self._build_inflight.discard(run_id)
+        LOG.warning('결과 저장을 못 했다(run %s): %s — 요약을 남긴다', run_id, why)
+
+    @staticmethod
+    def _response_ok(response_json):
+        """응답 JSON 글자가 객체이고 ok 가 true(참인 값이 아니라 정확히 true)인가."""
+        try:
+            body = json.loads(response_json)
+        except (TypeError, ValueError):
+            return False
+        return isinstance(body, dict) and body.get('ok') is True
 
     def halted(self):
         """멈춰야 하면 참 — 정지 노드가 stopped 를 보냈거나 끝내는 중. io 의 기다림이 이것을 should_abort 로 쓴다."""
@@ -490,7 +549,9 @@ class TaskManager:
         """열린 조립 기록을 result(DONE · STOPPED · ERROR)로 닫고 build/1 요약을 last_build 에 둔다. run_id 는 화면에 남긴다."""
         summary = self.logger.finish(result)
         if summary is not None:
-            self.last_build = summary
+            with self._lock:
+                self.last_build = summary
+                self.pending_builds[summary['run_id']] = copy.deepcopy(summary)    # 저장이 확인될 때까지 run_id 별로 남긴다
 
     def _clear_run(self):
         """run_id 를 비운다(새 설계 · IDLE). 닫히지 않은 기록이 있으면 STOPPED 로 닫는다."""
