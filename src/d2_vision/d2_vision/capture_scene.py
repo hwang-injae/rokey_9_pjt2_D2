@@ -6,7 +6,9 @@ Enter 를 누를 때마다 손목 카메라의 **컬러 PNG + 컬러에 맞춘 �
 이름으로 구분, PL 10/7 허락 — 규칙 §2.3). 태그를 안 켜면 이름은 그대로다. 장면 번호: 01~10 흩뿌린 장면 · 11~13 스캔(벤치 · 의자 Lv2 · 책상 Lv4) · 21~30 V-52 시험.
 스캔 원본은 드라이브 `1_원본_W114/스캔`에 따로 올린다(Roboflow에 섞이지 않게).
 자세 json = 두산 posx(mm · deg, /dsr_controller2/aux_control/get_current_posx) · 팔 관절값(/joint_states, deg) · 카메라 내부 파라미터
-· hand-eye 로 계산한 T_base2cam(m) · 해상도 · 시각. 브링업이 없으면 `--posx` 로 펜던트 값을 넣는다(관절값은 빈 값).
+· hand-eye 로 계산한 T_base2cam(m) · **그때 쓴 보정값(파일 · 수정 시각 · 카메라 위치 mm · 지문)** · 해상도 · 시각. 브링업이 없으면 `--posx` 로 펜던트 값을 넣는다(관절값은 빈 값).
+보정값은 촬영 중간에 바뀔 수 있다(10/7 수평 약 1 cm 재보정). 그래서 뒤에 쓰는 코드(스캔 추론기 · find_blocks)는 json 의 T_base2cam 을
+그대로 믿지 말고 **posx_mm_deg × 최신 보정값**으로 다시 계산한다(PL 10/7). json 의 calib 칸은 어느 값으로 계산했는지 되짚는 용도.
 
 입력(인자)
   --out      저장 폴더 (예: ~/d2_data/W114). 없으면 만든다. 저장소에는 넣지 않는다(드라이브 YOLO_흩어진블록/1_원본_W114 로 올림)
@@ -23,6 +25,7 @@ Enter 를 누를 때마다 손목 카메라의 **컬러 PNG + 컬러에 맞춘 �
   ros2 run d2_vision capture_scene --out ~/d2_data/W114_scan --scene 11 --pose observe   # 스캔: 11 벤치 · 12 의자 · 13 책상, 자세마다 p → Enter
 """
 import argparse
+import hashlib
 import json
 import sys
 import threading
@@ -43,6 +46,20 @@ from dsr_msgs2.srv import GetCurrentPosx
 JOINTS = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']   # 두산 팔 관절 (joint_states 에 그리퍼 관절도 섞여 온다)
 FRESH_S = 1.0
 POSES = ['', 'observe', 'front', 'side']    # 자세 태그 순서(p 키). '' = 태그 없음. robot.yaml 의 observe · observe_front · observe_side 에 대응
+
+
+def calib_info(path, T):
+    """pose json 에 적을 보정값 기록: 파일 이름 · 수정 시각(ISO) · 카메라 위치 mm(T 의 이동) · 4x4 지문(sha1 앞 12자리).
+    T 가 None(보정 파일 없음)이면 None. 같은 지문이면 같은 보정값으로 계산한 사진이다."""
+    if T is None:
+        return None
+    path = Path(path)
+    return {
+        'file': path.name,
+        'mtime': time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(path.stat().st_mtime)) if path.exists() else None,
+        'cam_pos_mm': [round(float(v), 2) for v in T[:3, 3]],
+        'sha1_12': hashlib.sha1(np.ascontiguousarray(T, dtype=np.float64).round(6).tobytes()).hexdigest()[:12],
+    }
 
 
 def stem_for(scene, index, light, pose=''):
@@ -73,6 +90,7 @@ class CaptureScene(Node):
         self.intr = None
         self.joints = None
         p = Path(get_package_share_directory('d2_vision')) / 'config' / 'T_gripper2camera.npy'
+        self.calib_path = p
         self.T_g2c = np.load(p) if p.exists() else None
         if self.T_g2c is None:
             self.get_logger().warn('보정값 %s 없음 — pose json 에 T_base2cam 을 못 넣는다' % p)
@@ -153,6 +171,7 @@ class CaptureScene(Node):
             'posx_mm_deg': posx, 'posj_deg': self.joints, 'intrinsics_px': self.intr,
             'depth_unit': 'mm', 'color_size': [int(color.shape[1]), int(color.shape[0])],
             'T_base2cam_m': None, 'tcp': 'GripperDA_v1 (config/tcp.json)',
+            'calib': calib_info(self.calib_path, self.T_g2c),      # 이 사진의 T_base2cam 을 어느 보정값으로 계산했나(PL 10/7)
         }
         if self.T_g2c is not None:
             T = posx_to_matrix(*posx) @ self.T_g2c
