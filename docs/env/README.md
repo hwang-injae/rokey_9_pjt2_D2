@@ -4,7 +4,7 @@
 |---|---|
 | OS · ROS | Ubuntu 24.04 LTS + ROS 2 Jazzy (Python 3.12). 팀 PC 모두 같은 버전 |
 | 로봇 | 두산 M0609 + 두산 드라이버(doosan-robot2) + MoveIt2 2.12. 팀 브링업 = 박진용 `real_moveit.launch.py` (`mode:=virtual`·`real`) |
-| 그리퍼 | OnRobot RG2 (고무 패드 뺌, 10/4) |
+| 그리퍼 | OnRobot RG2 |
 | 카메라 | 손목 RealSense D435i(깊이 있음) — 로봇 PC. **웹캠은 쓰지 않는다**(10/6 주제 개편 E-19) |
 | ROS 2 통신 | **로봇 PC 안에서만**: CycloneDDS(`rmw_cyclonedds_cpp`), `ROS_DOMAIN_ID` = 60 (팀 60번대). **PC 사이는 MQTT**(10/6 E-27) |
 | 컨테이너 | Docker compose, **웹 PC에만**(10/6 E-31): `mosquitto`(MQTT 브로커 1883) · `db`(PostgreSQL 16) · `web`(backend FastAPI :8000 + frontend 정적 파일 · AI 생성 · 저장소, 안). 셋 다 황인재. 로봇 PC는 전부 호스트 |
@@ -101,7 +101,7 @@ ros2 launch d2_bringup real_moveit.launch.py mode:=real host:=192.168.1.100
 
 | 장치 | 연결 | 확인 | 주의 |
 |---|---|---|---|
-| RG2 | 로봇 네트워크(192.168.1.1), Modbus | 그리퍼 노드(`d2_gripper`)로 열기·닫기 | **그리퍼 노드 하나만** 그리퍼에 명령한다. 고무 패드를 빼서 치수·TCP·표시폭을 다시 재는 중 — 값은 ＿＿ (측정 전) |
+| RG2 | 로봇 네트워크(192.168.1.1), Modbus | 그리퍼 노드(`d2_gripper`)로 열기·닫기 | **그리퍼 노드 하나만** 그리퍼에 명령한다. 치수·TCP·표시폭 값은 `robot.yaml`(10/6 측정) |
 | RealSense D435i | 로봇 PC USB 3 | `ros2 launch realsense2_camera rs_launch.py` 뒤 `ros2 topic list`에 카메라 토픽 | 깊이 최소 거리 약 28 cm → 관측 자세는 30~40 cm 위. 손목 보정이 4.8 cm 어긋나 있어 10/6에 다시 한다(R-05) |
 
 ```bash

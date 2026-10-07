@@ -1,7 +1,7 @@
 # D2 설정 파일 — 좌표·높이·힘·시간은 코드에 쓰지 않고 여기 하나에 둔다 (IRD 9장).
 # 단위: 길이 m (이름 끝 _m), 각 도 (_deg), 시간 s (_s), 힘 N (_n). 기준 좌표계 base_link.
 # 틀: 황인재 (W031). 측정값: 로봇 동작 (W033).
-# 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 — 그리퍼 값은 모두 고무 패드 낀 상태라 고무 빼고 다시 잰다 (W011~W014).
+# 10/6 박진용: recipe_demo/config/cell.json 값으로 처음 채움 → 10/6 다시 측정 (W011~W016).
 
 frame_id: base_link
 tcp_link: rg2_tcp
@@ -41,11 +41,11 @@ gripper:
   force_n: 10.0                # 드라이버는 2.5 N 단위로만 바꾼다
   open_margin_m: null          # (측정 전) — 지금은 잡기별 grasp_open_place_m 을 쓴다
   feedback_offset_m: 0.0094    # 잡았을 때 표시(피드백) 폭 = 실제 폭 + 이 값
-  command_offset_m: 0.0085     # 실제 폭 = 명령 폭 - 이 값 (10/6 캘리퍼스: 50 -> 41.7, 100 -> 91.3 mm, 고무 뺀 뒤). 그리퍼 노드가 더해서 명령한다
+  command_offset_m: 0.0085     # 실제 폭 = 명령 폭 - 이 값 (10/6 캘리퍼스: 50 -> 41.7, 100 -> 91.3 mm). 그리퍼 노드가 더해서 명령한다
   check_tolerance_m: 0.005     # |실제 폭 - grasp_width_m| 이 이 안이면 잡힘
   settle_timeout_s: 4.0        # 명령 뒤 폭이 멈출 때까지 기다리는 최대 시간
   finger_height:               # 손가락 끝 높이 보정점: 다 닫고(표시 9 mm) 끝이 작업대에 닿을 때의 rg2_tcp z
-    touch_tcp_z_m: 0.011         # 10/6 직접 교시 (한세교, 고무 패드 뺌). 이전 0.0112 (10/4 펜던트) — 무는 깊이만 0.2 mm 바뀜
+    touch_tcp_z_m: 0.011         # 10/6 직접 교시 (한세교). 이전 0.0112 (10/4 펜던트) — 무는 깊이만 0.2 mm 바뀜
     touch_display_width_m: 0.009
 
 grasp_depth_m: 0.011           # 블록 윗면에서 손가락 끝까지 (15 mm 블록이면 끝이 바닥 4 mm 위)
