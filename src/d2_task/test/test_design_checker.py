@@ -16,7 +16,7 @@ ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
 DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chair_back', 'chair', 12.5),
-           '003_DESK_STAND': ('desk_stand', 'desk', 7.5)}
+           '003_DESK_STAND': ('desk_stand', 'desk', 7.5), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 12.5)}   # 004 = 10/7 가운데 기둥형 책상(W117)
 
 
 def base_design(model_id):
