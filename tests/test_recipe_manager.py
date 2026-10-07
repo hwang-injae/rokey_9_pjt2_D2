@@ -53,10 +53,10 @@ def test_dxf_rebuild_matches_saved_files(model_id, cad):
     assert len(csv_lines) == len(rows) + 1 and csv_lines[1].startswith(f'{model_id}_B001,1,1,')
 
 
-# recipes/ 에는 모형마다 결과 2개(_recipe.json · _placements.csv)만 있다 — 계획은 cads/ 옆, 모델은 레시피 안에만
+# recipes/ 에는 모형마다 결과 3개(_recipe.json · _placements.csv · 10/8 W117 변환기 ②가 만든 _blocks.json — HMI 가 이 폴더만 읽게)만 있다 — 계획은 cads/ 옆, 모델은 레시피 안에만
 def test_recipes_folder_has_only_results():
     names = sorted(p.name for p in (RM / 'recipes').iterdir())
-    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('recipe.json', 'placements.csv'))
+    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('recipe.json', 'placements.csv', 'blocks.json'))
 
 
 # 저장 레시피의 모델로 다시 만든 모델 · 레시피가 원본과 같다(꼭짓점 → 치수 · 회전 · 받침 · block_id)
