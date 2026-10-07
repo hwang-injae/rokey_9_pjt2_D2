@@ -14,10 +14,10 @@ USAGE_EXAMPLES = """
 실행 인자가 없습니다. 저장소 루트의 터미널에서 아래와 같이 실행하세요.
 
 1) CAD에서 모델과 계획 양식 생성:
-   python3 recipe_manager/CAD_to_Recipe/main.py inspect recipe_manager/cad/lv1_bench.dxf --model-id LV1
-2) recipe_manager/recipes/LV1.plan.json의 sequence, stage, grasp를 확인·입력
+   python3 src/recipe_manager/CAD_to_Recipe/main.py inspect src/recipe_manager/cad/001_chair_bench.dxf --model-id 001_CHAIR_BENCH
+2) src/recipe_manager/recipes/001_CHAIR_BENCH.plan.json의 sequence, stage, grasp를 확인·입력
 3) 레시피 생성:
-   python3 recipe_manager/CAD_to_Recipe/main.py build recipe_manager/cad/lv1_bench.dxf recipe_manager/recipes/LV1.plan.json
+   python3 src/recipe_manager/CAD_to_Recipe/main.py build src/recipe_manager/cad/001_chair_bench.dxf src/recipe_manager/recipes/001_CHAIR_BENCH.plan.json
 """
 
 

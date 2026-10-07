@@ -493,7 +493,7 @@ $SKPOLY
   9
 $TDCREATE
  40
-2461317.520150463
+2461321.4431944443
   9
 $TDUCREATE
  40
@@ -501,7 +501,7 @@ $TDUCREATE
   9
 $TDUPDATE
  40
-2461317.520150463
+2461321.4431944443
   9
 $TDUUPDATE
  40
@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-F4
+10A
   9
 $SURFTAB1
  70
@@ -937,7 +937,7 @@ $FINGERPRINTGUID
   9
 $VERSIONGUID
   2
-{89D55C03-2C2C-47A2-8D9C-A5D571398621}
+{49097EAB-4F48-4C48-98E7-04B1D356C438}
   9
 $EXTNAMES
 290
@@ -2081,7 +2081,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B001
+001_CHAIR_BENCH_B001
 340
 0
  70
@@ -2101,7 +2101,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B002
+001_CHAIR_BENCH_B002
 340
 0
  70
@@ -2121,7 +2121,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B003
+001_CHAIR_BENCH_B003
 340
 0
  70
@@ -2141,7 +2141,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B004
+001_CHAIR_BENCH_B004
 340
 0
  70
@@ -2161,7 +2161,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B005
+001_CHAIR_BENCH_B005
 340
 0
  70
@@ -2181,7 +2181,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B006
+001_CHAIR_BENCH_B006
 340
 0
  70
@@ -2201,7 +2201,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B007
+001_CHAIR_BENCH_B007
 340
 0
  70
@@ -2221,7 +2221,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B008
+001_CHAIR_BENCH_B008
 340
 0
  70
@@ -2241,7 +2241,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B009
+001_CHAIR_BENCH_B009
 340
 0
  70
@@ -2261,7 +2261,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B010
+001_CHAIR_BENCH_B010
 340
 0
  70
@@ -2281,7 +2281,7 @@ AcDbSymbolTableRecord
 100
 AcDbBlockTableRecord
   2
-LV1_B011
+001_CHAIR_BENCH_B011
 340
 0
  70
@@ -2387,7 +2387,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B001
+001_CHAIR_BENCH_B001
  70
 2
  10
@@ -2397,7 +2397,7 @@ LV1_B001
  30
 0.0
   3
-LV1_B001
+001_CHAIR_BENCH_B001
   1
 
   0
@@ -2743,7 +2743,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B002
+001_CHAIR_BENCH_B002
  70
 2
  10
@@ -2753,7 +2753,7 @@ LV1_B002
  30
 0.0
   3
-LV1_B002
+001_CHAIR_BENCH_B002
   1
 
   0
@@ -3099,7 +3099,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B003
+001_CHAIR_BENCH_B003
  70
 2
  10
@@ -3109,7 +3109,7 @@ LV1_B003
  30
 0.0
   3
-LV1_B003
+001_CHAIR_BENCH_B003
   1
 
   0
@@ -3455,7 +3455,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B004
+001_CHAIR_BENCH_B004
  70
 2
  10
@@ -3465,7 +3465,7 @@ LV1_B004
  30
 0.0
   3
-LV1_B004
+001_CHAIR_BENCH_B004
   1
 
   0
@@ -3811,7 +3811,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B005
+001_CHAIR_BENCH_B005
  70
 2
  10
@@ -3821,7 +3821,7 @@ LV1_B005
  30
 0.0
   3
-LV1_B005
+001_CHAIR_BENCH_B005
   1
 
   0
@@ -4167,7 +4167,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B006
+001_CHAIR_BENCH_B006
  70
 2
  10
@@ -4177,7 +4177,7 @@ LV1_B006
  30
 0.0
   3
-LV1_B006
+001_CHAIR_BENCH_B006
   1
 
   0
@@ -4523,7 +4523,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B007
+001_CHAIR_BENCH_B007
  70
 2
  10
@@ -4533,7 +4533,7 @@ LV1_B007
  30
 0.0
   3
-LV1_B007
+001_CHAIR_BENCH_B007
   1
 
   0
@@ -4879,7 +4879,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B008
+001_CHAIR_BENCH_B008
  70
 2
  10
@@ -4889,7 +4889,7 @@ LV1_B008
  30
 0.0
   3
-LV1_B008
+001_CHAIR_BENCH_B008
   1
 
   0
@@ -5235,7 +5235,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B009
+001_CHAIR_BENCH_B009
  70
 2
  10
@@ -5245,7 +5245,7 @@ LV1_B009
  30
 0.0
   3
-LV1_B009
+001_CHAIR_BENCH_B009
   1
 
   0
@@ -5591,7 +5591,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B010
+001_CHAIR_BENCH_B010
  70
 2
  10
@@ -5601,7 +5601,7 @@ LV1_B010
  30
 0.0
   3
-LV1_B010
+001_CHAIR_BENCH_B010
   1
 
   0
@@ -5947,7 +5947,7 @@ AcDbEntity
 100
 AcDbBlockBegin
   2
-LV1_B011
+001_CHAIR_BENCH_B011
  70
 2
  10
@@ -5957,7 +5957,7 @@ LV1_B011
  30
 0.0
   3
-LV1_B011
+001_CHAIR_BENCH_B011
   1
 
   0
@@ -6311,7 +6311,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B001
+001_CHAIR_BENCH_B001
  10
 -25.0
  20
@@ -6321,17 +6321,17 @@ LV1_B001
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B001","sequence":1,"stage":1,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B001","sequence":1,"stage":1,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 40
 330
-17
+3E
 100
 AcDbEntity
   8
@@ -6375,7 +6375,7 @@ ATTRIB
   5
 41
 330
-17
+3E
 100
 AcDbEntity
   8
@@ -6419,7 +6419,7 @@ ATTRIB
   5
 42
 330
-17
+3E
 100
 AcDbEntity
   8
@@ -6463,7 +6463,7 @@ SEQEND
   5
 3F
 330
-3E
+17
 100
 AcDbEntity
   8
@@ -6483,7 +6483,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B002
+001_CHAIR_BENCH_B002
  10
 25.0
  20
@@ -6493,17 +6493,17 @@ LV1_B002
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B002","sequence":2,"stage":1,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_s
+{"block_id":"001_CHAIR_BENCH_B002","sequence":2,"stage":1,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V2
 1000
-lot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_
+0","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE",
 1000
-R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+"definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 51
 330
-17
+4F
 100
 AcDbEntity
   8
@@ -6547,7 +6547,7 @@ ATTRIB
   5
 52
 330
-17
+4F
 100
 AcDbEntity
   8
@@ -6591,7 +6591,7 @@ ATTRIB
   5
 53
 330
-17
+4F
 100
 AcDbEntity
   8
@@ -6635,7 +6635,7 @@ SEQEND
   5
 50
 330
-4F
+17
 100
 AcDbEntity
   8
@@ -6655,7 +6655,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B003
+001_CHAIR_BENCH_B003
  10
 -25.0
  20
@@ -6665,17 +6665,17 @@ LV1_B003
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B003","sequence":3,"stage":2,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B003","sequence":3,"stage":2,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 63
 330
-17
+61
 100
 AcDbEntity
   8
@@ -6719,7 +6719,7 @@ ATTRIB
   5
 64
 330
-17
+61
 100
 AcDbEntity
   8
@@ -6763,7 +6763,7 @@ ATTRIB
   5
 65
 330
-17
+61
 100
 AcDbEntity
   8
@@ -6807,7 +6807,7 @@ SEQEND
   5
 62
 330
-61
+17
 100
 AcDbEntity
   8
@@ -6827,7 +6827,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B004
+001_CHAIR_BENCH_B004
  10
 25.0
  20
@@ -6837,17 +6837,17 @@ LV1_B004
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B004","sequence":4,"stage":2,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_s
+{"block_id":"001_CHAIR_BENCH_B004","sequence":4,"stage":2,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V2
 1000
-lot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_
+0","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE",
 1000
-R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+"definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 74
 330
-17
+72
 100
 AcDbEntity
   8
@@ -6891,7 +6891,7 @@ ATTRIB
   5
 75
 330
-17
+72
 100
 AcDbEntity
   8
@@ -6935,7 +6935,7 @@ ATTRIB
   5
 76
 330
-17
+72
 100
 AcDbEntity
   8
@@ -6979,7 +6979,7 @@ SEQEND
   5
 73
 330
-72
+17
 100
 AcDbEntity
   8
@@ -6999,7 +6999,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B005
+001_CHAIR_BENCH_B005
  10
 -25.0
  20
@@ -7009,17 +7009,17 @@ LV1_B005
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B005","sequence":5,"stage":3,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B005","sequence":5,"stage":3,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 86
 330
-17
+84
 100
 AcDbEntity
   8
@@ -7063,7 +7063,7 @@ ATTRIB
   5
 87
 330
-17
+84
 100
 AcDbEntity
   8
@@ -7107,7 +7107,7 @@ ATTRIB
   5
 88
 330
-17
+84
 100
 AcDbEntity
   8
@@ -7151,7 +7151,7 @@ SEQEND
   5
 85
 330
-84
+17
 100
 AcDbEntity
   8
@@ -7171,7 +7171,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B006
+001_CHAIR_BENCH_B006
  10
 25.0
  20
@@ -7181,17 +7181,17 @@ LV1_B006
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B006","sequence":6,"stage":3,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_s
+{"block_id":"001_CHAIR_BENCH_B006","sequence":6,"stage":3,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V2
 1000
-lot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_
+0","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE",
 1000
-R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+"definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 97
 330
-17
+95
 100
 AcDbEntity
   8
@@ -7235,7 +7235,7 @@ ATTRIB
   5
 98
 330
-17
+95
 100
 AcDbEntity
   8
@@ -7279,7 +7279,7 @@ ATTRIB
   5
 99
 330
-17
+95
 100
 AcDbEntity
   8
@@ -7323,7 +7323,7 @@ SEQEND
   5
 96
 330
-95
+17
 100
 AcDbEntity
   8
@@ -7343,7 +7343,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B007
+001_CHAIR_BENCH_B007
  10
 -25.0
  20
@@ -7353,17 +7353,17 @@ LV1_B007
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B007","sequence":7,"stage":4,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B007","sequence":7,"stage":4,"role":"left_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 A9
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -7407,7 +7407,7 @@ ATTRIB
   5
 AA
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -7451,7 +7451,7 @@ ATTRIB
   5
 AB
 330
-17
+A7
 100
 AcDbEntity
   8
@@ -7495,7 +7495,7 @@ SEQEND
   5
 A8
 330
-A7
+17
 100
 AcDbEntity
   8
@@ -7515,7 +7515,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B008
+001_CHAIR_BENCH_B008
  10
 25.0
  20
@@ -7525,17 +7525,17 @@ LV1_B008
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B008","sequence":8,"stage":4,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V20","source_s
+{"block_id":"001_CHAIR_BENCH_B008","sequence":8,"stage":4,"role":"right_wall","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"SIDE_25","grasp_validation":"REQUIRED_V04_V2
 1000
-lot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_
+0","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE",
 1000
-R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
+"definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0
 ATTRIB
   5
 BA
 330
-17
+B8
 100
 AcDbEntity
   8
@@ -7579,7 +7579,7 @@ ATTRIB
   5
 BB
 330
-17
+B8
 100
 AcDbEntity
   8
@@ -7623,7 +7623,7 @@ ATTRIB
   5
 BC
 330
-17
+B8
 100
 AcDbEntity
   8
@@ -7667,7 +7667,7 @@ SEQEND
   5
 B9
 330
-B8
+17
 100
 AcDbEntity
   8
@@ -7687,7 +7687,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B009
+001_CHAIR_BENCH_B009
  10
 0.0
  20
@@ -7697,17 +7697,17 @@ LV1_B009
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B009","sequence":9,"stage":5,"role":"front_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B009","sequence":9,"stage":5,"role":"front_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
+definition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
   0
 ATTRIB
   5
 CC
 330
-17
+CA
 100
 AcDbEntity
   8
@@ -7751,7 +7751,7 @@ ATTRIB
   5
 CD
 330
-17
+CA
 100
 AcDbEntity
   8
@@ -7795,7 +7795,7 @@ ATTRIB
   5
 CE
 330
-17
+CA
 100
 AcDbEntity
   8
@@ -7839,7 +7839,7 @@ SEQEND
   5
 CB
 330
-CA
+17
 100
 AcDbEntity
   8
@@ -7859,7 +7859,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B010
+001_CHAIR_BENCH_B010
  10
 0.0
  20
@@ -7869,17 +7869,17 @@ LV1_B010
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B010","sequence":10,"stage":5,"role":"middle_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20","source_
+{"block_id":"001_CHAIR_BENCH_B010","sequence":10,"stage":5,"role":"middle_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V
 1000
-slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition
+20","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE"
 1000
-_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
+,"definition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
   0
 ATTRIB
   5
 DD
 330
-17
+DB
 100
 AcDbEntity
   8
@@ -7923,7 +7923,7 @@ ATTRIB
   5
 DE
 330
-17
+DB
 100
 AcDbEntity
   8
@@ -7967,7 +7967,7 @@ ATTRIB
   5
 DF
 330
-17
+DB
 100
 AcDbEntity
   8
@@ -8011,7 +8011,7 @@ SEQEND
   5
 DC
 330
-DB
+17
 100
 AcDbEntity
   8
@@ -8031,7 +8031,7 @@ AcDbBlockReference
  66
 1
   2
-LV1_B011
+001_CHAIR_BENCH_B011
  10
 0.0
  20
@@ -8041,17 +8041,17 @@ LV1_B011
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"LV1_B011","sequence":11,"stage":5,"role":"rear_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20","source_sl
+{"block_id":"001_CHAIR_BENCH_B011","sequence":11,"stage":5,"role":"rear_seat","orientation_name":"FLAT_X","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"END_75","grasp_validation":"REQUIRED_V04_V20
 1000
-ot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R
+","source_slot_id":null,"grip_force_N":null,"open_width_mm":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","
 1000
-_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
+definition_R_cad_from_block":[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]}
   0
 ATTRIB
   5
 EE
 330
-17
+EC
 100
 AcDbEntity
   8
@@ -8095,7 +8095,7 @@ ATTRIB
   5
 EF
 330
-17
+EC
 100
 AcDbEntity
   8
@@ -8139,7 +8139,7 @@ ATTRIB
   5
 F0
 330
-17
+EC
 100
 AcDbEntity
   8
@@ -8183,7 +8183,7 @@ SEQEND
   5
 ED
 330
-EC
+17
 100
 AcDbEntity
   8
@@ -9207,13 +9207,13 @@ AcDbXrecord
 280
 1
   1
-{"schema":"m0609.jenga.cad_recipe/1.0","project":"M0609 Advanced","model_id":"LV1","model_name":"\ubca4\uce58","revision":"v1.0","units":"mm","cad_frame":{"origin":"foundation outer-footprint centre o
+{"schema":"m0609.jenga.cad_recipe/1.0","project":"M0609 Advanced","model_id":"001_CHAIR_BENCH","model_name":"\ubca4\uce58","revision":"v1.0","units":"mm","cad_frame":{"origin":"foundation outer-footpr
   1
-n table","x":"right","y":"rear","z":"up","handedness":"right"},"block_count":11,"stage_count":5,"block_size_status":"NOMINAL_NOT_MEASURED","robot":"Doosan M0609","gripper":"OnRobot RG2","T_base_from_c
+int centre on table","x":"right","y":"rear","z":"up","handedness":"right"},"block_count":11,"stage_count":5,"block_size_status":"NOMINAL_NOT_MEASURED","robot":"Doosan M0609","gripper":"OnRobot RG2","T
   1
-ad":null,"tcp_definition":null,"source_slots":[],"execution_ready":false,"motion_limits":null,"gripper_dimensions":null,"measured_position_tolerance_mm":null,"verification":{"V01":null,"V02":null,"V03
+_base_from_cad":null,"tcp_definition":null,"source_slots":[],"execution_ready":false,"motion_limits":null,"gripper_dimensions":null,"measured_position_tolerance_mm":null,"verification":{"V01":null,"V0
   1
-":null,"V04":null,"V20":null,"V11":null},"standing_supply_requirement":null,"stability_check_required":true,"grip_candidates_are_not_certified":true}
+2":null,"V03":null,"V04":null,"V20":null,"V11":null},"standing_supply_requirement":null,"stability_check_required":true,"grip_candidates_are_not_certified":true}
   0
 DICTIONARYVAR
   5
@@ -9225,7 +9225,7 @@ DictionaryVariables
 280
 0
   1
-1.4.4 @ 2026-10-03T03:29:01.957190+00:00
+1.4.4 @ 2026-10-07T01:38:12.713270+00:00
   0
 ENDSEC
   0

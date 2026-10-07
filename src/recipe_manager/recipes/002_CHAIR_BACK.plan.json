@@ -4,7 +4,7 @@
   "revision": "1",
   "model_id": "002_CHAIR_BACK",
   "model_revision": "1",
-  "source_cad_sha256": "d336e7930b501f37f09b5d39bfc3d85d345a1e434444c41ad55987fd5f6ec9aa",
+  "source_cad_sha256": "138d445957ba45783ae17442d1e7f6bc60922fd4acd8ad6b1a659cef720854bb",
   "steps": [
     {
       "step_id": "PLACE_DXF_INSERT_3E",
