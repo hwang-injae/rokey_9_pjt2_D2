@@ -88,3 +88,40 @@ def test_stop_re(pr_check_mod):
     assert pr_check_mod.STOP_RE.search('self.move_stop(2)')
     assert not pr_check_mod.STOP_RE.search('SafeStopper()')
     assert not pr_check_mod.STOP_RE.search('stop = True')
+
+
+def _git(repo, *args):
+    """시험용 git 실행(작성자 이름 고정). 실패하면 예외."""
+    import subprocess
+    subprocess.run(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', *args], cwd=repo, check=True, capture_output=True)
+
+
+def _repo_behind_main(tmp_path, conflict):
+    """main이 PR 브랜치보다 한 커밋 앞선 저장소를 만든다. conflict=True 면 둘이 같은 줄을 다르게 고친다."""
+    _git(tmp_path, 'init', '-q', '-b', 'main')
+    (tmp_path / 'a.txt').write_text('1\n')
+    _git(tmp_path, 'add', '.'); _git(tmp_path, 'commit', '-qm', 'base')
+    _git(tmp_path, 'checkout', '-qb', 'pr')
+    (tmp_path / 'a.txt' if conflict else tmp_path / 'b.txt').write_text('pr\n')
+    _git(tmp_path, 'add', '.'); _git(tmp_path, 'commit', '-qm', 'pr')
+    _git(tmp_path, 'checkout', '-q', 'main')
+    (tmp_path / 'a.txt').write_text('main\n')
+    _git(tmp_path, 'add', '.'); _git(tmp_path, 'commit', '-qm', 'main moves')
+    _git(tmp_path, 'checkout', '-q', 'pr')
+
+
+def test_main_behind_without_conflict_is_warning(pr_check_mod, tmp_path):
+    """main보다 뒤처졌어도 충돌이 없으면 실패가 아니라 경고다 (10/7 PL)."""
+    _repo_behind_main(tmp_path, conflict=False)
+    c = pr_check_mod.PrCheck(tmp_path, 'main')
+    assert c.check_main_merged() is True
+    assert not c.fails and any('뒤처졌다' in w for w in c.warns)
+
+
+def test_main_behind_with_conflict_fails(pr_check_mod, tmp_path):
+    """main과 같은 줄을 다르게 고쳐 충돌이 나면 실패한다."""
+    _repo_behind_main(tmp_path, conflict=True)
+    c = pr_check_mod.PrCheck(tmp_path, 'main')
+    assert c.check_main_merged() is False
+    assert any(f.startswith('충돌') for f in c.fails)
+

@@ -1,6 +1,6 @@
 # GitHub 협업 규칙 (협동2)
 
-팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100710.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
+팀원 5명이 같은 방식으로 Branch / PR / Issue를 다루기 위한 규칙이다. 팀 전체 규칙(역할·코드·보안·컨테이너·로봇 안전·문서 이름)은 [팀 협업 규칙](../docs/06_팀협업규칙_v1_100711.md)에 있다. 저장소: https://github.com/hwang-injae/rokey_9_pjt2_D2 (공개)
 
 > 하루 흐름: `/today 이름`(main 받기 → 오늘 내 작업 → 브랜치) → 작업 → `/wrap W번호`(커밋 → push → PR 초안). 명령은 `.claude/commands/`에 있다.
 
@@ -47,7 +47,7 @@ feat: MoveIt 실행기에 서기 정지 추가
 ## 5. Pull Request
 - 양식(`PULL_REQUEST_TEMPLATE.md`)의 변경 내용·**변경 파일(필수)**·영향·**완료한 일정표 작업**(`완료: W041`)·확인 사항을 채운다.
 - **자동 검사·승인:** PR을 올리거나 새로 push하면 `PR 검사`가 돈다(`.github/workflows/pr_check.yml`).
-  1. main 반영: 최신 main이 내 브랜치에 merge돼 있는가 → 없으면 실패(`git fetch origin && git merge origin/main` 뒤 다시 push)
+  1. main 반영: 최신 main이 내 브랜치에 merge돼 있는가 → 뒤처지기만 했으면 경고(10/7 PL, 충돌이 있으면 2번에서 실패 → `git fetch origin && git merge origin/main` 뒤 다시 push)
   2. 충돌: main과 합칠 때 충돌이 없는가
   3. 문법: 바뀐 .py(컴파일만)·.yaml·.json·.xml/.urdf/.xacro
   4. 비밀값: OpenAI 키 모양 문자열·`.env`·키 파일이 없는가
