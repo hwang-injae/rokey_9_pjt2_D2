@@ -205,6 +205,33 @@ def tcp_target(cfg, center, rot, grasp, slot_cfg=None):
     return (center[0], center[1], tcp_z), q, held
 
 
+def move_speed_scale(cfg, speed_ratio):
+    """move_to 의 speed_ratio -> MoveIt 속도 비율 (robot.yaml speed_scale x speed_ratio, IRD 4.2 MoveTo · W121 C-9).
+
+    입력: speed_ratio 0 = 평소(1.0배), 0 < 값 ≤ 1 = 그만큼 느리게(예: 다시 시작 뒤 첫 이동 0.5).
+    반환: MoveIt 에 넘길 비율, 범위 밖(음수 · 1 초과 · NaN)이면 None — 평소보다 빠르게는 가지 않는다.
+    """
+    if speed_ratio == 0:
+        return cfg['speed_scale']
+    if not 0 < speed_ratio <= 1:          # NaN 도 여기서 걸린다
+        return None
+    return cfg['speed_scale'] * speed_ratio
+
+
+def pick_open_width(cfg, grasp, open_width_m):
+    """집기 전에 여는 실제 폭 (m) (IRD 4.2 PickPlace open_width_m · W121 C-10).
+
+    입력: grasp = 잡기 이름, open_width_m 0 = robot.yaml grasp_open_pick_m.<grasp>, 값이 있으면 그 폭(흩어진 블록 틈에 맞출 때).
+    반환: 열 폭 (m), 닫는 방향 블록 폭(grasp_width_m) 이하이면 None — 손가락이 블록 위에 내려앉는다.
+    너무 큰 값은 그리퍼 노드가 RG2 최대 열림으로 자른다.
+    """
+    if open_width_m == 0:
+        return cfg['grasp_open_pick_m'][grasp]
+    if not open_width_m > cfg['grasp_width_m'][grasp]:   # NaN 도 여기서 걸린다
+        return None
+    return open_width_m
+
+
 def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, slot=None):
     """집을 블록·놓을 자리의 블록 자세 -> 집기·놓기 TCP 목표 둘과 잡은 블록 상자.
 

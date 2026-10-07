@@ -20,7 +20,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_motion.executor import MoveItExecutor
-from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, pick_place_tcp
+from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, move_speed_scale, pick_open_width, pick_place_tcp
 from d2_safety.safe_stop import SafeStop, init_ros
 
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
@@ -99,10 +99,10 @@ class PickPlaceNode(Node):
         return None
 
     # ---------- 동작 단위 ----------
-    def go_free(self, goal, halted, keep_down=True, skip_slot=None):
+    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None):
         """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유).
 
-        skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸).
+        skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸). scale = 속도 비율(없으면 robot.yaml speed_scale).
         """
         # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
         if keep_down and not self.exe.valid(self.exe.current(), self.exe.down_constraint())[0]:
@@ -113,7 +113,7 @@ class PickPlaceNode(Node):
         jt = None
         for pad in (clear, clear / 2):
             for planner in PLANNERS:
-                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot)
+                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot, scale=scale)
                 if jt is not None:
                     break
                 self.get_logger().warn(f'길 찾기 실패 ({planner}, 여유 {pad * 1000:.0f} mm): {err}')
@@ -198,6 +198,8 @@ class PickPlaceNode(Node):
     def _execute(self, gh):
         """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
 
+        집기 전 여는 폭은 open_width_m(0 이면 robot.yaml grasp_open_pick_m, 블록 폭 이하면 움직이기 전에 PLAN_FAILED).
+
         바깥 영향: 로봇 팔·그리퍼가 움직이고, 장면 관리에 쥔 블록 붙이기·떼기를 부탁한다.
         실패·정지·취소 때는 세운 뒤 success=false 와 이유 코드(IRD 7장, 정지면 halt 이유)로 끝낸다.
         """
@@ -226,6 +228,11 @@ class PickPlaceNode(Node):
             return finish(False, 'ERROR')   # IRD 7장: 먼저 세움 → 사람 호출. 자세한 이유는 위 로그
         if g.grasp not in GRASP_AXIS:
             return finish(False, 'PLAN_FAILED')
+        open_pick = pick_open_width(self.cfg, g.grasp, g.open_width_m)
+        if open_pick is None:
+            # 블록 폭 이하로 열면 손가락이 블록 위에 내려앉는다 — 움직이기 전에 거절
+            self.get_logger().error(f'{g.block_id}: open_width_m {g.open_width_m * 1000:.1f} mm 가 블록 폭 이하')
+            return finish(False, 'PLAN_FAILED')
         if not self.busy.acquire(blocking=False):
             return finish(False, 'BUSY')
         try:
@@ -247,7 +254,7 @@ class PickPlaceNode(Node):
             if not ok:
                 return finish(False, why)
             # 집는 폭으로 여는 것은 집을 블록 바로 위에서 한다: 이동 중 벌린 손가락이 다른 것에 걸리지 않게 (10/6 실기)
-            r = self.grip(self.cfg['grasp_open_pick_m'][g.grasp])
+            r = self.grip(open_pick)
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED')
             ok, why = self.go_line(pk['low'], pk['quat'], halted)
@@ -317,9 +324,12 @@ class PickPlaceNode(Node):
         """정해진 자세(observe · home · observe_supply · observe_front · observe_side)로 간다. 다 간 뒤 답한다.
 
         자세 값은 robot.yaml <target>_pose. 이름이 목록 밖이거나 값이 없으면(교시 전) PLAN_FAILED.
+        speed_ratio(0 = 평소, 0 < 값 ≤ 1 = 느리게, 다시 시작 뒤 첫 이동 0.5)를 speed_scale 에 곱한다. 범위 밖이면 PLAN_FAILED.
         """
         pose = self.cfg.get(f'{req.target}_pose')
-        if req.target not in MOVE_TARGETS or not pose:
+        scale = move_speed_scale(self.cfg, req.speed_ratio)
+        if req.target not in MOVE_TARGETS or not pose or scale is None:
+            self.get_logger().error(f'move_to {req.target}: 자세 없음 또는 speed_ratio {req.speed_ratio} 범위 밖')
             res.success, res.reason = False, 'PLAN_FAILED'
             return res
         if self.locked:
@@ -332,7 +342,7 @@ class PickPlaceNode(Node):
             res.success, res.reason = False, 'BUSY'
             return res
         try:
-            ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False)
+            ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False, scale=scale)
             res.success, res.reason = ok, why
             return res
         except Exception as e:            # 예상 못 한 오류: 먼저 세운다
