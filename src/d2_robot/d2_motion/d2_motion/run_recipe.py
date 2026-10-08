@@ -153,7 +153,7 @@ def main():
     """레시피를 읽어 목표를 계산하고, --check 가 아니면 홈 -> 블록마다 PickPlace(그리퍼 폭은 블록 위에서 바뀜) -> 홈, 결과를 CSV 로 --log-dir(기본 ~/d2_data/runs, 저장소 밖)에 남긴다."""
     ap = argparse.ArgumentParser(description='레시피 -> 블록마다 /d2/motion/pick_place (로봇 파트 시험)')
     ap.add_argument('recipes', nargs='*',
-                    help='조립 레시피 파일 (<모델ID>_recipe.json — 구조 파일 _structure.json 은 같은 폴더에서 읽음). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
+                    help='레시피 파일 (<모델ID>_recipe.json = 구조 — 조립 방법 _placements.csv 는 같은 폴더에서 읽음). 여럿이면 세트로 나란히 (첫 설계의 −y 쪽에 다음). '
                          '없으면 설치된 레시피 목록에서 번호로 고름')
     ap.add_argument('--slots', default=None,
                     help='단계 순서대로 쓸 공급 칸 (예: 1,3). 없으면 잡기마다 정한 칸(robot.yaml supply_slots grasp)을 쓴다')
