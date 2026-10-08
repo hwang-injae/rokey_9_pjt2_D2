@@ -37,7 +37,7 @@
 ### 아키텍처
 
 <p align="center">
-  <img src="docs/images/시스템아키텍처_v6_100809.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
+  <img src="docs/images/시스템아키텍처_v6_100821.png" width="900" alt="시스템 아키텍처 v6 — 노드 카드: 입력 → 처리 → 출력"><br>
   <sub>시스템 아키텍처 v6 (10/6 PC 배치 · MQTT 다리 + 10/7 기술 스택 v2) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v3_100821.md">시스템 아키텍처 설명</a></sub>
 </p>
 
