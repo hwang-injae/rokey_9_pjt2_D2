@@ -918,3 +918,47 @@ def read_ply_header(path):
             count = int(line.split()[2])
     return fmt, count, end + len(b'end_header\n')
 
+
+def family_of(design_id):
+    """기본 설계 이름 → 가구 family(IRD 2장 `chair` · `desk`). 이름에 CHAIR · DESK 가 없으면 'unknown'(예 001_CHAIR_BENCH → chair)."""
+    name = str(design_id).upper()
+    return 'chair' if 'CHAIR' in name else ('desk' if 'DESK' in name else 'unknown')
+
+
+def json_ready(obj):
+    """numpy 수 · 배열이 섞인 dict · list → 파이썬 기본형(JSON 으로 바로 보낼 수 있게). NaN · inf 는 그대로 둔다(보내는 쪽이 allow_nan=False 로 막는다)."""
+    if isinstance(obj, dict):
+        return {str(k): json_ready(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_ready(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return json_ready(obj.tolist())
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    return obj
+
+
+def scan_response(result, image_path, cloud_path):
+    """infer() 결과 → scan_infer 응답 (success, reason, 응답 dict) — 노드가 JsonQuery 응답 세 칸에 그대로 넣는다(IRD 4.2).
+
+    입력: result = StructureScanner.infer() 출력 · image_path = 컬러 사진 경로(없으면 '') · cloud_path = PLY 경로(저장 실패면 None).
+    출력: ok → (True, '', {"ok":true,"blocks":blocks/1,"inferred_count","image_path"[,"cloud_path"]}),
+          신뢰도 미달 → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail":이유}) — 답은 냈지만 결과가 나쁨(mock_scan 과 같은 두 층).
+    cloud_path 가 None 이면 그 칸을 뺀다(PLY 저장 실패 — 10/8 임시 규칙, PL 확인 전). 블록 좌표는 소수 1자리 mm 로 반올림. 바깥 영향 없음."""
+    if not result.get('ok'):
+        return True, '', {'ok': False, 'reason': 'SCAN_FAILED', 'detail': str(result.get('reason', ''))}
+    blocks = json_ready(result['blocks'])
+    for b in blocks['blocks']:
+        for k in ('x', 'y', 'z'):
+            b[k] = round(float(b[k]), 1)
+        b['order'], b['inferred'] = int(b['order']), bool(b.get('inferred', False))
+    body = {'ok': True, 'blocks': blocks, 'inferred_count': sum(1 for b in blocks['blocks'] if b['inferred']),
+            'image_path': str(image_path or '')}
+    if cloud_path is not None:
+        body['cloud_path'] = str(cloud_path)
+    return True, '', body
+

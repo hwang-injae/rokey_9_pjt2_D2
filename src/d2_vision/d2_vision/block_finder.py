@@ -552,6 +552,56 @@ def _split(comp, edges, px_area, single_max, cv2):
     return out
 
 
+def masks_from_yolo(result, hw):
+    """YOLO seg 결과 하나(ultralytics Results) → (블록 마스크 목록, 신뢰도 목록). 본 방법(E-38 · E-47)의 ① 단계.
+
+    입력: result = model(...)[0] (masks.data (N, h, w) 0~1 · boxes.conf (N,)) · hw = 컬러 영상 (H, W).
+    출력: ([(H, W) bool, …], [float, …]) — 검출이 없으면 ([], []).
+    마스크 크기가 (H, W) 와 다르면 가장 가까운 픽셀로 늘린다(numpy 만 — CI 에 cv2 가 없다). 노드는 retina_masks=True 로 불러
+    처음부터 원본 크기를 받는다(640×480 은 레터박스 여백이 없어 늘려도 같다). torch 텐서 · numpy 배열 둘 다 받는다. 바깥 영향 없음."""
+    def arr(x):
+        """torch 텐서 또는 배열 → numpy."""
+        x = x.cpu().numpy() if hasattr(x, 'cpu') else x
+        return np.asarray(x)
+    if getattr(result, 'masks', None) is None or getattr(result, 'boxes', None) is None:
+        return [], []
+    data = arr(result.masks.data).astype(np.float32)
+    conf = arr(result.boxes.conf).astype(float).ravel()
+    H, W = hw
+    if data.ndim != 3 or len(data) == 0:
+        return [], []
+    if data.shape[1:] != (H, W):
+        rows = np.minimum((np.arange(H) + 0.5) * data.shape[1] / H, data.shape[1] - 1).astype(int)
+        cols = np.minimum((np.arange(W) + 0.5) * data.shape[2] / W, data.shape[2] - 1).astype(int)
+        data = data[:, rows][:, :, cols]
+    masks = [m > 0.5 for m in data]
+    return masks, [float(c) for c in conf[:len(masks)]] + [1.0] * max(0, len(masks) - len(conf))
+
+
+OVERLAP_BGR = {'none': (0, 200, 0), 'top': (0, 200, 255), 'under': (0, 0, 255)}   # 그림 윤곽 색: 집을 수 있음 초록 · 위 노랑 · 덮임 빨강
+
+
+def draw_found(color, blocks, masks, mask_index):
+    """find_blocks 결과를 컬러 영상 위에 그린다(IRD `/d2/vision/wrist_image`, E-67 — 화면은 받은 그림을 그대로 보여 준다).
+
+    입력: color (H, W, 3) BGR uint8 · blocks = find 결과(윗면 높이 순) · masks = BlockFinder.last_masks ·
+          mask_index = last_info['mask_index'](blocks[k] 가 쓴 마스크 번호). 출력: 같은 크기 BGR 새 그림(자르거나 줄이지 않음).
+    블록마다 윤곽(overlap 색) + '번호(1부터, 응답 순서) up 첫 글자 yaw°'. 바깥 영향 없음. 실패: cv2 가 없으면 ImportError."""
+    import cv2
+    img = np.ascontiguousarray(color).copy()
+    for k, (b, mi) in enumerate(zip(blocks, mask_index)):
+        m = np.asarray(masks[mi], np.uint8)
+        cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img, cnts, -1, OVERLAP_BGR.get(b['overlap'], (255, 255, 255)), 2)
+        vs, us = np.nonzero(m)
+        org = (int(us.mean()) - 20, int(vs.mean()) + 5) if len(us) else (5, 20 + 18 * k)
+        org = (min(max(org[0], 2), img.shape[1] - 90), min(max(org[1], 14), img.shape[0] - 4))   # 영상 테두리 블록도 글자가 잘리지 않게
+        txt = f'{k + 1} {b["up"][0]} {b["yaw_deg"]:+.0f}' + (' T' if b['tilted'] else '')
+        cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3)
+        cv2.putText(img, txt, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    return img
+
+
 class BlockFinder:
     """find_blocks 계산 묶음: 설정을 들고 있다가 영상 한 장 → blocks 목록. 노드는 이것 하나만 만든다.
 

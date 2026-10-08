@@ -36,6 +36,19 @@ def depth_to_base_points(depth_m, intr, T_base2cam, stride=2, z_min_m=0.1, z_max
     return (pts_cam @ T_base2cam.T)[:, :3]
 
 
+def mean_depth_mm(frames):
+    """깊이 프레임 여러 장(mm) → 화소마다 평균(mm). scan_capture · find_blocks 가 쓴다(SDD §6.9 '깊이 ~10장 평균').
+
+    입력: frames = 같은 크기 (H, W) 깊이 목록(mm, 구멍은 0 또는 NaN). 출력: (H, W) float32 mm — 구멍은 빼고 평균,
+    모든 장에서 구멍인 화소는 0(StructureScanner.add_capture · BlockFinder 가 '없음'으로 읽는 값).
+    실패: 목록이 비거나 크기가 다르면 ValueError(np.stack). 바깥 영향 없음."""
+    st = np.stack([np.asarray(f, np.float32) for f in frames])
+    ok = np.isfinite(st) & (st > 0)
+    n = ok.sum(axis=0)
+    s = np.where(ok, st, 0.0).sum(axis=0)
+    return np.where(n > 0, s / np.maximum(n, 1), 0.0).astype(np.float32)
+
+
 def height_map(points, origin_xy, half_m, cell_m=CELL_M):
     """점군 → 높이 지도. origin_xy 를 가운데로 ± half_m 영역을 cell_m 격자로 나눠 셀마다 **최고 z** 를 둔다.
     입력 points (N, 3) m. 출력: (grid (n, n) m — 점 없는 셀은 NaN, x0, y0) — x0·y0 는 grid[0][0] 셀의 왼쪽 아래 모서리.
