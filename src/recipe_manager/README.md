@@ -91,4 +91,4 @@ python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/
 
 ## 남은 일
 
-- 변환기 ① 본체(`blocks_to_recipe` — `d2_task` 안 별도 파일, 10/8 E-58)와 task 노드 연결(`task_node.py`의 `DesignChecker(cfg)`에 `blocks_to_recipe` 인자): 한세교 W110, 10/10 오전 PR — AI 칸(`role` · `part` · `stage` · `grasp`) 받기 · 공식 채움 없음 · 역할 목록 파일(`roles.json`, 이름은 안)(10/8 E-69).
+- 변환기 ① 본체(`blocks_to_recipe` — `d2_task` 안 별도 파일, 10/8 E-58)와 task 노드 연결(`task_node.py`의 `DesignChecker(cfg)`에 `blocks_to_recipe` 인자): 한세교 W110 — **끝(#99 본체 · #100 검사 묶음 연결, 10/8 밤)**: AI 칸(`role` · `part` · `stage` · `grasp`) 받기 · 공식 채움 없음 · 역할 목록 파일 `src/d2_task/d2_task/roles.json`(10/8 E-69).
