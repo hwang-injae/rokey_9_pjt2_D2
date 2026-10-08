@@ -13,7 +13,6 @@
 """
 import argparse
 import csv
-import json
 import math
 import os
 import sys
@@ -27,7 +26,6 @@ from d2_interfaces.srv import GripperCommand, MoveTo
 from moveit_msgs.msg import PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
 from rclpy.action import ActionClient
-from std_msgs.msg import String
 
 from d2_motion.executor import make_pose
 from d2_motion.motion_math import (close_angle_deg, column, layout_designs, load_recipe, pick_place_tcp, quat_from_axes,
@@ -137,7 +135,7 @@ def choose_recipe(folder):
 def stale_scene_objects(node, block_ids, wait):
     """MoveIt 장면에서 이번 실행과 무관한 물체 이름 목록 — 다른 블록 blk_*, 쥔 상자 held (world·붙은 것 모두).
 
-    입력: block_ids = 이번 목표의 block_id 집합, wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
+    입력: block_ids = 장면에 있어도 되는 block_id 집합(--steps 로 이어 쌓을 때 앞 순번), wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
     빈 목록(점검을 건너뛴다 — 장면 관리가 없으면 pick_place 가 따로 알린다). 장면은 읽기만 한다.
     """
     cli = node.create_client(GetPlanningScene, 'get_planning_scene')
@@ -223,26 +221,37 @@ def main():
             return 1
         if not args.auto and not confirm(f'시작: 공급 칸 {", ".join(sorted({str(s) for _, s, _, _ in jobs}))}번에 블록을 놓았으면'):
             return 1
-        # 블록을 쥔 채 시작하면 첫 집기에서 그리퍼를 열 때 떨어뜨린다 -> 사람이 먼저 빼게 하고 멈춘다
-        gst = {}
-        node.create_subscription(String, '/d2/gripper/state', lambda m: gst.update(json.loads(m.data)), 10)
-        end = time.monotonic() + 3.0
-        while not gst and time.monotonic() < end:
-            rclpy.spin_once(node, timeout_sec=0.1)
-        if not gst:
-            print('[오류] 그리퍼 상태가 안 온다 (gripper 노드 확인)')
+        # 시작은 늘 '그리퍼 열기 → 홈'(10/8 진용). 그리퍼 '쥠' 상태는 노드를 다시 켜면 명령 전까지 거짓으로 나와
+        # 믿을 수 없다 — 10/8 실기: 쥔 채로 시작해 첫 집기 위에서 열려 블록이 떨어졌다. 그래서 상태를 보지 않고 늘 연다
+        try:
+            ok = args.auto or input('  -> 그리퍼를 연다. 쥔 블록이 있으면 손으로 받치고 y: ').strip().lower() == 'y'
+        except EOFError:
+            ok = False
+        if not ok:
             return 1
-        if gst.get('grasped'):
-            print('[오류] 그리퍼가 블록을 쥐고 있다. 블록을 손으로 잡고 그리퍼를 연 뒤 다시 실행한다')
+        r = wait(grip.call_async(GripperCommand.Request(width_m=0.1, force_n=20.0)), 10.0)
+        if r is None or not r.success:
+            print(f'[오류] 그리퍼를 못 열었다 ({getattr(r, "reason", "응답 없음")})')
             return 1
+        print('   -> 그리퍼 열림')
+        if not args.auto:
+            try:
+                input('  -> 블록을 뺐고 손이 작업 영역 밖이면 Enter (홈으로 간다) ')
+            except EOFError:
+                return 1
         # 앞 실행의 블록·쥔 상자가 장면에 남아 있으면 놓기 경로가 막혀 중간에 PLAN_FAILED 로 선다(10/7 003 실기)
-        # -> 움직이기 전에 멈춘다. 이번 목표의 블록(--steps 로 앞 순번을 이미 쌓은 경우)은 괜찮다
-        stale = stale_scene_objects(node, {b['block_id'] for b, _, _, _ in jobs}, wait)
+        # -> 움직이기 전에 멈춘다. --steps 로 중간부터 이어 쌓을 때만 그보다 앞 순번 블록은 괜찮다.
+        # 이번에 놓을 블록도 예외가 아니다 — 놓기 전에 장면에 있으면 앞 실행의 것이다(10/8 실기: 멈춘 실행의 1번이 남아 놓기가 막혔다)
+        before = set()
+        if recipes and args.steps:
+            first = min(parse_list(args.steps))
+            before = {b['block_id'] for i, b in enumerate(b for design, _ in layout_designs(cfg, recipes) for b in design) if i + 1 < first}
+        stale = stale_scene_objects(node, before, wait)
         if stale:
             print(f'[오류] 장면에 앞 실행 물체가 남아 있다: {", ".join(stale)}\n'
                   '   조립 영역을 비우고 robot_nodes.launch.py 를 다시 띄운 뒤 실행한다(장면 관리가 시작할 때 지운다)')
             return 1
-        # 시작은 홈 자세에서. 그리퍼 폭은 여기서 바꾸지 않는다 — 집는 폭은 늘 집을 블록 바로 위에서 연다(pick_place, 10/7)
+        # 홈 자세에서 시작. 집는 폭은 늘 집을 블록 바로 위에서 맞춘다(pick_place, 10/7) — 위에서 연 건 '다 열기'뿐
         if not go_home():
             return 1
         for b, slot, center, rot in jobs:

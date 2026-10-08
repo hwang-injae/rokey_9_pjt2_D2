@@ -536,3 +536,16 @@ def test_새_요청은_다시_처음_단계부터_받는다():
     t.begin(2)
     assert t.last_step(2) is None and t.on_feedback(2, 'approach') is True
     assert t.on_feedback(1, 'retreat') is False                                  # 이전 요청의 늦은 피드백
+
+
+def test_결과_수신_시각은_현재_요청의_첫_결과만_적는다():
+    t = StepTracker()
+    t.begin(1)
+    assert t.result_at(1) is None
+    assert t.on_result(1, 100.5) is True and t.result_at(1) == 100.5
+    assert t.on_result(1, 200.0) is False and t.result_at(1) == 100.5           # 두 번째 결과는 무시
+    assert t.on_result(2, 300.0) is False                                        # 다른 요청 번호
+    t.begin(2)
+    assert t.result_at(1) is None and t.result_at(2) is None and t.on_result(1, 400.0) is False
+    t.end(2)
+    assert t.on_result(2, 500.0) is False and t.result_at(2) is None            # 끝난 요청

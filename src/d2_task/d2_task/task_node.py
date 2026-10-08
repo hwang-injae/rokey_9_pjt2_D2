@@ -331,11 +331,14 @@ class TaskNode(Node):
                                    'dz_m': res.dz_m[i], 'top_z_m': res.top_z_m[i]} for i in range(n)}
         return True, '', rows
 
-    def pick_place(self, goal, should_abort):
+    def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
         """블록 1개 pick_place 액션을 보내고 결과를 기다린다. 반환: (성공, reason).
 
         목표 수락부터 결과까지 합쳐 pick_place_s 초를 쓴다. 초과하면 먼저 취소하고 TIMEOUT(관리자가 정지 요청).
         중단 신호 때도 목표를 취소한다. 목표 수락이 늦어도 받아지는 즉시 취소한다.
+        on_feedback(step) 은 피드백이 올 때마다, on_result(받은 시각) 은 결과를 **실제로 받았을 때만** 한 번 부른다(실행기 스레드). 시각은 gripper_state 의
+        stamp 와 비교할 수 있게 time.time() 초다 — 제한 시간 계산은 기존 단조 시계(time.monotonic) 그대로다. 거절 · 시간 초과 · 우리 쪽 취소처럼
+        결과 없이 끝나면 on_result 를 부르지 않는다.
         """
         if should_abort():
             return False, 'STOPPED'
@@ -345,7 +348,10 @@ class TaskNode(Node):
         g.open_width_m = float(goal.get('open_width_m', 0.0))              # 흩뿌림만 실제 폭(m). 0 = robot.yaml grasp_open_pick_m (공급 칸 목표는 0)
         g.obstacles = [to_pose(p) for p in goal.get('obstacles', ())]      # 흩뿌림만(E-53 B). 공급 칸 목표에는 없다 → 빈 목록(동작 쪽이 칸 모드에서는 안 쓴다)
         deadline = time.monotonic() + self.pick_place_s
-        sent = self.pick_cli.send_goal_async(g)
+        if on_feedback is None:
+            sent = self.pick_cli.send_goal_async(g)
+        else:
+            sent = self.pick_cli.send_goal_async(g, feedback_callback=lambda msg: on_feedback(msg.feedback.step))
         accepted = threading.Event()
         sent.add_done_callback(lambda _f: accepted.set())
         try:
@@ -363,7 +369,14 @@ class TaskNode(Node):
         finished = threading.Event()
         try:
             result = handle.get_result_async()
-            result.add_done_callback(lambda _f: finished.set())
+
+            def got_result(_f):
+                """결과가 도착한 순간(기다리는 스레드가 깨어나기 전)의 시각을 적는다."""
+                if on_result is not None:
+                    on_result(time.time())
+                finished.set()
+
+            result.add_done_callback(got_result)
             if not wait_until(finished, should_abort, timeout_s=max(0.0, deadline - time.monotonic())):
                 try:
                     handle.cancel_goal_async()

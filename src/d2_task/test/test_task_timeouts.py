@@ -324,3 +324,61 @@ def test_open_width_m은_흩뿌림_목표만_싣고_공급_칸은_0(node):
     node.pick_place(dict(goal(), open_width_m=0.0865), lambda: False)
     node.pick_place(goal(), lambda: False)
     assert (sent[0].open_width_m, sent[1].open_width_m) == (0.0865, 0.0)
+
+# ---------- 집기 요청 피드백 · 결과 수신 시각 수집 (W130, 수집만 — 재시도 동작은 안 바꾼다) ----------
+def fb(step):
+    """PickPlace 피드백 메시지 모양(msg.feedback.step) 가짜."""
+    return SimpleNamespace(feedback=SimpleNamespace(step=step))
+
+
+def test_피드백과_결과_수신_시각을_콜백으로_알린다(node, monkeypatch):
+    """결과는 실제로 받은 순간의 time.time() 이고, 제한 시간 계산(monotonic)과 섞이지 않는다."""
+    h, seen = Handle(), {'steps': [], 'at': []}
+    h.result.set_result(SimpleNamespace(result=SimpleNamespace(success=True, reason='')))
+
+    def send(_g, feedback_callback=None):
+        feedback_callback(fb('approach')); feedback_callback(fb('grasp'))
+        return completed(h)
+
+    node.pick_cli = SimpleNamespace(send_goal_async=send)
+    scope = node.pick_place.__func__.__globals__
+    monkeypatch.setitem(scope, 'time', SimpleNamespace(monotonic=time.monotonic, time=lambda: 1234.5))
+    assert node.pick_place(goal(), lambda: False, on_feedback=seen['steps'].append, on_result=seen['at'].append) == (True, '')
+    assert seen == {'steps': ['approach', 'grasp'], 'at': [1234.5]}
+
+
+def test_콜백을_안_주면_피드백_인자를_넘기지_않는다(node):
+    h = Handle()
+    h.result.set_result(SimpleNamespace(result=SimpleNamespace(success=True, reason='')))
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(h))          # feedback_callback 인자를 받지 않는 가짜
+    assert node.pick_place(goal(), lambda: False) == (True, '')
+
+
+def test_서버가_보낸_실패_결과도_수신_시각이_있다(node):
+    """결과를 받았다(수신 시각 있음)와 결과 없이 끝났다(없음)를 가른다: 서버의 CANCELED 결과는 앞쪽."""
+    h, at = Handle(), []
+    h.result.set_result(SimpleNamespace(result=SimpleNamespace(success=False, reason='CANCELED')))
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(h))
+    assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'CANCELED') and len(at) == 1
+
+
+def test_거절_시간초과_우리쪽_취소는_결과_수신_시각이_없다(node):
+    at = []
+    rejected = Handle(); rejected.accepted = False
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(rejected))
+    assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'ERROR')           # 거절
+    h = Handle()                                                                                      # 결과가 안 옴 → 시간 초과
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(h))
+    assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'TIMEOUT')
+    flag = {'abort': False}                                                                           # 기다리다 우리 쪽이 취소
+    h2 = Handle()
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(h2))
+    node.pick_place_s = 5
+
+    def abort_soon():
+        time.sleep(0.05)
+        flag['abort'] = True
+
+    threading.Thread(target=abort_soon).start()
+    assert node.pick_place(goal(), lambda: flag['abort'], on_result=at.append) == (False, 'CANCELED')
+    assert at == [] and h2.cancels == 1
