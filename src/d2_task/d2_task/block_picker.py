@@ -14,7 +14,7 @@ import copy
 import math
 
 UPS = ('THICKNESS', 'WIDTH', 'LENGTH')
-AXES = ('LENGTH', 'WIDTH', 'THICKNESS')            # 잡는 축 = 손가락이 닫히는 블록 치수. IRD 4.2 예시는 LENGTH · WIDTH 만 보여 주므로 THICKNESS 틈은 응답에 있을 때만 쓴다
+AXES = ('LENGTH', 'WIDTH', 'THICKNESS')            # 잡는 축 = 손가락이 닫히는 블록 치수. find_blocks 의 clear · gap_mm 키는 블록의 수평인 두 축(up 축 제외, E-55 ③)
 OVERLAPS = ('none', 'top', 'under')
 # 잡기 종류 → 위를 향한 블록 면(IRD 2장: 눕힘 FLAT = 두께가 위, 옆세움 EDGE = 폭이 위, 세움 STAND = 길이가 위)
 UP_OF_GRASP = {'FLAT': 'THICKNESS', 'EDGE': 'WIDTH', 'STAND': 'LENGTH'}
@@ -26,7 +26,7 @@ def grasp_target(grasp, cfg):
     cfg = robot.yaml dict(block_size_m [길이, 폭, 두께] · grasp_width_m). 기하로 정해지는 값이다:
     FLAT_SHORT = (THICKNESS, WIDTH) · FLAT_LONG = (THICKNESS, LENGTH) · EDGE_SHORT = (WIDTH, THICKNESS) · EDGE_LONG = (WIDTH, LENGTH) ·
     STAND_SHORT = (LENGTH, THICKNESS) · STAND_LONG = (LENGTH, WIDTH). 잡는 축이 THICKNESS 인 잡기는 find_blocks 응답에
-    그 방향 틈이 있을 때만 후보가 되고, 없으면 pick 이 NONE(NO_GAP_INFO)으로 처리한다 — 틈 값을 만들어 쓰지 않는다.
+    그 방향 틈(옆세움 · 세움 블록이 보내는 수평 축)으로만 고르고, 틈 값을 만들어 쓰지 않는다.
     """
     kind = grasp.split('_')[0]
     if kind not in UP_OF_GRASP or grasp not in cfg['grasp_width_m']:
@@ -63,7 +63,7 @@ class BlockPicker:
 
     def pick(self, blocks, up, axis):
         """집을 블록을 고른다. up = 목표 자세(THICKNESS · WIDTH · LENGTH), axis = 잡는 축(LENGTH · WIDTH · THICKNESS, up 과 달라야 한다).
-        잡는 축이 THICKNESS 이면 응답에 그 방향 clear · gap_mm 칸이 있는 블록만 후보가 된다(없으면 counts['no_gap_info']).
+        블록의 clear · gap_mm 에는 그 블록의 수평인 두 축(눕힘 LENGTH · WIDTH, 옆세움 LENGTH · THICKNESS, 세움 WIDTH · THICKNESS)이 꼭 있어야 하고, 빠지면 잘못된 값이다.
 
         반환: {'status': 'FOUND', 'index': 입력 번호, 'block': 그 dict(복사), 'overlap': 'none'|'top', 'gap_mm': 그 축 틈}
               또는 {'status': 'NONE', 'reason': 이유 글자, 'counts': {거른 이유: 개수}}.
@@ -78,13 +78,11 @@ class BlockPicker:
             raise ValueError(f'blocks 가 목록이 아니다: {type(blocks).__name__}')     # 부르는 쪽 실수 — 빈 공급(EMPTY)과 섞지 않는다
         if not blocks:
             return {'status': 'NONE', 'reason': 'EMPTY', 'counts': {}}
-        counts = {'invalid': 0, 'under': 0, 'tilted': 0, 'other_up': 0, 'no_gap_info': 0, 'no_clear': 0, 'narrow': 0}
+        counts = {'invalid': 0, 'under': 0, 'tilted': 0, 'other_up': 0, 'no_clear': 0, 'narrow': 0}
         cands = []
         for i, b in enumerate(blocks):
             gap = self._gap(b, axis)
-            if gap == 'no_info':
-                counts['no_gap_info'] += 1
-            elif gap is None:
+            if gap is None:
                 counts['invalid'] += 1
             elif b['overlap'] == 'under':
                 counts['under'] += 1
@@ -106,7 +104,7 @@ class BlockPicker:
 
     @staticmethod
     def _gap(b, axis):
-        """블록 하나의 형식이 맞으면 axis 방향 틈(mm), 잡는 축 THICKNESS 인데 응답에 그 방향 틈이 없으면 'no_info', 형식이 틀리면 None.
+        """블록 하나의 형식이 맞으면 axis 방향 틈(mm), 형식이 틀리면 None. axis 가 이 블록의 위 축이면 틈이 없으므로 0.0(이 블록은 up 이 달라 어차피 other_up 으로 걸러진다).
 
         위치 · yaw · 높이 · 틈은 유한한 숫자(yaw 는 −90 ≤ yaw < 90), 나머지 칸은 정해진 값이어야 한다.
         """
@@ -118,14 +116,11 @@ class BlockPicker:
             clear, gap = b['clear'], b['gap_mm']
             if not isinstance(clear, dict) or not isinstance(gap, dict):
                 return None
+            horizontal = [a for a in AXES if a != b['up']]         # 수평인 두 축 — 응답에 꼭 있어야 한다(E-55 ③)
             for a in AXES:
-                if a in clear or a in gap:                 # 있는 칸은 형식이 맞아야 한다(LENGTH · WIDTH 는 꼭 있어야 한다)
+                if a in horizontal or a in clear or a in gap:   # 위 축은 없어도 되지만, 있으면 형식이 맞아야 한다
                     if not isinstance(clear.get(a), bool) or not _num(gap.get(a)):
                         return None
-            if not all(a in clear and a in gap for a in ('LENGTH', 'WIDTH')):
-                return None
-            if axis not in gap or axis not in clear:
-                return 'no_info'
-            return gap[axis]
+            return gap[axis] if axis in horizontal else 0.0
         except (KeyError, TypeError, AttributeError):
             return None

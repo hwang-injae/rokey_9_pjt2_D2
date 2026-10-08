@@ -18,17 +18,17 @@ def _nan_to_none(v):
 
 
 class TaskPlanner:
-    """옛 한 파일 또는 새 structure/recipe 와 관측 결과로 진행표를 만들고 다음 블록을 고른다.
+    """structure/recipe 와 관측 결과로 진행표를 만들고 다음 블록을 고른다.
 
     입력: robot.yaml 을 읽은 dict(cfg), 레시피 dict. 단위는 노드끼리 m·rad.
     바깥 영향: 없음(계산만). 로봇·메시지를 건드리지 않는다.
     실패: 레시피 · 설정이 서로 안 맞으면 만들 때 ValueError. 다음 블록을 못 고르면 예외 대신 status 로 알린다.
     """
 
-    def __init__(self, cfg, recipe, structure=None):
+    def __init__(self, cfg, recipe, structure):
         """레시피 블록을 sequence 순서로 펼치고, 블록마다 받침 block_id 를 붙인다. 진행표는 모두 unknown 으로 시작한다.
 
-        recipe 는 옛 한 파일 또는 새 조립 dict, structure 는 새 구조 dict(mm). 바깥 영향 없음.
+        recipe 는 조립 dict, structure 는 구조 dict(mm). 바깥 영향 없음.
         블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_blocks 한 곳에서 한다.
         """
         self.cfg = cfg
@@ -37,7 +37,7 @@ class TaskPlanner:
         self.design_id = recipe['model']['model_id']
         blocks = recipe_blocks(cfg, recipe)
         steps = sorted(recipe['steps'], key=lambda s: s['sequence'])
-        if document.structure is not None and any(st['grasp'] != b['grasp'] for st, b in zip(steps, blocks)):
+        if any(st['grasp'] != b['grasp'] for st, b in zip(steps, blocks)):
             raise ValueError('recipe 의 grasp 가 블록 방향 · grasp_axis 와 다르다')
         block_of = {st['instance_id']: b['block_id'] for st, b in zip(steps, blocks)}
         self.blocks = [dict(b, supports=[block_of[i] for i in st['support_instance_ids']])

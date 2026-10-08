@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""E-52 레시피 읽기: 옛 한 파일 · 새 structure/recipe 두 파일을 함께 받는다. ROS 없이 변환기와 작업 판단이 공유한다."""
+"""E-52 레시피 읽기: structure + recipe 두 파일(<모델ID>_structure.json · _recipe.json)을 읽는다. ROS 없이 변환기와 작업 판단이 공유한다."""
 import copy
 import hashlib
 import json
@@ -11,34 +11,31 @@ from pathlib import Path
 class RecipeDocument:
     """원본 두 문서를 보존하고 기존 좌표 계산용 model/steps 표현을 만든다. 파일 읽기 외 로봇·메시지 영향 없음.
 
-    새 문서는 모델 ID · 블록 참조 · 순서 · 받침 · 유한 좌표를 검증한다. 잘못된 입력은 ValueError.
+    두 문서는 모델 ID · 블록 참조 · 순서 · 받침 · 유한 좌표를 검증한다. 잘못된 입력은 ValueError. 옛 한 파일 레시피(model 포함)는 받지 않는다(E-52 옮김 끝).
     structure_sha256 은 파일 입력이면 원본 바이트로 확인한다. dict 입력은 원본 바이트가 없으므로 해시 모양만 확인한다.
     """
 
-    def __init__(self, recipe, structure=None):
-        """recipe 와 선택 structure 는 mm 단위 dict. geometry 는 기존 motion_math 가 읽는 표현(깊은 복사)이다."""
-        if not isinstance(recipe, dict) or recipe.get('schema') not in ('assembly.recipe/1.0', 'cad_recipe/1.0'):
-            raise ValueError('recipe schema 는 assembly.recipe/1.0 또는 cad_recipe/1.0 이어야 한다')
+    def __init__(self, recipe, structure):
+        """recipe 와 structure 는 mm 단위 dict. geometry 는 기존 motion_math 가 읽는 표현(깊은 복사)이다."""
+        if not isinstance(recipe, dict) or recipe.get('schema') != 'cad_recipe/1.0':
+            raise ValueError('recipe schema 는 cad_recipe/1.0 이어야 한다')
+        if 'model' in recipe:
+            raise ValueError('model 이 들어 있는 옛 한 파일 레시피는 받지 않는다 — structure 와 recipe 두 파일이 필요하다')
         self.recipe, self.structure = copy.deepcopy(recipe), copy.deepcopy(structure)
-        if 'model' in recipe and structure is not None:
-            raise ValueError('structure 는 model 을 포함하지 않는 새 recipe 와 함께 써야 한다')
-        self.geometry = self._join() if 'model' not in recipe else copy.deepcopy(recipe)
+        self.geometry = self._join()
 
     @classmethod
     def load(cls, folder, design_id):
-        """새 _recipe.json 을 우선 읽고, 없을 때만 옛 .recipe.json 을 읽는다. 새 파일이 깨졌으면 옛 파일로 대체하지 않는다.
+        """folder 의 <design_id>_recipe.json 과 _structure.json 을 읽는다. 원본 structure 바이트의 SHA256 이 조립 문서와 같아야 한다.
 
-        새 두 파일은 원본 structure 바이트의 SHA256 이 조립 문서와 같아야 한다. 파일 없음은 OSError, 내용 오류는 ValueError.
+        파일 없음은 OSError, 내용 오류는 ValueError.
         """
         if not isinstance(design_id, str) or not design_id or design_id.startswith('.') or any(c in design_id for c in '/\\'):
             raise ValueError('design_id 는 경로가 아닌 파일 이름이어야 한다')
         folder = Path(folder)
-        recipe_path = folder / f'{design_id}_recipe.json'
-        if not recipe_path.exists() and not recipe_path.is_symlink():
-            recipe_path = folder / f'{design_id}.recipe.json'
-        recipe = cls._json(recipe_path.read_bytes())
+        recipe = cls._json((folder / f'{design_id}_recipe.json').read_bytes())
         if isinstance(recipe, dict) and 'model' in recipe:
-            return cls(recipe)
+            raise ValueError('model 이 들어 있는 옛 한 파일 레시피는 받지 않는다 — structure 와 recipe 두 파일이 필요하다')
         raw = (folder / f'{design_id}_structure.json').read_bytes()
         document = cls(recipe, cls._json(raw))
         if recipe['structure_sha256'] != hashlib.sha256(raw).hexdigest():
@@ -47,10 +44,8 @@ class RecipeDocument:
 
     def design(self, design_id):
         """원본 recipe 와 structure 를 design/1 객체로 반환한다. 입력 문서를 변경하지 않는다."""
-        result = {'schema': 'design/1', 'design_id': design_id, 'recipe': copy.deepcopy(self.recipe)}
-        if self.structure is not None:
-            result['structure'] = copy.deepcopy(self.structure)
-        return result
+        return {'schema': 'design/1', 'design_id': design_id, 'recipe': copy.deepcopy(self.recipe),
+                'structure': copy.deepcopy(self.structure)}
 
     @staticmethod
     def _json(raw):

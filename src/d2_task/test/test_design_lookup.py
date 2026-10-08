@@ -12,12 +12,12 @@ import pytest
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager
 from test_build_saving import OK_JSON, RETRY_S
-from test_task_manager import CFG, RECIPE, SAFE_OK, SAFE_STOP, FakeIO, drive
+from test_task_manager import CFG, RECIPE, STRUCTURE, SAFE_OK, SAFE_STOP, FakeIO, drive
 
 
-def design(design_id='bench', recipe=RECIPE, **over):
-    """정상 design/1 답."""
-    return dict({'schema': 'design/1', 'design_id': design_id, 'recipe': recipe}, **over)
+def design(design_id='bench', recipe=RECIPE, structure=STRUCTURE, **over):
+    """정상 design/1 답(structure + recipe 두 파일)."""
+    return dict({'schema': 'design/1', 'design_id': design_id, 'recipe': recipe, 'structure': structure}, **over)
 
 
 class LookupIO(FakeIO):
@@ -82,6 +82,7 @@ BAD_DESIGNS = {
     'design_id 다름': [design(design_id='다른설계')],
     'recipe 없음': [design(recipe=None), design(recipe='글자'), design(recipe=[])],
     'recipe schema 다름': [design(recipe=dict(RECIPE, schema='other/1')), design(recipe={})],
+    'structure 없음 · 객체 아님': [design(structure=None), design(structure='글자'), design(structure=[])],
     '레시피 내용이 로봇 설정과 안 맞음': [design(recipe=dict(copy.deepcopy(RECIPE), steps=[]))],
 }
 
