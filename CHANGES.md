@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-08
+- 공통(12시, PM): **#80 보완(PL)** — ① 생성 설계 저장 = 검사 통과 후보 중 사람이 고른 1개(01 BR-04 · FR-D04 · FR-N03 · IRD · SDD 요약 줄 · README의 '자동 저장'을 SDD 6.6 ⑥에 맞춤) ② 손목 검출 영상 `wrist_image` = **640×480**(손목 카메라 해상도 그대로, 약 65 KB — 640×360은 카메라와 비율이 달랐음)
 - 공통(12시, PM): **HMI 화면 기능 확정 반영(PL, HMI 세션)** — IRD 8.3 · SDD 6.6: AI 생성 = LLM 한 번에 후보 3개 → 3D 미리보기 3개 · "디자인을 고르세요" → 뒤에서 `check_design` 3번(불합격 회색) → 고른 1개만 저장(검사 결과 structure · recipe), 나머지 rejected, 3개 다 불합격이면 재생성. IRD 4.2 `scan_infer` · 6장 `scan_result/1`에 **`cloud_path`**(PLY 복셀 3 mm ≤ 2 MB), 4.1 **`/d2/vision/wrist_image`**(CompressedImage YOLO-seg 검출 그림 1~2 Hz) + 10.1 `d2/vision/wrist_image` 줄, 10.5 사진 · 점군 크기 정함 · 12장 닫음.
 - 공통(11시, PM): **IRD 4.2 `check_design` 응답을 6장 · 코드에 맞춤(PL)** — 합격 응답 = `check_result/1`에 structure + recipe 둘 다(옛 'recipe만' 표기), 웹은 blocks와 함께 `design/1`로 저장(E-59), 변환기 ① 붙기 전(W110)에는 합격이어도 `success: false` · `ERROR`. 한석형 W122 질문 ②.
 - 공통(11시, PM): **IRD 블록 이름 예시를 코드대로(PL)** — 생성 설계 `chair_v1.1`의 블록 이름 = `CHAIR_V1.1_BLOCK_001_01`(설계 ID는 대문자로만, 점 그대로 — task `recipe_document` · PR #77 시험과 같음). 옛 예시 `CHAIR_V1_1_…`(점 → 밑줄)은 코드와 달랐다(IRD 2장 · 6장 `build/1` · `state/1` 예시). 손목 블록 인식의 대문자 고침(E-60 ①)도 같은 규칙으로
