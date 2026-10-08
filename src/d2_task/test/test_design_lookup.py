@@ -12,12 +12,12 @@ import pytest
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager
 from test_build_saving import OK_JSON, RETRY_S
-from test_task_manager import CFG, RECIPE, STRUCTURE, SAFE_OK, SAFE_STOP, FakeIO, drive
+from test_task_manager import CFG, RECIPE, PLACEMENTS, SAFE_OK, SAFE_STOP, FakeIO, drive
 
 
-def design(design_id='bench', recipe=RECIPE, structure=STRUCTURE, **over):
-    """정상 design/1 답(structure + recipe 두 파일)."""
-    return dict({'schema': 'design/1', 'design_id': design_id, 'recipe': recipe, 'structure': structure}, **over)
+def design(design_id='bench', recipe=RECIPE, placements=PLACEMENTS, **over):
+    """정상 design/2.0 답(recipe 구조 + placements 조립 방법)."""
+    return dict({'schema': 'design/2.0', 'design_id': design_id, 'recipe': recipe, 'placements': placements}, **over)
 
 
 class LookupIO(FakeIO):
@@ -81,9 +81,12 @@ BAD_DESIGNS = {
     'schema 다름': [design(schema='design/2'), design(schema=None)],
     'design_id 다름': [design(design_id='다른설계')],
     'recipe 없음': [design(recipe=None), design(recipe='글자'), design(recipe=[])],
-    'recipe schema 다름': [design(recipe=dict(RECIPE, schema='other/1')), design(recipe={})],
-    'structure 없음 · 객체 아님': [design(structure=None), design(structure='글자'), design(structure=[])],
-    '레시피 내용이 로봇 설정과 안 맞음': [design(recipe=dict(copy.deepcopy(RECIPE), steps=[]))],
+    'recipe schema 다름 · 옛 형식': [design(recipe=dict(RECIPE, schema='other/1')), design(recipe={}), design(recipe=dict(RECIPE, schema='cad_structure/1.0'))],
+    'placements 없음 · 객체 아님 · 옛 schema': [design(placements=None), design(placements='글자'), design(placements=[]),
+                                           design(placements=dict(PLACEMENTS, schema='cad_recipe/1.0'))],
+    '옛 design/1 은 거절': [design(schema='design/1')],
+    '짝 해시가 안 맞음(다른 구조의 조립 방법)': [design(placements=dict(PLACEMENTS, recipe_sha256='0' * 64))],
+    '레시피 내용이 로봇 설정과 안 맞음': [design(placements=dict(copy.deepcopy(PLACEMENTS), steps=[]))],
 }
 
 
