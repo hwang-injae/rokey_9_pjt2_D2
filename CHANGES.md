@@ -4,6 +4,7 @@
 
 ## 2026-10-08
 - 공통(13시, PM): **옛 주제 잔재 점검(PL)** — 저장소 전체 훑음(결과: 옛 말은 전부 '뺌' 표시, 낡은 곳 7곳). 고침: 01 FR-D07 '레시피 아직 옛 형식' → 두 파일 옮김 끝(W139, 읽는 쪽 W138 · W140 · W141 진행 중), 작명 규칙 v2 '코드 ② 남음' 같은 뜻으로, YOLO 규칙의 W022(뺀 작업) 표기, 01 · 04 · 05의 옛 이름 '의자 Lv2 · 책상 Lv4' → 002 · 003(10/3 V-01 · V-02 결과는 그대로). 팀원 몫(block_checker 옛 schema 이름 W140 · task_planner W022 주석 · recipe_manager README cadquery)은 자가 점검 공지로.
+- 공통(14시, PM): **문서 정리 2곳(PL)** — ① IRD 5장 `CheckProgress` 설명: `design_id` 이유 문장이 `run_id`(E-60) 문장 뒤에 섞여 있던 것을 제자리로, run_id는 PR #72로 들어감 ② 04 결과표 2-3 챌린지 칸을 E-64 순서로(AC-C4 → C2 → **C6 · C7 새** → C1, AC-C3 · C5는 저장)
 - 공통(12시, PM): **E-67 결정 번호(PL)** — HMI 화면 확정(PR #80)을 결정 기록 §25로: AI 후보 3개 중 사람이 고른 1개 저장 · 스캔 `cloud_path` · 손목 검출 영상 `wrist_image` 640×480 · 사진 ≤ 500 KB · 점군 ≤ 2 MB. IRD · SDD · 01의 '10/8 PL' 표시를 'E-67'로
 - 공통(12시, PM): **#80 보완(PL)** — ① 생성 설계 저장 = 검사 통과 후보 중 사람이 고른 1개(01 BR-04 · FR-D04 · FR-N03 · IRD · SDD 요약 줄 · README의 '자동 저장'을 SDD 6.6 ⑥에 맞춤) ② 손목 검출 영상 `wrist_image` = **640×480**(손목 카메라 해상도 그대로, 약 65 KB — 640×360은 카메라와 비율이 달랐음)
 - 공통(12시, PM): **HMI 화면 기능 확정 반영(PL, HMI 세션)** — IRD 8.3 · SDD 6.6: AI 생성 = LLM 한 번에 후보 3개 → 3D 미리보기 3개 · "디자인을 고르세요" → 뒤에서 `check_design` 3번(불합격 회색) → 고른 1개만 저장(검사 결과 structure · recipe), 나머지 rejected, 3개 다 불합격이면 재생성. IRD 4.2 `scan_infer` · 6장 `scan_result/1`에 **`cloud_path`**(PLY 복셀 3 mm ≤ 2 MB), 4.1 **`/d2/vision/wrist_image`**(CompressedImage YOLO-seg 검출 그림 1~2 Hz) + 10.1 `d2/vision/wrist_image` 줄, 10.5 사진 · 점군 크기 정함 · 12장 닫음.
