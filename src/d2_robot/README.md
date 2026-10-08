@@ -11,8 +11,8 @@ M0609 팔·RG2 그리퍼·손목카메라가 장착된 로봇 시스템의 구�
 | [d2_safety](d2_safety/) | 정지 판단·서기 궤적·잠금·재개 |
 
 카메라의 장착 모델·좌표는 bringup에 둔다. 관측 해석은 [d2_vision](../d2_vision/),
-조립 순서·완료 판단은 [d2_task](../d2_task/), 공통 메시지는 [d2_interfaces](../d2_interfaces/),
-설계·레시피 변환은 [recipe_manager](../recipe_manager/)에서 담당한다.
+조립 순서·완료 판단과 설계 ↔ 레시피 변환기 ① · ②는 [d2_task](../d2_task/)(10/8 E-58), 공통 메시지는 [d2_interfaces](../d2_interfaces/),
+CAD → 레시피 도구는 [recipe_manager](../recipe_manager/)에서 담당한다.
 
 공통 설정 정본은 [robot.yaml](d2_bringup/config/robot.yaml)이다. 실행 시에는 계속
 `get_package_share_directory('d2_bringup')`에서 설치된 설정·모델을 읽는다.

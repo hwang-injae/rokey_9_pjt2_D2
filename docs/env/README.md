@@ -36,7 +36,7 @@
 
 - 어느 PC가 로봇 PC·웹 PC인지는 (미정)이다. 정하면 여기에 적는다(웹 PC IP는 `robot.yaml` `mqtt.host`에).
 - 로봇 PC 노드는 어느 PC에서나 돌게 짠다. 옮기지 않는 것은 브링업·정지 노드(로봇 PC)이고, 카메라는 그 카메라를 처리하는 PC에 꽂는다. **웹 PC에는 ROS 2·두산 환경을 깔지 않는다**(10/6 E-26).
-- **늘리는 기준:** 10/8 오후 책상 가운데 기둥 조립 실기(W118) 때 잰 부하가 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 task · 다리를 3번째 PC로 옮긴다(W053).
+- **늘리는 기준:** 책상 가운데 기둥 조립 실기(W118) 때 잰 부하가 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 task · 다리를 3번째 PC로 옮긴다(W053).
 - **컨테이너는 성능을 바꾸지 않는다(S-15).** 과부하는 노드를 다른 PC로 옮기거나 처리량(해상도 · Hz)을 줄여 푼다. 컨테이너는 필요한 것만(브로커 · DB · 웹 서버) 쓴다(PL 10/6).
 
 
@@ -155,7 +155,7 @@ sudo apt install python3-paho-mqtt        # 없으면 pip3 install --user paho-m
 | 끝까지 | 화면 [출발] → `d2/hmi/command/req` → 로봇 PC → `d2/task/state`가 바뀜 | `mosquitto_sub -t 'd2/#' -v`로 전부 보임 |
 
 - 웹 PC IP는 `robot.yaml` `mqtt.host`(로봇 PC가 읽음). 브로커는 유선 LAN 안에서만 연다(인터넷 노출 없음). 인증은 10/8 결정(안: 없음).
-- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다.
+- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS — 아직 없음)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다. 다리 없이 task를 가상으로 돌릴 때는 웹 생존 감시를 끈다 — `ros2 run d2_task task --ros-args -p monitor_hmi:=false`(기본 true라 안 끄면 `/d2/hmi/alive`가 없어 출발 · 스캔이 거절됨, 10/8 E-62). 설계도 웹 없이 읽으려면 `-p design_source:=local -p recipe_dir:=<레시피 폴더>`([src/README](../../src/README.md) '빌드 · 시험').
 
 
 ## 7. Docker
@@ -171,15 +171,15 @@ docker --version
 | 컨테이너(서비스 이름) | 안에서 도는 것 | 따로 두는 이유 | 만드는 사람 (S-17) |
 |---|---|---|---|
 | `mosquitto` | MQTT 브로커(eclipse-mosquitto, 1883) — `web/mosquitto/mosquitto.conf` | PC 사이 통신의 가운데 서버. 설치 없이 이미지 1줄 | 황인재 · 10/6 저녁~10/7 (W102) |
-| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/8~10 (W088) |
-| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. 10/7은 호스트로 띄워도 된다 | 황인재 · 10/7 (W102 · W126) |
+| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/12 저녁 ~ 10/13 오전 (W088 — 10/8 HMI 일정 다시 잡음) |
+| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. compose(10/12) 전에는 호스트로 띄워도 된다 | 황인재 · backend 10/8 · 화면 · 저장소(JSON 폴더) 10/10 오전 · compose 10/12 (W102 · W126 — 10/8 HMI 일정 다시 잡음) |
 
 | 호스트에서 바로 | 이유 |
 |---|---|
 | 음성 (웹 PC) | 마이크 장치를 컨테이너에 넘기기가 번거롭다. `web/backend/voice.py` → Whisper API → MQTT |
 | 로봇 PC 전부(브링업 · 동작 · 그리퍼 · 정지 · 비전 · task · 다리) | 10/3에 시험한 호스트 환경(두산 드라이버 · MoveIt2 · RealSense)을 그대로 쓴다. 다리는 paho-mqtt만 더 깐다 |
 
-**컨테이너는 그 안에 넣는 것의 담당이 만든다(10/5 S-17).** 브로커는 W102로 먼저 띄워 쓰고, 두 PC 연결 확인은 10/8 오전(W129). 1시간 넘게 막히면 일단 호스트로 돌리고 10/8에 마저 한다.
+**컨테이너는 그 안에 넣는 것의 담당이 만든다(10/5 S-17).** 브로커는 W102로 먼저 띄워 쓰고, 두 PC 연결 확인은 W129(일정표). 1시간 넘게 막히면 일단 호스트로 돌리고 compose(10/12) 때 마저 한다.
 
 컨테이너는 성능을 바꾸지 않는다(1장). DB는 PostgreSQL 16(10/6 21시 E-39) — W088 전에는 저장소 인터페이스가 JSON 파일 폴더로 돈다. 띄우는 모양은 아래와 같다(안).
 
