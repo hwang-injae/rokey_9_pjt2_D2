@@ -76,11 +76,11 @@ def test_block_sizes(robot_cfg):
 
 
 def test_supply_slots(robot_cfg):
-    """공급 칸은 정확히 6개. 칸마다 x_m·y_m·surface_z_m·yaw_deg·block_up·grasp 가 있고 6칸의 잡기가 서로 다르다."""
+    """공급 칸은 정확히 6개. 칸마다 x_m·y_m·yaw_deg·block_up·grasp 가 있고 6칸의 잡기가 서로 다르다."""
     slots = robot_cfg['supply_slots']
     assert len(slots) == 6
     for i, st in enumerate(slots, 1):
-        assert all(num(st[k]) for k in ('x_m', 'y_m', 'surface_z_m', 'yaw_deg')), f'칸 {i}'
+        assert all(num(st[k]) for k in ('x_m', 'y_m', 'yaw_deg')), f'칸 {i}'
         assert st['block_up'] in BLOCK_AXES, f'칸 {i}'
         assert st['grasp'] in GRASPS, f'칸 {i}'
     assert sorted(st['grasp'] for st in slots) == sorted(GRASPS), '6칸의 잡기는 서로 달라야 한다'

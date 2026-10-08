@@ -131,6 +131,7 @@ def slot_block_pose(cfg, slot):
     """공급 칸 slot (1부터) 에 놓인 블록의 중심 (m) 과 회전 행렬.
 
     칸의 block_up = 위를 향하는 블록 축, yaw_deg = 블록 긴 쪽(LENGTH) 방향. LENGTH 로 세우면 WIDTH 방향.
+    칸 바닥 높이는 작업면 table_z_m 하나를 쓴다(10/8 PL E-62 — 칸 맞춤 틀을 깔아 바닥이 올라가면 다시 정함).
     칸 번호가 없으면 ValueError.
     """
     slots = cfg['supply_slots']
@@ -146,7 +147,7 @@ def slot_block_pose(cfg, slot):
         rot = rot_z(rpy_matrix(0.0, -math.pi / 2, 0.0), yaw - math.pi / 2)
     else:
         raise ValueError(f'공급 칸 {slot}: block_up 은 THICKNESS / WIDTH / LENGTH ({up})')
-    return (st['x_m'], st['y_m'], st['surface_z_m'] + half_height(rot, cfg['block_actual_m'])), rot
+    return (st['x_m'], st['y_m'], cfg['table_z_m'] + half_height(rot, cfg['block_actual_m'])), rot
 
 
 # ---------------- RG2 손가락 끝 높이 ----------------
