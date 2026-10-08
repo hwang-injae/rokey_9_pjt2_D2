@@ -15,7 +15,7 @@ from d2_task.recipe_to_blocks import RecipeToBlocks
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager
 from d2_task.task_planner import TaskPlanner
-from test_task_manager import CFG, RECIPE, SAFE_OK, FakeIO, drive
+from test_task_manager import CFG, SAFE_OK, FakeIO, drive
 
 FIXTURES = Path(__file__).parent / 'fixtures'
 MODEL = '001_CHAIR_BENCH'
@@ -47,21 +47,20 @@ def copy_pair(folder):
         shutil.copyfile(FIXTURES / f'{MODEL}{suffix}', folder / f'{MODEL}{suffix}')
 
 
-def test_두파일_블록좌표는_옛파일과_같다(pair):
-    """형식 전환으로 실제 블록 방향·아랫면·놓는 순서가 바뀌지 않아야 한다."""
-    convert = RecipeToBlocks(MODEL, 'chair', [75, 25, 15])
-    assert convert.convert(*pair) == convert.convert(RECIPE)
-
-
 def test_두파일_판단은_역할이름과_받침을_보존한다(pair):
     """같은 계산으로 실제 높이를 얻고 전체 역할 이름으로 진행표를 만든다."""
-    p, old = TaskPlanner(CFG, *pair), TaskPlanner(CFG, RECIPE)
+    p = TaskPlanner(CFG, *pair)
     assert p.blocks[0]['block_id'] == f'{MODEL}_LEG_001_01'
     assert p.blocks[2]['supports'] == [f'{MODEL}_LEG_001_01']
-    for a, b in zip(p.blocks, old.blocks):
-        assert (a['center'], a['quat'], a['grasp']) == (b['center'], b['quat'], b['grasp'])
     p.update_progress({k: {'state': 'absent'} for k in p.progress})
     assert p.next_block()['block_id'] == f'{MODEL}_LEG_001_01'
+
+
+def test_시험용_파일은_main의_실제_벤치_레시피와_같다():
+    """fixtures 가 레시피 도구 출력과 어긋나면(한쪽만 고침) 여기서 걸린다."""
+    real = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
+    for suffix in ('_recipe.json', '_structure.json'):
+        assert (FIXTURES / f'{MODEL}{suffix}').read_bytes() == (real / f'{MODEL}{suffix}').read_bytes()
 
 
 def test_순서를_바꿔도_블록이름이_바뀌지_않는다(pair):
@@ -114,25 +113,31 @@ def test_잡기이름과_축이_다르면_거절한다(pair):
         TaskPlanner(CFG, *pair)
 
 
-def test_새파일_우선_옛파일도_읽는다(tmp_path):
-    """양쪽 파일이 있으면 새 두 파일을 쓰고, 새 파일이 없는 폴더는 옛 파일을 읽는다."""
-    old = tmp_path / f'{MODEL}.recipe.json'
-    old.write_text(json.dumps(RECIPE))
-    assert RecipeDocument.load(tmp_path, MODEL).structure is None
+def test_옛_한_파일은_읽지_않는다(tmp_path):
+    """E-52 옮김 끝: <ID>.recipe.json 만 있는 폴더는 읽지 못하고, model 이 든 _recipe.json 은 거절한다. 두 파일이면 읽는다."""
+    old = {'schema': 'cad_recipe/1.0', 'model': {'model_id': MODEL}, 'steps': []}
+    (tmp_path / f'{MODEL}.recipe.json').write_text(json.dumps(old))
+    with pytest.raises(OSError):
+        RecipeDocument.load(tmp_path, MODEL)
+    (tmp_path / f'{MODEL}_recipe.json').write_text(json.dumps(old))
+    with pytest.raises(ValueError, match='옛 한 파일'):
+        RecipeDocument.load(tmp_path, MODEL)
     copy_pair(tmp_path)
     assert RecipeDocument.load(tmp_path, MODEL).structure['blocks'][0]['block'] == 'LEG_001_01'
 
 
-def test_이름만_바뀐_한파일도_읽는다(tmp_path):
-    """PR #46 단계의 _recipe.json + model/steps 도 지원한다."""
-    (tmp_path / f'{MODEL}_recipe.json').write_text(json.dumps(RECIPE))
-    assert RecipeDocument.load(tmp_path, MODEL).geometry == RECIPE
+def test_structure_없이는_문서를_만들_수_없다(pair):
+    with pytest.raises(TypeError):
+        RecipeDocument(pair[0])
+    with pytest.raises(ValueError):
+        RecipeDocument(pair[0], None)
+    with pytest.raises(TypeError):
+        TaskPlanner(CFG, pair[0])
 
 
 @pytest.mark.parametrize('literal', ['NaN', 'Infinity', '1e999'])
-def test_깨진_새파일은_옛파일로_대체하지_않는다(tmp_path, literal):
+def test_깨진_파일은_유한하지_않은_값을_거절한다(tmp_path, literal):
     """새 출력 오류를 숨겨 다른 설계를 조립하지 않고 유한하지 않은 값도 거절한다."""
-    (tmp_path / f'{MODEL}.recipe.json').write_text(json.dumps(RECIPE))
     (tmp_path / f'{MODEL}_recipe.json').write_text('{"x":' + literal + '}')
     with pytest.raises(ValueError):
         RecipeDocument.load(tmp_path, MODEL)

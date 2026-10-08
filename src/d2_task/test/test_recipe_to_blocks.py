@@ -16,13 +16,14 @@ IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back
 
 
 def load(model_id):
-    """main 레시피의 옛·새 파일 이름과 두 파일 형식을 읽는다. 형식 오류는 시험 실패로 알린다."""
-    return RecipeDocument.load(RECIPES, model_id).geometry
+    """main 레시피 두 파일(_recipe.json · _structure.json)을 (recipe, structure) 복사본으로 읽는다. 형식 오류는 시험 실패로 알린다."""
+    doc = RecipeDocument.load(RECIPES, model_id)
+    return copy.deepcopy(doc.recipe), copy.deepcopy(doc.structure)
 
 
 def convert(model_id):
     design_id, family, _ = IDS[model_id]
-    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(load(model_id))
+    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(*load(model_id))
 
 
 @pytest.mark.parametrize('model_id', IDS)
@@ -55,18 +56,18 @@ def test_의자_등받이_위층():
 
 
 def test_steps_순서가_섞여도_sequence_순():
-    r = load('001_CHAIR_BENCH')
+    r, st = load('001_CHAIR_BENCH')
     r['steps'].reverse()
-    out = RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
+    out = RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, st)
     assert [b['order'] for b in out['blocks']] == list(range(1, 12))
     assert out == convert('001_CHAIR_BENCH')
 
 
 def test_원본_레시피를_바꾸지_않는다():
-    r = load('001_CHAIR_BENCH')
-    before = copy.deepcopy(r)
-    RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
-    assert r == before
+    r, st = load('001_CHAIR_BENCH')
+    before = copy.deepcopy((r, st))
+    RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, st)
+    assert (r, st) == before
 
 
 def test_출력은_JSON으로_직렬화된다():
@@ -80,61 +81,67 @@ def test_design_id_family_는_명시_입력():
 
 
 def bad(mutate):
-    r = load('001_CHAIR_BENCH')
-    mutate(r)
+    """recipe · structure 복사본을 mutate(recipe, structure) 로 망가뜨리면 변환이 ValueError 여야 한다."""
+    r, st = load('001_CHAIR_BENCH')
+    mutate(r, st)
     with pytest.raises(ValueError):
-        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r)
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, st)
 
 
-def test_새_이름_cad_recipe도_같은_결과():
-    r = load('001_CHAIR_BENCH')
-    r['schema'] = 'cad_recipe/1.0'
-    assert RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r) == convert('001_CHAIR_BENCH')
+def test_옛_한_파일_레시피는_거부():
+    """E-52: model 이 들어 있는 한 파일 레시피(옛 형식)는 더 받지 않는다."""
+    old = {'schema': 'cad_recipe/1.0', 'model': {'model_id': '001_CHAIR_BENCH'}, 'steps': []}
+    with pytest.raises(ValueError, match='옛 한 파일'):
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(old, None)
+    bad(lambda r, st: r.update(schema='assembly.recipe/1.0'))
+
+
+def test_structure가_없으면_거부():
+    r, _ = load('001_CHAIR_BENCH')
+    with pytest.raises(ValueError):
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, None)
 
 
 def test_잘못된_schema():
-    bad(lambda r: r.update(schema='m0609.jenga.cad_recipe/1.0'))
+    bad(lambda r, st: r.update(schema='m0609.jenga.cad_recipe/1.0'))
+    bad(lambda r, st: st.update(schema='other/1'))
     with pytest.raises(ValueError):
-        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert({})
+        RecipeToBlocks('bench', 'chair', BLOCK_MM).convert({}, {})
 
 
-def test_단위가_mm_아님():
-    bad(lambda r: r['model']['frame'].update(units='m'))
-
-
-def test_없는_instance():
-    bad(lambda r: r['steps'][0].update(instance_id='NOPE'))
+def test_없는_block():
+    bad(lambda r, st: r['steps'][0].update(block='NOPE_001_01'))
 
 
 def test_없는_part():
-    bad(lambda r: r['model']['instances'][0].update(part_id='PART_999'))
+    bad(lambda r, st: st['blocks'][0].update(part_id='PART_999'))
 
 
 def test_sequence_중복():
-    bad(lambda r: r['steps'][1].update(sequence=1))
+    bad(lambda r, st: r['steps'][1].update(sequence=1))
 
 
 def test_steps_없음():
-    bad(lambda r: r.update(steps=[]))
+    bad(lambda r, st: r.update(steps=[]))
 
 
 def test_45도_회전은_방향_복원_불가():
     s = 0.7071
-    bad(lambda r: r['model']['instances'][0].update(R=[[s, -s, 0], [s, s, 0], [0, 0, 1]]))
+    bad(lambda r, st: st['blocks'][0].update(R=[[s, -s, 0], [s, s, 0], [0, 0, 1]]))
 
 
 def test_크기가_75_25_15가_아니면_방향_복원_불가():
-    bad(lambda r: r['model']['parts'][0].update(size_mm=[80.0, 25.0, 15.0]))
+    bad(lambda r, st: st['parts'][0].update(size_mm=[80.0, 25.0, 15.0]))
 
 
 def test_거울_반사_회전은_거부():
-    bad(lambda r: r['model']['instances'][0].update(R=[[0, -1, 0], [1, 0, 0], [0, 0, -1]]))
+    bad(lambda r, st: st['blocks'][0].update(R=[[0, -1, 0], [1, 0, 0], [0, 0, -1]]))
 
 
 def test_좌표는_레시피_원본_값_그대로():
-    r = load('003_DESK_STAND')
-    out = RecipeToBlocks('desk_stand', 'desk', BLOCK_MM).convert(r)
-    inst = {i['instance_id']: i for i in r['model']['instances']}
+    r, st = load('003_DESK_STAND')
+    out = RecipeToBlocks('desk_stand', 'desk', BLOCK_MM).convert(r, st)
+    center = {b['block']: b['center_mm'] for b in st['blocks']}
     for step, b in zip(sorted(r['steps'], key=lambda s: s['sequence']), out['blocks']):
-        cx, cy, _ = inst[step['instance_id']]['center_mm']
+        cx, cy, _ = center[step['block']]
         assert (b['x'], b['y']) == (cx, cy)
