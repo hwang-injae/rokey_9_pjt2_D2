@@ -19,21 +19,23 @@ DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chai
            '003_DESK_STAND': ('desk_stand', 'desk', 7.5), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 12.5)}   # 004 = 10/7 가운데 기둥형 책상(W117)
 
 
-_DOC = RecipeDocument.load(SRC / 'recipe_manager/recipes', '001_CHAIR_BENCH')
-CONVERTED = {'recipe': _DOC.recipe, 'structure': _DOC.structure}      # 변환기 ①이 돌려주는 두 파일(가짜 변환기의 답)
+FIXTURES = Path(__file__).parent / 'fixtures'
+_DOC = RecipeDocument.load(FIXTURES, '001_CHAIR_BENCH')
+CONVERTED = {'recipe': _DOC.recipe, 'placements': _DOC.placements}      # 변환기 ①이 돌려주는 두 문서(가짜 변환기의 답, E-69)
 
 
 def base_design(model_id):
     design_id, family, _ = DESIGNS[model_id]
-    """main 구조·레시피를 읽어 blocks/1 로 바꾼다. 읽기 실패는 시험에 알린다."""
-    document = RecipeDocument.load(SRC / 'recipe_manager/recipes', model_id)
-    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(document.recipe, document.structure)
+    """레시피 두 파일(시험용 사본)을 읽어 blocks/2.0 으로 바꾼다. 읽기 실패는 시험에 알린다."""
+    document = RecipeDocument.load(FIXTURES, model_id)
+    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(document.recipe, document.placements)
 
 
 def design(*items):
-    """(x, y, z, ori) 들 → order 1.. 의 blocks/1."""
-    return {'schema': 'blocks/1', 'design_id': 't', 'family': 'test',
-            'blocks': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'inferred': False} for i, (x, y, z, o) in enumerate(items, 1)]}
+    """(x, y, z, ori) 들 → order 1.. 의 blocks/2.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT)."""
+    return {'schema': 'blocks/2.0', 'design_id': 't', 'family': 'test',
+            'blocks': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'part': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
+                       for i, (x, y, z, o) in enumerate(items, 1)]}
 
 
 def check(req, **kw):
@@ -47,7 +49,7 @@ def reasons(res):
 @pytest.mark.parametrize('model_id', DESIGNS)
 def test_기본_설계_3종_통과(model_id):
     res = check(base_design(model_id))
-    assert res['ok'] and res['errors'] == [] and res['schema'] == 'check_result/1'
+    assert res['ok'] and res['errors'] == [] and res['schema'] == 'check_result/2.0'
     assert res['min_margin_mm'] == DESIGNS[model_id][2]
 
 
@@ -138,9 +140,9 @@ def test_요청이_객체가_아님():
 
 
 def test_블록_수_상한():
-    res = check({'blocks': [{'order': i, 'x': 0, 'y': 0, 'z': 0, 'ori': 'x'} for i in range(1, 56)]})
+    res = check(design(*[(0, 0, 0, 'x')] * 55))
     assert reasons(res) == [(None, 'OUT_OF_SCOPE')]
-    assert check({'blocks': [{'order': i, 'x': 0, 'y': 0, 'z': 15 * (i - 1), 'ori': 'x'} for i in range(1, 3)]})['ok']
+    assert check(design(*[(0, 0, 15 * (i - 1), 'x') for i in range(1, 3)]))['ok']
 
 
 def test_order_순서가_섞여_와도_order로_검사():
@@ -150,11 +152,11 @@ def test_order_순서가_섞여_와도_order로_검사():
 
 
 def test_변환기_연결():
-    """변환기 ①은 {structure, recipe} 두 파일을 돌려준다. 옛 한 파일 답(recipe 만)은 ERROR."""
+    """변환기 ①은 {recipe, placements} 두 문서를 돌려준다. 한 문서만 준 답은 ERROR."""
     bench = base_design('001_CHAIR_BENCH')
     calls = []
     res = check(bench, blocks_to_recipe=lambda blocks: calls.append(blocks) or CONVERTED)
-    assert res['ok'] and (res['recipe'], res['structure']) == (CONVERTED['recipe'], CONVERTED['structure']) and calls == [bench]
+    assert res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements']) and calls == [bench]
     assert 'recipe' not in check(bench)
     bad = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')), blocks_to_recipe=lambda b: calls.append(b))
     assert not bad['ok'] and len(calls) == 1                           # 통과 못 하면 변환기를 부르지 않는다
@@ -181,7 +183,7 @@ def handle(req_text, **kw):
 
 def test_서비스_합격은_success_true와_레시피():
     ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: CONVERTED)
-    assert (ok, reason) == (True, '') and res['ok'] and (res['recipe'], res['structure']) == (CONVERTED['recipe'], CONVERTED['structure'])
+    assert (ok, reason) == (True, '') and res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements'])
 
 
 def test_서비스_설계_불합격은_success_true_ok_false():
@@ -227,7 +229,7 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
 
 
-@pytest.mark.parametrize('schema', ['other/1', 'blocks/2', None, 5])
+@pytest.mark.parametrize('schema', ['other/1', 'blocks/1', 'blocks/2', 'blocks/3.0', None, 5])
 def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
     req = base_design('001_CHAIR_BENCH')
     req['schema'] = schema
@@ -270,6 +272,89 @@ def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
 
 
 def test_변환기가_옛_한_파일만_돌려주면_ERROR():
-    """E-52 옮김 끝: recipe 만 있는 답(structure 없음)은 합격 결과로 내보내지 않는다."""
+    """recipe(구조)만 있는 답(placements 없음)은 합격 결과로 내보내지 않는다."""
     res = check(base_design('001_CHAIR_BENCH'), blocks_to_recipe=lambda b: CONVERTED['recipe'])
     assert not res['ok'] and res['errors'][0]['reason'] == 'ERROR'
+
+
+# ---------- blocks/2.0 의 AI 칸(role · part · stage · grasp) 형식 검사 (E-69) ----------
+def ai_blocks(n=3):
+    """쌓인 블록 n개(아랫면 0, 15, 30)의 정상 blocks/2.0."""
+    return design(*[(0, 0, 15 * i, 'x') for i in range(n)])
+
+
+def one_error_detail(req):
+    res = check(req)
+    assert not res['ok'] and res['errors'] and all(e['reason'] == 'CHECK_FAILED' for e in res['errors']), res
+    return res['errors'][0]['detail']
+
+
+@pytest.mark.parametrize('key', ['role', 'part', 'stage', 'grasp'])
+def test_AI_칸이_빠지면_CHECK_FAILED이고_코드가_대신_채우지_않는다(key):
+    req = ai_blocks()
+    del req['blocks'][1][key]
+    assert key in one_error_detail(req) and '없음' in one_error_detail(req)
+
+
+@pytest.mark.parametrize('role', ['leg', 'ARM_REST_X', 'LEG_', '_LEG', 'LEG1', '', 5, None])
+def test_역할_형식이_틀리면_거절(role):
+    req = ai_blocks()
+    req['blocks'][0]['role'] = role
+    assert 'role' in one_error_detail(req)
+
+
+@pytest.mark.parametrize('role', ['LEG', 'LEG_WHEEL', 'SEAT'])
+def test_역할_한_단어_옵션_0_1개는_통과(role):
+    req = ai_blocks()
+    req['blocks'][0]['role'] = role
+    assert check(req)['ok']
+
+
+@pytest.mark.parametrize('key, value', [('part', 0), ('part', -1), ('part', True), ('part', 1.5), ('part', '1'),
+                                        ('stage', 0), ('stage', True), ('stage', None), ('grasp', 'SIDE_25'), ('grasp', 'flat_short'), ('grasp', None)])
+def test_part_stage_grasp_값이_틀리면_거절(key, value):
+    req = ai_blocks()
+    req['blocks'][1][key] = value
+    assert key in one_error_detail(req)
+
+
+@pytest.mark.parametrize('stages', [[2, 2, 3], [1, 3, 3], [1, 2, 1], [2, 3, 4]])
+def test_단계는_1부터_같거나_1씩_늘어야_한다(stages):
+    req = ai_blocks()
+    for b, st in zip(req['blocks'], stages):
+        b['stage'] = st
+    assert 'stage' in one_error_detail(req)
+
+
+@pytest.mark.parametrize('stages', [[1, 1, 1], [1, 1, 2], [1, 2, 3], [1, 2, 2]])
+def test_단계가_같거나_1씩_늘면_통과(stages):
+    req = ai_blocks()
+    for b, st in zip(req['blocks'], stages):
+        b['stage'] = st
+    assert check(req)['ok']
+
+
+def test_inferred는_선택이고_불리언이어야_한다():
+    req = ai_blocks()
+    req['blocks'][2]['inferred'] = True
+    assert check(req)['ok']
+    req['blocks'][2]['inferred'] = 'yes'
+    assert 'inferred' in one_error_detail(req)
+
+
+def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
+    """E-69: blocks/1 은 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 ERROR."""
+    req = ai_blocks()
+    req['schema'] = 'blocks/1'
+    for b in req['blocks']:
+        for k in ('role', 'part', 'stage', 'grasp'):
+            del b[k]
+    ok, reason, text = DesignChecker(CFG).handle_json(json.dumps(req))
+    assert (ok, reason) == (False, 'ERROR') and 'blocks/1' in text
+
+
+def test_변환기_결과의_짝_해시가_안_맞으면_ERROR():
+    from d2_task.recipe_document import recipe_sha256  # noqa: F401  (해시 규칙은 test_recipe_document 가 본다)
+    wrong = {'recipe': CONVERTED['recipe'], 'placements': dict(CONVERTED['placements'], recipe_sha256='0' * 64)}
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: wrong)
+    assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe_sha256' in res['errors'][0]['detail']
