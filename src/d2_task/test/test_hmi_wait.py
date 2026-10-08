@@ -39,7 +39,7 @@ def go():
     return m, io, clock
 
 
-def test_원격모드는_첫_생존_신호_전에_출발하지_않는다():
+def test_원격모드는_첫_연결_신호_전에_출발하지_않는다():
     m, io, _clock = make()
     assert m.command('select_design', 'bench') == (False, '')            # IRD BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → reason 비움 + message(E-62)
     assert m.state == 'IDLE' and m.run_id is None and not picks(io)
@@ -58,7 +58,7 @@ def test_수신시각으로_정확히_3초에_끊김을_판정한다():
 
 
 @pytest.mark.parametrize('body', [None, [], 'true', {}, {'alive': 'true'}, {'alive': 1}, {'alive': False}])
-def test_잘못된_생존_값으로_연결이_갱신되지_않는다(body):
+def test_잘못된_연결_값으로_연결이_갱신되지_않는다(body):
     m, _io, clock = go()
     clock.now = CFG['mqtt']['lost_after_s']
     m.on_hmi_alive(body)
@@ -173,7 +173,7 @@ def test_진행_재확인_중_다시_끊기면_새_목표를_보내지_않는다
     observe = io.check_progress
 
     def lose_during_check(block_ids, should_abort):
-        """재관측 답을 기다리던 중 생존 신호가 끊긴다."""
+        """재관측 답을 기다리던 중 연결 신호가 끊긴다."""
         clock.now += CFG['mqtt']['lost_after_s']
         return observe(block_ids, should_abort)
 

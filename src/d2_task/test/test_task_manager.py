@@ -31,7 +31,7 @@ def reseal(recipe, placements):
     return dict(copy.deepcopy(placements), recipe_sha256=recipe_sha256(recipe))
 OK = (True, '')
 SAFE_OK = {'stopped': False, 'locked': False, 'reason': ''}
-SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_REQUEST'}
+SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_WEB'}
 # IRD 2장 '화면 알림 message_id' 중 이번에 쓰는 값. 이 밖의 값은 새로 만든 이름이라 나오면 안 된다
 IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost', 'scan_running', 'scan_review'}
 
@@ -56,7 +56,7 @@ class FakeIO:
         return [e[1:] for e in self.events if e[0] == 'call']
 
     def get_design(self, design_id, should_abort):
-        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/1 dict."""
+        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/2.0 dict."""
         self.events.append(('call', 'load', design_id))
         if design_id != 'bench':
             return False, '', None

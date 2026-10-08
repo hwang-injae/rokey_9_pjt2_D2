@@ -12,7 +12,7 @@ from d2_task.block_picker import BlockPicker
 from d2_task.scatter_pick import ScatterFlow, StepTracker, block_pose, contact_phase, failure_action, grasped_now
 from test_block_picker import CFG, MIN_GAP, blk
 
-TARGET = {'block_id': '001_CHAIR_BENCH_B004', 'grasp': 'FLAT_LONG',
+TARGET = {'block_id': '001_CHAIR_BENCH_LEG_001_04', 'grasp': 'FLAT_LONG',
           'place_pose': ((0.43, -0.07, -0.0035), (0.0, 0.0, 0.0, 1.0))}
 
 
@@ -295,7 +295,7 @@ def test_관측_자세는_공급_칸_자세_계산과_같다(slot):
 def test_세_자세_모두_칸_자세_계산과_중심_회전이_같다(up, yaw):
     """실제 robot.yaml 칸은 눕힘뿐일 수 있어, 옆세움 · 세움과 yaw 경계(−90 포함)를 가짜 칸으로 같은 규약인지 비교한다(W142)."""
     cfg = copy.deepcopy(CFG)
-    cfg['supply_slots'] = [dict(cfg['supply_slots'][0], block_up=up, yaw_deg=yaw, x_m=0.31, y_m=-0.12, surface_z_m=-0.018)]
+    cfg['supply_slots'] = [dict(cfg['supply_slots'][0], block_up=up, yaw_deg=yaw, x_m=0.31, y_m=-0.12)]
     center, rot = slot_block_pose(cfg, 1)
     top = center[2] + cfg['block_actual_m'][{'THICKNESS': 2, 'WIDTH': 1, 'LENGTH': 0}[up]] / 2
     got_center, got_quat = block_pose(cfg, up, yaw, 0.31, -0.12, top)

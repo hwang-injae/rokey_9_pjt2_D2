@@ -81,7 +81,7 @@ class TaskManager:
 
     def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False, open_width_m=None):
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
-        monitor_hmi 는 웹 생존 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
+        monitor_hmi 는 웹 연결 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
         공급 방식은 cfg['supply_mode'](없으면 slots): slots = 공급 칸 6개(기본), scatter = 흩뿌린 공급(관측 → 후보 고르기, E-55). scatter 는 open_width_m(m)을 명시로 받아야
         집기 요청을 만든다 — 열림 폭이 확정 전이라 노드는 아직 None 을 넘기고, 그러면 scatter 선택은 ERROR 로 끝난다(실제 흩뿌림 실행 보류).
         만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
@@ -160,7 +160,7 @@ class TaskManager:
             self.gripper = st
 
     def on_hmi_alive(self, body):
-        """웹 생존 JSON 의 alive 가 정확히 true 일 때 수신 시각을 갱신한다. 깨진 값은 무시하고 외부 stamp 는 사용하지 않는다.
+        """웹 연결 JSON 의 alive 가 정확히 true 일 때 수신 시각을 갱신한다. 깨진 값은 무시하고 외부 stamp 는 사용하지 않는다.
 
         재접속은 대기를 풀지 않는다. 현재 블록 처리 중 끊겼다가 돌아온 경우도 사람의 계속 버튼을 기다린다.
         """
@@ -170,7 +170,7 @@ class TaskManager:
                 self._hmi_seen_at = self._clock()
 
     def _hmi_fresh(self):
-        """(잠금 안) 웹 생존 신호가 lost_after_s 초 안에 왔는가. 감시 안 하는 로컬 개발은 항상 참."""
+        """(잠금 안) 웹 연결 신호가 lost_after_s 초 안에 왔는가. 감시 안 하는 로컬 개발은 항상 참."""
         return not self._monitor_hmi or (self._hmi_seen_at is not None and
                                          self._clock() - self._hmi_seen_at < self.cfg['mqtt']['lost_after_s'])
 
