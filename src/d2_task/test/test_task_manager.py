@@ -83,7 +83,7 @@ class FakeIO:
                        'dz_m': self.dz if here else float('nan'), 'top_z_m': 0.05 if here else float('nan')}
         return True, '', rows
 
-    def pick_place(self, goal, should_abort):
+    def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
         self.events.append(('call', 'pick', goal['block_id'], goal['supply_slot']))
         step = self.pick_script.pop(0) if self.pick_script else OK
         if callable(step):

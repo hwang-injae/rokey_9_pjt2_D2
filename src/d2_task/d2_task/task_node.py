@@ -103,6 +103,7 @@ class TaskNode(Node):
         self.design_cli = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=cb)
         self.capture_cli = self.create_client(JsonQuery, '/d2/vision/scan_capture', callback_group=cb)
         self.infer_cli = self.create_client(JsonQuery, '/d2/vision/scan_infer', callback_group=cb)
+        self.find_cli = self.create_client(JsonQuery, '/d2/vision/find_blocks', callback_group=cb)      # supply_mode: scatter 일 때만 쓴다
         self.stop_cli = self.create_client(StopRequest, '/d2/safety/stop', callback_group=cb)
         self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
         self.move_to_s = cfg['timeout']['move_to_s']
@@ -223,12 +224,15 @@ class TaskNode(Node):
             waiting.append('/d2/vision/check_progress')
         if not self.pick_cli.server_is_ready():
             waiting.append('/d2/motion/pick_place')
+        if self.manager.supply_mode == 'scatter' and not self.find_cli.service_is_ready():
+            waiting.append('/d2/vision/find_blocks')
         return waiting
 
-    def _scan_query(self, client, body, should_abort):
-        """스캔 JsonQuery를 service_s 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
+    def _scan_query(self, client, body, should_abort, default_reason='SCAN_FAILED'):
+        """JsonQuery(스캔 · find_blocks)를 service_s 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
 
         JSON 깨짐·객체 아님·유한하지 않은 수는 ERROR. 서버 없음은 ERROR, 정지·시간 초과는 공통 reason으로 돌려준다.
+        서버가 실패하면서 이유를 안 주면 default_reason.
         """
         if not client.service_is_ready():
             return False, 'ERROR', None
@@ -238,7 +242,7 @@ class TaskNode(Node):
         if res is None:
             return False, why or 'ERROR', None
         if not res.success:
-            return False, res.reason or 'SCAN_FAILED', None
+            return False, res.reason or default_reason, None
         try:
             response = json.loads(res.response_json)
             json.dumps(response, allow_nan=False)
@@ -255,6 +259,10 @@ class TaskNode(Node):
     def scan_infer(self, run_id, should_abort):
         """run_id의 점군 추론을 요청한다. 결과 좌표는 blocks/1의 mm, 제한 시간·실패는 _scan_query와 같다."""
         return self._scan_query(self.infer_cli, dict(run_id=run_id), should_abort)
+
+    def find_blocks(self, run_id, should_abort):
+        """흩뿌린 공급 영역을 /d2/vision/find_blocks 로 조회한다(IRD 4.2). 반환: (성공, reason, 응답 dict). 제한 시간 · 실패는 _scan_query 와 같다."""
+        return self._scan_query(self.find_cli, dict(run_id=run_id), should_abort, default_reason='ERROR')
 
     def publish_scan_result(self, body):
         """완성된 scan_result/1(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
@@ -323,11 +331,14 @@ class TaskNode(Node):
                                    'dz_m': res.dz_m[i], 'top_z_m': res.top_z_m[i]} for i in range(n)}
         return True, '', rows
 
-    def pick_place(self, goal, should_abort):
+    def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
         """블록 1개 pick_place 액션을 보내고 결과를 기다린다. 반환: (성공, reason).
 
         목표 수락부터 결과까지 합쳐 pick_place_s 초를 쓴다. 초과하면 먼저 취소하고 TIMEOUT(관리자가 정지 요청).
         중단 신호 때도 목표를 취소한다. 목표 수락이 늦어도 받아지는 즉시 취소한다.
+        on_feedback(step) 은 피드백이 올 때마다, on_result(받은 시각) 은 결과를 **실제로 받았을 때만** 한 번 부른다(실행기 스레드). 시각은 gripper_state 의
+        stamp 와 비교할 수 있게 time.time() 초다 — 제한 시간 계산은 기존 단조 시계(time.monotonic) 그대로다. 거절 · 시간 초과 · 우리 쪽 취소처럼
+        결과 없이 끝나면 on_result 를 부르지 않는다.
         """
         if should_abort():
             return False, 'STOPPED'
@@ -335,7 +346,10 @@ class TaskNode(Node):
         g.block_id, g.supply_slot, g.grasp = goal['block_id'], goal['supply_slot'], goal['grasp']
         g.pick_pose, g.place_pose = to_pose(goal['pick_pose']), to_pose(goal['place_pose'])
         deadline = time.monotonic() + self.pick_place_s
-        sent = self.pick_cli.send_goal_async(g)
+        if on_feedback is None:
+            sent = self.pick_cli.send_goal_async(g)
+        else:
+            sent = self.pick_cli.send_goal_async(g, feedback_callback=lambda msg: on_feedback(msg.feedback.step))
         accepted = threading.Event()
         sent.add_done_callback(lambda _f: accepted.set())
         try:
@@ -353,7 +367,14 @@ class TaskNode(Node):
         finished = threading.Event()
         try:
             result = handle.get_result_async()
-            result.add_done_callback(lambda _f: finished.set())
+
+            def got_result(_f):
+                """결과가 도착한 순간(기다리는 스레드가 깨어나기 전)의 시각을 적는다."""
+                if on_result is not None:
+                    on_result(time.time())
+                finished.set()
+
+            result.add_done_callback(got_result)
             if not wait_until(finished, should_abort, timeout_s=max(0.0, deadline - time.monotonic())):
                 try:
                     handle.cancel_goal_async()

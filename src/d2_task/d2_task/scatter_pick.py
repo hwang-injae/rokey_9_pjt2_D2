@@ -94,6 +94,9 @@ class StepTracker:
 
     begin(request_id) 로 새 요청을 시작하면 이전 요청의 step 은 지워지고, 이전 요청의 늦은 피드백(request_id 가 다름)은 버린다.
     request_id 는 부르는 쪽이 요청마다 새로 만드는 번호(예: 증가하는 정수)다. 모르는 step 도 기록하지 않는다.
+    같은 요청 안에서 단계는 STEPS 순서로만 앞으로 간다: 이미 지난 단계나 같은 단계의 늦은 피드백(예: grasp 뒤에 늦게 온 approach)은 버린다 —
+    그러지 않으면 접촉 뒤인데 '접촉 전(PRE_CONTACT)'으로 되돌아가 같은 후보로 다시 계획하게 된다.
+    결과(PickPlace result)를 실제로 받은 시각도 요청마다 한 번만 적는다(on_result). 결과 없이 끝난 요청(거절 · 시간 초과 · 우리 쪽 취소)은 None 이다.
     """
 
     def __init__(self):
@@ -101,18 +104,29 @@ class StepTracker:
         self._lock = threading.Lock()
         self._current = None
         self._step = None
+        self._result_at = None
 
     def begin(self, request_id):
-        """새 요청을 시작한다. 마지막 step 을 비운다."""
+        """새 요청을 시작한다. 마지막 step 과 결과 수신 시각을 비운다."""
         with self._lock:
-            self._current, self._step = request_id, None
+            self._current, self._step, self._result_at = request_id, None, None
 
     def on_feedback(self, request_id, step):
-        """피드백을 받았다. 지금 요청의 것이고 알려진 step 일 때만 기록한다. 반환: 기록했으면 True."""
+        """피드백을 받았다. 지금 요청의 것이고 알려진 step 이며 마지막 step 보다 **앞으로 가는** 것일 때만 기록한다. 반환: 기록했으면 True."""
         with self._lock:
             if request_id != self._current or request_id is None or step not in STEPS:
                 return False
+            if self._step is not None and STEPS.index(step) <= STEPS.index(self._step):
+                return False                       # 역행 · 중복은 버린다
             self._step = step
+            return True
+
+    def on_result(self, request_id, received_at):
+        """결과를 받았다. 지금 요청의 첫 결과일 때만 수신 시각(time.time() 초)을 적는다. 반환: 적었으면 True."""
+        with self._lock:
+            if request_id != self._current or request_id is None or self._result_at is not None:
+                return False
+            self._result_at = received_at
             return True
 
     def last_step(self, request_id):
@@ -120,11 +134,16 @@ class StepTracker:
         with self._lock:
             return self._step if request_id == self._current and request_id is not None else None
 
+    def result_at(self, request_id):
+        """그 요청의 결과 수신 시각(time.time() 초). 지금 요청이 아니거나 결과를 못 받았으면 None."""
+        with self._lock:
+            return self._result_at if request_id == self._current and request_id is not None else None
+
     def end(self, request_id):
-        """요청이 끝났다(결과 처리 뒤). 더 이상 그 요청의 피드백을 받지 않는다."""
+        """요청이 끝났다(결과 처리 뒤). 더 이상 그 요청의 피드백 · 결과를 받지 않는다."""
         with self._lock:
             if request_id == self._current:
-                self._current = self._step = None
+                self._current = self._step = self._result_at = None
 
 
 def block_pose(cfg, up, yaw_deg, x_m, y_m, top_z_m):
