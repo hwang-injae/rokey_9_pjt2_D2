@@ -216,8 +216,8 @@ class PickPlaceNode(Node):
             res.success, res.reason, res.grip_width_m, res.duration_s = ok, reason, width, time.monotonic() - t0
             if ok:
                 gh.succeed()
-            elif reason == 'CANCELED':
-                gh.canceled()
+            elif reason == 'CANCELED' and gh.is_cancel_requested:
+                gh.canceled()                       # 취소 요청을 받은 목표만 canceled 로 끝낼 수 있다 (정지 노드가 세운 건 abort + CANCELED)
             else:
                 gh.abort()
             why = f'{reason} ({self.halt_reason})' if reason in ('CANCELED', 'STOPPED') and self.halt_reason else reason
