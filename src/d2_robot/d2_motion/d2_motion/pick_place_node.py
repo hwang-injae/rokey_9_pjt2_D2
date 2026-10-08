@@ -47,8 +47,8 @@ class PickPlaceNode(Node):
     """블록 1개 집기·놓기 액션 서버 + 관측·홈 자세 이동 서비스. MoveIt2 실행기는 같은 프로그램 안 클래스(MoveItExecutor).
 
     받는 것: /d2/motion/pick_place (액션 PickPlace), /d2/motion/move_to (MoveTo),
-             /d2/safety/state (JSON safety_state/1 — stopped 면 지금 동작을 세우고 목표를 실패로 끝냄,
-             locked 동안 새 목표를 받지 않음. S-26)
+             /d2/safety/state (JSON safety_state/1 — stopped 면 지금 동작을 세우고 목표를 CANCELED 로 끝냄,
+             locked 동안 새 목표를 STOPPED 로 거절. S-26)
     부르는 것: /d2/gripper/command (GripperCommand), /d2/motion/scene/attach (SceneAttach), MoveIt2 move_group,
                켤 때 두산 tcp/get_current_tcp · tool/get_current_tool (config/tcp.json·tool.json 과 비교)
     PickPlace 의 pick_pose·place_pose 는 블록 중심 자세(base_link, m, 블록 자신의 축)로 받고, 손가락 끝 목표는 여기서 계산한다 (안).
@@ -93,10 +93,12 @@ class PickPlaceNode(Node):
         self.holding = bool(json.loads(msg.data).get('grasped'))
 
     def _halted(self, gh=None):
-        """멈춰야 할 이유 (정지 노드의 stopped, 목표 취소) 를 돌려준다. 없으면 None."""
-        if self.halt_reason:
-            return self.halt_reason
-        if gh is not None and gh.is_cancel_requested:
+        """멈춰야 하면 'CANCELED' (정지 노드의 stopped · Ctrl+C · 목표 취소), 아니면 None.
+
+        정지 이유(STOP_WEB · ROBOT_ALARM:… 등)는 결과에 넣지 않는다 — 작업 관리자는 STOPPED · CANCELED 만 정지로 알아듣고
+        나머지는 ERROR 로 처리한다(IRD 7장, E-62). 자세한 이유는 /d2/safety/state 의 reason 과 이 노드 로그에 있다.
+        """
+        if self.halt_reason or (gh is not None and gh.is_cancel_requested):
             return 'CANCELED'
         return None
 
@@ -214,15 +216,16 @@ class PickPlaceNode(Node):
             res.success, res.reason, res.grip_width_m, res.duration_s = ok, reason, width, time.monotonic() - t0
             if ok:
                 gh.succeed()
-            elif reason == 'CANCELED':
-                gh.canceled()
+            elif reason == 'CANCELED' and gh.is_cancel_requested:
+                gh.canceled()                       # 취소 요청을 받은 목표만 canceled 로 끝낼 수 있다 (정지 노드가 세운 건 abort + CANCELED)
             else:
                 gh.abort()
-            self.get_logger().info(f'{g.block_id}: {"성공" if ok else "실패 " + reason} ({res.duration_s:.1f} s)')
+            why = f'{reason} ({self.halt_reason})' if reason in ('CANCELED', 'STOPPED') and self.halt_reason else reason
+            self.get_logger().info(f'{g.block_id}: {"성공" if ok else "실패 " + why} ({res.duration_s:.1f} s)')
             return res
 
         if self.locked:
-            return finish(False, self.halt_reason or 'STOPPED')
+            return finish(False, 'STOPPED')          # 잠긴 동안 거절 (IRD 7장 — 정지 이유는 safety/state 에)
         if self.controller_error:
             return finish(False, 'TCP_MISMATCH')
         if self.holding:
@@ -344,7 +347,7 @@ class PickPlaceNode(Node):
             res.success, res.reason = False, 'PLAN_FAILED'
             return res
         if self.locked:
-            res.success, res.reason = False, self.halt_reason or 'STOPPED'
+            res.success, res.reason = False, 'STOPPED'
             return res
         if self.controller_error:
             res.success, res.reason = False, 'TCP_MISMATCH'
