@@ -116,6 +116,23 @@ def test_맞는_블록이_없으면_이유를_알리고_기다린다(blocks, mes
     assert last['message_id'] == message_id and '맞는 블록이 없다' in last['message'] and not picks(io)
 
 
+def test_기울어진_블록이_있어도_다른_블록을_집고_기울어진_것은_장애물이다():
+    """E-68: 집을 후보가 있으면 tilted 블록 때문에 멈추지 않는다. tilted · under 는 PickPlace 장애물로 실린다."""
+    m, io = make()
+    io.find_script = [(True, '', {'ok': True, 'blocks': [blk(x=0.30, length=40, width=40), blk(x=0.40, tilted=True), blk(x=0.45, overlap='under')]})]
+    start(m)
+    drive(m, 'PICK_PLACE')
+    assert len(m.goal['obstacles']) == 2 and m.goal['supply_slot'] == ''
+
+
+def test_장애물_블록의_형식이_틀리면_일부만_보내지_않고_ERROR():
+    m, io = make()
+    io.find_script = [(True, '', {'ok': True, 'blocks': [blk(x=0.30, length=40, width=40), {'x_m': 'abc'}]})]
+    start(m)
+    drive(m, 'ERROR')
+    assert '장애물 블록' in io.states[-1]['message'] and not picks(io)
+
+
 def test_조회_응답이_이상하면_다시_시도하지_않고_ERROR():
     m, io = make()
     io.find_script = [(True, '', {'ok': False})]

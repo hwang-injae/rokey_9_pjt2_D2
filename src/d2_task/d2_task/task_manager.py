@@ -467,11 +467,17 @@ class TaskManager:
             self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+        elif status == 'BLOCKED':                  # 장애물 블록 중 형식이 틀린 것이 있다(E-68) — 일부만 보내지 않고 서서 사람을 부른다
+            self._to_error(result['message'])
         else:                                      # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
             self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
 
     def _pick_place(self):
-        """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다."""
+        """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다.
+
+        요청마다 새 번호를 만들어 피드백 step · 결과 수신 시각(time.time())을 모으고, 끝나면 self.last_pick 에 남긴다
+        ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 수집만 하고 분기에는 아직 쓰지 않는다.
+        """
         self._pick_seq += 1
         rid = self._pick_seq
         self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다

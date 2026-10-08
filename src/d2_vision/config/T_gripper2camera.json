@@ -44,5 +44,24 @@
     ],
     "tool": "src/d2_vision/d2_vision/check_wrist_calib.py"
   },
-  "not_verified": "x·y 방향 오차와 기울기(구역 '왼위'가 늘 +8~10 mm)는 이 측정으로 못 봄 → 10/7 V-15(TCP 로 5점 짚기)에서 확인"
+  "not_verified": "V-15(로봇이 직접 놓은 블록 5곳, 2 mm)와 비스듬히 보는 스캔 촬영 자세(observe_front · observe_side)는 아직 — 10/8 W058",
+  "correction_1008": {
+    "date": "2026-10-08 15:00 (W058, E-54)",
+    "what": "회전 + 이동 다시 — 카메라 위치(그리퍼 틀) [33.09, 75.71, -184.17] → [35.45, 77.45, -184.65] mm, 회전 변화(그리퍼 틀 x, y, z) [1.42, -0.15, 1.45]°",
+    "how": [
+      "1) 박진용 4각도 측정(손목 0·90·180·270°, 공급 칸 p1~p4 블록, 카메라 높이 10/7 496 mm · 10/8 400 mm)으로 이동 x·y + 회전 3축 + 날마다 치우침 c 를 함께 맞춤(박진용 fit_rt.py → T_g2c_fit)",
+      "2) 그 값의 남은 기울기를 빈 작업대 평면으로 수평 맞춤(check_wrist_calib.fix_tilt, 공급 관측 자세)",
+      "3) 회전은 고정하고 이동 x·y 만 4각도 자료로 다시 맞춤"
+    ],
+    "why_not_fit_as_is": "4각도의 한 축 회전 0.6°는 두 높이 차이 1 mm 에서 나온 값(측정 흔들림 수준)이고, 작업대를 0.77° 기울게 만들었다",
+    "result": {
+      "observe_empty_table": "작업대 기울기 1.29° → 0.15°, 구역 5곳 높이 차 -0.9 ~ +0.5 mm (이 값을 만들 때 안 쓴 자세)",
+      "supply_p1_p3_p4": "칸 좌표 대비 dx -2.3±1.0 → -3.1±0.4, dy +13.5±2.2 → +3.6±0.5 mm, 블록 윗면 높이 -2.2±0.8 → -1.4±1.0 mm",
+      "four_angle_residual_mean_mm": 1.46,
+      "four_angle_residual_mean_mm_fit_as_is": 1.4
+    },
+    "remaining": "공급 칸 모든 칸에 같은 (-3, +3.6) mm 가 남음 — 4각도의 c 와 같아 블록 놓은 어긋남 · 칸 좌표 오차로 추정, 이 측정으로는 못 가름",
+    "data": "민범진 PC ~/d2_data/W058_1008_minbj/ (후보 보정값 · 깊이 원자료 · 계산 스크립트), 박진용 로봇 PC ~/d2_data/handeye_1007 · handeye_1008",
+    "tool": "src/d2_vision/d2_vision/check_wrist_calib.py"
+  }
 }

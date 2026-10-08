@@ -103,6 +103,11 @@ class BlockPicker:
         return {'status': 'FOUND', 'index': i, 'block': copy.deepcopy(b), 'overlap': b['overlap'], 'gap_mm': gap}
 
     @staticmethod
+    def is_valid(b):
+        """find_blocks 블록 하나의 형식이 맞나(위치 · yaw · 높이 · up · overlap · tilted · 수평 두 축의 틈). 고르지 않을 블록을 장애물로 쓸 때 쓴다."""
+        return BlockPicker._gap(b, 'LENGTH') is not None
+
+    @staticmethod
     def _gap(b, axis):
         """블록 하나의 형식이 맞으면 axis 방향 틈(mm), 형식이 틀리면 None. axis 가 이 블록의 위 축이면 틈이 없으므로 0.0(이 블록은 up 이 달라 어차피 other_up 으로 걸러진다).
 

@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents
 from d2_task.recipe_document import RecipeDocument
 
 RECIPES = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
-BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000
+BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000 (아래 시험이 같은지 확인한다)
 IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back', 'chair', 16),
        '003_DESK_STAND': ('desk_stand', 'desk', 9), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 11)}
 
@@ -145,3 +146,13 @@ def test_좌표는_레시피_원본_값_그대로():
     for step, b in zip(sorted(r['steps'], key=lambda s: s['sequence']), out['blocks']):
         cx, cy, _ = center[step['block']]
         assert (b['x'], b['y']) == (cx, cy)
+
+
+def test_블록_크기_두_곳은_허용_오차_없이_같다():
+    """방향 계산(레시피 parts[].size_mm)과 방향 표(robot.yaml block_size_m × 1000)가 같아야 방향이 정해진다(한세교 W117 확인 요청)."""
+    root = Path(__file__).resolve().parents[2]
+    cfg = yaml.safe_load(next(root.glob('d2_robot/d2_bringup/config/robot.yaml')).read_text(encoding='utf-8'))
+    assert [v * 1000.0 for v in cfg['block_size_m']] == BLOCK_MM
+    for model_id in IDS:
+        _, structure = load(model_id)
+        assert all(p['size_mm'] == BLOCK_MM for p in structure['parts']), model_id
