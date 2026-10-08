@@ -307,6 +307,7 @@ class TaskNode(Node):
         """진행 확인을 service_s 초 안에 받는다. 반환: (성공, reason, 블록별 관측). 중단 · 시간 초과 · 실패 때 관측은 빈 dict."""
         req = CheckProgress.Request()
         req.design_id = self.manager.design_id     # 이름에서 _B 앞을 자르면 새 역할 이름(BACK · BEAM)이 설계 ID 를 망가뜨린다(E-52)
+        req.run_id = self.manager.run_id or ''      # 손목 블록 인식은 run_id가 바뀔 때 설계를 다시 읽는다(E-60 ②). 조립 · 스캔 시작 때 정해지고 한 판 동안 같다
         req.block_ids = list(block_ids)
         res, why = self._call(self.check_cli, req, should_abort, self.service_s)
         if res is None:

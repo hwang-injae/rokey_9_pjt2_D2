@@ -91,6 +91,13 @@ def test_move_to_fields():
     assert req.get('speed_ratio') == 'float64'
 
 
+def test_check_progress_request_has_design_id_and_run_id():
+    """CheckProgress.srv 요청 — design_id(E-52) 다음에 run_id(E-60), 그 뒤 block_ids. 순서가 바뀌면 받는 쪽(손목 블록 인식)과 어긋난다."""
+    req, _ = (fields(s) for s in sections(IFACE / 'srv' / 'CheckProgress.srv'))
+    assert list(req) == ['design_id', 'run_id', 'block_ids']
+    assert req['run_id'] == 'string'
+
+
 def test_check_progress_fields():
     """CheckProgress.srv — 응답 states·dx_m·dy_m·dz_m·top_z_m (모두 배열, 같은 번호끼리 한 블록)."""
     _, res = (fields(s) for s in sections(IFACE / 'srv' / 'CheckProgress.srv'))

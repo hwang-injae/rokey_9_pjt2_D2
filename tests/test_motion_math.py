@@ -144,37 +144,11 @@ def test_pick_place_tcp_rejects_different_up_axis(robot_cfg):
         mm.pick_place_tcp(robot_cfg, center, rot, _place_center(robot_cfg, IDENTITY), IDENTITY, 'EDGE_LONG', slot=3)
 
 
-def _recipe(size_lwt_mm=(75, 25, 15)):
-    """m0609.jenga.cad_recipe/1.0 꼴의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (B002 가 B001 위)."""
-    return {'schema': 'm0609.jenga.cad_recipe/1.0', 'blocks': [
-        {'block_id': 'B001', 'sequence': 1, 'size_lwt_mm': list(size_lwt_mm), 'center_cad_mm': [0, 0, 7.5],
-         'R_cad_from_block': IDENTITY, 'closing_axis_cad': [0, 1, 0], 'support_block_ids': []},
-        {'block_id': 'B002', 'sequence': 2, 'size_lwt_mm': list(size_lwt_mm), 'center_cad_mm': [0, 0, 22.5],
-         'R_cad_from_block': IDENTITY, 'closing_axis_cad': [0, 1, 0], 'support_block_ids': ['B001']}]}
-
-
-def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
-    """레시피 2블록: 결과 2개, 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH), B002 중심 z = 원점 z + 실측 두께 x 1.5.
-    설계값(15 mm 층)이 아니라 실측 두께로 쌓아 올린다 — 10/6 실기 교훈(10층에서 +1.8 mm)."""
-    blocks = mm.recipe_blocks(robot_cfg, _recipe())
-    assert [b['block_id'] for b in blocks] == ['B001', 'B002']
-    assert all(b['grasp'] == 'FLAT_SHORT' for b in blocks)
-    o, t = robot_cfg['assembly_origin'], robot_cfg['block_actual_m'][2]
-    assert close(blocks[0]['center'][2], o['z_m'] + t * 0.5)
-    assert close(blocks[1]['center'][2], o['z_m'] + t * 1.5)
-    assert close(blocks[0]['center'][:2], (o['x_m'], o['y_m']))
-
-
-def test_recipe_blocks_rejects_wrong_size(robot_cfg):
-    """블록 크기가 robot.yaml block_size_m 와 다르면([70, 25, 15]) ValueError."""
-    with pytest.raises(ValueError):
-        mm.recipe_blocks(robot_cfg, _recipe((70, 25, 15)))
-
-
-def _recipe_v2(model_id='001_CHAIR_BENCH'):
-    """E-52 새 형식 두 파일(조립 · 구조)을 _recipe() 와 같은 두 블록으로 — 구조는 load_recipe 처럼 'structure' 칸에 붙인 꼴."""
+def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH'):
+    """E-52 두 파일(조립 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
+    반환: (조립, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'cad_structure/1.0', 'model_id': model_id,
-                 'parts': [{'part_id': 'PART_001', 'size_mm': [75, 25, 15]}],
+                 'parts': [{'part_id': 'PART_001', 'size_mm': list(size_mm)}],
                  'blocks': [{'block': 'SEAT_001_01', 'part_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
                             {'block': 'SEAT_001_02', 'part_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
     recipe = {'schema': 'cad_recipe/1.0', 'model_id': model_id,
@@ -185,36 +159,56 @@ def _recipe_v2(model_id='001_CHAIR_BENCH'):
     return recipe, structure
 
 
-def test_recipe_blocks_v2_two_files_same_as_old(robot_cfg):
-    """새 형식(E-52, W138): sequence 순서, block_id = '<model_id>_<블록 이름>', 자리 · 잡기는 같은 블록의 옛 형식과 같다."""
-    recipe, structure = _recipe_v2()
-    new = mm.recipe_blocks(robot_cfg, dict(recipe, structure=structure))
-    old = mm.recipe_blocks(robot_cfg, _recipe())
-    assert [b['block_id'] for b in new] == ['001_CHAIR_BENCH_SEAT_001_01', '001_CHAIR_BENCH_SEAT_001_02']
-    for a, b in zip(new, old):
-        assert a['grasp'] == b['grasp'] and close(a['center'], b['center']) and close(a['quat'], b['quat'])
+def _joined(size_mm=(75, 25, 15)):
+    """_recipe() 를 load_recipe 가 돌려주는 모양(조립 + 'structure' 칸)으로."""
+    recipe, structure = _recipe(size_mm)
+    return dict(recipe, structure=structure)
+
+
+def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
+    """레시피 2블록: sequence 순서, block_id = '<model_id>_<블록 이름>', 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH),
+    위 블록 중심 z = 원점 z + 실측 두께 x 1.5. 설계값(15 mm 층)이 아니라 실측 두께로 쌓아 올린다 — 10/6 실기 교훈(10층에서 +1.8 mm)."""
+    blocks = mm.recipe_blocks(robot_cfg, _joined())
+    assert [b['block_id'] for b in blocks] == ['001_CHAIR_BENCH_SEAT_001_01', '001_CHAIR_BENCH_SEAT_001_02']
+    assert all(b['grasp'] == 'FLAT_SHORT' for b in blocks)
+    o, t = robot_cfg['assembly_origin'], robot_cfg['block_actual_m'][2]
+    assert close(blocks[0]['center'][2], o['z_m'] + t * 0.5)
+    assert close(blocks[1]['center'][2], o['z_m'] + t * 1.5)
+    assert close(blocks[0]['center'][:2], (o['x_m'], o['y_m']))
+
+
+def test_recipe_blocks_rejects_wrong_size(robot_cfg):
+    """블록 크기가 robot.yaml block_size_m 와 다르면([70, 25, 15]) ValueError."""
+    with pytest.raises(ValueError):
+        mm.recipe_blocks(robot_cfg, _joined((70, 25, 15)))
+
+
+def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
+    """옛 blocks[] 형식(구조 칸 · model 칸 없음)은 W139 뒤 읽지 않는다(W138) — KeyError."""
+    with pytest.raises(KeyError):
+        mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'blocks': []})
 
 
 def test_load_recipe_reads_structure_next_to_it(tmp_path, robot_cfg):
-    """load_recipe: 새 조립 파일이면 같은 폴더의 <model_id>_structure.json 을 붙이고, 없으면 FileNotFoundError.
-    recipe_files 는 새 이름 · 옛 이름 조립 파일만 (구조 파일은 빼고) 이름 순으로."""
-    recipe, structure = _recipe_v2()
+    """load_recipe: 조립 파일 옆 <model_id>_structure.json 을 붙이고, 없으면 FileNotFoundError.
+    recipe_files 는 조립 파일(_recipe.json)만 — 구조 파일 · 옛 이름 .recipe.json 은 목록에 안 넣는다."""
+    recipe, structure = _recipe()
     (tmp_path / '001_CHAIR_BENCH_recipe.json').write_text(json.dumps(recipe))
-    (tmp_path / '003_DESK_STAND.recipe.json').write_text(json.dumps(_recipe()))
+    (tmp_path / '003_DESK_STAND.recipe.json').write_text(json.dumps(recipe))
     with pytest.raises(FileNotFoundError):
         mm.load_recipe(str(tmp_path / '001_CHAIR_BENCH_recipe.json'))
     (tmp_path / '001_CHAIR_BENCH_structure.json').write_text(json.dumps(structure))
     files = mm.recipe_files(str(tmp_path))
-    assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH', '003_DESK_STAND']
-    loaded = [mm.load_recipe(f) for f in files]
-    assert loaded[0]['structure'] == structure and 'structure' not in loaded[1]
-    assert len(mm.recipe_blocks(robot_cfg, loaded[0])) == 2
-    assert mm.recipe_model_id(loaded[0]) == '001_CHAIR_BENCH'
+    assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH']
+    loaded = mm.load_recipe(files[0])
+    assert loaded['structure'] == structure
+    assert len(mm.recipe_blocks(robot_cfg, loaded)) == 2
+    assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH'
 
 
 def test_load_recipe_checks_structure_sha256(tmp_path):
     """structure_sha256 = 구조 파일 바이트 그대로의 sha256 (한세교 10/7). 맞으면 읽고, 구조 파일이 바뀌면 ValueError."""
-    recipe, structure = _recipe_v2()
+    recipe, structure = _recipe()
     sp = tmp_path / '001_CHAIR_BENCH_structure.json'
     sp.write_text(json.dumps(structure))
     rp = tmp_path / '001_CHAIR_BENCH_recipe.json'

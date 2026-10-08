@@ -35,7 +35,7 @@ def node():
     n = scope['TaskNode']()
     n.service_s = n.move_to_s = n.pick_place_s = 0.04
     n._active, n._active_lock = None, threading.Lock()
-    n.manager = SimpleNamespace(design_id='design_with_BACK_BEAM')
+    n.manager = SimpleNamespace(design_id='design_with_BACK_BEAM', run_id='R20261008_100000_ab12')
     n.get_logger = lambda: logging.getLogger('test_task_node')
     return n
 
@@ -105,6 +105,14 @@ def test_관측_서비스도_시간제한이_있다(node):
     assert node.check_progress(['b1'], lambda: False) == (False, 'TIMEOUT', {})
     assert node.check_cli.removed == [node.check_cli.future]
     assert node.check_cli.requests[0].design_id == 'design_with_BACK_BEAM'
+    assert node.check_cli.requests[0].run_id == 'R20261008_100000_ab12'      # E-60 ②: 한 판의 ID를 손목 블록 인식에 넘긴다
+
+
+def test_run_id가_아직_없으면_빈_값(node):
+    node.manager.run_id = None
+    node.check_cli = Client()
+    node.check_progress(['b1'], lambda: False)
+    assert node.check_cli.requests[0].run_id == ''
 
 
 def test_정지_요청은_task_TIME_OUT을_보낸다(node):

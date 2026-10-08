@@ -16,9 +16,8 @@ setup(
         ('share/' + package_name + '/description', glob('description/*.xacro') + glob('description/*.srdf')),
         ('share/' + package_name + '/config', glob('config/*.yaml') + glob('config/*.json')),
         # 패키지 안 recipes/ 링크를 사용해 symlink-install이 작업 공간 밖에 레시피 링크를 만들지 않게 한다.
-        # E-52 새 형식은 조립 · 구조 두 파일(_recipe.json · _structure.json), 옛 이름 .recipe.json 은 W139 뒤 뺀다 (W138)
-        ('share/' + package_name + '/recipes', glob('recipes/*_recipe.json')
-         + glob('recipes/*_structure.json') + glob('recipes/*.recipe.json')),
+        # E-52 레시피는 조립 · 구조 두 파일(_recipe.json · _structure.json)
+        ('share/' + package_name + '/recipes', glob('recipes/*_recipe.json') + glob('recipes/*_structure.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
