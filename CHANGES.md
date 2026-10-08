@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-08
+- 공통(12시, PM): **`cloud_path` = 선택 칸(PL)** — 없거나 빈 글자면 점군 없음(스캔은 진행, 화면은 점군 창만 안 띄움), 글자가 아닌 값만 `SCAN_FAILED`(IRD 4.2 · 6장, 한석형 #82 질문 ②). SDD 3.5: 웹 생존 감시 = `monitor_hmi`(기본 true, #83) — 웹 없이 가상 시험은 `-p monitor_hmi:=false`.
 - 공통(12시, PM): **E-67 결정 번호(PL)** — HMI 화면 확정(PR #80)을 결정 기록 §25로: AI 후보 3개 중 사람이 고른 1개 저장 · 스캔 `cloud_path` · 손목 검출 영상 `wrist_image` 640×480 · 사진 ≤ 500 KB · 점군 ≤ 2 MB. IRD · SDD · 01의 '10/8 PL' 표시를 'E-67'로
 - 공통(12시, PM): **#80 보완(PL)** — ① 생성 설계 저장 = 검사 통과 후보 중 사람이 고른 1개(01 BR-04 · FR-D04 · FR-N03 · IRD · SDD 요약 줄 · README의 '자동 저장'을 SDD 6.6 ⑥에 맞춤) ② 손목 검출 영상 `wrist_image` = **640×480**(손목 카메라 해상도 그대로, 약 65 KB — 640×360은 카메라와 비율이 달랐음)
 - 공통(12시, PM): **HMI 화면 기능 확정 반영(PL, HMI 세션)** — IRD 8.3 · SDD 6.6: AI 생성 = LLM 한 번에 후보 3개 → 3D 미리보기 3개 · "디자인을 고르세요" → 뒤에서 `check_design` 3번(불합격 회색) → 고른 1개만 저장(검사 결과 structure · recipe), 나머지 rejected, 3개 다 불합격이면 재생성. IRD 4.2 `scan_infer` · 6장 `scan_result/1`에 **`cloud_path`**(PLY 복셀 3 mm ≤ 2 MB), 4.1 **`/d2/vision/wrist_image`**(CompressedImage YOLO-seg 검출 그림 1~2 Hz) + 10.1 `d2/vision/wrist_image` 줄, 10.5 사진 · 점군 크기 정함 · 12장 닫음.
