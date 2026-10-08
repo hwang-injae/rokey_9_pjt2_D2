@@ -12,7 +12,6 @@ from d2_task.recipe_to_blocks import ori_extents
 from d2_task.recipe_document import RecipeDocument
 
 SCHEMA_REQUEST = 'blocks/1'       # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장)
-SCHEMA_RECIPE = 'cad_recipe/1.0'  # 변환기 ①이 돌려줘야 하는 레시피 형식 이름 (E-44 — 레시피 안쪽 전체 검증은 W110 계약)
 PENETRATION_MM = 0.1     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 (SDD 6.7 검사 2)
 FLAT, EDGE, STAND = 'FLAT', 'EDGE', 'STAND'
 # 방향 코드 → 위를 향한 면에 따른 잡기 종류 (IRD 2장: 눕힘 = FLAT, 옆세움 = EDGE, 세움 = STAND)
@@ -29,7 +28,7 @@ class DesignChecker:
     """
 
     def __init__(self, cfg, blocks_to_recipe=None):
-        """cfg 를 mm 로 바꾼다. 변환기 ①은 옛 recipe dict 또는 {structure, recipe} 를 반환한다. 미연결이면 레시피를 안 낸다."""
+        """cfg 를 mm 로 바꾼다. 변환기 ①은 {structure, recipe} 를 반환한다. 미연결이면 레시피를 안 낸다."""
         try:
             self.block_mm = [v * 1000.0 for v in cfg['block_size_m']]
             self.extent = ori_extents(self.block_mm)
@@ -70,18 +69,10 @@ class DesignChecker:
         if self.blocks_to_recipe is not None:
             try:
                 converted = self.blocks_to_recipe(request)
-                if isinstance(converted, dict) and 'recipe' in converted:
-                    document = RecipeDocument(converted['recipe'], converted.get('structure'))
-                    if document.structure is None:
-                        raise ValueError('두 파일 변환 결과에 structure 가 없다')
-                    result.update(structure=document.structure, recipe=document.recipe)
-                else:
-                    if not isinstance(converted, dict) or converted.get('schema') != SCHEMA_RECIPE:
-                        raise ValueError(f'변환기 ① 결과가 {SCHEMA_RECIPE} 객체가 아니다')
-                    if 'model_id' in converted and 'model' not in converted:
-                        raise ValueError('새 recipe 에는 structure 가 필요하다')
-                    # 출력 전환 전의 한 파일 계약도 유지한다. 새 두 파일은 위에서 참조 관계까지 검증한다.
-                    result['recipe'] = converted
+                if not isinstance(converted, dict) or 'recipe' not in converted or 'structure' not in converted:
+                    raise ValueError('변환기 ① 결과에 structure · recipe 가 없다')
+                document = RecipeDocument(converted['recipe'], converted['structure'])    # 두 파일의 참조 관계까지 검증한다
+                result.update(structure=document.structure, recipe=document.recipe)
             except Exception as e:   # 변환기는 다른 파트 코드라 어떤 예외든 ERROR 로 알린다
                 return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result

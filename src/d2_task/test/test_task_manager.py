@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH, assembly.recipe/1.0), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH, structure + cad_recipe/1.0 두 파일), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -19,8 +19,9 @@ from d2_task.task_manager import TaskManager, wait_until
 SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
-RECIPE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH.recipe.json').read_text(encoding='utf-8'))
-IDS = [f'001_CHAIR_BENCH_B{n:03d}' for n in range(1, 12)]
+RECIPE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH_recipe.json').read_text(encoding='utf-8'))
+STRUCTURE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH_structure.json').read_text(encoding='utf-8'))
+IDS = [f'001_CHAIR_BENCH_{s["block"]}' for s in sorted(RECIPE['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 OK = (True, '')
 SAFE_OK = {'stopped': False, 'locked': False, 'reason': ''}
 SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_REQUEST'}
@@ -35,8 +36,8 @@ class FakeIO:
     world = 지금 작업대에 놓인 블록. dz = 놓인 블록의 높이 어긋남(m).
     """
 
-    def __init__(self, recipe=RECIPE):
-        self.recipe, self.manager = recipe, None
+    def __init__(self, recipe=RECIPE, structure=STRUCTURE):
+        self.recipe, self.structure, self.manager = recipe, structure, None
         self.events, self.states, self.progress = [], [], []
         self.world, self.missing, self.dz = set(), [], 0.0
         self.move_script, self.check_script, self.pick_script = [], [], []
@@ -52,7 +53,7 @@ class FakeIO:
         self.events.append(('call', 'load', design_id))
         if design_id != 'bench':
             return False, '', None
-        return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': self.recipe}
+        return True, '', {'schema': 'design/1', 'design_id': design_id, 'recipe': self.recipe, 'structure': self.structure}
 
     def services_ready(self):
         return list(self.missing)
@@ -167,7 +168,7 @@ def test_벤치_11개_정상_흐름():
     m, io = go()
     drive(m, 'DONE')
     assert io.world == set(IDS)
-    assert picks(io) == [(b, '2') for b in IDS[:8]] + [(b, '1') for b in IDS[8:]]      # 벽 FLAT_SHORT 칸 2, 좌판 FLAT_LONG 칸 1
+    assert picks(io) == [(b, '2') for b in IDS[:9]] + [(b, '1') for b in IDS[9:]]      # FLAT_SHORT 칸 2(짧은 쪽 우선, E-52 W139), 마지막 좌판 둘 FLAT_LONG 칸 1
     assert io.calls[:6] == [('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),     # 선택 때 한 번 조회(출발은 받아 둔 설계)
                             ('pick', IDS[0], '2'), ('move_to', 'observe'), ('check', (IDS[0],))]
     assert ('check', (IDS[2], IDS[0])) in io.calls                                   # 3번째: 놓은 블록 + 받침
@@ -423,8 +424,8 @@ def test_설계를_못_읽으면_거절():
     m, io = make()
     assert m.command('select_design', 'nope') == (False, '')
     assert m.command('select_design', '') == (False, '')
-    io.recipe = copy.deepcopy(RECIPE)
-    io.recipe['model']['parts'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 레시피
+    io.structure = copy.deepcopy(STRUCTURE)
+    io.structure['parts'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 레시피
     assert m.command('select_design', 'bench') == (False, '')
     assert m.state == 'IDLE'
 
