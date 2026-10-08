@@ -471,7 +471,11 @@ class TaskManager:
             self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
 
     def _pick_place(self):
-        """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다."""
+        """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다.
+
+        요청마다 새 번호를 만들어 피드백 step · 결과 수신 시각(time.time())을 모으고, 끝나면 self.last_pick 에 남긴다
+        ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 수집만 하고 분기에는 아직 쓰지 않는다.
+        """
         self._pick_seq += 1
         rid = self._pick_seq
         self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다
