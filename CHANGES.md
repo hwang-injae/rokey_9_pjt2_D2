@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-08
+- 로봇 동작(밤, 한세교): **E-69 레시피 교체 #93 · 변환기 ① 본체 #99 (완료: W110)** — 레시피 도구가 `_recipe.json`(`recipe/2.0`) + `_placements.csv`(20칸, `recipe_sha256` · `schema`)로 저장, `recipes/` 4종 교체(내용 같음), `RecipeBuilder` → `d2_task`. 변환기 ① `blocks_to_recipe.py`: AI 값 그대로 · 번호 · 중심 · R · 받침 · 닫힘 축만 계산, AI 실수 3가지(역할 목록 `roles.json` · 같은 부품 **면** 맞닿음 · 고른 잡기)는 `DesignRejected` → `CHECK_FAILED`(한석형 #100 연결). 4종 왕복(V-45) 같음. 남은 것: 검사 규칙 표 초안 → PL(10/10 오전, 초안 있음 — 겹침 기준 0.1 mm vs 0.000001 mm 메시지 갈림 · CAD 경로 빈칸 발견).
 - 비전(한석형, 밤): **#92 E-69 task 전환(W141 완료 · W117 입출력) · #97 `tilted`+`under`만 남으면 `tilted_block` 알림(W130, E-68).** 읽는 쪽이 `recipe/2.0` + `placements/2.0`(CSV `schema` 칸 · `recipe_sha256` 대조)을 읽고 옛 형식은 `schema`로 거절, 검사 묶음은 `blocks/2.0` → `check_result/2.0`, 변환기 ②는 `blocks/2.0` 출력. W065 실행 기록 CSV는 이미 구현돼 있어 벤치 가상 조립(82줄, `run_id` 하나)으로 확인 — 완료 기준 확인(완료 처리는 PL 확인). 남은 것: W110 변환기 ① 연결(세교님 PR 뒤) · W122 웹·다리 통합(황인재님 코드 뒤).
 - 비전(20시, PM 기록): **민범진 #95 merge(W140 완료)** — 손목 블록 인식이 `get_design` 답을 `design/2.0`으로 읽음(`recipe/2.0` + `placements/2.0` · `recipe_sha256` 확인), 옛 형식 · '_B' 방식 뺌. **E-69 네 PR 전부 main(#93 · #92 · #94 · #95), main CI 통과.** 남은 '안'은 `roles.json`(10/10 변환기 ① PR).
 - 공통(20시, PM): **E-69 전환 끝 — 네 PR 중 셋 merge(#93 한세교 레시피 4종 · #92 한석형 task W141 · #94 박진용 W138), main CI 통과.** IRD 6장 · 12장 · 작명 규칙 v3 · SDD의 '안' → 정함: `placements/2.0` 객체 모양 · CSV 20칸(`schema` 칸) · `RecipeBuilder` = `d2_task/recipe_builder.py`(#93 본문). 남은 '안' = `roles.json`(10/10 변환기 ① PR). 민범진 W140은 10/10 오전 main 기준.
