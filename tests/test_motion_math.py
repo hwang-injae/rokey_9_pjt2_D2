@@ -90,7 +90,7 @@ def test_slot_pose_matches_yaml(robot_cfg, slot):
     assert mm.grasp_name(rot, mm.GRASP_AXIS[st['grasp']]) == st['grasp']
     assert close(center[:2], (st['x_m'], st['y_m']))
     half = mm.half_height(rot, robot_cfg['block_actual_m'])
-    assert half > 0 and close(center[2], st['surface_z_m'] + half)
+    assert half > 0 and close(center[2], robot_cfg['table_z_m'] + half)
 
 
 def test_slot_out_of_range(robot_cfg):
