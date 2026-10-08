@@ -229,6 +229,13 @@ def test_stacked_cross():
     assert by[0]['overlap'] == 'under', (by[0], info['detail'])
 
 
+def test_clipped_at_image_border():
+    """영상 왼쪽 테두리에 잘린 블록(영역 밖이기도 함) → 자세 · yaw 를 못 믿으니 under + confidence ≤ 0.2 (10/8 PL)."""
+    out, info, _ = run_truth([block(140, 230, 0)])
+    b, = out
+    assert b['overlap'] == 'under' and b['confidence'] <= 0.2, (b, info['detail'])
+
+
 def test_empty_and_bad_masks():
     """빈 마스크 · 크기 다른 마스크 · 깊이 없는 영상은 빼고 빈 목록(예외 없음)."""
     depth, _ = render([block(420, 210, 0)])

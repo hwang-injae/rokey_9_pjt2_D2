@@ -10,6 +10,8 @@
 출력은 IRD `/d2/vision/find_blocks` 응답의 blocks 원소 그대로(dict, JSON 직렬화 가능, NaN 없음), 윗면 높이 순:
   {"x_m","y_m","top_z_m","yaw_deg","up","clear":{축:bool},"gap_mm":{축:mm},"overlap","tilted","confidence"}
   - x_m · y_m · top_z_m: base_link (m), 윗면 가운데. 기울어진 블록은 윗면 평면의 가운데 높이.
+  - up: 작업면 위 높이를 먼저(15 · 25 · 75 + 포개짐 층, ±5 mm) 보고 그 후보 안에서만 윗면 모양으로 가린다. 어긋나면 confidence 절반(10/8 PL).
+    다른 블록 위에 얹힌 블록은 '내 높이 − 아래 블록 높이'를 내 두께로 다시 본다. 영상 테두리 · 영역 경계에 잘린 윤곽은 under · confidence ≤ 0.2.
   - yaw_deg: 윗면의 긴 변이 base x 와 평행하면 0, 반시계 +, −90 ≤ yaw < 90 (motion_math.wrap_half 와 같은 경계).
     세움(up LENGTH)은 윗면 25 mm 변(WIDTH) 기준(10/8 E-62).
   - gap_mm · clear 의 키 = 블록의 수평인 두 축(눕힘 LENGTH · WIDTH, 옆세움 LENGTH · THICKNESS, 세움 WIDTH · THICKNESS — E-55 ③).
@@ -46,12 +48,19 @@ PLANE_RESID_MM = 4.0      # 평면에서 이보다 먼 점은 윗면이 아니�
 MIN_TOP_PTS = 30          # 윗면 점이 이보다 적으면 그 마스크는 블록으로 내지 않는다(깊이 구멍 · 너무 가려짐)
 SHRINK_MM = 4.5           # 기울기 · 가장자리 거르기로 윗면 크기가 이만큼 작게 재진다 — 치수 비교 때 더해 준다
                           # (W114-v2 실측: 떨어진 눕힘 블록 윗면이 70 x 20 mm 로 재짐 → 74.5 x 24.8 과 맞춤. 합성 영상은 1~2 mm 라 조금 크게 나온다)
-SIGMA_H_MM = 4.0          # 자세 판정: 받침 높이(작업면 0 · 블록 층) 어긋남의 허용 폭
-STACK_PENALTY = 2.0       # 자세 판정: 받침 블록 하나마다 더하는 값 — 비슷하면 바닥에 있다고(또 높이 쌓인 것보다 덜 쌓였다고) 본다
+HEIGHT_TOL_MM = 5.0       # 자세 판정 ① 높이: 작업면 위 높이가 후보 높이(위 치수 + 받침 층) ± 이 안이면 후보 (10/8 PL — 높이 먼저)
+SIGMA_H_MM = 4.0          # 높이 후보 안에서 같은 모양 점수일 때 높이가 더 가까운 쪽을 고르는 데만 쓴다
+STACK_PENALTY = 2.0       # 자세 판정 ② 모양 점수에 받침 블록 하나마다 더하는 값 — 비슷하면 덜 쌓였다고 본다
+SHAPE_MISMATCH = 4.0      # 고른 자세의 모양 점수가 이보다 크면(≈ 2σ) '높이와 모양이 어긋남' → confidence 절반(자세는 높이를 따른다)
 FAT_PER_MM = (0.15, 0.10) # 높은 블록일수록 깊이가 윗면을 넓게 잰다(W114-v2 실측: 세운 블록 윗면 25x15 → 40x28 mm) —
                           # 기대보다 큰 쪽 허용 폭을 작업면 위 FAT_FROM_MM 넘는 높이 1 mm 마다 (긴 변, 짧은 변) 이만큼 넓힌다
 FAT_FROM_MM = 30.0        # 이 높이까지는 넓히지 않는다 — 눕힘 · 옆세움 · 두 층(≤ 30 mm)은 실측에서 윗면이 오히려 작게 재짐
-MAX_COST = 9.0            # 자세 판정 비용이 이보다 크면(≈ 3σ) 블록 하나 모양이 아니다(붙은 두 블록 · 잘못 나뉜 마스크) → 집지 않게 under
+MAX_COST = 9.0            # 모양 점수가 이보다 크면(≈ 3σ) 블록 하나 모양이 아니다(붙은 두 블록 · 잘못 나뉜 마스크) → 집지 않게 under
+BORDER_PX = 3             # 마스크가 영상 테두리 이 픽셀 안에 닿으면 잘린 윤곽 — 자세 · yaw 를 믿지 않는다(10/8 PL)
+CLIP_RING_PX = 3          # 마스크를 이만큼 넓힌 테두리에 흩뿌릴 영역 밖 블록 높이 픽셀이 있으면 영역 경계에서 잘린 윤곽
+CLIP_H_FRAC = 0.5         # 그 '블록 높이' = 내 높이의 이 비율 이상 — 내 가장자리 깊이 번짐(작업면 위 5~8 mm)은 잘림으로 세지 않는다
+CLIP_OUT_FRAC = 0.02      # 마스크 픽셀 중 영역 밖 비율이 이보다 크면 잘린 윤곽(YOLO 마스크는 영역을 모른다)
+CLIP_CONF = 0.2           # 잘린 윤곽의 confidence 상한 — under 로 내보내 집지 않게 한다
 UNDER_AREA_RATIO = 0.55   # 보이는 면적 ÷ 기대 윗면 면적이 이보다 작으면 under(덮임)
 CONTACT_PX = 5            # 두 마스크가 이 픽셀(약 4 mm) 안이면 맞닿음
 UNDER_TOL_MM = 4.0        # 맞닿은 더 높은 블록의 밑면이 내 윗면 − 이 값보다 높으면 '나를 덮음'
@@ -211,41 +220,93 @@ def _measure(mask, P, slope, table_z, depth_m, intr, cfg, score):
     tilted = tilt_mm >= TILT_MM
     h_c = (z_c - table_z) * 1000.0
     h_ref = (z_lo - table_z) * 1000.0 if tilted else h_c   # 기울어진 블록은 낮은 끝(바닥에 닿은 쪽)으로 받침을 본다
-    up, cost, base_mm = _classify(long_mm, short_mm, h_ref, cfg)
-    size_mm = [s * 1000.0 for s in cfg['size_m']]
-    e_long, e_short = (size_mm[DIM[a]] for a in TOP_AXES[up])
+    up, cost, base_mm, mismatch = _classify(long_mm, short_mm, h_ref, cfg)
     # 보이는 면적: 마스크 픽셀 수 × 윗면 깊이에서 픽셀 하나의 넓이 — 깊이 구멍이 있어도 마스크로 센다
     fx, fy = intr[0], intr[1]
     d_med = float(np.median(depth_m[top]))
-    area_ratio = float(mask.sum()) * (d_med / fx) * (d_med / fy) * 1e6 / (e_long * e_short)
-    conf = score * min(1.0, top.sum() / max(sel.sum(), 1)) * math.exp(-cost / 8.0)
+    vis_area = float(mask.sum()) * (d_med / fx) * (d_med / fy) * 1e6
+    base_conf = score * min(1.0, top.sum() / max(sel.sum(), 1))
     return {
         'mask': mask, 'top': top, 'coef': coef, 'center': center, 'u': u, 'v': v,
-        'z_c': z_c, 'h_c': h_c, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
-        'long_mm': long_mm, 'short_mm': short_mm, 'area_ratio': area_ratio, 'cost': cost,
-        'confidence': float(min(max(conf, 0.0), 1.0)), 'under': False, 'top_of': False,
+        'z_c': z_c, 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
+        'long_mm': long_mm, 'short_mm': short_mm, 'vis_area': vis_area, 'cost': cost, 'mismatch': mismatch,
+        'base_conf': base_conf, 'under': False, 'top_of': False, 'on': [],
     }
 
 
-def _classify(long_mm, short_mm, h_ref_mm, cfg):
-    """윗면 크기(긴 변 · 짧은 변 mm)와 작업면 위 높이(mm) → (up, 비용, 받침 높이 mm).
-
-    자세마다 '윗면 치수가 맞는가' + '높이 − 위로 향한 치수 = 받침(0 또는 블록 층)인가'를 비용으로 더해 가장 작은 것.
+def _shape_cost(up, long_mm, short_mm, h_mm, size_mm):
+    """윗면 모양(긴 변 · 짧은 변 mm)이 자세 up 의 윗면(75×25 · 75×15 · 25×15)과 얼마나 다른가(제곱 합, 0 = 같음).
     가려진 블록은 보이는 면이 작으니 기대보다 작은 쪽은 너그럽게(σ 20 · 8 mm), 큰 쪽은 엄하게(σ 8 · 5 mm + 높이 × FAT_PER_MM) 본다."""
+    e_long, e_short = (size_mm[DIM[a]] for a in TOP_AXES[up])
+    hh = max(h_mm - FAT_FROM_MM, 0.0)
+    c_l = ((long_mm - e_long) / (8.0 + FAT_PER_MM[0] * hh if long_mm > e_long else 20.0)) ** 2
+    c_s = ((short_mm - e_short) / (5.0 + FAT_PER_MM[1] * hh if short_mm > e_short else 8.0)) ** 2
+    return c_l + c_s
+
+
+def _classify(long_mm, short_mm, h_ref_mm, cfg):
+    """작업면 위 높이(mm)를 먼저, 윗면 모양은 보조로 → (up, 모양 점수, 받침 높이 mm, 어긋남 bool). (10/8 PL 규칙)
+
+    ① 높이: 후보 = 위 치수(15 · 25 · 75) + 받침 층(0 · 블록 1~3개 합 — 15+15, 15+25 …). 높이가 ±HEIGHT_TOL_MM 안인 후보만 남긴다.
+       맞는 후보가 없으면 가장 가까운 높이 하나를 쓰고 어긋남으로 표시한다.
+    ② 모양: 남은 후보 중 모양 점수(+ 받침 블록 수 × STACK_PENALTY, 같으면 높이가 가까운 쪽)가 가장 작은 것.
+    ③ 고른 자세의 모양 점수 > SHAPE_MISMATCH 면 어긋남(부르는 쪽이 confidence 를 낮춘다) — 자세는 높이를 따른 그대로."""
     size_mm = [s * 1000.0 for s in cfg['size_m']]
-    levels = _levels(size_mm)
-    best = None
-    for up in UPS:
-        e_long, e_short = (size_mm[DIM[a]] for a in TOP_AXES[up])
-        b = h_ref_mm - size_mm[DIM[up]]
-        c_h, lvl = min((((b - L) / SIGMA_H_MM) ** 2 + STACK_PENALTY * n, L) for L, n in levels)
-        hh = max(h_ref_mm - FAT_FROM_MM, 0.0)
-        c_l = ((long_mm - e_long) / (8.0 + FAT_PER_MM[0] * hh if long_mm > e_long else 20.0)) ** 2
-        c_s = ((short_mm - e_short) / (5.0 + FAT_PER_MM[1] * hh if short_mm > e_short else 8.0)) ** 2
-        cost = c_h + c_l + c_s
-        if best is None or cost < best[1]:
-            best = (up, cost, lvl)
-    return best
+    cands = [(abs(h_ref_mm - size_mm[DIM[up]] - L), up, L, n) for up in UPS for L, n in _levels(size_mm)]
+    near = [c for c in cands if c[0] <= HEIGHT_TOL_MM]
+    mismatch = not near
+    if not near:
+        near = [min(cands)]
+
+    def key(c):
+        return _shape_cost(c[1], long_mm, short_mm, h_ref_mm, size_mm) + STACK_PENALTY * c[3] + 0.1 * (c[0] / SIGMA_H_MM) ** 2
+
+    dh, up, lvl, _ = min(near, key=key)
+    shape = _shape_cost(up, long_mm, short_mm, h_ref_mm, size_mm)
+    mismatch = mismatch or shape > SHAPE_MISMATCH
+    return up, shape + (dh / SIGMA_H_MM) ** 2, lvl, mismatch
+
+
+def _refine_top(blk, cfg):
+    """다른 블록 위에 얹힌 블록(맞닿은 아래 블록이 있음, 기울지 않음)의 자세를 '내 높이 − 아래 블록 높이' = 내 두께로 다시 정한다(10/8 PL).
+    두께가 15 · 25 · 75 중 ±HEIGHT_TOL_MM 안이고 모양도 맞는 자세가 있으면 그것(여럿이면 모양으로), 없으면 그대로 둔다. 입력 dict 를 고침."""
+    if blk['tilted'] or not blk['on']:
+        return
+    size_mm = [s * 1000.0 for s in cfg['size_m']]
+    # 맞닿은 아래 블록이 여럿이면 높은 것부터 — 맞닿았다고 다 받침은 아니라서(보이지 않는 받침 위에 얹혀 낮은 블록과 옆으로 닿을 수 있음)
+    # 두께가 맞고 모양도 맞는(SHAPE_MISMATCH 이하) 첫 받침만 쓴다. 없으면 높이 먼저 고른 자세 그대로.
+    for a in sorted(blk['on'], key=lambda k: -k['h_c']):
+        own = blk['h_c'] - a['h_c']
+        ups = [(_shape_cost(up, blk['long_mm'], blk['short_mm'], blk['h_c'], size_mm), up) for up in UPS
+               if abs(own - size_mm[DIM[up]]) <= HEIGHT_TOL_MM]
+        ups = [c for c in ups if c[0] <= SHAPE_MISMATCH]
+        if ups:
+            shape, up = min(ups)
+            blk.update(up=up, base_mm=a['h_c'], cost=shape + ((own - size_mm[DIM[up]]) / SIGMA_H_MM) ** 2, mismatch=False)
+            return
+
+
+def _clipped(mask, P, h_mm, h_c, cfg):
+    """윤곽이 잘렸나(bool): 영상 테두리 BORDER_PX 안에 닿음 · 마스크 픽셀이 흩뿌릴 영역 밖(CLIP_OUT_FRAC 넘게) ·
+    마스크 바로 바깥(CLIP_RING_PX)에 영역 밖이면서 내 높이 h_c(mm)의 CLIP_H_FRAC 이상인 픽셀이 있음(블록이 영역 밖으로 이어짐 —
+    예비 마스크는 영역 안에서만 만들어져 경계에서 잘려 나온다)."""
+    b = BORDER_PX
+    if mask[:b].any() or mask[-b:].any() or mask[:, :b].any() or mask[:, -b:].any():
+        return True
+    if cfg.get('area_m') is None:
+        return False
+    win = _bbox(mask, CLIP_RING_PX + 1, mask.shape)
+    v0, v1, u0, u1 = win
+    m = mask[v0:v1, u0:u1]
+    Pw = P[v0:v1, u0:u1]
+    inside = _in_area(Pw, cfg)
+    known = np.isfinite(Pw[..., 0])
+    if (m & known & ~inside).sum() > CLIP_OUT_FRAC * max(m.sum(), 1):
+        return True
+    ring = _dilate(m, CLIP_RING_PX) & ~m
+    with np.errstate(invalid='ignore'):
+        tall = h_mm[v0:v1, u0:u1] > max(OBST_MIN_MM, CLIP_H_FRAC * h_c)
+    return bool((ring & known & ~inside & tall).any())
 
 
 def _mark_overlaps(blocks):
@@ -267,6 +328,7 @@ def _mark_overlaps(blocks):
         if b_bottom >= a['h_c'] - UNDER_TOL_MM:
             a['under'] = True
             b['top_of'] = True
+            b['on'].append(a)
     for a in blocks:
         a.pop('_grow', None)
 
@@ -338,11 +400,21 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         blk.update(index=i, P=P, table_z=table_z, cfg_size_m=cfg['size_m'])
         found.append(blk)
     _mark_overlaps(found)
+    size_mm = [s * 1000.0 for s in cfg['size_m']]
     out = []
     for blk in found:
+        _refine_top(blk, cfg)
+        e_long, e_short = (size_mm[DIM[a]] for a in TOP_AXES[blk['up']])
+        blk['area_ratio'] = blk['vis_area'] / (e_long * e_short)
+        blk['clipped'] = _clipped(blk['mask'], P, h_mm, blk['h_c'], cfg)
+        conf = blk['base_conf'] * math.exp(-blk['cost'] / 8.0) * (0.5 if blk['mismatch'] else 1.0)
+        if blk['clipped']:
+            conf = min(conf, CLIP_CONF)
+        blk['confidence'] = float(min(max(conf, 0.0), 1.0))
         gaps = _gaps(blk, P, h_mm, valid, cfg)
-        # 덮였거나(맞닿은 위 블록 · 보이는 면이 작음) 블록 하나 모양이 아니면(MAX_COST) 집지 않고 장애물로만 쓰게 under
-        under = blk['under'] or blk['area_ratio'] < UNDER_AREA_RATIO or blk['cost'] > MAX_COST
+        # 덮였거나(맞닿은 위 블록 · 보이는 면이 작음) · 블록 하나 모양이 아니거나(MAX_COST) · 윤곽이 잘렸으면(자세 · yaw 를 못 믿음)
+        # 집지 않고 장애물로만 쓰게 under
+        under = blk['under'] or blk['area_ratio'] < UNDER_AREA_RATIO or blk['cost'] > MAX_COST or blk['clipped']
         top = blk['top_of'] or blk['base_mm'] > 0
         yaw = wrap_deg(math.degrees(math.atan2(blk['u'][1], blk['u'][0])))
         out.append((blk['index'], {
@@ -362,7 +434,8 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         info['table_z_m'] = table_z
         info['mask_index'] = [i for i, _ in out]
         info['skipped'] = skipped
-        info['detail'] = {b['index']: {k: b[k] for k in ('long_mm', 'short_mm', 'h_c', 'tilt_mm', 'area_ratio', 'cost', 'base_mm')}
+        info['detail'] = {b['index']: {k: b[k] for k in ('long_mm', 'short_mm', 'h_c', 'tilt_mm', 'area_ratio', 'cost', 'base_mm',
+                                                         'mismatch', 'clipped')}
                           for b in found}
     return [b for _, b in out]
 
