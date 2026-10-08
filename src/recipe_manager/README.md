@@ -18,10 +18,10 @@ cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
 
 | 폴더·파일 | 내용 |
 |---|---|
-| `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(검사기용 치수, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
+| `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(치수 참고용 — 도구는 읽지 않음, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
 | `recipes/` | **결과.** 모형마다 `<ID>_recipe.json` · `<ID>_placements.csv` 2개(E-69). 손으로 고치지 않는다 — CAD를 고치고 `build`를 다시. 블록 JSON(`blocks/1`) 파일은 두지 않는다 — 웹이 등록 때 변환기 ②(`d2_task.recipe_to_blocks`)로 바꾼다(10/8 E-59) |
 | `recipe_manager/` | 코드(아래 '코드 구조') |
-| `requirements.txt` | `ezdxf`, `numpy`(필수), `cadquery`(STEP 검사기) |
+| `requirements.txt` | `ezdxf`, `numpy` |
 
 ## 쓰는 레시피 — 의자 2 · 책상 2 (10/6 한세교 결정, 004는 10/7 추가)
 
@@ -74,6 +74,8 @@ python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/
 |---|---|---|
 | `recipe_manager/cad_reader.py` | `CadReader` | DXF → 블록 목록 `[{'block', 'handle', 'vertices', 'hints'}]` |
 | `src/d2_task/d2_task/recipe_builder.py` | `RecipeBuilder` | 블록 → 레시피(`make_recipe` — 이름 · 번호 · 겹침 검사) → 조립 방법(`make_placements` — 순서 · 잡기 · 받침 · `recipe_sha256`) · CSV 줄(`make_placement_rows`). ROS·파일 없음. 변환기 ①(W110, 10/10)과 한 벌로 쓰려고 d2_task 에 있다(E-58) — `main.py`가 소스 폴더를 import 경로에 넣어 쓴다 |
+| `src/d2_task/d2_task/blocks_to_recipe.py` | `BlocksToRecipe` | **변환기 ①**(W110, E-69): AI 설계도 `blocks/2.0` → `recipe/2.0` + `placements/2.0`. AI 값(역할 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로, 번호 · 중심 · R · 받침 · 닫힘 축만 계산(`RecipeBuilder`). AI 실수 ① 역할 목록 ② 같은 부품 면 맞닿음 ③ 고른 잡기(`DesignChecker.grasp_options`)는 `DesignRejected(errors)` → 검사 묶음이 `CHECK_FAILED` |
+| `src/d2_task/d2_task/roles.json` | — | 역할 · 옵션 목록(작명 규칙 v3 3장). HMI 프롬프트와 변환기 ①이 같이 읽는다. 새 이름은 뜻 한 줄과 함께 PR로 |
 | `recipe_manager/main.py` | `RecipeManager` | 명령(`build`) · 파일 저장(덮어쓰기 질문) |
 
 시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 4종을 DXF에서 다시 만들어 저장 파일과 같은지 + 이름 · 번호 · 겹침 · 뜬 블록 · 순서 · 잡기 상태 · 빠진 속성 거부 + **변환기 ①: 4종 블록 JSON → 레시피가 CAD 레시피와 같은 로봇 목표(V-45)**.

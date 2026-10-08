@@ -464,8 +464,9 @@ class TaskManager:
             self._enter_wait_supply(block_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
         elif status == 'NO_MATCH':
             counts = result['counts']
-            only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k != 'tilted')
-            # 기울어진 블록만 남았으면 IRD 알림 tilted_block. 그 밖의 '맞는 블록 없음'은 message_id 없이 글자만 — 새 이름(no_match_block)을 둘지는 PL 선택
+            # 기울어진 블록이 있고 제외 이유가 tilted · under 뿐이면 IRD 알림 tilted_block(E-68 — 덮인 블록이 같이 있어도 사람이 기울어진 것을 바로 놓으면 된다).
+            # under 만이거나 다른 제외 이유가 섞이면 message_id 없이 글자만 — 새 이름(no_match_block)을 둘지는 PL 선택
+            only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k not in ('tilted', 'under'))
             self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')

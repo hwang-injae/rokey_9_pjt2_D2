@@ -6,7 +6,7 @@ class CadReader:
 
     레시피의 원본은 DXF 하나다(E-52): INSERT 블록 이름 = 사람이 정한 블록 이름(`LEG_001_01`),
     INSERT 속성 SEQ · STAGE · GRASP = 놓는 순서 · 단계 · 잡기. 핸들은 CAD 대응 검증용으로만 넘긴다.
-    STEP(`cads/*.step`)은 이름 · 속성이 없어 레시피 원본으로 쓰지 않는다(검사기 치수 확인용으로만 둔다).
+    STEP(`cads/*.step`)은 이름 · 속성이 없어 레시피 원본으로 쓰지 않는다(치수 참고용으로만 둔다).
     출력 블록 = {'block', 'handle', 'vertices', 'hints'} — RecipeBuilder.make_structure 의 입력이다.
     """
 
