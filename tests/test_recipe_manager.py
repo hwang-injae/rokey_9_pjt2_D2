@@ -60,11 +60,11 @@ def test_dxf_rebuild_matches_saved_files(model_id, cad):
     assert len(csv_lines) == len(recipe['steps']) + 1 and csv_lines[1].startswith(f'{model_id}_{recipe["steps"][0]["block"]},')
 
 
-# 폴더: cads/ 에는 CAD 만(계획 파일 없음), recipes/ 에는 모형마다 구조 · 조립 · 배치표 + _blocks.json(W117 변환기 ②가 만든 blocks/1 — HMI 가 이 폴더만 읽게) 4개만
+# 폴더: cads/ 에는 CAD 만(계획 파일 없음), recipes/ 에는 모형마다 구조 · 조립 · 배치표 3개만(블록 JSON 파일은 두지 않음 — 웹이 변환기 ②로 바꿈, E-59)
 def test_folders_hold_only_cad_and_results():
     assert not list((RM / 'cads').glob('*plan*'))
     names = sorted(p.name for p in (RM / 'recipes').iterdir())
-    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('structure.json', 'recipe.json', 'placements.csv', 'blocks.json'))
+    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('structure.json', 'recipe.json', 'placements.csv'))
 
 
 # 조립 파일의 structure_sha256 = 저장된 구조 파일 바이트의 sha256 (읽는 쪽이 이 값으로 구조가 바뀌었는지 본다)
