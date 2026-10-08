@@ -18,6 +18,8 @@ MoveIt 으로 로봇을 움직이는 우리 노드에는 이 브링업을 쓴다
 import json
 import os
 
+import yaml
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, RegisterEventHandler
@@ -37,18 +39,22 @@ RG2_BASE_OFFSET_M = 0.004   # 플랜지 -> rg2_base_link 원점 (수업 모델 m
 
 
 def load_tcp():
-    """config/tcp.json (제어기에 등록된 활성 TCP, 플랜지 기준 mm · posx 축) 에서 MoveIt 손가락 가운데 rg2_tcp 의
-    rg2_base_link 기준 위치 (x, y, z m) 를 만든다 — MoveIt 모델과 제어기가 같은 손가락 가운데를 쓰게 한다(10/8 PL E-69 뒤 A안).
+    """config/tcp.json (제어기에 등록된 활성 TCP GripperDA_v1, 플랜지 기준 mm · posx 축) + robot.yaml finger.center_offset_m
+    (손가락 가운데 − 그 TCP, rg2_tcp 축 m) 으로 MoveIt 손가락 가운데 rg2_tcp 의 rg2_base_link 기준 위치 (x, y, z m) 를 만든다.
 
     rg2_tcp 축은 posx 를 손목 Z 로 -90° 돌린 틀이라 x_rg2 = -y_posx, y_rg2 = +x_posx (10/7 W134 FK · posx 비교, motion_math 머리말).
+    10/8: 손가락 가운데가 제어기 TCP(J6 축 위)에서 비켜 있어 손목을 돌려 놓는 블록이 어긋났다 → MoveIt 쪽만 손가락 가운데로 옮긴다
+    (제어기 TCP 는 v1 그대로 — 손목 카메라 보정 · 펜던트 기준이 안 바뀜).
     회전(A · B · C)이 0 이 아니거나 기준이 플랜지가 아니면 모델에 그대로 옮길 수 없으므로 ValueError 로 브링업을 멈춘다.
     """
     with open(os.path.join(SHARE, 'config', 'tcp.json')) as f:
         tcp = json.load(f)
+    with open(os.path.join(SHARE, 'config', 'robot.yaml')) as f:
+        dx, dy = yaml.safe_load(f)['finger']['center_offset_m']
     x, y, z, a, b, c = tcp['pos']
     if tcp['reference_frame'] != 'FLANGE' or any(abs(v) > 1e-6 for v in (a, b, c)):
         raise ValueError(f'tcp.json {tcp["name"]}: 회전 없는 플랜지 기준 TCP 만 쓸 수 있다 ({tcp["pos"]})')
-    return round(-y / 1000.0, 6), round(x / 1000.0, 6), round(z / 1000.0 - RG2_BASE_OFFSET_M, 6)
+    return round(-y / 1000.0 + dx, 6), round(x / 1000.0 + dy, 6), round(z / 1000.0 - RG2_BASE_OFFSET_M, 6)
 
 
 def generate_launch_description():

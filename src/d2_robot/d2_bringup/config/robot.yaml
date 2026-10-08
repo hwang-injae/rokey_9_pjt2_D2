@@ -8,7 +8,7 @@
 supply_mode: slots
 
 frame_id: base_link
-tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
+tcp_link: rg2_tcp                # 손가락 가운데 = 두산 posx(GripperDA_v1) 점 + finger.center_offset_m, 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
 table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
 table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
   x_m: [-0.2675, 0.9325]
@@ -26,7 +26,7 @@ block_tolerance_m: 0.0005      # 실제 블록은 설계 치수보다 이 안에
 # 로봇 공급 칸 (10/6 직접 교시로 다시 찍음, 잡기 6가지 순서). block_up = 위를 향하는 블록 축,
 # yaw_deg = 블록 긴 쪽 방향 (세우면 25 mm 쪽). tcp_z_m·grip_display_width_m = 10/4 교시 집는 높이 (세운 블록은 더 깊게 문다)
 # grasp = 이 칸에서 쓰는 잡기 하나 (칸마다 고정 — 그리퍼 방향을 찍을 때 그대로 쓴다)
-# 10/8 TCP GripperDA_v2(손가락 가운데, tcp.json)로 바꾸며 6칸 모두 y +2.7 mm: 옛 TCP 로 맞춘 좌표라, 칸마다 노드가 실제로 고르는
+# 10/8 MoveIt TCP(rg2_tcp)를 손가락 가운데(finger.center_offset_m)로 옮기며 6칸 모두 y +2.7 mm: 옛 TCP 로 맞춘 좌표라, 칸마다 노드가 실제로 고르는
 # 집기 자세(닫힘 각도 ±180° — p1 · p2 는 004 로그, p3~p6 은 같은 IK)에서 손가락 가운데 비킴(rg2_tcp x −2.7)이 base +y 2.7 mm 이므로
 # 같은 손가락 위치로 집게 옮겼다. x · 높이는 그대로. 실기 확인 = PL ④ 3동작.
 supply_slots:
@@ -46,6 +46,9 @@ home_pose: {joints_deg: [0.0, 0.0, 90.0, 0.0, 90.0, 0.0]}
 finger:
   thickness_m: 0.0114          # RG2 모델 메시 값 (캘리퍼스 W011)
   width_m: 0.020
+  center_offset_m: [-0.0027, 0.0]   # 손가락 가운데 − GripperDA_v1(J6 축 위 228 mm 점), rg2_tcp 축 x · y (m). 브링업이 rg2_tcp 에 더한다 —
+                                    # 10/8 004 시험(실제 손목 각도 기록)으로 잼, 손목을 돌려 놓는 블록 4 mm → 1.6 mm 안. 제어기 TCP 는 v1 그대로(펜던트 등록 안 함).
+                                    # y(닫힘 방향)는 넣지 않음(PL). 실기 3동작 확인 뒤 남는 값이 한쪽으로 쏠리면 조정
 
 timeout:                       # 작업 관리자가 답을 기다리는 시간 제한(s) — 넘으면 TIMEOUT = 먼저 세움 → 사람 호출 (IRD 7장 · 9장, W121 C-2, 10/7 PL)
   service_s: 3                 # ROS 서비스 한 번(save_build · get_design 등). 이 값이 save_build 다시 보내기 간격도 정한다. 3초 = get_design이 화면 요청(MQTT 5초) 안에서 끝나게(10/7 PL, 5 → 3)
