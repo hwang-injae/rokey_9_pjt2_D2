@@ -155,7 +155,7 @@ sudo apt install python3-paho-mqtt        # 없으면 pip3 install --user paho-m
 | 끝까지 | 화면 [출발] → `d2/hmi/command/req` → 로봇 PC → `d2/task/state`가 바뀜 | `mosquitto_sub -t 'd2/#' -v`로 전부 보임 |
 
 - 웹 PC IP는 `robot.yaml` `mqtt.host`(로봇 PC가 읽음). 브로커는 유선 LAN 안에서만 연다(인터넷 노출 없음). 인증은 10/8 결정(안: 없음).
-- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS — 아직 없음)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다. 다리 없이 task를 가상으로 돌릴 때는 웹 생존 감시를 끈다 — `ros2 run d2_task task --ros-args -p monitor_hmi:=false`(기본 true라 안 끄면 `/d2/hmi/alive`가 없어 출발 · 스캔이 거절됨, 10/8 E-62). 설계도 웹 없이 읽으려면 `-p design_source:=local -p recipe_dir:=<레시피 폴더>`([src/README](../../src/README.md) '빌드 · 시험').
+- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS — 아직 없음)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다. 다리 없이 task를 가상으로 돌릴 때는 웹 연결 감시를 끈다 — `ros2 run d2_task task --ros-args -p monitor_hmi:=false`(기본 true라 안 끄면 `/d2/hmi/alive`가 없어 출발 · 스캔이 거절됨, 10/8 E-62). 설계도 웹 없이 읽으려면 `-p design_source:=local -p recipe_dir:=<레시피 폴더>`([src/README](../../src/README.md) '빌드 · 시험').
 
 
 ## 7. Docker

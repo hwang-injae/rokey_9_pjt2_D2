@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-08
+- 공통(22시, PM): **용어 '생존 신호' → '연결 신호'(PL, HMI 세션 전달)** — 문서의 우리말 용어만(다리 연결 신호 `d2/bridge/alive` · 웹 연결 신호 `d2/web/alive` · 웹 연결 신호 없음 거절 · 웹 연결 감시 `monitor_hmi`). 토픽 · 키 이름(`alive` · `hmi_lost` · `mqtt.lost_after_s`)과 코드는 그대로.
 - 공통(21시, PM): **10/8 밤 옛 부분 점검(PL) — E-57 ~ E-69 · #99 · #100 기준** — IRD · SDD · 01 · 04 · 05 · 06 · 시스템 아키텍처 설명 · 작명 규칙 v3 · YOLO 규칙 · 복구 절차 · README · AGENTS/CLAUDE/GEMINI · src · tests README의 옛 형식(`_structure.json` · `cad_*` · `design/1` · 템플릿 길 · `STOP_REQUEST` · `surface_z_m` · `tcp_length_m`)과 날짜(HMI 다시 잡음 · W122 10/11 오전)를 고침, 변환기 ① 본체 · 연결 끝(#99 · #100) · `roles.json` 정함 반영, 결정 기록의 옛 결정 30곳에 '(→ E-nn)' 주석, 에이전트 프롬프트 v4_100821(생성기 고침). 코드 쪽 옛 부분은 담당자 메시지로.
 - 비전(한석형, 밤): **#92 E-69 task 전환(W141 완료 · W117 입출력) · #97 `tilted`+`under`만 남으면 `tilted_block` 알림(W130, E-68).** 읽는 쪽이 `recipe/2.0` + `placements/2.0`(CSV `schema` 칸 · `recipe_sha256` 대조)을 읽고 옛 형식은 `schema`로 거절, 검사 묶음은 `blocks/2.0` → `check_result/2.0`, 변환기 ②는 `blocks/2.0` 출력. W065 실행 기록 CSV는 이미 구현돼 있어 벤치 가상 조립(82줄, `run_id` 하나)으로 확인 — 완료 기준 확인(완료 처리는 PL 확인). 남은 것: W110 변환기 ① 연결(세교님 PR 뒤) · W122 웹·다리 통합(황인재님 코드 뒤).
 - 비전(20시, PM 기록): **민범진 #95 merge(W140 완료)** — 손목 블록 인식이 `get_design` 답을 `design/2.0`으로 읽음(`recipe/2.0` + `placements/2.0` · `recipe_sha256` 확인), 옛 형식 · '_B' 방식 뺌. **E-69 네 PR 전부 main(#93 · #92 · #94 · #95), main CI 통과.** 남은 '안'은 `roles.json`(10/10 변환기 ① PR).
