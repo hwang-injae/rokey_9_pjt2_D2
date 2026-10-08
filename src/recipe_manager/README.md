@@ -18,10 +18,10 @@ cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
 
 | 폴더·파일 | 내용 |
 |---|---|
-| `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(검사기용 치수, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
+| `cads/` | **입력 = 원본.** DXF(도구가 읽는 조립 정의 — INSERT 블록 이름 = 블록 이름, INSERT 속성 SEQ · STAGE · GRASP = 순서 · 단계 · 잡기) + STEP(치수 참고용 — 도구는 읽지 않음, 제품 이름 = 블록 이름). 계획 파일은 없다(E-52) |
 | `recipes/` | **결과.** 모형마다 `<ID>_recipe.json` · `<ID>_placements.csv` 2개(E-69). 손으로 고치지 않는다 — CAD를 고치고 `build`를 다시. 블록 JSON(`blocks/1`) 파일은 두지 않는다 — 웹이 등록 때 변환기 ②(`d2_task.recipe_to_blocks`)로 바꾼다(10/8 E-59) |
 | `recipe_manager/` | 코드(아래 '코드 구조') |
-| `requirements.txt` | `ezdxf`, `numpy`(필수), `cadquery`(STEP 검사기) |
+| `requirements.txt` | `ezdxf`, `numpy` |
 
 ## 쓰는 레시피 — 의자 2 · 책상 2 (10/6 한세교 결정, 004는 10/7 추가)
 
