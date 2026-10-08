@@ -216,7 +216,9 @@ class WristBlock(Node):
 
     def _load_yolo(self):
         """yolo_model 파라미터의 YOLO seg 모델을 읽는다. 비었거나 ultralytics · 파일이 없거나 못 읽으면 None(예비 마스크) — 로그는 여기서 한 번.
-        켤 때 읽는 이유: 처음 읽기는 몇 초 걸려 find_blocks 의 3초 제한(timeout.service_s) 안에 넣지 않으려고."""
+        켤 때 읽는 이유: 처음 읽기는 몇 초 걸려 find_blocks 의 3초 제한(timeout.service_s) 안에 넣지 않으려고.
+        읽은 뒤 빈 640×480 그림으로 한 번 미리 돌린다 — 첫 추론 준비(10/8 실측 약 0.9초)를 첫 find_blocks 에서 빼려고.
+        미리 돌리기가 실패해도 None(예비 마스크) — 실제 호출에서도 실패할 것이라."""
         path = self.get_parameter('yolo_model').value
         if not path:
             self.get_logger().info('find_blocks 마스크: 예비(엣지 + 깊이, E-47) — yolo_model 파라미터가 비었다')
@@ -226,10 +228,15 @@ class WristBlock(Node):
             if not Path(path).is_file():
                 raise FileNotFoundError(path)
             model = YOLO(path)
-        except Exception as e:                # ImportError · 파일 없음 · 모델 형식 — 무엇이든 예비로 간다
+            t0 = time.monotonic()
+            model(np.zeros((480, 640, 3), np.uint8), imgsz=640, conf=float(self.get_parameter('yolo_conf').value), verbose=False,
+                  retina_masks=True)             # _yolo_masks 와 같은 인자로 미리 한 번
+            warm_s = time.monotonic() - t0
+        except Exception as e:                # ImportError · 파일 없음 · 모델 형식 · 미리 돌리기 실패 — 무엇이든 예비로 간다
             self.get_logger().error('YOLO 모델을 못 씀(%s: %s) — find_blocks 는 예비 마스크(엣지 + 깊이)로 간다' % (type(e).__name__, e))
             return None
-        self.get_logger().info('find_blocks 마스크: YOLO seg %s (conf %.2f)' % (path, self.get_parameter('yolo_conf').value))
+        self.get_logger().info('find_blocks 마스크: YOLO seg %s (conf %.2f) · 미리 돌리기 %.2f초' % (
+            path, self.get_parameter('yolo_conf').value, warm_s))
         return model
 
     def _load_bases(self):

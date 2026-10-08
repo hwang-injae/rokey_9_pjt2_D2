@@ -65,6 +65,12 @@ UNDER_AREA_RATIO = 0.55   # 보이는 면적 ÷ 기대 윗면 면적이 이보�
 CONTACT_PX = 5            # 두 마스크가 이 픽셀(약 4 mm) 안이면 맞닿음
 UNDER_TOL_MM = 4.0        # 맞닿은 더 높은 블록의 밑면이 내 윗면 − 이 값보다 높으면 '나를 덮음'
 HALO_PX = 6               # 틈 셀 때 내 마스크를 이만큼(약 5 mm) 넓혀 내 블록의 가장자리 깊이 번짐을 장애물로 세지 않는다
+FOOT_MARGIN_MM = 3.0      # 틈 셀 때 내 블록 자리(중심 ± 치수/2)를 이만큼 넓혀 장애물에서 뺀다 — 마스크가 블록보다 짧아도
+                          # (YOLO 실측: 길이 71 mm 로 재진 블록) 내 윗면 끝이 장애물로 세지지 않게
+OTHER_DILATE_PX = 2       # 다른 블록 마스크를 이만큼 넓혀 장애물 후보로 — 마스크가 블록보다 조금 작아도 옆 블록 가장자리를 놓치지 않게
+NONMASK_MIN_MM = 10.0     # 어느 마스크에도 없는 점(못 찾은 블록일 수 있음)은 작업면 위 이보다 높고 완만할 때만 장애물 — 내 블록 둘레 깊이 번짐
+                          # (W114 s04_002 실측: 면 밖 0~15 mm 에 높이 5~13 mm 비탈)과 종이 주름(~8 mm)을 빼려고. 블록 윗면은 실측 ≥ 10 mm
+STEEP_ABOVE_MM = 3.0      # 마스크 밖의 가파른 점도 내 윗면 + 이 값보다 높으면 장애물 — 옆에 선 · 포갠 높은 블록의 옆면(윗면은 작아 완만한 점이 적다)
 GAP_CELL_M = 0.002        # 틈 계산 높이 지도 셀 — 8 mm 틈을 ±1.4 mm 로 재려고 5 mm 대신 2 mm
 GAP_SEARCH_MM = 60.0      # 이 거리 안에 장애물이 없으면 틈 = 이 값(충분히 넓음, 22.2 mm 기준의 2.7배)
 STRIP_MARGIN_MM = 2.0     # 손가락 폭(finger.width_m) 양옆 여유 — 손가락이 지나갈 띠의 반폭 = 폭/2 + 이 값
@@ -333,21 +339,34 @@ def _mark_overlaps(blocks):
         a.pop('_grow', None)
 
 
-def _gaps(blk, P, h_mm, valid, cfg):
+def _gaps(blk, P, h_mm, valid, slope, others, cfg):
     """블록의 수평 두 축마다 손가락이 내려갈 틈(mm, 양쪽 중 좁은 쪽). 반환 {축: mm}.
 
-    장애물 = 내 마스크(HALO_PX 넓힘) 밖에서 작업면 위 높이 > 손가락 끝 높이(윗면 − grasp_depth − 여유, 최소 OBST_MIN_MM)인 점.
+    장애물 = 내 마스크(HALO_PX 넓힘) · 내 블록 자리(치수 + FOOT_MARGIN_MM) 밖에서 작업면 위 높이 > 손가락 끝 높이(윗면 − grasp_depth
+    − 여유, 최소 OBST_MIN_MM)인 점 중
+      · 다른 블록 마스크(OTHER_DILATE_PX 넓힘) 안의 점 — 찾은 블록은 그대로 장애물, 또는
+      · 어느 마스크에도 없으면 작업면 위 NONMASK_MIN_MM 보다 높고 완만한(slope < MAX_SLOPE) 점 · 내 윗면 + STEEP_ABOVE_MM 보다 높은 점.
+    까닭(W114 s04_002 실측 단면): 내 블록 가장자리 너머로 작업면까지 비스듬히 이어지는 깊이 번짐(면 밖 0~15 mm, 높이 5~13 mm)과
+    마스크보다 긴 내 윗면 끝이 장애물로 세져, 떨어져 있는 블록도 틈이 4~7 mm 로 나왔다. 번짐은 어느 마스크에도 속하지 않는다.
     그 점들로 block_checker.height_map(GAP_CELL_M 격자, 셀마다 최고 z)을 만들고, 축 방향 띠(손가락 폭 + 여유) 안에서
     블록 면(중심 ± 치수/2)부터 가장 가까운 장애물 셀까지 거리를 잰다. 깊이 없는 셀은 비었다고 본다."""
     size_mm = [s * 1000.0 for s in cfg['size_m']]
     thr = max(blk['h_c'] - cfg['grasp_depth_m'] * 1000.0 - FINGER_Z_MARGIN_MM, OBST_MIN_MM)
     win = _bbox(blk['mask'], 160, blk['mask'].shape)      # 160 px ≈ 130 mm — 블록 반길이 37 + 찾는 거리 60 mm 보다 넉넉히
     v0, v1, u0, u1 = win
-    own = _dilate(blk['mask'][v0:v1, u0:u1], HALO_PX)
+    Pw = P[v0:v1, u0:u1]
     with np.errstate(invalid='ignore'):
-        obst = valid[v0:v1, u0:u1] & ~own & (h_mm[v0:v1, u0:u1] > thr)
+        da = (Pw[..., 0] - blk['center'][0]) * 1000.0, (Pw[..., 1] - blk['center'][1]) * 1000.0
+        e_long, e_short = (size_mm[DIM[a]] / 2 + FOOT_MARGIN_MM for a in TOP_AXES[blk['up']])
+        foot = ((np.abs(da[0] * blk['u'][0] + da[1] * blk['u'][1]) <= e_long)
+                & (np.abs(da[0] * blk['v'][0] + da[1] * blk['v'][1]) <= e_short))
+        own = _dilate(blk['mask'][v0:v1, u0:u1], HALO_PX) | foot
+        hw = h_mm[v0:v1, u0:u1]
+        oth = _dilate(others[v0:v1, u0:u1] & ~blk['mask'][v0:v1, u0:u1], OTHER_DILATE_PX)
+        loose = ((slope[v0:v1, u0:u1] < MAX_SLOPE) & (hw > NONMASK_MIN_MM)) | (hw > blk['h_c'] + STEEP_ABOVE_MM)
+        obst = valid[v0:v1, u0:u1] & ~own & (hw > thr) & (oth | loose)
     half_win = (max(size_mm) / 2 + GAP_SEARCH_MM + 10.0) / 1000.0
-    grid, x0, y0 = height_map(P[v0:v1, u0:u1][obst], tuple(blk['center']), half_win, GAP_CELL_M)
+    grid, x0, y0 = height_map(Pw[obst], tuple(blk['center']), half_win, GAP_CELL_M)
     n = grid.shape[0]
     cx = x0 + (np.arange(n) + 0.5) * GAP_CELL_M
     cy = y0 + (np.arange(n) + 0.5) * GAP_CELL_M
@@ -400,6 +419,10 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         blk.update(index=i, P=P, table_z=table_z, cfg_size_m=cfg['size_m'])
         found.append(blk)
     _mark_overlaps(found)
+    others = np.zeros(depth_m.shape, bool)       # 받은 마스크 전부(윗면 점이 모자라 뺀 것도) — 틈 셀 때 '다른 블록' 장애물 후보
+    for m in masks:
+        if np.shape(m) == depth_m.shape:
+            others |= np.asarray(m, bool)
     size_mm = [s * 1000.0 for s in cfg['size_m']]
     out = []
     for blk in found:
@@ -411,7 +434,7 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         if blk['clipped']:
             conf = min(conf, CLIP_CONF)
         blk['confidence'] = float(min(max(conf, 0.0), 1.0))
-        gaps = _gaps(blk, P, h_mm, valid, cfg)
+        gaps = _gaps(blk, P, h_mm, valid, slope, others, cfg)
         # 덮였거나(맞닿은 위 블록 · 보이는 면이 작음) · 블록 하나 모양이 아니거나(MAX_COST) · 윤곽이 잘렸으면(자세 · yaw 를 못 믿음)
         # 집지 않고 장애물로만 쓰게 under
         under = blk['under'] or blk['area_ratio'] < UNDER_AREA_RATIO or blk['cost'] > MAX_COST or blk['clipped']

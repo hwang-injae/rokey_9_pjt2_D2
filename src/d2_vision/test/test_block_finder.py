@@ -336,3 +336,24 @@ def test_real_scene_preview(name):
     if out_dir:
         Path(out_dir).mkdir(parents=True, exist_ok=True)
         _draw(color, finder.last_masks, info, blocks, Path(out_dir) / f'{name}_find.png', cv2)
+
+
+REAL1_DIR = Path(os.environ.get('D2_W114_V1_DIR', Path.home() / 'Downloads' / '데이터셋' / 'W114'))   # 첫 촬영(s01~s05)
+
+
+def test_real_separated_blocks_have_clear_axis():
+    """실측 회귀(있을 때만): s04_002 는 블록 7개가 흩어져 있다(서로 붙은 건 옆으로 8~10 mm 떨어진 한 쌍뿐).
+    예비 마스크 → 뒷단에서 덮이지 않고 기울지 않은 블록 7개 중 6개 이상이 한 축 이상 clear 여야 한다.
+    (10/8 고치기 전: 내 블록 둘레 깊이 번짐 · 마스크보다 긴 윗면 끝이 장애물로 세져 2개뿐 — 틈 4~7 mm)"""
+    cv2 = pytest.importorskip('cv2')
+    stem = REAL1_DIR / 's04_002_a'
+    if not Path(f'{stem}_color.png').is_file():
+        pytest.skip(f'실측 데이터 없음: {stem}_color.png')
+    pose = json.loads(Path(f'{stem}_pose.json').read_text())
+    ii = pose['intrinsics_px']
+    color = cv2.imread(f'{stem}_color.png')
+    depth = cv2.imread(f'{stem}_depth.png', cv2.IMREAD_UNCHANGED).astype(float) / 1000.0
+    blocks = BlockFinder(CFG).find(color, depth, (ii['fx'], ii['fy'], ii['ppx'], ii['ppy']), np.array(pose['T_base2cam_m']))
+    free = [b for b in blocks if b['overlap'] == 'none' and not b['tilted']]
+    assert len(free) == 7, blocks
+    assert sum(any(b['clear'].values()) for b in free) >= 6, [b['gap_mm'] for b in free]
