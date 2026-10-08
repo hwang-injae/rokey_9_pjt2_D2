@@ -218,7 +218,7 @@ def test_BACK_BEAM도_명시적_설계ID를_보낸다(node):
         sent.append(request)
         raise InterruptedError
 
-    node.manager = SimpleNamespace(design_id='002_CHAIR_BACK')
+    node.manager = SimpleNamespace(design_id='002_CHAIR_BACK', run_id='R1')
     node.check_cli, node.service_s, node._call = None, 3, capture
     blocks = ['002_CHAIR_BACK_BACK_001_01', '002_CHAIR_BACK_BEAM_001_01']
     with pytest.raises(InterruptedError):
