@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from d2_vision.block_checker import mean_depth_mm
-from d2_vision.block_finder import draw_found, masks_from_yolo
+from d2_vision.block_finder import _largest_part, draw_found, masks_from_yolo
 from d2_vision.mock_scan import parse_request, structure_to_blocks
 from d2_vision.structure_scanner import family_of, scan_response
 
@@ -76,6 +76,42 @@ def test_masks_from_yolo_no_detection():
     """검출이 없으면(masks None · 0개) 빈 목록 — find(masks=[]) 는 빈 블록 목록(ok true → WAIT_SUPPLY)."""
     assert masks_from_yolo(_Result(None, []), (480, 640)) == ([], [])
     assert masks_from_yolo(_Result(np.zeros((0, 480, 640)), []), (480, 640)) == ([], [])
+
+
+def test_masks_from_yolo_merges_duplicates_and_drops_specks():
+    """같은 블록을 두 번 낸 마스크(작은 쪽 ≥ 80 % 겹침)는 conf 높은 마스크에 합쳐지고 자기는 빈다 · 부스러기 조각은 떨어진다 ·
+    다른 블록끼리 조금 겹친 마스크는 둘 다 그대로 남는다(W086 실측 장면에서 본 경우)."""
+    data = np.zeros((4, 20, 30), np.float32)
+    data[0, 2:6, 2:12] = 1.0                         # 블록 A (conf 0.9)
+    data[1, 2:7, 3:13] = 1.0                         # A 를 다시 낸 것(conf 0.6, 조금 더 넓음) → A 에 합쳐짐
+    data[2, 10:14, 2:12] = 1.0                       # 블록 B + 떨어진 부스러기
+    data[2, 18, 28] = 1.0
+    data[3, 12:16, 10:20] = 1.0                      # 블록 C — B 와 조금 겹침(작은 쪽의 4/40) → 그대로
+    masks, scores = masks_from_yolo(_Result(data, [0.9, 0.6, 0.8, 0.7]), (20, 30))
+    assert len(masks) == 4 and scores == [pytest.approx(v) for v in (0.9, 0.6, 0.8, 0.7)]
+    assert masks[0].sum() == (data[0] + data[1] > 0).sum() and masks[1].sum() == 0
+    assert masks[2].sum() == 40 and not masks[2][18, 28]
+    assert masks[3].sum() == 40
+
+
+def test_largest_part_numpy_and_cv2_agree():
+    """가장 큰 8-연결 조각: numpy 길(CI)과 cv2 길(노드)이 같은 답 — 대각선으로만 이어진 픽셀도 한 조각."""
+    m = np.zeros((12, 15), bool)
+    m[1:4, 1:9] = True                               # 24 px
+    m[4, 9] = m[5, 10] = True                        # 대각선으로 이어짐 → 같은 조각(26 px)
+    m[8:11, 2:12] = True                             # 30 px — 가장 큼
+    m[0, 14] = True                                  # 부스러기
+    want = np.zeros_like(m)
+    want[8:11, 2:12] = True
+    assert (_largest_part(m, use_cv2=False) == want).all()
+    m[8:11, 2:5] = False                             # 21 px 로 줄이면 대각선 조각(26 px)이 가장 큼
+    got = _largest_part(m, use_cv2=False)
+    assert got.sum() == 26 and got[5, 10] and not got[9, 6]
+    try:
+        import cv2  # noqa: F401 — 있을 때만 cv2 길도 본다(CI 에는 없다)
+    except ImportError:
+        return
+    assert (_largest_part(m) == got).all()
 
 
 def test_draw_found_keeps_size():

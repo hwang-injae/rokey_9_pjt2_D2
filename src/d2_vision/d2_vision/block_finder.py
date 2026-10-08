@@ -552,13 +552,60 @@ def _split(comp, edges, px_area, single_max, cv2):
     return out
 
 
+YOLO_DUP_IOS = 0.8         # 두 마스크 중 작은 쪽의 이 비율 이상이 겹치면 같은 블록을 두 번 낸 것 — conf 높은 쪽에 합친다
+                           # (W114 검증 장면 실측: 한 블록에 마스크 둘(겹침 0.89~1.00)이 50장 중 9장 · 15쌍.
+                           #  다른 블록끼리 맞닿은 마스크 쌍은 겹침 0.05~0.5 라 이 값이면 나뉜다)
+
+
+def _largest_part(m, use_cv2=True):
+    """bool 마스크에서 가장 큰 8-연결 조각만 남긴다. 빈 마스크는 그대로.
+    cv2 가 있으면(로봇 PC 노드) connectedComponentsWithStats, 없으면(CI) numpy 로 — 마스크를 감싼 창 안에서 씨앗부터
+    '넓히고 마스크와 겹치기'를 더 안 커질 때까지 되풀이해 조각을 하나씩 뗀다(실측 장면당 numpy 약 60 ms · cv2 약 2 ms — 노드는 cv2)."""
+    rows, cols = np.flatnonzero(m.any(axis=1)), np.flatnonzero(m.any(axis=0))   # 감싼 창 — _bbox(np.nonzero)보다 빠르다
+    if len(rows) == 0:
+        return m
+    v0, v1, u0, u1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
+    out = np.zeros_like(m)
+    try:
+        import cv2
+    except ImportError:
+        cv2 = None
+    if use_cv2 and cv2 is not None:
+        n, lab, st, _ = cv2.connectedComponentsWithStats(m[v0:v1, u0:u1].astype(np.uint8), connectivity=8)
+        out[v0:v1, u0:u1] = lab == 1 + int(np.argmax(st[1:, cv2.CC_STAT_AREA]))
+        return out
+    rest = m[v0:v1, u0:u1].copy()
+    best = None
+    while rest.any():
+        part = np.zeros_like(rest)
+        part.flat[np.flatnonzero(rest)[0]] = True
+        while True:
+            grown = _dilate(part, 1) & rest
+            if grown.sum() == part.sum():
+                break
+            part = grown
+        rest &= ~part
+        if best is None or part.sum() > best.sum():
+            best = part
+    out[v0:v1, u0:u1] = best
+    return out
+
+
 def masks_from_yolo(result, hw):
     """YOLO seg 결과 하나(ultralytics Results) → (블록 마스크 목록, 신뢰도 목록). 본 방법(E-38 · E-47)의 ① 단계.
 
     입력: result = model(...)[0] (masks.data (N, h, w) 0~1 · boxes.conf (N,)) · hw = 컬러 영상 (H, W).
-    출력: ([(H, W) bool, …], [float, …]) — 검출이 없으면 ([], []).
+    출력: ([(H, W) bool, …], [float, …]) — 검출 순서 그대로 N 개(합쳐진 중복은 빈 마스크로 둔다 — 뒷단이 '비었음'으로 빼고
+          info['skipped'] 에 남는다). 검출이 없으면 ([], []).
     마스크 크기가 (H, W) 와 다르면 가장 가까운 픽셀로 늘린다(numpy 만 — CI 에 cv2 가 없다). 노드는 retina_masks=True 로 불러
-    처음부터 원본 크기를 받는다(640×480 은 레터박스 여백이 없어 늘려도 같다). torch 텐서 · numpy 배열 둘 다 받는다. 바깥 영향 없음."""
+    처음부터 원본 크기를 받는다(640×480 은 레터박스 여백이 없어 늘려도 같다). torch 텐서 · numpy 배열 둘 다 받는다. 바깥 영향 없음.
+    정리(W086 실측 장면에서 본 것):
+      ① 같은 블록을 두 번 낸 마스크(conf 더 높은 마스크와 YOLO_DUP_IOS 이상 겹침)는 그 마스크에 합치고 자기는 비운다 —
+         한 블록이 두 블록으로 나가지 않게. 버리지 않고 합치는 까닭: 실측에서 conf 낮은 쪽이 더 넓어 위에 걸친 블록과
+         맞닿는 경우가 있었다(s06_035 — 버리면 그 블록의 under 를 놓친다).
+      ② 마스크마다 가장 큰 조각 하나만 남긴다 — 경계의 몇 픽셀짜리 부스러기와, 가려 두 조각이 된 아래 블록의 작은 조각
+         (E-66: 큰 조각만 그 블록, 두 조각을 한 윤곽으로 잇지 않는다).
+      다른 블록끼리 조금 겹친 픽셀은 그대로 둔다 — 깎으면 맞닿음이 줄어 under 를 놓쳤다(s04_004 · s06_011 실측)."""
     def arr(x):
         """torch 텐서 또는 배열 → numpy."""
         x = x.cpu().numpy() if hasattr(x, 'cpu') else x
@@ -574,8 +621,22 @@ def masks_from_yolo(result, hw):
         rows = np.minimum((np.arange(H) + 0.5) * data.shape[1] / H, data.shape[1] - 1).astype(int)
         cols = np.minimum((np.arange(W) + 0.5) * data.shape[2] / W, data.shape[2] - 1).astype(int)
         data = data[:, rows][:, :, cols]
-    masks = [m > 0.5 for m in data]
-    return masks, [float(c) for c in conf[:len(masks)]] + [1.0] * max(0, len(masks) - len(conf))
+    raw = [m > 0.5 for m in data]
+    scores = [float(c) for c in conf[:len(raw)]] + [1.0] * max(0, len(raw) - len(conf))
+    area = [np.count_nonzero(m) for m in raw]    # count_nonzero — bool .sum() 보다 훨씬 빠르다(장면당 마스크 쌍 ~100개)
+    masks = [np.zeros_like(m) for m in raw]
+    kept = []                                    # 남긴 검출 번호(conf 높은 순)
+    for i in sorted(range(len(raw)), key=lambda k: -scores[k]):
+        m = raw[i]
+        if area[i] == 0:
+            continue
+        dup = next((k for k in kept if np.count_nonzero(m & raw[k]) >= YOLO_DUP_IOS * min(area[i], area[k])), None)
+        if dup is not None:
+            masks[dup] |= m
+            continue
+        kept.append(i)
+        masks[i] = m.copy()
+    return [_largest_part(m) for m in masks], scores
 
 
 OVERLAP_BGR = {'none': (0, 200, 0), 'top': (0, 200, 255), 'under': (0, 0, 255)}   # 그림 윤곽 색: 집을 수 있음 초록 · 위 노랑 · 덮임 빨강
