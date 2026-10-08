@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""검사 묶음 DesignChecker — 블록 JSON(blocks/1)이 쌓을 만한 설계인지 본다 (ROS 없이 동작, W109, SDD 6.7).
+"""검사 묶음 DesignChecker — 블록 JSON(blocks/2.0)이 쌓을 만한 설계인지 본다 (ROS 없이 동작, W109, SDD 6.7).
 
 `/d2/task/check_design`(JsonQuery) 서비스 뒤에서 task 노드가 부른다. ROS 없이 시험할 수 있게 노드와 나눴다(팀 규칙 ②).
 10/3 jenga_check.py(안정성 계산)를 가져와 내민 구조 버그를 고치고, 받침 · 손가락 틈 · 작업영역을 더했다.
@@ -7,11 +7,15 @@
 """
 import json
 import math
+import re
 
 from d2_task.recipe_to_blocks import ori_extents
 from d2_task.recipe_document import RecipeDocument
 
-SCHEMA_REQUEST = 'blocks/1'       # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장)
+SCHEMA_REQUEST = 'blocks/2.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
+SCHEMA_RESULT = 'check_result/2.0'
+GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG')
+ROLE_RE = re.compile(r'[A-Z]+(?:_[A-Z]+)?')     # 역할 한 단어 + 옵션 0~1개 한 단어(영문 대문자, 작명 규칙 v3)
 PENETRATION_MM = 0.1     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 (SDD 6.7 검사 2)
 FLAT, EDGE, STAND = 'FLAT', 'EDGE', 'STAND'
 # 방향 코드 → 위를 향한 면에 따른 잡기 종류 (IRD 2장: 눕힘 = FLAT, 옆세움 = EDGE, 세움 = STAND)
@@ -19,10 +23,10 @@ STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy':
 
 
 class DesignChecker:
-    """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/1 을 만든다.
+    """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/2.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
-    assembly_area_half_m · table · check.margin_mm · check.max_blocks), blocks/1 dict. 변환기 ①(blocks_to_recipe)은 선택으로 받는다.
+    assembly_area_half_m · table · check.margin_mm · check.max_blocks), blocks/2.0 dict. 변환기 ①(blocks_to_recipe)은 선택으로 받는다.
     바깥 영향: 없음(계산만). 로봇 · 메시지를 건드리지 않는다.
     실패: 설계가 나쁘면 예외 없이 ok=false + errors 로 돌려준다(HMI 가 detail 을 LLM 에 되돌려 줌). cfg 에 키가 없으면 만들 때 ValueError.
     """
@@ -46,7 +50,7 @@ class DesignChecker:
 
     # ---------------- 바깥에서 부르는 곳 ----------------
     def check(self, request):
-        """blocks/1 요청 → check_result/1. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[block · reason · detail] · recipe(ok 일 때).
+        """blocks/2.0 요청 → check_result/2.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[block · reason · detail] · recipe + placements(ok 일 때 둘 다).
 
         검사는 순서대로 하되, 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
         reason: OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · ERROR(변환기 ① 실패).
@@ -69,10 +73,10 @@ class DesignChecker:
         if self.blocks_to_recipe is not None:
             try:
                 converted = self.blocks_to_recipe(request)
-                if not isinstance(converted, dict) or 'recipe' not in converted or 'structure' not in converted:
-                    raise ValueError('변환기 ① 결과에 structure · recipe 가 없다')
-                document = RecipeDocument(converted['recipe'], converted['structure'])    # 두 파일의 참조 관계까지 검증한다
-                result.update(structure=document.structure, recipe=document.recipe)
+                if not isinstance(converted, dict) or 'recipe' not in converted or 'placements' not in converted:
+                    raise ValueError('변환기 ① 결과에 recipe · placements 가 없다')
+                document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
+                result.update(recipe=document.recipe, placements=document.placements)
             except Exception as e:   # 변환기는 다른 파트 코드라 어떤 예외든 ERROR 로 알린다
                 return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result
@@ -80,7 +84,7 @@ class DesignChecker:
     def handle_json(self, request_json):
         """`check_design`(JsonQuery) 한 번을 처리한다. 반환: (success, reason, response_json 글자).
 
-        요청은 blocks/1 객체 글자 그대로(schema 가 'blocks/1' 이어야 한다). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
+        요청은 blocks/2.0 객체 글자 그대로(schema 가 'blocks/2.0' 이어야 하고, 옛 blocks/1 은 받은 schema 를 적어 ERROR). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
         설계 불합격은 (True, '', ok:false + errors) — 좌표가 유한한 수가 아닌 것(NaN · Infinity · 1e999 처럼 읽으면 무한대가 되는 수)은 불합격이 아니라 요청 오류다.
         JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 실패 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
         변환기 ①이 안 붙은 동안은 검사에 통과해도 레시피가 없어 완성된 합격 응답이 아니므로 (False, 'ERROR') 로 답한다.
@@ -89,7 +93,8 @@ class DesignChecker:
         try:
             request = json.loads(request_json, parse_constant=self._reject_constant, parse_float=self._finite_float)
             if not isinstance(request, dict) or request.get('schema') != SCHEMA_REQUEST:
-                raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다')
+                got = request.get('schema') if isinstance(request, dict) else None
+                raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
             result = self.check(request)
             if result['ok'] and self.blocks_to_recipe is None:
                 result = self._result(False, result['min_margin_mm'], [{'block': None, 'reason': 'ERROR',
@@ -116,7 +121,7 @@ class DesignChecker:
     def grasp_options(self, blocks):
         """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {order: [잡기 이름…]}.
 
-        blocks: 형식이 맞는 blocks/1 의 blocks 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
+        blocks: 형식이 맞는 blocks/2.0 의 blocks 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
         """
         boxes = [self._box(b) for b in sorted(blocks, key=lambda b: b['order'])]
         return {bx['order']: self._grasps(bx, boxes[:i]) for i, bx in enumerate(boxes)}
@@ -138,22 +143,36 @@ class DesignChecker:
             if not isinstance(it, dict):
                 bad(f'{k}번째 항목이 객체가 아니다')
                 continue
-            miss = [key for key in ('order', 'x', 'y', 'z', 'ori') if key not in it]
+            miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp') if key not in it]
             if miss:
-                bad(f'{k}번째 항목에 {", ".join(miss)} 없음')
+                bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · part · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)')
                 continue
             for key in ('x', 'y', 'z'):
                 if not self._num(it[key]):
                     bad(f'{k}번째 항목의 {key} 가 숫자가 아니다')
             if it['ori'] not in self.extent:
                 bad(f'{k}번째 항목 ori={it["ori"]!r} 는 x, y, xe, ye, zx, zy 가 아니다')
+            if not isinstance(it['role'], str) or not ROLE_RE.fullmatch(it['role']):
+                bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다')
+            for key in ('part', 'stage'):
+                if not isinstance(it[key], int) or isinstance(it[key], bool) or it[key] < 1:
+                    bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다')
+            if it['grasp'] not in GRASPS:
+                bad(f'{k}번째 항목 grasp={it["grasp"]!r} 는 {GRASPS} 중 하나가 아니다')
+            if 'inferred' in it and not isinstance(it['inferred'], bool):
+                bad(f'{k}번째 항목 inferred 가 true · false 가 아니다')
         if errors:
             return []
         orders = [it['order'] for it in items]
         if any(not isinstance(o, int) or isinstance(o, bool) for o in orders) or sorted(orders) != list(range(1, len(items) + 1)):
             bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다')
             return []
-        return sorted(items, key=lambda it: it['order'])
+        ordered = sorted(items, key=lambda it: it['order'])
+        stages = [it['stage'] for it in ordered]
+        if stages[0] != 1 or any(b - a not in (0, 1) for a, b in zip(stages, stages[1:])):
+            bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다')
+            return []
+        return ordered
 
     @staticmethod
     def _num(v):
@@ -358,5 +377,5 @@ class DesignChecker:
 
     @staticmethod
     def _result(ok, margin, errors):
-        """check_result/1 dict."""
-        return {'schema': 'check_result/1', 'ok': ok, 'min_margin_mm': margin, 'errors': errors}
+        """check_result/2.0 dict (합격이면 recipe + placements 포함)."""
+        return {'schema': SCHEMA_RESULT, 'ok': ok, 'min_margin_mm': margin, 'errors': errors}
