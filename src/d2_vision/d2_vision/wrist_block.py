@@ -64,7 +64,7 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_si
   요청 JSON 이 틀림(run_id · pose_id 없음 · 폴더 이름으로 못 쓰는 글자) → success=false, SCAN_FAILED.
   보정값 없음 · 계산 예외 → success=false, ERROR. posx 못 받음 · 요청 뒤 새 깊이(find_blocks 는 컬러도)가 시간 안에 안 옴 → success=false, TIMEOUT.
   촬영 안 한 run_id · 추론 신뢰도 미달(점 설명률 · 추정 블록 비율 · 자세 수 — StructureScanner ⑧) → success=true + ok:false SCAN_FAILED.
-  PLY 저장만 실패하면 cloud_path 칸을 빼고 ok:true 로 답하고 경고 로그(10/8 임시 — PL 확인 전).
+  PLY 저장만 실패하면 cloud_path 칸을 빼고 ok:true 로 답하고 경고 로그(IRD 4.2 cloud_path 선택 칸, 10/8 PL).
 NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_m 은 present 일 때만 값.
   top_z_m 은 present · occluded(설계 밖 물체 윗면, 참고값) 일 때 값. absent·unknown · 위 블록에 가려진 present 는 dz·top_z 둘 다 NaN.
 보정값은 TCP 기준이라(config/T_gripper2camera.json) 켤 때 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 다르면 경고한다(한 번).
@@ -584,7 +584,7 @@ class WristBlock(Node):
         """scan_infer 콜백: {"run_id"} → StructureScanner.infer(기본 설계로 family) → 파일 저장 → scan_response.
 
         저장: <scan_dir>/<run_id>/color.png(마지막 촬영 컬러) · cloud.ply(save_cloud, ≤ 2 MB) · blocks.json(번호 세기 · 기록).
-        PLY 저장이 실패하면 cloud_path 를 빼고 ok:true + 경고(10/8 임시 — PL 확인 전). 사진을 못 쓰면 image_path ''.
+        PLY 저장이 실패하면 cloud_path 를 빼고 ok:true + 경고(IRD 4.2 선택 칸, 10/8 PL). 사진을 못 쓰면 image_path ''.
         추론이 끝난 run_id 는 성공 · 실패 모두 메모리에서 지운다(다시 스캔 = 새 run_id). 바깥 영향: 파일 쓰기 · 로그."""
         t0 = time.monotonic()
         try:
@@ -621,13 +621,13 @@ class WristBlock(Node):
         except OSError as e:
             self.get_logger().warn('scan_infer %s: 폴더 · 사진을 못 씀 %s — image_path 를 비운다' % (rid, e))
         try:
-            # IRD E-67: PLY 가 없으면 화면 점군 창만 빈다 — 블록 결과는 그대로 넘긴다(cloud_path 칸 뺌). PL 확인 전 임시 규칙(10/8)
+            # IRD E-67: PLY 가 없으면 화면 점군 창만 빈다 — 블록 결과는 그대로 넘긴다(cloud_path 칸 뺌). cloud_path 는 선택 칸(IRD 4.2, 10/8 PL)
             n_pts = sc.save_cloud(str(out_dir / 'cloud.ply'))
             cloud_path = str(out_dir / 'cloud.ply')
             self.get_logger().info('scan_infer %s: 점군 %d점 · %.0f KB (복셀 %.1f mm)' % (
                 rid, n_pts, (out_dir / 'cloud.ply').stat().st_size / 1024, sc.cloud_voxel_m * 1000))
         except (OSError, ValueError) as e:
-            self.get_logger().warn('scan_infer %s: 점군 PLY 를 못 씀 %s — cloud_path 를 빼고 답한다(PL 확인 전 임시)' % (rid, e))
+            self.get_logger().warn('scan_infer %s: 점군 PLY 를 못 씀 %s — cloud_path 를 빼고 답한다(선택 칸 — 화면 점군 창만 빈다)' % (rid, e))
         out = scan_response(result, image_path, cloud_path)
         try:
             (out_dir / 'blocks.json').write_text(json.dumps(out[2]['blocks'], ensure_ascii=False, indent=1), encoding='utf-8')
