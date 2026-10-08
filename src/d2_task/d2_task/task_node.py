@@ -331,6 +331,8 @@ class TaskNode(Node):
         g = PickPlace.Goal()
         g.block_id, g.supply_slot, g.grasp = goal['block_id'], goal['supply_slot'], goal['grasp']
         g.pick_pose, g.place_pose = to_pose(goal['pick_pose']), to_pose(goal['place_pose'])
+        g.open_width_m = float(goal.get('open_width_m', 0.0))              # 흩뿌림만 실제 폭(m). 0 = robot.yaml grasp_open_pick_m (공급 칸 목표는 0)
+        g.obstacles = [to_pose(p) for p in goal.get('obstacles', ())]      # 흩뿌림만(E-53 B). 공급 칸 목표에는 없다 → 빈 목록(동작 쪽이 칸 모드에서는 안 쓴다)
         deadline = time.monotonic() + self.pick_place_s
         sent = self.pick_cli.send_goal_async(g)
         accepted = threading.Event()

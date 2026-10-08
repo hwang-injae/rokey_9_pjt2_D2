@@ -211,9 +211,11 @@ def test_쓸_수_있는_블록이_하나도_없는_응답은_조회_오류(block
     assert r == {'status': 'LOOKUP_FAILED', 'reason': 'ALL_INVALID'}
 
 
-def test_정상과_잘못된_후보가_섞이면_정상_후보에서_고른다():
-    r = flow().prepare(TARGET, resp({}, blk(length=33), None))
-    assert r['status'] == 'PICK' and r['gap_mm'] == 33
+def test_고르지_않은_블록에_잘못된_값이_섞이면_조용히_빼지_않고_요청을_막는다():
+    """W142: 정상 후보가 있어도 나머지 중 형식이 틀린 블록은 상자를 모른다 → INVALID_OBSTACLE, 요청 없음."""
+    for bad in ({}, None, blk(up='SIDE'), blk(x=float('nan')), dict(blk(), gap_mm={'LENGTH': 30})):
+        r = flow().prepare(TARGET, resp(blk(length=33), bad))
+        assert (r['status'], r['reason'], r['index']) == ('BLOCKED', 'INVALID_OBSTACLE', 1) and 'request' not in r
 
 
 def test_잘못된_후보와_맞지_않는_정상_후보가_섞이면_NO_MATCH():
@@ -286,6 +288,19 @@ def test_관측_자세는_공급_칸_자세_계산과_같다(slot):
     want_quat = quat_from_axes(*(column(rot, k) for k in range(3)))
     assert got_center == pytest.approx(center, abs=1e-9)
     assert got_quat == pytest.approx(want_quat, abs=1e-9)
+
+
+@pytest.mark.parametrize('up', ['THICKNESS', 'WIDTH', 'LENGTH'])
+@pytest.mark.parametrize('yaw', [-90.0, -45.0, 0.0, 12.0, 89.0])
+def test_세_자세_모두_칸_자세_계산과_중심_회전이_같다(up, yaw):
+    """실제 robot.yaml 칸은 눕힘뿐일 수 있어, 옆세움 · 세움과 yaw 경계(−90 포함)를 가짜 칸으로 같은 규약인지 비교한다(W142)."""
+    cfg = copy.deepcopy(CFG)
+    cfg['supply_slots'] = [dict(cfg['supply_slots'][0], block_up=up, yaw_deg=yaw, x_m=0.31, y_m=-0.12, surface_z_m=-0.018)]
+    center, rot = slot_block_pose(cfg, 1)
+    top = center[2] + cfg['block_actual_m'][{'THICKNESS': 2, 'WIDTH': 1, 'LENGTH': 0}[up]] / 2
+    got_center, got_quat = block_pose(cfg, up, yaw, 0.31, -0.12, top)
+    assert got_center == pytest.approx(center, abs=1e-9)
+    assert got_quat == pytest.approx(quat_from_axes(*(column(rot, k) for k in range(3))), abs=1e-9)
 
 
 def test_높이는_윗면에서_위로_향한_치수의_절반을_뺀다():
@@ -446,3 +461,51 @@ def test_시계를_섞으면_믿지_않는다():
 
 def test_robot_yaml_공급_방식_스위치_기본은_slots():
     assert CFG['supply_mode'] == 'slots' and CFG['supply_mode'] in ('slots', 'scatter')       # E-55
+
+
+# ---------- 장애물 (W142, E-53 B) ----------
+def test_고른_인덱스_하나만_빼고_나머지가_장애물이다():
+    f = flow()
+    picked, near, under, top = blk(x=0.30, length=40), blk(x=0.40, y=0.1, length=10), blk(x=0.5, up='WIDTH', overlap='under'), blk(x=0.6, up='LENGTH', overlap='top')
+    r = f.prepare(TARGET, resp(near, picked, under, top))
+    assert r['status'] == 'PICK' and r['candidate']['x_m'] == 0.30
+    want = [block_pose(CFG, b['up'], b['yaw_deg'], b['x_m'], b['y_m'], b['top_z_m']) for b in (near, under, top)]
+    assert r['request']['obstacles'] == want                     # 순서는 응답 순서, under · top 도 포함, 고른 것은 없다
+
+
+def test_똑같은_블록이_둘이면_고른_인덱스_하나만_뺀다():
+    """값이 같다고 둘 다 빼면 안 된다 — 인덱스로만 뺀다."""
+    twin = blk(x=0.35, length=40)
+    r = flow().prepare(TARGET, resp(twin, copy.deepcopy(twin)))
+    assert r['status'] == 'PICK' and len(r['request']['obstacles']) == 1
+
+
+def test_고른_블록만_있으면_빈_장애물은_정상():
+    r = flow().prepare(TARGET, resp(blk(length=40)))
+    assert r['status'] == 'PICK' and r['request']['obstacles'] == []
+
+
+def test_장애물은_자르지_않고_모두_보낸다():
+    r = flow().prepare(TARGET, resp(blk(length=40), *[blk(x=0.3 + 0.01 * i, length=10) for i in range(40)]))
+    assert len(r['request']['obstacles']) == 40
+
+
+def test_다른_블록이_기울어졌으면_범위를_모르니_요청을_막는다():
+    r = flow().prepare(TARGET, resp(blk(length=40), blk(x=0.5, tilted=True), blk(x=0.6, tilted=True)))
+    assert (r['status'], r['reason'], r['indexes'], r['guide']) == ('BLOCKED', 'TILTED_UNBOUNDED', [1, 2], 'CHECK_BLOCKS')
+    assert 'request' not in r
+
+
+def test_기울어진_블록만_남으면_기존대로_NO_MATCH_안내():
+    """고를 블록이 없으면 막는 것이 아니라 기존 안내(tilted 개수 포함)다."""
+    r = flow().prepare(TARGET, resp(blk(tilted=True)))
+    assert r['status'] == 'NO_MATCH' and r['counts']['tilted'] == 1
+
+
+def test_장애물_자세는_입력을_바꾸지_않고_복사본이다():
+    blocks = [blk(length=40), blk(x=0.5, length=10)]
+    before = copy.deepcopy(blocks)
+    r = flow().prepare(TARGET, resp(*blocks))
+    assert blocks == before
+    r['request']['obstacles'].clear()
+    assert r['candidate']['x_m'] == 0.4
