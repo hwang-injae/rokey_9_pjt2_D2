@@ -26,7 +26,7 @@ OK = (True, '')
 SAFE_OK = {'stopped': False, 'locked': False, 'reason': ''}
 SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_REQUEST'}
 # IRD 2장 '화면 알림 message_id' 중 이번에 쓰는 값. 이 밖의 값은 새로 만든 이름이라 나오면 안 된다
-IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost'}
+IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost', 'scan_running', 'scan_review'}
 
 
 class FakeIO:

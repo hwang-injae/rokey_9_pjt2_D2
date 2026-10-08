@@ -229,3 +229,15 @@ def test_BACK_BEAM도_명시적_설계ID를_보낸다(node):
     with pytest.raises(InterruptedError):
         node.check_progress(blocks, lambda: False)
     assert sent[0].design_id == '002_CHAIR_BACK' and sent[0].block_ids == blocks
+
+
+@pytest.mark.parametrize('name', ['recipe_document', 'recipe_to_blocks'])
+def test_웹이_import하는_두_파일은_ROS를_가져오지_않는다(name):
+    """E-59 · E-62: 웹 backend(ROS 없음)가 d2_task.recipe_document · recipe_to_blocks 를 import 한다 → rclpy · ROS 메시지 import 가 들어오면 안 된다."""
+    tree = ast.parse((Path(__file__).parents[1] / 'd2_task' / f'{name}.py').read_text(encoding='utf-8'))
+    mods = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import): mods.update(a.name.split('.')[0] for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module: mods.add(n.module.split('.')[0])
+    ros = {'rclpy', 'std_msgs', 'geometry_msgs', 'd2_interfaces', 'd2_motion', 'ament_index_python', 'rosidl_runtime_py'}
+    assert not (mods & ros), mods & ros
