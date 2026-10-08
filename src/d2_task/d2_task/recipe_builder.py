@@ -226,7 +226,8 @@ class RecipeBuilder:
                             and (np.minimum(hi[:2], other_hi[:2]) - np.maximum(lo[:2], other_lo[:2]) > TOL).all()]
                 if not supports:
                     raise ValueError(f'{block["block"]}: nothing placed beneath it yet; it would float at this point in the sequence')
-            steps.append({'block': block['block'], 'block_id': f'{recipe["model_id"]}_{block["block"]}',
+            # block_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 chair_v1.1 → CHAIR_V1.1_LEG_001_01, task RecipeDocument 와 같음)
+            steps.append({'block': block['block'], 'block_id': f'{recipe["model_id"].upper()}_{block["block"]}',
                           'sequence': sequence, 'stage': stage, 'grasp': grasp,
                           'grasp_axis': next(name for name, k in AXES.items() if k == closing_axis),
                           'supports': supports})
