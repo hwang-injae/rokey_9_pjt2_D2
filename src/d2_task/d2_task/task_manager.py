@@ -571,8 +571,13 @@ class TaskManager:
             count = body['inferred_count']
             if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(rows) or not isinstance(body['image_path'], str):
                 raise ValueError('inferred_count · image_path 가 잘못됐다')
+            cloud = body.get('cloud_path', '')                # 화면 점군 창용 PLY 경로(로봇 PC). 선택 칸(10/8 PL, IRD 4.2 · 6장): 없거나 빈 글자 = 점군 없음 → 스캔은 그대로, 결과에서 뺀다
+            if not isinstance(cloud, str):                    # 글자가 아닌 값(null · 숫자 · 목록 …)만 잘못된 응답이다 → SCAN_FAILED
+                raise ValueError('cloud_path 가 글자가 아니다')
             result = dict(schema='scan_result/1', run_id=self.run_id, blocks=copy.deepcopy(blocks),
                           inferred_count=count, image_path=body['image_path'], poses_used=list(self._scan_poses))
+            if cloud:
+                result['cloud_path'] = cloud                  # 비어 있지 않은 글자는 그대로 넘긴다(작업 관리자는 파일을 열지 않는다)
             json.dumps(result, allow_nan=False)       # NaN · Infinity 를 방송·저장 가능한 결과로 넘기지 않는다
         except (KeyError, TypeError, ValueError) as e:
             return self._to_error(f'SCAN_FAILED: 추론 응답이 잘못됐다({e})')
