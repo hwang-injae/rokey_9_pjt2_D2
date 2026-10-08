@@ -106,6 +106,9 @@ def test_계속은_알림을_낸_뒤에야_받는다():
 @pytest.mark.parametrize('blocks, message_id', [
     ([blk(overlap='under')], None),                                            # 덮인 것뿐 → 맞는 블록 없음 안내(이름 미정이라 message_id 없음)
     ([blk(tilted=True)], 'tilted_block'),                                      # 기울어진 것만 남음 → IRD 알림
+    ([blk(tilted=True), blk(x=0.40, overlap='under')], 'tilted_block'),        # 기울어진 것 + 덮인 것뿐(E-68) → 같은 알림
+    ([blk(tilted=True), blk(x=0.40, up='LENGTH')], None),                      # 다른 제외 이유(목표와 다른 자세)가 섞이면 알림 없이 안내만
+    ([blk(tilted=True), blk(x=0.40, overlap='under'), {'x_m': 'abc'}], None),  # 잘못된 값이 섞여도 알림 없이 안내만
 ])
 def test_맞는_블록이_없으면_이유를_알리고_기다린다(blocks, message_id):
     m, io = make()
