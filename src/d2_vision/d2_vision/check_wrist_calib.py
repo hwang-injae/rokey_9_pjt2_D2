@@ -79,6 +79,7 @@ PLANE_MIN_PTS = 200
 XY_TOL_MM = 2.0             # E-54: 이보다 크게 어긋나면 다시 보정
 XY_SEARCH_MM = 60.0         # 기준 자리에서 이 반경 안만 본다 — 블록 반 길이 37 mm + 지금 수평 오차 약 11 mm 가 들어가게
 BLOCK_ABOVE_MM = 7.0        # 작업면보다 이만큼 높은 점만 블록 — 가장 낮은 눕힘(14.8 mm)의 절반쯤, 작업면 잡음 · 기울기(몇 mm)보다 크게
+BLOCK_MAX_MM = 90.0         # 작업면보다 이만큼 넘게 높은 점은 블록이 아님 — 세움(74.5 mm) + 여유. 10/8 실기: 화면에 비친 그리퍼 · 팔(+291 mm)을 블록으로 잡았다
 TOP_BAND_MM = 3.0           # 덩어리 윗면 높이에서 이 안쪽 점만 윗면 — 옆면 · 가장자리 번짐 점을 뺀다
 XY_CELL_MM = 2.0            # 덩어리 나누기 격자 — 반경 안에 들어온 이웃 칸 블록(틈 수십 mm)을 떼어 내기에 충분히 작게
 XY_MIN_PTS = 50
@@ -230,10 +231,11 @@ def find_block_xy(pts_base, ref_mm, table_mm):
     from scipy import ndimage
     ref = np.asarray(ref_mm, dtype=float)
     dist = np.hypot(pts_base[:, 0] - ref[0], pts_base[:, 1] - ref[1])
-    sel = (dist <= XY_SEARCH_MM) & (pts_base[:, 2] >= table_mm + BLOCK_ABOVE_MM)
+    sel = (dist <= XY_SEARCH_MM) & (pts_base[:, 2] >= table_mm + BLOCK_ABOVE_MM) & (pts_base[:, 2] <= table_mm + BLOCK_MAX_MM)
     pts, dist = pts_base[sel], dist[sel]
     if len(pts) < XY_MIN_PTS:
-        return None, f"기준 자리 반경 {XY_SEARCH_MM:.0f} mm 안에 작업면보다 {BLOCK_ABOVE_MM:.0f} mm 넘게 높은 점이 없다 — 블록이 화면에 있는지 확인"
+        return None, (f"기준 자리 반경 {XY_SEARCH_MM:.0f} mm 안에 작업면 위 {BLOCK_ABOVE_MM:.0f} ~ {BLOCK_MAX_MM:.0f} mm 높이의 점이 없다"
+                      " — 블록이 화면에 있는지 확인")
     # 덩어리 나누기 — 반경 안에 이웃 블록이 걸쳐도 기준 자리에 가장 가까운 덩어리 하나만 쓴다
     ij = np.floor((pts[:, :2] - (ref - XY_SEARCH_MM)) / XY_CELL_MM).astype(int)
     n = int(2 * XY_SEARCH_MM / XY_CELL_MM) + 2              # 격자 칸 수 — 반경 끝 점(칸 번호 = 2·반경/칸)까지 들어가게
