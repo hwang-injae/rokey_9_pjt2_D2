@@ -12,13 +12,14 @@ from d2_task.task_planner import TaskPlanner
 SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
-RECIPE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH.recipe.json').read_text(encoding='utf-8'))
-IDS = [f'001_CHAIR_BENCH_B{n:03d}' for n in range(1, 12)]
+RECIPE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH_recipe.json').read_text(encoding='utf-8'))
+STRUCTURE = json.loads((Path(__file__).parent / 'fixtures/001_CHAIR_BENCH_structure.json').read_text(encoding='utf-8'))
+IDS = [f'001_CHAIR_BENCH_{s["block"]}' for s in sorted(RECIPE['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
 def planner(present=0, **kw):
     """앞에서부터 present 개는 놓였고 나머지는 없는 진행표를 가진 TaskPlanner."""
-    p = TaskPlanner(CFG, kw.get('recipe', RECIPE))
+    p = TaskPlanner(CFG, kw.get('recipe', RECIPE), STRUCTURE)
     p.update_progress({b: {'state': 'present' if i < present else 'absent'} for i, b in enumerate(IDS)})
     return p
 
@@ -36,7 +37,7 @@ def test_블록마다_잡기가_같은_칸을_준다():
     for n in range(11):
         r = planner(n).next_block()
         assert CFG['supply_slots'][int(r['supply_slot']) - 1]['grasp'] == r['grasp'], r['block_id']
-    assert [planner(n).next_block()['supply_slot'] for n in (0, 7, 8)] == ['2', '2', '1']   # 벽 p2, 좌판 p1
+    assert [planner(n).next_block()['supply_slot'] for n in (0, 8, 9)] == ['2', '2', '1']   # FLAT_SHORT p2(앞 9개), 마지막 둘 FLAT_LONG p1
 
 
 def test_높이는_실측_블록으로_쌓아_올린다():
@@ -51,10 +52,10 @@ def test_다_놓이면_DONE():
 
 
 def test_받침이_없으면_NO_SUPPORT():
-    bad = copy.deepcopy(RECIPE)
-    step = next(s for s in bad['steps'] if s['sequence'] == 1)
-    step['support_instance_ids'] = [next(s['instance_id'] for s in bad['steps'] if s['sequence'] == 5)]
-    assert planner(0, recipe=bad).next_block() == {'status': 'NO_SUPPORT', 'block_id': IDS[0]}
+    """레시피 읽기가 '받침은 먼저'를 보장해서 파일로는 만들 수 없다 — 진행표 쪽 방어를 만든 뒤 받침을 뒤 블록으로 바꿔 시험한다."""
+    p = planner(0)
+    p.blocks[0]['supports'] = [IDS[4]]
+    assert p.next_block() == {'status': 'NO_SUPPORT', 'block_id': IDS[0]}
 
 
 @pytest.mark.parametrize('state', ['occluded', 'unknown'])
@@ -65,7 +66,7 @@ def test_못_본_블록은_UNKNOWN_BLOCK(state):
 
 
 def test_처음_관측_전에는_UNKNOWN_BLOCK():
-    assert TaskPlanner(CFG, RECIPE).next_block()['status'] == 'UNKNOWN_BLOCK'
+    assert TaskPlanner(CFG, RECIPE, STRUCTURE).next_block()['status'] == 'UNKNOWN_BLOCK'
 
 
 def test_칸이_비면_WAIT_SUPPLY_채우면_이어_감():
@@ -106,7 +107,7 @@ def cfg_two_flat_short_slots():
 
 
 def test_avoid_slots로_다른_칸을_받는다():
-    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE, STRUCTURE)
     p.update_progress({b: {'state': 'absent'} for b in IDS})
     first = p.next_block()
     second = p.next_block(avoid_slots=(int(first['supply_slot']),))
@@ -119,7 +120,7 @@ def test_avoid_slots로_다른_칸을_받는다():
 
 
 def test_avoid_slots는_문자열_번호도_받는다():
-    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE, STRUCTURE)
     p.update_progress({b: {'state': 'absent'} for b in IDS})
     first = p.next_block()
     assert p.next_block(avoid_slots=[first['supply_slot']])['supply_slot'] != first['supply_slot']
@@ -181,7 +182,7 @@ def test_progress_message는_NaN_없는_JSON():
 
 
 def test_빔으로_적은_칸은_다음_호출에서도_계속_제외_채우면_복귀():
-    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE, STRUCTURE)
     p.update_progress({b: {'state': 'absent'} for b in IDS})
     first = p.next_block()
     p.mark_slot_empty(int(first['supply_slot']))
@@ -193,7 +194,7 @@ def test_빔으로_적은_칸은_다음_호출에서도_계속_제외_채우면_
 
 
 def test_빈_칸이_다_차면_WAIT_SUPPLY_채우면_FOUND():
-    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE)
+    p = TaskPlanner(cfg_two_flat_short_slots(), RECIPE, STRUCTURE)
     p.update_progress({b: {'state': 'absent'} for b in IDS})
     for slot in (2, 7):                                       # FLAT_SHORT 칸 둘 다 빔
         p.mark_slot_empty(slot)

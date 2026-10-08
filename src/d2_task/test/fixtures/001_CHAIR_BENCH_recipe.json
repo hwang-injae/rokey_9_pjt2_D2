@@ -1,7 +1,7 @@
 {
   "schema": "cad_recipe/1.0",
   "model_id": "001_CHAIR_BENCH",
-  "structure_sha256": "4112557b15b29cb5e01633823c3c976842fc565d4033a84bca0348f37472043e",
+  "structure_sha256": "779b849adad0b4c8b2b5a0b494ae87690d3761e348e45d62835771d4bdd874ea",
   "steps": [
     {
       "block": "LEG_001_01",
@@ -83,8 +83,8 @@
       "block": "SEAT_001_01",
       "sequence": 9,
       "stage": 5,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
+      "grasp": "FLAT_SHORT",
+      "grasp_axis": "WIDTH",
       "supports": [
         "LEG_001_04",
         "LEG_002_04"

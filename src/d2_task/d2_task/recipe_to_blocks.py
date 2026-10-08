@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② — 레시피(assembly.recipe/1.0 · cad_recipe/1.0)를 블록 JSON(blocks/1)으로 바꾼다 (ROS 없이 동작, W117).
+"""변환기 ② — 레시피(structure + cad_recipe/1.0 두 파일)를 블록 JSON(blocks/1)으로 바꾼다 (ROS 없이 동작, W117).
 
 기본 설계(벤치 · 의자 · 책상)를 DB와 AI 생성의 예시로 넘길 때, 그리고 검사 묶음이 같은 형식으로 시험할 때 쓴다.
 검사 묶음 · HMI 가 부른다. 레시피를 읽기만 하고 파일 · 로봇 · 메시지에는 손대지 않는다.
 """
 
-# E-44: 형식 이름이 cad_recipe/1.0 으로 바뀌는 중 — 레시피 도구 출력이 바뀌기 전후를 모두 받는다(3단계 중 ①, 옛 이름은 ③에서 지움)
 from d2_task.recipe_document import RecipeDocument
 
-SCHEMA_IN = ('assembly.recipe/1.0', 'cad_recipe/1.0')
 SCHEMA_OUT = 'blocks/1'                # IRD 3장 blocks/1 (안)
 
 
@@ -25,7 +23,7 @@ def ori_extents(block_mm):
 class RecipeToBlocks:
     """레시피 하나를 blocks/1 하나로 바꾸는 변환기.
 
-    입력: 레시피 dict(SCHEMA_IN 중 하나, 단위 mm). 출력: blocks/1 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
+    입력: recipe(cad_recipe/1.0) + structure(cad_structure/1.0) dict(단위 mm). 출력: blocks/1 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
     """
@@ -41,15 +39,13 @@ class RecipeToBlocks:
         self.family = family
         self.extent = ori_extents(block_mm)
 
-    def convert(self, recipe, structure=None):
-        """옛 레시피 또는 새 recipe + structure(mm)를 blocks/1 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
+    def convert(self, recipe, structure):
+        """recipe + structure(mm)를 blocks/1 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
 
         order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
 
         반환: {"schema","design_id","family","blocks":[{"order","x","y","z","ori","inferred"}]} (order 오름차순).
         """
-        if not isinstance(recipe, dict) or recipe.get('schema') not in SCHEMA_IN:
-            raise ValueError(f'레시피 schema 가 {' · '.join(SCHEMA_IN)} 중 하나가 아니다: {recipe.get("schema") if isinstance(recipe, dict) else recipe!r}')
         recipe = RecipeDocument(recipe, structure).geometry
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':

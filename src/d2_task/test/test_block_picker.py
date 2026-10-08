@@ -13,10 +13,11 @@ CFG = yaml.safe_load(next(SRC.glob('d2_*/d2_bringup/config/robot.yaml')).read_te
 MIN_GAP = CFG['find']['min_gap_mm']
 
 
-def blk(x=0.4, y=0.2, top=-0.003, up='THICKNESS', length=30.0, width=30.0, overlap='none', tilted=False, **over):
-    """정상 find_blocks 블록 하나. length · width = 그 방향 틈(mm), clear 는 기준에 맞게 채운다."""
+def blk(x=0.4, y=0.2, top=-0.003, up='THICKNESS', length=30.0, width=30.0, thickness=30.0, overlap='none', tilted=False, **over):
+    """정상 find_blocks 블록 하나. length · width · thickness = 그 방향 틈(mm). 키는 블록의 수평인 두 축만(up 축 제외, E-55 ③), clear 는 기준에 맞게 채운다."""
+    gaps = {k: v for k, v in (('LENGTH', length), ('WIDTH', width), ('THICKNESS', thickness)) if k != up}
     b = {'x_m': x, 'y_m': y, 'top_z_m': top, 'yaw_deg': 10.0, 'up': up,
-         'gap_mm': {'LENGTH': length, 'WIDTH': width}, 'clear': {'LENGTH': length >= MIN_GAP, 'WIDTH': width >= MIN_GAP},
+         'gap_mm': gaps, 'clear': {k: v >= MIN_GAP for k, v in gaps.items()},
          'overlap': overlap, 'tilted': tilted, 'confidence': 0.9}
     b.update(over)
     return b
@@ -49,18 +50,45 @@ def test_여섯_잡기_전부_자세와_축이_정해진다():
                    'STAND_SHORT': ('LENGTH', 'THICKNESS'), 'STAND_LONG': ('LENGTH', 'WIDTH')}
 
 
-def test_두께_틈이_응답에_없으면_NONE이고_있으면_고른다():
+@pytest.mark.parametrize('grasp, horizontal', [
+    ('FLAT_LONG', ('LENGTH', 'WIDTH')), ('FLAT_SHORT', ('LENGTH', 'WIDTH')),
+    ('EDGE_LONG', ('LENGTH', 'THICKNESS')), ('EDGE_SHORT', ('LENGTH', 'THICKNESS')),
+    ('STAND_LONG', ('WIDTH', 'THICKNESS')), ('STAND_SHORT', ('WIDTH', 'THICKNESS'))])
+def test_눕힘_옆세움_세움은_수평인_두_축으로_정상_처리된다(grasp, horizontal):
+    """E-55 ③: 응답 키 = 수평인 두 축(up 축 제외). 여섯 잡기 모두 그 키만 있는 블록을 고른다."""
+    up, axis = grasp_target(grasp, CFG)
+    b = blk(up=up, length=40, width=41, thickness=42)
+    assert set(b['gap_mm']) == set(b['clear']) == set(horizontal) and up not in b['gap_mm']
+    r = pick([b], up, axis)
+    assert (r['status'], r['index'], r['gap_mm']) == ('FOUND', 0, {'LENGTH': 40, 'WIDTH': 41, 'THICKNESS': 42}[axis])
+
+
+@pytest.mark.parametrize('up, missing', [('THICKNESS', 'LENGTH'), ('THICKNESS', 'WIDTH'), ('WIDTH', 'LENGTH'),
+                                         ('WIDTH', 'THICKNESS'), ('LENGTH', 'WIDTH'), ('LENGTH', 'THICKNESS')])
+def test_수평인_축이_빠진_응답은_잘못된_값으로_거부(up, missing):
+    """필요한 축 하나가 gap_mm 이나 clear 에서 빠지면 어느 잡는 축이든 그 블록은 잘못된 값이다(축을 만들어 채우지 않는다)."""
+    axis = next(a for a in ('LENGTH', 'WIDTH', 'THICKNESS') if a != up)
+    for field in ('gap_mm', 'clear'):
+        b = blk(up=up, length=40, width=40, thickness=40)
+        del b[field][missing]
+        r = pick([b], up, axis)
+        assert r['status'] == 'NONE' and r['counts']['invalid'] == 1
+
+
+def test_두께_틈_칸이_없는_옛_옆세움_응답은_거부():
+    """옛 예시(LENGTH · WIDTH 만)로 옆세움을 보내면 THICKNESS 가 없어 잘못된 값 — EDGE_SHORT 가 길이 틈으로 잘못 골라지지 않는다."""
     up, axis = grasp_target('EDGE_SHORT', CFG)
-    no_info = blk(up=up, length=80, width=80)                 # 두께 틈 칸이 없는 응답
-    r = pick([no_info], up, axis)
-    assert r['status'] == 'NONE' and r['counts']['no_gap_info'] == 1
-    with_info = blk(up=up, length=80, width=80)
-    with_info['gap_mm']['THICKNESS'], with_info['clear']['THICKNESS'] = 30.0, True
-    r = pick([no_info, with_info], up, axis)
-    assert (r['status'], r['index'], r['gap_mm']) == ('FOUND', 1, 30.0)
-    narrow = copy.deepcopy(with_info)
-    narrow['gap_mm']['THICKNESS'], narrow['clear']['THICKNESS'] = 10.0, False
+    old = blk(up=up, length=80, width=80)
+    old['gap_mm'], old['clear'] = {'LENGTH': 80, 'WIDTH': 80}, {'LENGTH': True, 'WIDTH': True}
+    r = pick([old], up, axis)
+    assert r['status'] == 'NONE' and r['counts']['invalid'] == 1
+
+
+def test_두께_틈이_좁으면_옆세움은_제외():
+    up, axis = grasp_target('EDGE_SHORT', CFG)
+    ok, narrow = blk(up=up, thickness=30), blk(up=up, thickness=10)
     assert pick([narrow], up, axis)['counts']['no_clear'] == 1
+    assert pick([narrow, ok], up, axis)['index'] == 1
 
 
 def test_두께_틈_칸_형식이_틀리면_잘못된_값():

@@ -14,7 +14,7 @@
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
 설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
-        recipe_dir 아래 <design_id>_recipe.json · _structure.json 을 읽는다. 옮기는 동안 옛 .recipe.json 도 받는다(E-52).
+        recipe_dir 아래 <design_id>_recipe.json · _structure.json 을 읽는다(E-52).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 중단 플래그 · 목표 취소 · 정지 요청 뒤에만 파일 기록을 마무리한다. 시간 초과도 목표 취소와 정지 요청을 먼저 보낸다.
 """
@@ -198,7 +198,7 @@ class TaskNode(Node):
             return False, 'ERROR', None
 
     def _local_design(self, design_id):
-        """개발용 레시피를 design/1 로 읽는다. 새 _recipe/_structure 우선, 없으면 옛 .recipe. 파일·형식 오류는 실패 반환."""
+        """개발용 레시피(_recipe/_structure 두 파일)를 design/1 로 읽는다. 파일·형식 오류는 실패 반환."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
             return False, '', None

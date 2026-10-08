@@ -19,6 +19,10 @@ DESIGNS = {'001_CHAIR_BENCH': ('bench', 'chair', 12.5), '002_CHAIR_BACK': ('chai
            '003_DESK_STAND': ('desk_stand', 'desk', 7.5), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 12.5)}   # 004 = 10/7 가운데 기둥형 책상(W117)
 
 
+_DOC = RecipeDocument.load(SRC / 'recipe_manager/recipes', '001_CHAIR_BENCH')
+CONVERTED = {'recipe': _DOC.recipe, 'structure': _DOC.structure}      # 변환기 ①이 돌려주는 두 파일(가짜 변환기의 답)
+
+
 def base_design(model_id):
     design_id, family, _ = DESIGNS[model_id]
     """main 구조·레시피를 읽어 blocks/1 로 바꾼다. 읽기 실패는 시험에 알린다."""
@@ -146,10 +150,11 @@ def test_order_순서가_섞여_와도_order로_검사():
 
 
 def test_변환기_연결():
+    """변환기 ①은 {structure, recipe} 두 파일을 돌려준다. 옛 한 파일 답(recipe 만)은 ERROR."""
     bench = base_design('001_CHAIR_BENCH')
     calls = []
-    res = check(bench, blocks_to_recipe=lambda blocks: calls.append(blocks) or {'schema': 'cad_recipe/1.0'})
-    assert res['ok'] and res['recipe'] == {'schema': 'cad_recipe/1.0'} and calls == [bench]
+    res = check(bench, blocks_to_recipe=lambda blocks: calls.append(blocks) or CONVERTED)
+    assert res['ok'] and (res['recipe'], res['structure']) == (CONVERTED['recipe'], CONVERTED['structure']) and calls == [bench]
     assert 'recipe' not in check(bench)
     bad = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')), blocks_to_recipe=lambda b: calls.append(b))
     assert not bad['ok'] and len(calls) == 1                           # 통과 못 하면 변환기를 부르지 않는다
@@ -175,8 +180,8 @@ def handle(req_text, **kw):
 
 
 def test_서비스_합격은_success_true와_레시피():
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
-    assert (ok, reason) == (True, '') and res['ok'] and res['recipe'] == {'schema': 'cad_recipe/1.0'}
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH')), blocks_to_recipe=lambda b: CONVERTED)
+    assert (ok, reason) == (True, '') and res['ok'] and (res['recipe'], res['structure']) == (CONVERTED['recipe'], CONVERTED['structure'])
 
 
 def test_서비스_설계_불합격은_success_true_ok_false():
@@ -207,7 +212,7 @@ def test_서비스_안쪽_예외도_ERROR():
 
 
 def test_서비스_응답은_순수_JSON():
-    _, _, text = DesignChecker(CFG, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'}).handle_json(json.dumps(base_design('002_CHAIR_BACK')))
+    _, _, text = DesignChecker(CFG, blocks_to_recipe=lambda b: CONVERTED).handle_json(json.dumps(base_design('002_CHAIR_BACK')))
     assert json.loads(text, parse_constant=lambda c: pytest.fail(c))['ok']
 
 
@@ -226,7 +231,7 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
 def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
     req = base_design('001_CHAIR_BENCH')
     req['schema'] = schema
-    ok, reason, _ = handle(json.dumps(req), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    ok, reason, _ = handle(json.dumps(req), blocks_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR')
 
 
@@ -240,7 +245,7 @@ def test_서비스_schema_없으면_ERROR():
 def test_서비스_유한하지_않은_수는_불합격이_아니라_ERROR(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
-    ok, reason, res = handle(text, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    ok, reason, res = handle(text, blocks_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
 
 
@@ -252,7 +257,7 @@ def test_서비스_오류_응답도_순수_JSON():
 def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
     req = base_design('001_CHAIR_BENCH')
     req['blocks'][0]['ori'] = []
-    ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and not res['ok']
 
 
@@ -260,5 +265,11 @@ def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
 def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
-    ok, reason, res = handle(text, blocks_to_recipe=lambda b: {'schema': 'cad_recipe/1.0'})
+    ok, reason, res = handle(text, blocks_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
+
+
+def test_변환기가_옛_한_파일만_돌려주면_ERROR():
+    """E-52 옮김 끝: recipe 만 있는 답(structure 없음)은 합격 결과로 내보내지 않는다."""
+    res = check(base_design('001_CHAIR_BENCH'), blocks_to_recipe=lambda b: CONVERTED['recipe'])
+    assert not res['ok'] and res['errors'][0]['reason'] == 'ERROR'
