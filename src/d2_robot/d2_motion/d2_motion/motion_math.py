@@ -265,12 +265,12 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 
 
 # ---------------- 설계도(레시피) ----------------
-RECIPE_SUFFIXES = ('_recipe.json', '.recipe.json')   # 새 이름(E-52, <모델ID>_recipe.json) · 옛 이름(<모델ID>.recipe.json)
+RECIPE_SUFFIXES = ('_recipe.json',)   # E-52 조립 파일 이름 <모델ID>_recipe.json (옛 이름 .recipe.json 은 W139 뒤 뺌 — W138)
 STRUCTURE_SUFFIX = '_structure.json'
 
 
 def recipe_files(folder):
-    """folder 안의 조립 레시피 파일 경로 목록 (이름 순). 새 이름 _recipe.json · 옛 이름 .recipe.json 둘 다 (W138, 옛 이름은 W139 뒤 뺌).
+    """folder 안의 조립 레시피 파일(<모델ID>_recipe.json) 경로 목록 (이름 순).
     구조 파일(_structure.json)은 조립 파일이 읽으므로 목록에 넣지 않는다. 폴더가 없으면 빈 목록."""
     if not os.path.isdir(folder):
         return []
@@ -287,14 +287,13 @@ def recipe_name(path):
 
 
 def load_recipe(path):
-    """레시피 파일을 읽는다. 새 형식(E-52 — cad_recipe/1.0 조립 파일, steps[].block)이면 같은 폴더의
-    <model_id>_structure.json(cad_structure/1.0)을 읽어 'structure' 칸에 붙인다 — recipe_blocks 가 두 파일을 블록 이름으로 잇는다.
-    옛 형식은 읽은 그대로. 구조 파일이 없으면 FileNotFoundError.
+    """조립 파일(E-52 — cad_recipe/1.0, steps[].block)을 읽고 같은 폴더의 <model_id>_structure.json(cad_structure/1.0)을
+    'structure' 칸에 붙인다 — recipe_blocks 가 두 파일을 블록 이름으로 잇는다. 구조 파일이 없으면 FileNotFoundError.
     조립 파일에 structure_sha256 이 있으면 구조 파일 바이트 그대로의 sha256 과 비교해, 다르면 ValueError — 구조가 바뀌었는데
     옛 조립 순서로 쌓으면 받침 · 잡기가 어긋난다(한세교 10/7: source_cad.sha256 과 같은 방식)."""
     with open(path) as f:
         recipe = json.load(f)
-    if 'model' not in recipe and 'blocks' not in recipe and 'structure' not in recipe:
+    if 'structure' not in recipe and 'model' not in recipe:
         sp = os.path.join(os.path.dirname(path), recipe['model_id'] + STRUCTURE_SUFFIX)
         with open(sp, 'rb') as f:
             raw = f.read()
@@ -307,22 +306,19 @@ def load_recipe(path):
 
 def recipe_model_id(recipe):
     """레시피의 모델 ID (= 기본 설계 design_id). 설계 이름은 블록 이름에서 잘라 내지 않는다(E-52 ④ — BACK · BEAM 에도 _B 가 있다).
-    옛 blocks[] 형식처럼 모델 ID 가 없으면 빈 글자."""
+    모델 ID 칸이 없으면 빈 글자."""
     return recipe['model']['model_id'] if 'model' in recipe else recipe.get('model_id', '')
 
 
 def recipe_blocks(cfg, recipe):
-    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표). 형식은 이름(schema)이 아니라 칸 유무로 가른다.
+    """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    - 새 형식 (E-52, W138): 조립 파일 cad_recipe/1.0 steps[](block · sequence · stage · grasp_axis · supports — 블록 이름)
-      + 구조 파일 cad_structure/1.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
-      block_id = '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_LEG_001_01 — 노드 사이 전체 블록 이름).
-    - 옛 cad_recipe/1.0 (예전 이름 assembly.recipe/1.0, W139 전 recipe_manager 출력): model.instances + steps
-      (예 src/recipe_manager/recipes/001_CHAIR_BENCH.recipe.json).
-      steps[].block_id 를 쓴다 (규칙 '<model_id>_B<sequence 3자리>', 예 001_CHAIR_BENCH_B001 — 10/7 W105).
-      block_id 가 없는 옛 파일은 같은 규칙으로 만들어 쓴다.
-    - 옛 blocks[] 형식 (한세교 Advanced m0609.jenga.cad_recipe/1.0, 예 03_Recipes/lv4_table_standing.recipe.json): blocks[].
-      block_id 그대로, 끼우는 축은 closing_axis_cad 와 나란한 블록 축.
+    레시피 = E-52 두 파일: 조립 파일 cad_recipe/1.0 steps[](block · sequence · stage · grasp_axis · supports — 블록 이름)
+    + 구조 파일 cad_structure/1.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
+    block_id = '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_LEG_001_01 — 노드 사이 전체 블록 이름).
+    옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
+    (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
+    옛 blocks[] 형식 · 로봇 쪽 옛 파일 이름 .recipe.json 은 W139 뒤 뺐다(W138).
     조립 원점은 robot.yaml assembly_origin 하나만 쓴다 (레시피 T_base_from_cad 는 null — 10/4 합의).
     가로 위치는 설계 그대로, 높이는 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
     반환: [{'block_id', 'sequence', 'stage', 'grasp', 'center': (m), 'rot': 3x3, 'quat'}]
@@ -353,22 +349,7 @@ def recipe_blocks(cfg, recipe):
                 'rot': rot, 'quat': quat_from_axes(*(column(rot, k) for k in range(3)))}
 
     out = []
-    if 'blocks' in recipe:                          # 옛 blocks[] 형식 (Advanced)
-        for b in sorted(recipe['blocks'], key=lambda k: k['sequence']):
-            R, ca = b['R_cad_from_block'], b['closing_axis_cad']
-            axis = ['LENGTH', 'WIDTH', 'THICKNESS'][max(range(3), key=lambda k: abs(sum(R[i][k] * ca[i] for i in range(3))))]
-            out.append(block(b['block_id'], b['sequence'], b.get('stage'), b['size_lwt_mm'], b['center_cad_mm'], R, axis,
-                             b.get('support_block_ids') or []))
-    elif 'structure' in recipe:                     # 새 형식 (E-52) — 조립 steps + 구조 blocks, 블록 이름으로 잇는다
-        struct = recipe['structure']
-        sizes = {p['part_id']: p['size_mm'] for p in struct['parts']}
-        geo = {b['block']: b for b in struct['blocks']}
-        full = {st['block']: f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
-        for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
-            g = geo[st['block']]
-            out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['part_id']], g['center_mm'], g['R'],
-                             st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
-    else:                                           # 옛 cad_recipe/1.0 (예전 이름 assembly.recipe/1.0) — model + steps
+    if 'model' in recipe:                           # 옛 한 파일 꼴 — task RecipeDocument.geometry · task 시험 예시(W141 전)
         model = recipe['model']
         sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
         inst = {i['instance_id']: i for i in model['instances']}
@@ -377,6 +358,15 @@ def recipe_blocks(cfg, recipe):
             i = inst[st['instance_id']]
             out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['part_id']], i['center_mm'], i['R'],
                              st['grasp_axis'], [bid[k] for k in st.get('support_instance_ids') or [] if k in bid]))
+        return out
+    struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조를 'structure' 칸에 붙임)
+    sizes = {p['part_id']: p['size_mm'] for p in struct['parts']}
+    geo = {b['block']: b for b in struct['blocks']}
+    full = {st['block']: f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
+    for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
+        g = geo[st['block']]
+        out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['part_id']], g['center_mm'], g['R'],
+                         st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
     return out
 
 
