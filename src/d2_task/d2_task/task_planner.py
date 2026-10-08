@@ -116,7 +116,7 @@ class TaskPlanner:
         입력: expect_present = 지금 있어야 하는 block_id 들(방금 놓은 블록). 반환: [{'block_id', 'reason', 'detail'}].
         잡는 것: 있어야 하는데 없음 · 높이(dz_m)가 두께 절반보다 어긋남 · 받침이 없는데 위층만 있음(무너짐).
         occluded · unknown 은 문제로 안 본다(못 본 것이지 어긋난 것이 아니다 → next_block 이 UNKNOWN_BLOCK 으로 재관측).
-        높이 기준 block_actual_m[2] / 2 는 SDD 6.3 '기준 안'(안)이다. 허용 오차는 W058·W022 뒤에 다시 정한다.
+        높이 기준 block_actual_m[2] / 2 는 SDD 6.3 '기준 안'(안)이다. 높이 기준은 W058(손목 보정) 뒤에 다시 본다.
         ±2 mm 판정 · 위층 보정은 하지 않는다(E-20, 오차는 측정값만). '설계 밖 블록'은 check_progress 가 설계 블록만
         묻기 때문에 여기서 표현할 수 없다(W121 확인 사항).
         없는 block_id 를 넘기면 ValueError.
