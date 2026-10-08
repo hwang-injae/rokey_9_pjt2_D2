@@ -9,7 +9,7 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
   check_progress(block_ids, should_abort) -> (ok, reason, rows)   rows = {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}
-  pick_place(goal, should_abort) -> (ok, reason)    goal = TaskPlanner.next_block 의 FOUND dict
+  pick_place(goal, should_abort, on_feedback, on_result) -> (ok, reason)    goal = TaskPlanner.next_block 의 FOUND dict. 피드백 step · 결과 수신 시각을 콜백으로 알린다
   request_stop(reason) -> (ok, message)             정지 노드에 먼저 세우라고 요청(응답은 접수 여부)
   publish_state(dict) · publish_progress(dict)
 move_to · check_progress · pick_place 는 io 가 robot.yaml 의 제한 시간(service_s 3 · move_to_s 45 · pick_place_s 90)을 건다.
@@ -36,7 +36,7 @@ import time
 
 from d2_task.block_picker import BlockPicker
 from d2_task.run_logger import RunLogger
-from d2_task.scatter_pick import ScatterFlow
+from d2_task.scatter_pick import ScatterFlow, StepTracker
 from d2_task.task_planner import TaskPlanner
 
 RECIPE_SCHEMA = 'cad_recipe/1.0'
@@ -95,6 +95,9 @@ class TaskManager:
         self._clock = clock
         self.command_s = cfg['timeout']['command_s']   # 화면 명령(선택 · 출발)을 받은 뒤 확정해야 하는 시간(s) — 넘으면 실행하지 않고 TIMEOUT
         self._epoch = 0                           # 상태가 바뀔 때마다 +1 — 설계 조회 중에 상태가 바뀌었는지 알아보는 표
+        self._steps = StepTracker()               # 집기 요청마다 마지막 피드백 step · 결과 수신 시각(수집만 — 재시도 판단에는 아직 안 쓴다)
+        self._pick_seq = 0                        # pick_place 요청마다 새 번호
+        self.last_pick = None                     # 가장 최근 pick_place 가 끝났을 때의 {request_id, ok, reason, step, result_at}
         self._stop_count = 0                      # stopped=true 신호를 받은 횟수 — 정지 뒤 [다시 시작]까지 끝나도 그 전에 보낸 요청의 늦은 답을 알아본다
         self._lookup_token = 0                    # 가장 최근 설계 조회 요청 번호 — 이전 요청의 늦은 답을 버리는 데 쓴다
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
@@ -469,7 +472,16 @@ class TaskManager:
 
     def _pick_place(self):
         """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다."""
-        ok, why = self.io.pick_place(self.goal, self.halted)
+        self._pick_seq += 1
+        rid = self._pick_seq
+        self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다
+        ok, why = self.io.pick_place(self.goal, self.halted,
+                                     on_feedback=lambda step: self._steps.on_feedback(rid, step),
+                                     on_result=lambda at: self._steps.on_result(rid, at))
+        # 결과 처리에 넘길 수집값. result_at 이 None 이면 결과를 못 받고 끝난 것(거절 · 시간 초과 · 우리 쪽 취소) — 이유(why)로 어느 경우인지 가른다
+        self.last_pick = {'request_id': rid, 'ok': ok, 'reason': why,
+                          'step': self._steps.last_step(rid), 'result_at': self._steps.result_at(rid)}
+        self._steps.end(rid)                   # 이 번호의 늦은 피드백이 다음 요청에 섞이지 않게 닫는다
         if ok:
             self.placed = self.goal['block_id']
             self.logger.record_placed(self.placed, self.goal['supply_slot'])
