@@ -4,7 +4,7 @@
 웹 화면 · 음성은 웹 PC 에 있고 다리(bridge)가 ROS 이름 그대로 대신 부른다(E-26~E-28). 이 노드는 MQTT 를 모른다.
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
         /d2/gripper/state (JSON gripper_state/1), /d2/hmi/alive (웹 생존 신호 — 파라미터 monitor_hmi 가 참일 때 감시, 기본 참)
-제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
+제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/2.0 글자, 응답 = check_result/2.0 글자)
 부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace),
         /d2/safety/stop (StopRequest — 시간 초과 · Ctrl+C 때 먼저 정지 요청),
         /d2/vision/scan_capture · scan_infer (JsonQuery — 촬영 점군 수집과 추론),

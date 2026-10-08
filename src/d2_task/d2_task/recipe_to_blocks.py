@@ -23,7 +23,7 @@ def ori_extents(block_mm):
 
 
 class RecipeToBlocks:
-    """레시피 하나를 blocks/1 하나로 바꾸는 변환기.
+    """레시피 하나를 blocks/2.0 하나로 바꾸는 변환기.
 
     입력: recipe(recipe/2.0 구조) + placements(placements/2.0 조립 방법) dict(단위 mm). 출력: blocks/2.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
     위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.

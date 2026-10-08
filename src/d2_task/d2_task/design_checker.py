@@ -23,7 +23,7 @@ STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy':
 
 
 class DesignChecker:
-    """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/1 을 만든다.
+    """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/2.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
     assembly_area_half_m · table · check.margin_mm · check.max_blocks), blocks/2.0 dict. 변환기 ①(blocks_to_recipe)은 선택으로 받는다.
@@ -377,5 +377,5 @@ class DesignChecker:
 
     @staticmethod
     def _result(ok, margin, errors):
-        """check_result/1 dict."""
+        """check_result/2.0 dict (합격이면 recipe + placements 포함)."""
         return {'schema': SCHEMA_RESULT, 'ok': ok, 'min_margin_mm': margin, 'errors': errors}
