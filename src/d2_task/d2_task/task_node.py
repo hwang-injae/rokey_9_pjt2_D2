@@ -3,7 +3,7 @@
 
 웹 화면 · 음성은 웹 PC 에 있고 다리(bridge)가 ROS 이름 그대로 대신 부른다(E-26~E-28). 이 노드는 MQTT 를 모른다.
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
-        /d2/gripper/state (JSON gripper_state/1), /d2/hmi/alive (웹 생존 신호, 로컬 개발은 감시하지 않음)
+        /d2/gripper/state (JSON gripper_state/1), /d2/hmi/alive (웹 생존 신호 — 파라미터 monitor_hmi 가 참일 때 감시, 기본 참)
 제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/1 글자, 응답 = check_result/1 글자)
 부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace),
         /d2/safety/stop (StopRequest — 시간 초과 · Ctrl+C 때 먼저 정지 요청),
@@ -15,6 +15,7 @@
 설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/1) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
         recipe_dir 아래 <design_id>_recipe.json · _structure.json 을 읽는다(E-52).
+        design_source 는 설계 읽기만 정한다. 웹 생존 감시는 따로 monitor_hmi 로 끈다(웹 없이 개발할 때 -p monitor_hmi:=false, E-62).
 바깥 영향: pick_place · move_to 를 통해 로봇이 움직인다. 이 노드가 팔을 직접 움직이지는 않는다.
 Ctrl+C: 중단 플래그 · 목표 취소 · 정지 요청 뒤에만 파일 기록을 마무리한다. 시간 초과도 목표 취소와 정지 요청을 먼저 보낸다.
 """
@@ -81,6 +82,7 @@ class TaskNode(Node):
         super().__init__('task')
         self.declare_parameter('recipe_dir', '')         # design_source:=local 일 때만 쓰는 레시피 폴더(개발용)
         self.declare_parameter('design_source', 'remote')  # remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일(웹 없이 개발할 때 명시)
+        self.declare_parameter('monitor_hmi', True)        # 웹 생존 신호(/d2/hmi/alive) 감시. design_source 와 따로다(E-62) — 웹 없이 개발할 때만 false 로 명시
         self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
@@ -90,7 +92,7 @@ class TaskNode(Node):
         else:
             self.get_logger().warn('[작업 관리자] 조립 기록 파일이 꺼져 있다(log_dir 이 비어 있음) — run_id 와 요약만 만든다')
         self.manager = TaskManager(cfg, self, logger,
-                                   monitor_hmi=self.get_parameter('design_source').value != 'local')
+                                   monitor_hmi=bool(self.get_parameter('monitor_hmi').value))
         self.checker = DesignChecker(cfg)         # 변환기 ①(한세교 W110)이 정해지면 blocks_to_recipe 인자로 붙인다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
@@ -101,6 +103,7 @@ class TaskNode(Node):
         self.design_cli = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=cb)
         self.capture_cli = self.create_client(JsonQuery, '/d2/vision/scan_capture', callback_group=cb)
         self.infer_cli = self.create_client(JsonQuery, '/d2/vision/scan_infer', callback_group=cb)
+        self.find_cli = self.create_client(JsonQuery, '/d2/vision/find_blocks', callback_group=cb)      # supply_mode: scatter 일 때만 쓴다
         self.stop_cli = self.create_client(StopRequest, '/d2/safety/stop', callback_group=cb)
         self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
         self.move_to_s = cfg['timeout']['move_to_s']
@@ -221,12 +224,15 @@ class TaskNode(Node):
             waiting.append('/d2/vision/check_progress')
         if not self.pick_cli.server_is_ready():
             waiting.append('/d2/motion/pick_place')
+        if self.manager.supply_mode == 'scatter' and not self.find_cli.service_is_ready():
+            waiting.append('/d2/vision/find_blocks')
         return waiting
 
-    def _scan_query(self, client, body, should_abort):
-        """스캔 JsonQuery를 service_s 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
+    def _scan_query(self, client, body, should_abort, default_reason='SCAN_FAILED'):
+        """JsonQuery(스캔 · find_blocks)를 service_s 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
 
         JSON 깨짐·객체 아님·유한하지 않은 수는 ERROR. 서버 없음은 ERROR, 정지·시간 초과는 공통 reason으로 돌려준다.
+        서버가 실패하면서 이유를 안 주면 default_reason.
         """
         if not client.service_is_ready():
             return False, 'ERROR', None
@@ -236,7 +242,7 @@ class TaskNode(Node):
         if res is None:
             return False, why or 'ERROR', None
         if not res.success:
-            return False, res.reason or 'SCAN_FAILED', None
+            return False, res.reason or default_reason, None
         try:
             response = json.loads(res.response_json)
             json.dumps(response, allow_nan=False)
@@ -253,6 +259,10 @@ class TaskNode(Node):
     def scan_infer(self, run_id, should_abort):
         """run_id의 점군 추론을 요청한다. 결과 좌표는 blocks/1의 mm, 제한 시간·실패는 _scan_query와 같다."""
         return self._scan_query(self.infer_cli, dict(run_id=run_id), should_abort)
+
+    def find_blocks(self, run_id, should_abort):
+        """흩뿌린 공급 영역을 /d2/vision/find_blocks 로 조회한다(IRD 4.2). 반환: (성공, reason, 응답 dict). 제한 시간 · 실패는 _scan_query 와 같다."""
+        return self._scan_query(self.find_cli, dict(run_id=run_id), should_abort, default_reason='ERROR')
 
     def publish_scan_result(self, body):
         """완성된 scan_result/1(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
@@ -307,6 +317,7 @@ class TaskNode(Node):
         """진행 확인을 service_s 초 안에 받는다. 반환: (성공, reason, 블록별 관측). 중단 · 시간 초과 · 실패 때 관측은 빈 dict."""
         req = CheckProgress.Request()
         req.design_id = self.manager.design_id     # 이름에서 _B 앞을 자르면 새 역할 이름(BACK · BEAM)이 설계 ID 를 망가뜨린다(E-52)
+        req.run_id = self.manager.run_id or ''      # 손목 블록 인식은 run_id가 바뀔 때 설계를 다시 읽는다(E-60 ②). 조립 · 스캔 시작 때 정해지고 한 판 동안 같다
         req.block_ids = list(block_ids)
         res, why = self._call(self.check_cli, req, should_abort, self.service_s)
         if res is None:

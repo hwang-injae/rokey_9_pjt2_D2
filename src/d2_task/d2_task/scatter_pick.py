@@ -94,6 +94,8 @@ class StepTracker:
 
     begin(request_id) 로 새 요청을 시작하면 이전 요청의 step 은 지워지고, 이전 요청의 늦은 피드백(request_id 가 다름)은 버린다.
     request_id 는 부르는 쪽이 요청마다 새로 만드는 번호(예: 증가하는 정수)다. 모르는 step 도 기록하지 않는다.
+    같은 요청 안에서 단계는 STEPS 순서로만 앞으로 간다: 이미 지난 단계나 같은 단계의 늦은 피드백(예: grasp 뒤에 늦게 온 approach)은 버린다 —
+    그러지 않으면 접촉 뒤인데 '접촉 전(PRE_CONTACT)'으로 되돌아가 같은 후보로 다시 계획하게 된다.
     """
 
     def __init__(self):
@@ -108,10 +110,12 @@ class StepTracker:
             self._current, self._step = request_id, None
 
     def on_feedback(self, request_id, step):
-        """피드백을 받았다. 지금 요청의 것이고 알려진 step 일 때만 기록한다. 반환: 기록했으면 True."""
+        """피드백을 받았다. 지금 요청의 것이고 알려진 step 이며 마지막 step 보다 **앞으로 가는** 것일 때만 기록한다. 반환: 기록했으면 True."""
         with self._lock:
             if request_id != self._current or request_id is None or step not in STEPS:
                 return False
+            if self._step is not None and STEPS.index(step) <= STEPS.index(self._step):
+                return False                       # 역행 · 중복은 버린다
             self._step = step
             return True
 

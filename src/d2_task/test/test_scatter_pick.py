@@ -509,3 +509,30 @@ def test_장애물_자세는_입력을_바꾸지_않고_복사본이다():
     assert blocks == before
     r['request']['obstacles'].clear()
     assert r['candidate']['x_m'] == 0.4
+
+# ---------- StepTracker 단계 역행 방지 (W130 미해결 검토: grasp 뒤 늦은 approach 가 PRE_CONTACT 로 되돌리던 것) ----------
+def test_단계는_앞으로만_가고_늦은_앞단계는_버린다():
+    t = StepTracker()
+    t.begin(1)
+    assert t.on_feedback(1, 'approach') and t.on_feedback(1, 'grasp') and t.on_feedback(1, 'lift')
+    assert t.on_feedback(1, 'approach') is False and t.on_feedback(1, 'grasp') is False      # 역행 · 중복
+    assert t.last_step(1) == 'lift'
+    assert t.on_feedback(1, 'retreat') is True and t.last_step(1) == 'retreat'
+
+
+def test_늦은_approach가_와도_접촉_후는_접촉_전으로_되돌아가지_않는다():
+    """같은 요청이 grasp 까지 갔는데 approach 피드백이 늦게 오면, 마지막 step 으로 접촉 전후를 정하므로 PRE_CONTACT 로 퇴행하면 안 된다."""
+    t = StepTracker()
+    t.begin(7)
+    t.on_feedback(7, 'grasp')
+    t.on_feedback(7, 'approach')
+    assert contact_phase(t.last_step(7), 'PLAN_FAILED') == 'POST_CONTACT'
+
+
+def test_새_요청은_다시_처음_단계부터_받는다():
+    t = StepTracker()
+    t.begin(1)
+    t.on_feedback(1, 'place')
+    t.begin(2)
+    assert t.last_step(2) is None and t.on_feedback(2, 'approach') is True
+    assert t.on_feedback(1, 'retreat') is False                                  # 이전 요청의 늦은 피드백

@@ -157,6 +157,9 @@ def test_잘못된_점군응답은_다음_자세로_넘어가지_않는다(point
     lambda b: b.update(inferred_count=True),
     lambda b: b.update(inferred_count=2),
     lambda b: b.update(image_path=None),
+    lambda b: b.update(cloud_path=5),
+    lambda b: b.update(cloud_path=None),                # 칸은 있는데 글자가 아님
+    lambda b: b.update(cloud_path=['/data/cloud.ply']),
 ])
 def test_추론_손상은_결과를_방송하지_않는다(mutate):
     """형식·유한 좌표·필수 값이 틀리면 검토 가능한 성공 결과로 내보내지 않는다."""
@@ -167,6 +170,26 @@ def test_추론_손상은_결과를_방송하지_않는다(mutate):
     assert not io.results
     m.finalize()
     assert not m.pending_builds
+
+
+def test_cloud_path는_scan_infer_응답값_그대로_scan_result에_실린다(tmp_path):
+    """W147(IRD 6장): 점군 PLY 경로를 작업 관리자가 열지 않고 image_path 옆에 그대로 넘긴다."""
+    m, io = make(tmp_path)
+    io.inference['cloud_path'] = '/data/scan/R1/cloud.ply'
+    review(m)
+    assert io.results[0]['cloud_path'] == '/data/scan/R1/cloud.ply' and io.results[0]['image_path'] == '/data/image.png'
+    m.finalize()
+
+
+@pytest.mark.parametrize('present, value', [(False, None), (True, '')])
+def test_cloud_path가_없거나_빈_글자면_스캔은_계속되고_결과에서_빠진다(tmp_path, present, value):
+    """PL 답(10/8, IRD 4.2 · 6장): cloud_path 는 선택 칸이다. 키 없음 · 빈 글자 = 점군 없음 → SCAN_REVIEW 까지 가고 scan_result 에 칸을 만들지 않는다."""
+    m, io = make(tmp_path)
+    if present:
+        io.inference['cloud_path'] = value
+    review(m)
+    assert m.state == 'SCAN_REVIEW' and 'cloud_path' not in io.results[0] and io.results[0]['image_path'] == '/data/image.png'
+    m.finalize()
 
 
 def test_이동_시간초과_정지확인_뒤_스캔은_IDLE로():
@@ -201,3 +224,31 @@ def test_실제_노드_깨진JSON과_무한대_응답거절(node, text):
     """서버의 형식 오류를 성공 응답이나 다음 상태로 전달하지 않는다."""
     node.infer_cli = Client(completed(SimpleNamespace(success=True, reason='', response_json=text)))
     assert node.scan_infer('run', lambda: False) == (False, 'ERROR', None)
+
+
+def test_스캔_상태_알림은_IRD_이름을_쓴다(tmp_path):
+    """E-62: 촬영 중(SCAN_MOVE · CAPTURE · INFER)은 scan_running, 검토 화면은 scan_review (message_id null 아님)."""
+    m, io = make(tmp_path)
+    review(m)
+    got = {s['state']: s['message_id'] for s in io.states if s['state'].startswith('SCAN_')}
+    assert got == {'SCAN_MOVE': 'scan_running', 'SCAN_CAPTURE': 'scan_running', 'SCAN_INFER': 'scan_running', 'SCAN_REVIEW': 'scan_review'}
+    m.finalize()
+
+
+def test_화면_cancel은_READY_ERROR_SCAN_REVIEW에서_받고_운전_중에는_거절(tmp_path):
+    """E-62 ㉮: 음성 cancel 과 같은 상태에서 받는다(S-16 음성 = 버튼). ERROR 는 기록을 ERROR 로 닫는다."""
+    m, io = make(tmp_path)
+    review(m)                                                        # SCAN_REVIEW
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE'
+    m, io = make(tmp_path)
+    assert m.command('select_design', 'bench') == (True, '') and m.state == 'READY'     # READY
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE' and m.planner is None
+    m, io = make(tmp_path)
+    assert m.command('scan')[0]
+    io.move_script = [(False, 'ERROR')]
+    drive(m, 'ERROR')                                                # ERROR
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE' and m.run_id is None
+    m, io = make(tmp_path)
+    assert m.command('scan')[0] and m.state == 'SCAN_MOVE'            # 운전 중
+    assert m.command('cancel') == (False, 'BUSY') and m.state == 'SCAN_MOVE'
+    m.finalize()

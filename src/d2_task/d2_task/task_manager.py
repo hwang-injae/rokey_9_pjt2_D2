@@ -34,7 +34,9 @@ import logging
 import threading
 import time
 
+from d2_task.block_picker import BlockPicker
 from d2_task.run_logger import RunLogger
+from d2_task.scatter_pick import ScatterFlow
 from d2_task.task_planner import TaskPlanner
 
 RECIPE_SCHEMA = 'cad_recipe/1.0'
@@ -75,9 +77,11 @@ class TaskManager:
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
 
-    def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False):
+    def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False, open_width_m=None):
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
-        monitor_hmi 는 웹 생존 신호 감시 여부(노드의 remote 모드만 참). 로컬 개발은 웹 없이 동작한다.
+        monitor_hmi 는 웹 생존 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
+        공급 방식은 cfg['supply_mode'](없으면 slots): slots = 공급 칸 6개(기본), scatter = 흩뿌린 공급(관측 → 후보 고르기, E-55). scatter 는 open_width_m(m)을 명시로 받아야
+        집기 요청을 만든다 — 열림 폭이 확정 전이라 노드는 아직 None 을 넘기고, 그러면 scatter 선택은 ERROR 로 끝난다(실제 흩뿌림 실행 보류).
         만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
@@ -91,6 +95,7 @@ class TaskManager:
         self._clock = clock
         self.command_s = cfg['timeout']['command_s']   # 화면 명령(선택 · 출발)을 받은 뒤 확정해야 하는 시간(s) — 넘으면 실행하지 않고 TIMEOUT
         self._epoch = 0                           # 상태가 바뀔 때마다 +1 — 설계 조회 중에 상태가 바뀌었는지 알아보는 표
+        self._stop_count = 0                      # stopped=true 신호를 받은 횟수 — 정지 뒤 [다시 시작]까지 끝나도 그 전에 보낸 요청의 늦은 답을 알아본다
         self._lookup_token = 0                    # 가장 최근 설계 조회 요청 번호 — 이전 요청의 늦은 답을 버리는 데 쓴다
         self._lock = threading.RLock()            # 콜백 스레드와 작업 스레드가 같이 만지는 값들
         self.state = 'IDLE'
@@ -113,6 +118,11 @@ class TaskManager:
         self._timeout_pending = False             # 정지 요청의 성공 응답만으로는 서 있다고 볼 수 없다. stopped 신호가 필요하다
         self._recover_slow = False                # 복구 뒤 첫 이동이 성공할 때까지 저속을 유지한다
         self._monitor_hmi = monitor_hmi
+        self.supply_mode = cfg.get('supply_mode', 'slots')
+        if self.supply_mode not in ('slots', 'scatter'):
+            raise ValueError(f"robot.yaml supply_mode 는 slots · scatter 중 하나다: {self.supply_mode!r}")
+        self._scatter = (ScatterFlow(cfg, BlockPicker(cfg['find']['min_gap_mm']), self.supply_mode, open_width_m)
+                         if self.supply_mode == 'scatter' else None)
         self._hmi_seen_at = None                  # PC 사이 stamp 대신 이 PC 의 단조 시계로 수신 간격을 잰다
         self._hmi_pause = False                   # 잠깐 끊겼다 다시 붙어도 사람의 start 전에는 풀지 않는다
         self._hmi_recheck = False                 # WAIT_HMI 의 start 는 SELECT 에서 진행표부터 다시 확인한다
@@ -134,6 +144,10 @@ class TaskManager:
         with self._lock:
             self.safety = st
             self.safety_count += 1
+            if isinstance(st, dict) and st.get('stopped'):
+                self._stop_count += 1
+                if self._scatter is not None:
+                    self._scatter.invalidate()        # 관측 · 조회 중이던 흩뿌림 답은 정지 뒤에 적용하지 않는다
 
     def on_gripper(self, st):
         """그리퍼 노드의 gripper_state/1(dict)을 적는다. grasped 가 참이면 블록을 쥐고 있다."""
@@ -251,7 +265,7 @@ class TaskManager:
 
         select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 [설계 선택] 때 받아 둔 설계로 출발(점검 한 번 더) → CHECK(다시 조회하지 않는다),
         WAIT_SUPPLY 에서는 [계속](관측 자세 도착 뒤), WAIT_HMI 는 웹 재연결 뒤 진행 확인부터 SELECT 로 이어 간다(조회 없음).
-        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 SCAN_REVIEW 를 IDLE 로 돌린다.
+        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 READY·ERROR·SCAN_REVIEW 를 IDLE 로 돌린다(음성 cancel 과 같다, S-16).
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
         거절한다(로컬 파일로 몰래 대신하지 않는다 — 개발용 로컬은 노드가 design_source=local 로 명시해야 한다).
         reason 은 IRD 7장에 이미 있는 코드만 쓴다: 운전 중 'BUSY', 정지 중 'STOPPED', 조회 시간 초과 'TIMEOUT'. 맞는 코드가 없는 거절(설계 없음 ·
@@ -265,11 +279,8 @@ class TaskManager:
             if cmd == 'scan':
                 return self._begin_scan()
             if cmd == 'cancel':
-                if self.state != 'SCAN_REVIEW':
-                    return self._reject(self._busy_reason(), '스캔 검토 화면에서만 취소할 수 있다')
-                self.planner, self.design_id, self.block_id = None, None, None
-                self._clear_run()
-                self._set('IDLE', None, '스캔을 취소했다')
+                if not self._cancel_to_idle():
+                    return self._reject(self._busy_reason(), '준비·오류·스캔 검토 상태에서만 취소할 수 있다')
                 return True, ''
             return self._reject('', f'모르는 명령: {cmd}')
 
@@ -293,12 +304,21 @@ class TaskManager:
                     self._publish('voice_start_ignored', '관측 자세로 가는 중이라 음성 출발을 무시했다')
         elif intent == 'cancel':
             with self._lock:
-                if self.state in ('READY', 'ERROR', 'SCAN_REVIEW'):
-                    if self.state == 'ERROR':
-                        self._finish_run('ERROR')
-                    self.planner, self.design_id, self.block_id = None, None, None
-                    self._clear_run()
-                    self._set('IDLE', None, '취소했다')
+                self._cancel_to_idle()
+
+    def _cancel_to_idle(self):
+        """(잠금 안) READY·ERROR·SCAN_REVIEW 에서 취소해 IDLE 로 간다. 반환: 취소했나. 화면 cancel 과 음성 cancel 이 같이 쓴다(S-16).
+
+        ERROR 에서는 조립 기록을 ERROR 로 닫는다. 운전 중에는 받지 않는다. 로봇은 움직이지 않는다.
+        """
+        if self.state not in ('READY', 'ERROR', 'SCAN_REVIEW'):
+            return False
+        if self.state == 'ERROR':
+            self._finish_run('ERROR')
+        self.planner, self.design_id, self.block_id = None, None, None
+        self._clear_run()
+        self._set('IDLE', None, '취소했다')
+        return True
 
     # ---------- 작업 스레드 ----------
     def run_once(self):
@@ -363,7 +383,9 @@ class TaskManager:
             self.poll_hmi()
             if self._hmi_pause:
                 return self._enter_wait_hmi()
-        r = self.planner.next_block()
+        r = self._next_goal()
+        if r is None:                          # 흩뿌림은 전환까지 끝냈거나(집기 · 대기 · 오류) 이동 · 조회 실패를 처리했거나 정지 뒤 늦은 답을 버렸다
+            return None
         status = r['status']
         if status == 'FOUND':
             self._start_goal(r)
@@ -377,9 +399,73 @@ class TaskManager:
             self._reobserved = True
             self._set('CHECK', None, f'{r["block_id"]} 가 있는지 못 봐서 한 번 더 봅니다')
         elif status == 'WAIT_SUPPLY':
-            self._enter_wait_supply(r['block_id'])
+            self._enter_wait_supply(r['block_id'], r.get('alert'))
         else:                                  # NO_SUPPORT · 재관측 뒤에도 UNKNOWN_BLOCK
             self._to_error(f'{r["block_id"]}: {status}')
+
+    def _next_goal(self, pick_message='{block} 를 집으러 갑니다'):
+        """다음 집기 목표를 공급 방식에 맞게 정한다(목표 블록은 작업 판단이, 어디서 집을지는 방식이 정한다).
+
+        slots: planner.next_block() 를 그대로 돌려준다(부르는 쪽이 목표를 적용한다).
+        scatter: planner.next_target() 로 블록을 정하고, 집을 블록이 있으면 _scatter_goal 이 관측 → 후보 고르기 → **목표 적용과 PICK_PLACE 전환까지**
+        한 잠금 안에서 끝내고 None 을 돌려준다. 블록이 없는 경우(DONE · NO_SUPPORT · UNKNOWN_BLOCK)는 그 status dict 를 돌려준다.
+        None = 이미 처리했다(전환 · 이동/조회 실패 · 설정 미완 · 정지 뒤 늦은 답 버림) — 부르는 쪽은 아무것도 더 하지 않는다.
+        """
+        if self._scatter is None:
+            return self.planner.next_block()
+        target = self.planner.next_target()
+        if target['status'] != 'FOUND':
+            return target
+        self._scatter_goal(target, pick_message)
+        return None
+
+    def _scatter_goal(self, target, pick_message):
+        """흩뿌린 공급에서 target 블록을 집을 후보를 고르고 결과를 적용한다: 설정 점검 → observe_supply 이동 → find_blocks → ScatterFlow 고르기.
+
+        설정(열림 폭)이 안 정해졌으면 **로봇을 움직이기 전에** ERROR 로 끝낸다. 이동 · 조회는 잠금 밖에서 기다린다.
+        적용(commit)과 그 결과(목표 적용 · PICK_PLACE 또는 WAIT_SUPPLY 전환)는 **한 잠금 안에서** 한다 — 정지 신호(on_safety)는 같은 잠금을 얻어야
+        반영되므로 commit 확인 뒤 전환 전에 정지가 끼지 못한다. commit 은 요청 번호 · 상태 변화 · 정지 횟수 · 정지 중 여부를 그 안에서 다시 확인한다
+        (정지가 끼었거나, 정지 뒤 [다시 시작]까지 끝났어도 그 전 요청의 늦은 답은 적용하지 않는다). 로봇은 move_to 외에 움직이지 않는다.
+        """
+        if not self._scatter.configured:
+            self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+            return
+        stops_before = self._stop_count
+        ticket = self._scatter.begin((self._epoch, stops_before))
+        ok, why = self.io.move_to('observe_supply', self.halted)
+        if not ok:
+            self._failed(why, '공급 관측 자세 이동')
+            return
+        ok, why, body = self.io.find_blocks(self.run_id, self.halted)
+        if not ok or self.halted():
+            self._failed('STOPPED' if self.halted() else why, 'find_blocks 조회')
+            return
+        result = self._scatter.prepare(target, body)
+        with self._lock:
+            applied = self._scatter.commit(ticket, lambda: ((self._epoch, self._stop_count), self.halted()), result)
+            if applied:
+                self._apply_scatter_result(target, result, pick_message)
+                return
+        if self._stop_count != stops_before:       # 조회 중에 정지가 있었다(이미 [다시 시작]까지 끝났어도) → 다른 정지 때처럼 STOPPED 절차로
+            self._failed('STOPPED', 'find_blocks 조회 중 정지')
+
+    def _apply_scatter_result(self, target, result, pick_message):
+        """(잠금 안) commit 이 적용된 흩뿌림 결과를 상태에 반영한다: PICK → 목표 + PICK_PLACE, 비었음 · 맞는 블록 없음 → WAIT_SUPPLY, 그 밖은 ERROR."""
+        status, block_id = result['status'], target['block_id']
+        if status == 'PICK':
+            self._start_goal(dict(result['request'], status='FOUND'))
+            self._set('PICK_PLACE', None, pick_message.format(block=block_id))
+        elif status == 'EMPTY':
+            self._enter_wait_supply(block_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
+        elif status == 'NO_MATCH':
+            counts = result['counts']
+            only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k != 'tilted')
+            # 기울어진 블록만 남았으면 IRD 알림 tilted_block. 그 밖의 '맞는 블록 없음'은 message_id 없이 글자만 — 새 이름(no_match_block)을 둘지는 PL 선택
+            self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
+        elif status == 'NOT_CONFIGURED':
+            self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+        else:                                      # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
+            self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
 
     def _pick_place(self):
         """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다."""
@@ -393,6 +479,9 @@ class TaskManager:
             self._set('VERIFY', None, f'{self.placed} 를 놓았다. 확인합니다')
             return None
         self.logger.log('fail', self.goal['block_id'], f'pick_place {why}')
+        if self._scatter is not None and why in ('PLAN_FAILED', 'GRASP_FAILED', 'SLOT_EMPTY'):
+            # 흩뿌림은 실패 뒤 다시 계획 · 다시 관측(failure_action)을 아직 연결하지 않았다 → 서서 사람을 부른다(실제 흩뿌림 실행 보류)
+            return self._to_error(f'{self.goal["block_id"]}: {why}(흩뿌림 집기 실패 뒤 재시도는 아직 연결 전)')
         if why == 'PLAN_FAILED':
             if self._plan_retry < 1:           # 같은 목표로 다시 계획 1번
                 self._plan_retry += 1
@@ -440,8 +529,13 @@ class TaskManager:
             if not self._pending_start:
                 return None
             self._pending_start = False
-        self.planner.supply_refilled()
-        r = self.planner.next_block()
+        if self._scatter is not None:
+            self._scatter.after_wait_start()        # 흩뿌림은 다시 관측하고 조회한다. 공급 칸 표시는 건드리지 않는다
+        else:
+            self.planner.supply_refilled()
+        r = self._next_goal('공급을 채웠다. {block} 를 이어서 집습니다')
+        if r is None:                          # 흩뿌림은 전환까지 끝냈다(다시 기다림 · 집기 · 오류)
+            return None
         if r['status'] != 'FOUND':
             return self._to_error(f'공급을 채웠는데 다음 블록을 못 골랐다({r["status"]})')
         self._start_goal(r)
@@ -505,7 +599,7 @@ class TaskManager:
         self._scan_poses, self._scan_index = tuple(poses), 0
         self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/1 은 만들지 않는다
         self.logger.log('scan', None, 'start')
-        self._set('SCAN_MOVE', None, '스캔 촬영 자세로 갑니다')
+        self._set('SCAN_MOVE', 'scan_running', '스캔 촬영 자세로 갑니다')
         return True, ''
 
     def _scan_move(self):
@@ -517,7 +611,7 @@ class TaskManager:
         with self._lock:
             if self.halted():
                 return self._failed('STOPPED', '스캔 자세 이동')
-            self._set('SCAN_CAPTURE', None, f'{pose}에서 촬영합니다')
+            self._set('SCAN_CAPTURE', 'scan_running', f'{pose}에서 촬영합니다')
 
     def _scan_capture(self):
         """현재 자세·run_id로 점군을 수집한다. points는 비음수 정수. 잘못된 답은 SCAN_FAILED, 정지 뒤 답은 버린다."""
@@ -533,7 +627,7 @@ class TaskManager:
                 return self._failed('STOPPED', '스캔 촬영 결과 적용')
             self.logger.log('scan_capture', None, f'{pose}: {points}')
             self._scan_index += 1
-            self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', None, '스캔 촬영을 마쳤습니다')
+            self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', 'scan_running', '스캔 촬영을 마쳤습니다')
 
     def _scan_infer(self):
         """모은 점군을 추론해 scan_result/1로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
@@ -565,8 +659,13 @@ class TaskManager:
             count = body['inferred_count']
             if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= len(rows) or not isinstance(body['image_path'], str):
                 raise ValueError('inferred_count · image_path 가 잘못됐다')
+            cloud = body.get('cloud_path', '')                # 화면 점군 창용 PLY 경로(로봇 PC). 선택 칸(10/8 PL, IRD 4.2 · 6장): 없거나 빈 글자 = 점군 없음 → 스캔은 그대로, 결과에서 뺀다
+            if not isinstance(cloud, str):                    # 글자가 아닌 값(null · 숫자 · 목록 …)만 잘못된 응답이다 → SCAN_FAILED
+                raise ValueError('cloud_path 가 글자가 아니다')
             result = dict(schema='scan_result/1', run_id=self.run_id, blocks=copy.deepcopy(blocks),
                           inferred_count=count, image_path=body['image_path'], poses_used=list(self._scan_poses))
+            if cloud:
+                result['cloud_path'] = cloud                  # 비어 있지 않은 글자는 그대로 넘긴다(작업 관리자는 파일을 열지 않는다)
             json.dumps(result, allow_nan=False)       # NaN · Infinity 를 방송·저장 가능한 결과로 넘기지 않는다
         except (KeyError, TypeError, ValueError) as e:
             return self._to_error(f'SCAN_FAILED: 추론 응답이 잘못됐다({e})')
@@ -575,7 +674,7 @@ class TaskManager:
                 return self._failed('STOPPED', '스캔 추론 결과 적용')
             self.io.publish_scan_result(result)
             self._finish_run('DONE')
-            self._set('SCAN_REVIEW', None, '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
+            self._set('SCAN_REVIEW', 'scan_review', '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
 
     # ---------- 실패 · 공급 처리 ----------
     def _grasp_failed(self):
@@ -607,13 +706,20 @@ class TaskManager:
         else:
             self._to_error(f'공급 칸을 바꾸는 중 이상한 결과({r["status"]})')
 
-    def _enter_wait_supply(self, block_id):
-        """WAIT_SUPPLY 상태로 들어간다. 알림(supply_empty)은 아직 안 낸다 — 관측 자세에 도착한 뒤 _wait_supply 가 낸다."""
+    def _enter_wait_supply(self, block_id, alert=None):
+        """WAIT_SUPPLY 상태로 들어간다. 칸 방식은 알림(supply_empty)을 아직 안 낸다 — 관측 자세에 도착한 뒤 _wait_supply 가 낸다.
+
+        흩뿌림은 이미 observe_supply 에 와 있으므로 alert=(message_id, 글자)를 주면 도착 확인 없이 그 알림으로 바로 들어간다.
+        """
         with self._lock:
             self.block_id = block_id
-            self._supply_moved = False
             self._pending_start = False        # 이전에 눌린 [계속]은 버린다
-            self._set('WAIT_SUPPLY', None, '공급이 필요해요. 관측 자세로 갑니다')
+            if alert is not None:
+                self._supply_moved = True
+                self._set('WAIT_SUPPLY', alert[0], alert[1])
+            else:
+                self._supply_moved = False
+                self._set('WAIT_SUPPLY', None, '공급이 필요해요. 관측 자세로 갑니다')
 
     def _enter_wait_hmi(self):
         """현재 동작이 끝난 뒤 WAIT_HMI 를 알린다. 정지 요청 · 공급 초기화 · 조립 요약 확정은 하지 않는다."""
@@ -802,7 +908,7 @@ class TaskManager:
         if self._timeout_pending:
             return False, 'STOPPED', '시간 초과 뒤 정지 상태 확인을 기다린다'
         if not self._hmi_fresh():
-            return False, 'BUSY', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'
+            return False, '', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'      # IRD 7장 BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → 맞는 코드가 없어 비움(E-62)
         st = self.safety
         if st is None:
             return False, '', '정지 노드 신호를 아직 못 받았다'
@@ -872,6 +978,8 @@ class TaskManager:
             self._finish_run('STOPPED')
         self.logger.clear()
         self.run_id = None
+        if self._scatter is not None:
+            self._scatter.invalidate()
         self._recover_slow = False
         self._hmi_pause = self._hmi_recheck = False
         self._scan_run = False
