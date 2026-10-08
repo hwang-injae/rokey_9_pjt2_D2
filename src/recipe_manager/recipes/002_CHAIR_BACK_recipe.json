@@ -1,166 +1,484 @@
 {
-  "schema": "cad_recipe/1.0",
+  "schema": "recipe/2.0",
   "model_id": "002_CHAIR_BACK",
-  "structure_sha256": "46055c5e5f0948efba34f47fe515cecf19c0b5223a2f55a4b7c49a3ed97818a2",
-  "steps": [
+  "source_cad": {
+    "filename": "002_chair_back.dxf",
+    "sha256": "524d75e3961eef017f3b16b73c8745350adec6e5f942ee2c0f0d68c715b288cb"
+  },
+  "parts": [
+    {
+      "part_id": "PART_001",
+      "size_mm": [
+        75.0,
+        25.0,
+        15.0
+      ]
+    }
+  ],
+  "blocks": [
     {
       "block": "LEG_001_01",
-      "sequence": 1,
-      "stage": 1,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": []
+      "part_id": "PART_001",
+      "center_mm": [
+        -25.0,
+        0.0,
+        7.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "3E"
+      }
     },
     {
       "block": "LEG_002_01",
-      "sequence": 2,
-      "stage": 1,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": []
+      "part_id": "PART_001",
+      "center_mm": [
+        25.0,
+        0.0,
+        7.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "4F"
+      }
     },
     {
       "block": "LEG_001_02",
-      "sequence": 3,
-      "stage": 2,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_001_01"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        -25.0,
+        0.0,
+        22.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "61"
+      }
     },
     {
       "block": "LEG_002_02",
-      "sequence": 4,
-      "stage": 2,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_002_01"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        25.0,
+        0.0,
+        22.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "72"
+      }
     },
     {
       "block": "LEG_001_03",
-      "sequence": 5,
-      "stage": 3,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_001_02"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        -25.0,
+        0.0,
+        37.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "84"
+      }
     },
     {
       "block": "LEG_002_03",
-      "sequence": 6,
-      "stage": 3,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_002_02"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        25.0,
+        0.0,
+        37.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "95"
+      }
     },
     {
       "block": "LEG_001_04",
-      "sequence": 7,
-      "stage": 4,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_001_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        -25.0,
+        0.0,
+        52.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "A7"
+      }
     },
     {
       "block": "LEG_002_04",
-      "sequence": 8,
-      "stage": 4,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_002_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        25.0,
+        0.0,
+        52.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "B8"
+      }
     },
     {
       "block": "SEAT_001_01",
-      "sequence": 9,
-      "stage": 5,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "LEG_001_04",
-        "LEG_002_04"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        -25.0,
+        67.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "CA"
+      }
     },
     {
       "block": "SEAT_001_02",
-      "sequence": 10,
-      "stage": 5,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": [
-        "LEG_001_04",
-        "LEG_002_04"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        67.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "DB"
+      }
     },
     {
       "block": "SEAT_001_03",
-      "sequence": 11,
-      "stage": 5,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": [
-        "LEG_001_04",
-        "LEG_002_04"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        67.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "EC"
+      }
     },
     {
       "block": "BACK_001_01",
-      "sequence": 12,
-      "stage": 6,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "SEAT_001_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        82.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "FE"
+      }
     },
     {
       "block": "BACK_001_02",
-      "sequence": 13,
-      "stage": 7,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "BACK_001_01"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        97.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "110"
+      }
     },
     {
       "block": "BACK_001_03",
-      "sequence": 14,
-      "stage": 8,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "BACK_001_02"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        112.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "122"
+      }
     },
     {
       "block": "BACK_001_04",
-      "sequence": 15,
-      "stage": 9,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "BACK_001_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        127.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "134"
+      }
     },
     {
       "block": "BACK_001_05",
-      "sequence": 16,
-      "stage": 10,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "BACK_001_04"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        142.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "146"
+      }
     }
   ]
 }
