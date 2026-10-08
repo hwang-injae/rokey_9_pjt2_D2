@@ -306,11 +306,19 @@ def test_모르는_up은_오류():
         block_pose(CFG, 'SIDE', 0, 0, 0, 0)
 
 
-def test_두께_잡는_축의_목표는_틈_정보가_없으면_요청을_만들지_않는다():
-    """EDGE_SHORT 목표 + THICKNESS 틈 칸이 없는 응답 → NO_MATCH(틈 정보 없음), 실행 요청 없음."""
+def test_옆세움_목표는_두께_틈이_빠진_응답이면_요청을_만들지_않는다():
+    """EDGE_SHORT 목표 + 수평 축 THICKNESS 가 빠진 응답은 잘못된 값 → 요청 없음."""
     f = flow()
-    r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(blk(up='WIDTH', length=80, width=80)))
-    assert r['status'] == 'NO_MATCH' and r['counts']['no_gap_info'] == 1 and 'request' not in r
+    bad = blk(up='WIDTH', length=80)
+    del bad['gap_mm']['THICKNESS'], bad['clear']['THICKNESS']
+    r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(bad))
+    assert r['status'] != 'PICK' and 'request' not in r
+
+
+def test_옆세움_목표는_두께_틈이_있으면_요청을_만든다():
+    f = flow()
+    r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(blk(up='WIDTH', length=80, thickness=30)))
+    assert r['status'] == 'PICK' and 'request' in r
 
 
 # ---------- 접촉 전후와 그리퍼 상태 (박진용 확인) ----------

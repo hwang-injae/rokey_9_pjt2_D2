@@ -244,7 +244,7 @@ class ScatterFlow:
     @staticmethod
     def _why(counts):
         """제외 이유 개수 → 사람이 읽을 안내 글자(0 인 것은 뺀다)."""
-        names = {'under': '다른 블록에 덮임', 'tilted': '기울어짐', 'other_up': '필요한 자세가 아님', 'no_gap_info': '틈 정보 없음',
+        names = {'under': '다른 블록에 덮임', 'tilted': '기울어짐', 'other_up': '필요한 자세가 아님',
                  'no_clear': '손가락 틈 부족', 'narrow': '틈이 기준보다 좁음', 'invalid': '잘못된 값'}
         parts = [f'{names[k]} {n}개' for k, n in counts.items() if n and k in names]
         return '맞는 블록이 없다: ' + (', '.join(parts) if parts else '이유 없음')
