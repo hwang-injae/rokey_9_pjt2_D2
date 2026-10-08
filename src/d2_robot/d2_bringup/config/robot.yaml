@@ -102,11 +102,6 @@ motion:
   place_up_m: 0.001            # 블록 바닥이 이만큼 떠 있을 때 연다. 닿으면 충돌 감지로 설 수 있고, 2 mm 는 떨어지며 뒤틀림 (10/6 실기 4 -> 2 -> 1 mm)
 
 speed_scale: 0.3               # 속도 비율 (10/6 LV1 실기 0.1 -> 6칸 잡기 시험 뒤 0.3)
-place_tolerance_m: 0.002       # 배치 목표 정밀도 — 판정은 1차 뒤 (W100)
-
-turn:
-  hand_absent_s: 3
-  start_warning_s: 2
 
 stop:
   vision_timeout_s: 1          # 1차 뒤 (W066)
