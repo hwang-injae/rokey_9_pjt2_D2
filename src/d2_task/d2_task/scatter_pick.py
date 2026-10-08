@@ -233,7 +233,14 @@ class ScatterFlow:
         """목표 블록 + find_blocks 응답 → 집기 요청 준비. 반환 dict 의 status:
 
         (후보는 이 함수가 정하지 않는다 — 계산만. 적용은 commit.)
-        PICK          request = PickPlace 목표 칸(block_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m)과 candidate(복사본)
+        PICK          request = PickPlace 목표 칸(block_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m · obstacles)과 candidate(복사본)
+                      obstacles = 같은 응답에서 고른 블록 하나(인덱스)만 뺀 나머지 전부의 중심 자세 [(xyz m, 쿼터니언 xyzw)](under · top 포함, 자르기 없음).
+                      고른 블록만 있었으면 빈 목록 — 정상이다(다른 블록 없음, 공급 칸 가정 상자로 안 돌아감).
+                      기울어진(tilted) 블록도 장애물에 넣는다 — 지금(핵심 단계)은 집기 요청을 막지 않고 IRD 4.2 그대로 '윗면 = 가장 높은 점인 반듯한 상자'로
+                      싣는다(E-68, 10/8 PL). 챌린지 ④(W135)에서 민범진의 기울기 칸으로 정확한 기울기 상자로 바꾼다. 깔린 블록(under)도 장애물이다.
+                      기울어진 블록을 **고르지 않는** 것은 BlockPicker 가 한다(E-43): 그런 블록만 남으면 아래 NO_MATCH.
+        BLOCKED       요청을 만들지 않는다(reason): INVALID_OBSTACLE = 고르지 않은 블록 중 형식이 틀린 것이 있다(조용히 빼지 않는다 — 상자를 모른다).
+                      사람 안내는 guide 'CHECK_BLOCKS'.
         NOT_CONFIGURED 모드 · 열림 폭이 아직 정해지지 않음 — 요청을 만들지 않는다
         EMPTY         공급에 블록이 없다 → 채우기 안내(guide 'REFILL')
         NO_MATCH      블록은 있는데 맞는 후보가 없다 → 제외 이유(counts · message)를 안내(guide 'CHECK_BLOCKS')
@@ -254,11 +261,28 @@ class ScatterFlow:
             return {'status': 'NO_MATCH', 'guide': 'CHECK_BLOCKS', 'counts': dict(picked['counts']),
                     'message': self._why(picked['counts'])}
         c = picked['block']
+        obstacles = self._obstacles(response['blocks'], picked['index'])
+        if isinstance(obstacles, dict):
+            return obstacles
         center, quat = block_pose(self.cfg, c['up'], c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
         request = {'block_id': target['block_id'], 'supply_slot': '', 'grasp': target['grasp'],
                    'pick_pose': (center, quat), 'place_pose': copy.deepcopy(target['place_pose']),
-                   'open_width_m': self.open_width_m}
+                   'open_width_m': self.open_width_m, 'obstacles': obstacles}
         return {'status': 'PICK', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm']}
+
+    def _obstacles(self, blocks, picked_index):
+        """같은 응답에서 고른 인덱스 하나만 빼고 나머지를 장애물 자세로 바꾼다. 반환: 자세 목록, 또는 요청을 막는 BLOCKED dict.
+
+        나머지 중 형식이 틀린 블록이 있으면 일부만 보내지 않고 요청을 막는다(조용히 빼면 그 자리를 비었다고 보고 지나간다).
+        tilted · under(덮임) · top(겹침 중 위)도 모두 상자를 만든다(E-68). tilted 는 지금 '가장 높은 점인 반듯한 상자'(top_z_m 기준), 챌린지 ④ 때 기울기 상자로 바꾼다.
+        under 의 top_z_m 이 그 블록 자신의 윗면인지는 비전(민범진) 확인 전이다.
+        """
+        others = [(i, b) for i, b in enumerate(blocks) if i != picked_index]
+        for i, b in others:
+            if not self.picker.is_valid(b):
+                return {'status': 'BLOCKED', 'reason': 'INVALID_OBSTACLE', 'index': i, 'guide': 'CHECK_BLOCKS',
+                        'message': f'장애물 블록 {i}번의 값이 잘못돼 집기를 시작하지 않는다'}
+        return [block_pose(self.cfg, b['up'], b['yaw_deg'], b['x_m'], b['y_m'], b['top_z_m']) for _, b in others]
 
     @staticmethod
     def _why(counts):

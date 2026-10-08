@@ -307,6 +307,24 @@ def test_CtrlC는_정지요청_뒤에만_기록을_마무리한다():
     assert events == ['shutdown', 'cancel', 'stop', 'finalize', 'executor shutdown', 'destroy', 'ros shutdown']
 
 
+def test_목표에_obstacles가_있으면_그대로_싣고_없으면_빈_목록(node):
+    """W142: 흩뿌림 목표의 장애물 자세를 PickPlace 목표에 싣는다. 공급 칸 목표(칸 없음)는 빈 목록."""
+    sent = []
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda g: sent.append(g) or Future())
+    with_obs = dict(goal(), obstacles=[((0.1, 0.2, 0.0), (0, 0, 0, 1)), ((0.3, 0.2, 0.0), (0, 0, 0, 1))])
+    node.pick_place(with_obs, lambda: False)
+    node.pick_place(goal(), lambda: False)
+    assert sent[0].obstacles == with_obs['obstacles'] and sent[1].obstacles == []
+
+
+def test_open_width_m은_흩뿌림_목표만_싣고_공급_칸은_0(node):
+    """W121 C-10: 흩어진 블록 틈에 맞춘 열림 폭(m)을 목표에 싣는다. 값이 없는 목표(공급 칸)는 0 = robot.yaml 기본 폭."""
+    sent = []
+    node.pick_cli = SimpleNamespace(send_goal_async=lambda g: sent.append(g) or Future())
+    node.pick_place(dict(goal(), open_width_m=0.0865), lambda: False)
+    node.pick_place(goal(), lambda: False)
+    assert (sent[0].open_width_m, sent[1].open_width_m) == (0.0865, 0.0)
+
 # ---------- 집기 요청 피드백 · 결과 수신 시각 수집 (W130, 수집만 — 재시도 동작은 안 바꾼다) ----------
 def fb(step):
     """PickPlace 피드백 메시지 모양(msg.feedback.step) 가짜."""
