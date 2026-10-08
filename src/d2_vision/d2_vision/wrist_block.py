@@ -8,7 +8,7 @@
 설계 · 블록 이름 (E-52, 10/7)
   요청 design_id 칸으로 설계를 고른다(블록 이름에서 잘라 내지 않는다). block_ids 는 전체 블록 이름
   `<design_id>_<역할>_<부품 3자리>_<블록 2자리>`(예 001_CHAIR_BENCH_LEG_001_01)를 그대로 받아 레시피가 만든 이름과 맞춘다.
-  design_id 가 비면 옛 방식(10/8 저녁까지만): 첫 block_id 의 '_B' 앞(001_CHAIR_BENCH_B003 → 001_CHAIR_BENCH).
+  design_id 칸이 비면 설계를 고를 수 없어 실패로 답한다(success=false, reason=ERROR — 아래 '실패 때').
   한 요청은 한 설계다 — 그 설계 레시피에 없는 블록은 그 블록만 unknown.
 
 설계 읽기 — task 와 같은 파라미터 design_source (10/7 민범진 · 한석형 합의). **task 와 손목에 같은 design_source 값을 준다**
@@ -37,7 +37,7 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_ac
   remote 에서 처음 보는 설계이거나 시작 확인(블록 전부)이면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 실패 때: 새 프레임이 시간 안에 안 오거나 posx 를 못 받으면 success=false, reason=TIMEOUT.
          get_design 이 timeout.service_s 안에 답하지 않으면 success=false, reason=TIMEOUT (task_node.get_design 과 같은 코드).
-         get_design 서버 없음 · success=false · 응답 형식 오류, 보정값·레시피를 못 읽음, 설계를 못 고름 → 노드는 뜬 채 success=false, reason=ERROR.
+         get_design 서버 없음 · success=false · 응답 형식 오류, 보정값·레시피를 못 읽음, design_id 칸이 빔 → 노드는 뜬 채 success=false, reason=ERROR.
          (배열은 모두 요청 길이, state unknown, 값 NaN.)
 NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_m 은 present 일 때만 값.
   top_z_m 은 present · occluded(설계 밖 물체 윗면, 참고값) 일 때 값. absent·unknown · 위 블록에 가려진 present 는 dz·top_z 둘 다 NaN.
@@ -48,10 +48,8 @@ NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_
     ros2 run d2_vision wrist_block
   웹 없이 파일로(task 도 -p design_source:=local -p recipe_dir:=… 로 띄운다):
     ros2 run d2_vision wrist_block --ros-args -p design_source:=local -p recipe_dir:=src/recipe_manager/recipes
-시험 호출 (새 — design_id 칸 + 전체 블록 이름):
+시험 호출 (design_id 칸 + 전체 블록 이름):
   ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH, block_ids: [001_CHAIR_BENCH_LEG_001_01, 001_CHAIR_BENCH_SEAT_001_03]}"
-시험 호출 (옛 — design_id 빈 값, 레시피가 아직 옛 이름일 때. 10/8 저녁까지):
-  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{block_ids: [001_CHAIR_BENCH_B001, 001_CHAIR_BENCH_B002]}"
 """
 import json
 import threading
@@ -73,7 +71,7 @@ from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress, JsonQuery
 from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
-from d2_vision.block_checker import BlockChecker, depth_to_base_points, design_of, recipe_from_design, recipe_path
+from d2_vision.block_checker import BlockChecker, depth_to_base_points, recipe_from_design, recipe_path
 from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp
 
 NAN = float('nan')
@@ -168,7 +166,7 @@ class WristBlock(Node):
           → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 recipe_blocks 가 만든 이름(새 형식은 '<model_id>_<블록 이름>').
           파일을 못 찾으면(이름 비었음 · 경로 문자 · 파일 없음) 캐시하지 않아 다음 요청에 다시 찾고, 찾은 파일을 못 읽으면
           (구조 파일 없음 · 형식 틀림 · 블록 크기 다름) None 을 캐시한다(같은 오류를 매번 읽지 않게)."""
-        if not design_id:                     # 설계를 못 고름(design_id 칸이 비었고 '_B' 이름도 없음) — 로그는 on_check 가 남긴다
+        if not design_id:                     # design_id 칸이 비었다 — 블록 이름에서 잘라 내지 않는다(E-52 ④). 로그는 on_check 가 남긴다
             return None, 'ERROR'
         source = 'local' if self.get_parameter('design_source').value == 'local' else 'remote'
         key = (source, design_id)
@@ -328,18 +326,21 @@ class WristBlock(Node):
 
         보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계 · 시작 확인(블록 전부)만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
         + posx → 점군 → BlockChecker → 답. 바깥 영향: get_design · 두산 posx 조회 · 로그.
-        실패: 보정값 없음 · 설계를 못 고름 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · posx 없음 → TIMEOUT
+        실패: 보정값 없음 · design_id 칸이 빔 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · posx 없음 → TIMEOUT
         (모두 state unknown, 값 NaN)."""
         ids = list(req.block_ids)
         if self.T_g2c is None:                # 보정값이 없으면 설계를 받아도 답할 수 없다 — get_design 을 부르지 않는다
             self.get_logger().error('보정값이 없어 답할 수 없다 → ERROR')
             return self._fill(res, ids, reason='ERROR')
-        # 설계 = design_id 칸(E-52). 비었으면 옛 방식으로 첫 '_B' block_id 의 앞(10/8 저녁까지 — remote 면 그 이름으로 get_design).
+        # 설계 = design_id 칸만(E-52 ④ — 블록 이름에서 잘라 내지 않는다. BACK · BASE · BEAM 에도 '_B' 가 있다).
         # 한 요청은 한 설계라고 본다 — 그 설계에 없는 블록은 BlockChecker 가 그 블록만 unknown 으로 답한다
-        design_id = next((d for d in (design_of(req.design_id, i) for i in ids) if d), '')
+        design_id = req.design_id
+        if not design_id:
+            self.get_logger().error('check_progress 요청의 design_id 칸이 비었다(블록 %s …) — 설계를 고를 수 없다 → ERROR' % ids[:1])
+            return self._fill(res, ids, reason='ERROR')
         checker, reason = self.checker_for(design_id, ids)
         if checker is None:
-            self.get_logger().error('설계(%r, design_id 칸 %r)를 못 읽어 답할 수 없다 → %s' % (design_id or ids[:1], req.design_id, reason))
+            self.get_logger().error('설계 %r 를 못 읽어 답할 수 없다 → %s' % (design_id, reason))
             return self._fill(res, ids, reason=reason)
         t_req = self.now()
         posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관

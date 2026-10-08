@@ -5,8 +5,8 @@
 
 입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_blocks(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-52 두 파일 ·
 옛 cad_recipe/1.0 · assembly.recipe/1.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(block_id · center(m, base) · rot 3x3)만 받는다.
-block_id 는 글자 그대로 맞춘다 — 새 전체 이름(001_CHAIR_BENCH_LEG_001_01)이든 옛 이름(001_CHAIR_BENCH_B001)이든 레시피가 만든 이름과 같으면 된다.
-check_progress 요청이 어느 설계 · 어느 레시피 파일인지 고르는 것(design_of · recipe_path)과 get_design 답(design/1)을
+block_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
+(E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/1)을
 recipe_blocks 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
 단위: 이 파일 안은 모두 m · rad(레시피 dict 는 파일과 같은 mm 그대로 넘긴다). 좌표: base_link.
@@ -50,19 +50,6 @@ def height_map(points, origin_xy, half_m, cell_m=CELL_M):
         np.maximum.at(grid, (ix[ok], iy[ok]), points[ok, 2])
     grid[np.isinf(grid)] = NAN             # 점이 없는 셀
     return grid, x0, y0
-
-
-def design_of(design_id, block_id):
-    """check_progress 요청의 블록 하나가 속한 설계 이름(= 레시피 모델 ID)을 고른다. 바깥 영향 없음.
-
-    입력: design_id = 요청의 design_id 칸(글자, 빈 값 가능) · block_id = 요청의 블록 이름 하나.
-    출력: 설계 이름 글자. 고를 수 없으면 빈 글자(부르는 쪽이 ERROR · unknown 으로 답한다).
-      - design_id 가 있으면 그대로(E-52 ④ — 블록 이름에서 설계를 잘라 내지 않는다. BACK · BASE · BEAM 에도 '_B' 가 있어서).
-      - 비었으면 옛 방식(10/8 저녁까지만): block_id 의 마지막 '_B' 앞(001_CHAIR_BENCH_B003 → 001_CHAIR_BENCH). '_B' 가 없으면 빈 글자.
-    """
-    if design_id:
-        return design_id
-    return block_id.rsplit('_B', 1)[0] if '_B' in block_id else ''
 
 
 def recipe_path(recipe_dir, design_id, suffixes):
