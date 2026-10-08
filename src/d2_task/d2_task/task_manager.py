@@ -77,7 +77,7 @@ class TaskManager:
 
     def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False):
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
-        monitor_hmi 는 웹 생존 신호 감시 여부(노드의 remote 모드만 참). 로컬 개발은 웹 없이 동작한다.
+        monitor_hmi 는 웹 생존 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
         만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
@@ -251,7 +251,7 @@ class TaskManager:
 
         select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 [설계 선택] 때 받아 둔 설계로 출발(점검 한 번 더) → CHECK(다시 조회하지 않는다),
         WAIT_SUPPLY 에서는 [계속](관측 자세 도착 뒤), WAIT_HMI 는 웹 재연결 뒤 진행 확인부터 SELECT 로 이어 간다(조회 없음).
-        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 SCAN_REVIEW 를 IDLE 로 돌린다.
+        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 READY·ERROR·SCAN_REVIEW 를 IDLE 로 돌린다(음성 cancel 과 같다, S-16).
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
         거절한다(로컬 파일로 몰래 대신하지 않는다 — 개발용 로컬은 노드가 design_source=local 로 명시해야 한다).
         reason 은 IRD 7장에 이미 있는 코드만 쓴다: 운전 중 'BUSY', 정지 중 'STOPPED', 조회 시간 초과 'TIMEOUT'. 맞는 코드가 없는 거절(설계 없음 ·
@@ -265,11 +265,8 @@ class TaskManager:
             if cmd == 'scan':
                 return self._begin_scan()
             if cmd == 'cancel':
-                if self.state != 'SCAN_REVIEW':
-                    return self._reject(self._busy_reason(), '스캔 검토 화면에서만 취소할 수 있다')
-                self.planner, self.design_id, self.block_id = None, None, None
-                self._clear_run()
-                self._set('IDLE', None, '스캔을 취소했다')
+                if not self._cancel_to_idle():
+                    return self._reject(self._busy_reason(), '준비·오류·스캔 검토 상태에서만 취소할 수 있다')
                 return True, ''
             return self._reject('', f'모르는 명령: {cmd}')
 
@@ -293,12 +290,21 @@ class TaskManager:
                     self._publish('voice_start_ignored', '관측 자세로 가는 중이라 음성 출발을 무시했다')
         elif intent == 'cancel':
             with self._lock:
-                if self.state in ('READY', 'ERROR', 'SCAN_REVIEW'):
-                    if self.state == 'ERROR':
-                        self._finish_run('ERROR')
-                    self.planner, self.design_id, self.block_id = None, None, None
-                    self._clear_run()
-                    self._set('IDLE', None, '취소했다')
+                self._cancel_to_idle()
+
+    def _cancel_to_idle(self):
+        """(잠금 안) READY·ERROR·SCAN_REVIEW 에서 취소해 IDLE 로 간다. 반환: 취소했나. 화면 cancel 과 음성 cancel 이 같이 쓴다(S-16).
+
+        ERROR 에서는 조립 기록을 ERROR 로 닫는다. 운전 중에는 받지 않는다. 로봇은 움직이지 않는다.
+        """
+        if self.state not in ('READY', 'ERROR', 'SCAN_REVIEW'):
+            return False
+        if self.state == 'ERROR':
+            self._finish_run('ERROR')
+        self.planner, self.design_id, self.block_id = None, None, None
+        self._clear_run()
+        self._set('IDLE', None, '취소했다')
+        return True
 
     # ---------- 작업 스레드 ----------
     def run_once(self):
@@ -505,7 +511,7 @@ class TaskManager:
         self._scan_poses, self._scan_index = tuple(poses), 0
         self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/1 은 만들지 않는다
         self.logger.log('scan', None, 'start')
-        self._set('SCAN_MOVE', None, '스캔 촬영 자세로 갑니다')
+        self._set('SCAN_MOVE', 'scan_running', '스캔 촬영 자세로 갑니다')
         return True, ''
 
     def _scan_move(self):
@@ -517,7 +523,7 @@ class TaskManager:
         with self._lock:
             if self.halted():
                 return self._failed('STOPPED', '스캔 자세 이동')
-            self._set('SCAN_CAPTURE', None, f'{pose}에서 촬영합니다')
+            self._set('SCAN_CAPTURE', 'scan_running', f'{pose}에서 촬영합니다')
 
     def _scan_capture(self):
         """현재 자세·run_id로 점군을 수집한다. points는 비음수 정수. 잘못된 답은 SCAN_FAILED, 정지 뒤 답은 버린다."""
@@ -533,7 +539,7 @@ class TaskManager:
                 return self._failed('STOPPED', '스캔 촬영 결과 적용')
             self.logger.log('scan_capture', None, f'{pose}: {points}')
             self._scan_index += 1
-            self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', None, '스캔 촬영을 마쳤습니다')
+            self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', 'scan_running', '스캔 촬영을 마쳤습니다')
 
     def _scan_infer(self):
         """모은 점군을 추론해 scan_result/1로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
@@ -580,7 +586,7 @@ class TaskManager:
                 return self._failed('STOPPED', '스캔 추론 결과 적용')
             self.io.publish_scan_result(result)
             self._finish_run('DONE')
-            self._set('SCAN_REVIEW', None, '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
+            self._set('SCAN_REVIEW', 'scan_review', '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
 
     # ---------- 실패 · 공급 처리 ----------
     def _grasp_failed(self):
@@ -807,7 +813,7 @@ class TaskManager:
         if self._timeout_pending:
             return False, 'STOPPED', '시간 초과 뒤 정지 상태 확인을 기다린다'
         if not self._hmi_fresh():
-            return False, 'BUSY', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'
+            return False, '', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'      # IRD 7장 BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → 맞는 코드가 없어 비움(E-62)
         st = self.safety
         if st is None:
             return False, '', '정지 노드 신호를 아직 못 받았다'

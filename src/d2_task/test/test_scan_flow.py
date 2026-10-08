@@ -220,3 +220,31 @@ def test_실제_노드_깨진JSON과_무한대_응답거절(node, text):
     """서버의 형식 오류를 성공 응답이나 다음 상태로 전달하지 않는다."""
     node.infer_cli = Client(completed(SimpleNamespace(success=True, reason='', response_json=text)))
     assert node.scan_infer('run', lambda: False) == (False, 'ERROR', None)
+
+
+def test_스캔_상태_알림은_IRD_이름을_쓴다(tmp_path):
+    """E-62: 촬영 중(SCAN_MOVE · CAPTURE · INFER)은 scan_running, 검토 화면은 scan_review (message_id null 아님)."""
+    m, io = make(tmp_path)
+    review(m)
+    got = {s['state']: s['message_id'] for s in io.states if s['state'].startswith('SCAN_')}
+    assert got == {'SCAN_MOVE': 'scan_running', 'SCAN_CAPTURE': 'scan_running', 'SCAN_INFER': 'scan_running', 'SCAN_REVIEW': 'scan_review'}
+    m.finalize()
+
+
+def test_화면_cancel은_READY_ERROR_SCAN_REVIEW에서_받고_운전_중에는_거절(tmp_path):
+    """E-62 ㉮: 음성 cancel 과 같은 상태에서 받는다(S-16 음성 = 버튼). ERROR 는 기록을 ERROR 로 닫는다."""
+    m, io = make(tmp_path)
+    review(m)                                                        # SCAN_REVIEW
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE'
+    m, io = make(tmp_path)
+    assert m.command('select_design', 'bench') == (True, '') and m.state == 'READY'     # READY
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE' and m.planner is None
+    m, io = make(tmp_path)
+    assert m.command('scan')[0]
+    io.move_script = [(False, 'ERROR')]
+    drive(m, 'ERROR')                                                # ERROR
+    assert m.command('cancel') == (True, '') and m.state == 'IDLE' and m.run_id is None
+    m, io = make(tmp_path)
+    assert m.command('scan')[0] and m.state == 'SCAN_MOVE'            # 운전 중
+    assert m.command('cancel') == (False, 'BUSY') and m.state == 'SCAN_MOVE'
+    m.finalize()
