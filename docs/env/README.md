@@ -36,7 +36,7 @@
 
 - 어느 PC가 로봇 PC·웹 PC인지는 (미정)이다. 정하면 여기에 적는다(웹 PC IP는 `robot.yaml` `mqtt.host`에).
 - 로봇 PC 노드는 어느 PC에서나 돌게 짠다. 옮기지 않는 것은 브링업·정지 노드(로봇 PC)이고, 카메라는 그 카메라를 처리하는 PC에 꽂는다. **웹 PC에는 ROS 2·두산 환경을 깔지 않는다**(10/6 E-26).
-- **늘리는 기준:** 10/8 오후 책상 가운데 기둥 조립 실기(W118) 때 잰 부하가 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 task · 다리를 3번째 PC로 옮긴다(W053).
+- **늘리는 기준:** 책상 가운데 기둥 조립 실기(W118) 때 잰 부하가 CPU 70%를 넘거나 카메라 처리가 초당 15장 아래면 task · 다리를 3번째 PC로 옮긴다(W053).
 - **컨테이너는 성능을 바꾸지 않는다(S-15).** 과부하는 노드를 다른 PC로 옮기거나 처리량(해상도 · Hz)을 줄여 푼다. 컨테이너는 필요한 것만(브로커 · DB · 웹 서버) 쓴다(PL 10/6).
 
 
@@ -48,7 +48,7 @@ git clone https://github.com/hwang-injae/rokey_9_pjt2_D2.git
 cd rokey_9_pjt2_D2
 ```
 
-- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100719.md)에 있다.
+- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100821.md)에 있다.
 - source 순서는 늘 같다: `/opt/ros/jazzy` → 두산 워크스페이스 → 이 저장소. 빌드 명령은 [src/README](../../src/README.md) '빌드 · 시험'.
 
 ## 3. 버전 확인
@@ -89,7 +89,7 @@ ros2 launch d2_bringup real_moveit.launch.py mode:=real host:=192.168.1.100
 
 - **실기 PC 유선 IP:** IPv4를 수동으로 `192.168.1.x`, 넷마스크 255.255.255.0. x는 로봇(.100)·그리퍼(.1)와 겹치지 않게 한다. 연결 확인은 `ping -c 3 192.168.1.100`, `ping -c 3 192.168.1.1`.
 - 실기 모드 사전 설정(재부팅하면 풀린다): `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0`
-- 티치펜던트와 ROS가 로봇을 동시에 제어하지 않게 한다. **실기 중 펜던트 안전 설정 화면에 들어가지 않는다** — 서보가 꺼지고(SAFE_OFF) ROS 서보 명령이 무시돼 브링업을 다시 켜야 풀린다([복구 절차](../복구절차_정지뒤다시시작_v1_100719.md) §3-2, 10/7 실기).
+- 티치펜던트와 ROS가 로봇을 동시에 제어하지 않게 한다. **실기 중 펜던트 안전 설정 화면에 들어가지 않는다** — 서보가 꺼지고(SAFE_OFF) ROS 서보 명령이 무시돼 브링업을 다시 켜야 풀린다([복구 절차](../복구절차_정지뒤다시시작_v1_100821.md) §3-2, 10/7 실기).
 - 런치는 **패키지 이름으로** 실행한다(`ros2 launch d2_bringup …`). `src/…` 경로로 실행하면 `__pycache__`가 생긴다.
 - 정지 처리가 들어간 프로그램은 시작할 때 아래 두 줄이 나와야 한다. `없음`이나 `안 보인다`가 나오면 실기를 하지 않는다(R-01).
 
@@ -137,7 +137,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 로봇 PC는 60
 
 ## 6-1. MQTT (PC 사이 — 웹 PC 브로커 ↔ 로봇 PC 다리)
 
-PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100819.md#10-pc-사이-통신--mqtt-다리-e-27e-30)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
+PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_100821.md#10-pc-사이-통신--mqtt-다리-e-27e-30)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
 
 ```bash
 # 두 PC 모두 — 확인용 클라이언트
@@ -155,7 +155,7 @@ sudo apt install python3-paho-mqtt        # 없으면 pip3 install --user paho-m
 | 끝까지 | 화면 [출발] → `d2/hmi/command/req` → 로봇 PC → `d2/task/state`가 바뀜 | `mosquitto_sub -t 'd2/#' -v`로 전부 보임 |
 
 - 웹 PC IP는 `robot.yaml` `mqtt.host`(로봇 PC가 읽음). 브로커는 유선 LAN 안에서만 연다(인터넷 노출 없음). 인증은 10/8 결정(안: 없음).
-- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다.
+- 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS — 아직 없음)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다. 다리 없이 task를 가상으로 돌릴 때는 웹 연결 감시를 끈다 — `ros2 run d2_task task --ros-args -p monitor_hmi:=false`(기본 true라 안 끄면 `/d2/hmi/alive`가 없어 출발 · 스캔이 거절됨, 10/8 E-62). 설계도 웹 없이 읽으려면 `-p design_source:=local -p recipe_dir:=<레시피 폴더>`([src/README](../../src/README.md) '빌드 · 시험').
 
 
 ## 7. Docker
@@ -171,15 +171,15 @@ docker --version
 | 컨테이너(서비스 이름) | 안에서 도는 것 | 따로 두는 이유 | 만드는 사람 (S-17) |
 |---|---|---|---|
 | `mosquitto` | MQTT 브로커(eclipse-mosquitto, 1883) — `web/mosquitto/mosquitto.conf` | PC 사이 통신의 가운데 서버. 설치 없이 이미지 1줄 | 황인재 · 10/6 저녁~10/7 (W102) |
-| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/8~10 (W088) |
-| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. 10/7은 호스트로 띄워도 된다 | 황인재 · 10/7 (W102 · W126) |
+| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/12 저녁 ~ 10/13 오전 (W088 — 10/8 HMI 일정 다시 잡음) |
+| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. compose(10/12) 전에는 호스트로 띄워도 된다 | 황인재 · backend 10/8 · 화면 · 저장소(JSON 폴더) 10/10 오전 · compose 10/12 (W102 · W126 — 10/8 HMI 일정 다시 잡음) |
 
 | 호스트에서 바로 | 이유 |
 |---|---|
 | 음성 (웹 PC) | 마이크 장치를 컨테이너에 넘기기가 번거롭다. `web/backend/voice.py` → Whisper API → MQTT |
 | 로봇 PC 전부(브링업 · 동작 · 그리퍼 · 정지 · 비전 · task · 다리) | 10/3에 시험한 호스트 환경(두산 드라이버 · MoveIt2 · RealSense)을 그대로 쓴다. 다리는 paho-mqtt만 더 깐다 |
 
-**컨테이너는 그 안에 넣는 것의 담당이 만든다(10/5 S-17).** 브로커는 W102로 먼저 띄워 쓰고, 두 PC 연결 확인은 10/8 오전(W129). 1시간 넘게 막히면 일단 호스트로 돌리고 10/8에 마저 한다.
+**컨테이너는 그 안에 넣는 것의 담당이 만든다(10/5 S-17).** 브로커는 W102로 먼저 띄워 쓰고, 두 PC 연결 확인은 W129(일정표). 1시간 넘게 막히면 일단 호스트로 돌리고 compose(10/12) 때 마저 한다.
 
 컨테이너는 성능을 바꾸지 않는다(1장). DB는 PostgreSQL 16(10/6 21시 E-39) — W088 전에는 저장소 인터페이스가 JSON 파일 폴더로 돈다. 띄우는 모양은 아래와 같다(안).
 
@@ -205,7 +205,7 @@ docker compose logs -f web    # 키 읽힘(값은 안 찍음) · 브로커 연�
 
 - OpenAI 키는 **PC마다 `.env` 파일에만** 둔다. 코드는 환경 변수로 읽는다.
 - `.env`는 `.gitignore`에 들어 있다. 커밋 전에 `git status`로 `.env`가 없는지 본다. PR 검사도 키 모양 글자와 `.env`를 막는다.
-- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100719.md)).
+- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100821.md)).
 
 ## 9. 작업 전 확인
 
