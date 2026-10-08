@@ -47,7 +47,7 @@
   scan_frames  scan_capture · find_blocks 가 평균 낼 깊이 프레임 수(10 — 30 fps 면 0.33초, task 의 3초 제한 안. 45장까지 1.5초 안)
   scan_dir     스캔 결과 폴더(비우면 ~/d2_data/scan) — <run_id>/color.png · cloud.ply · blocks.json
   yolo_model   YOLO seg 모델 파일(.pt) 경로. 비우거나 못 읽으면 예비 마스크(엣지 + 깊이)로 간다(켤 때 로그 한 번)
-  yolo_conf    YOLO 검출 신뢰도 문턱(0.5)
+  yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
   table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m 를 읽는다.
 
@@ -146,7 +146,7 @@ class WristBlock(Node):
         self.declare_parameter('scan_frames', 10)
         self.declare_parameter('scan_dir', '')
         self.declare_parameter('yolo_model', '')
-        self.declare_parameter('yolo_conf', 0.5)
+        self.declare_parameter('yolo_conf', 0.55)
         self.declare_parameter('status_hz', 2.0)
 
         self.bridge = CvBridge()
