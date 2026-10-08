@@ -216,7 +216,7 @@ def test_CSV_머리줄로_읽고_칸_순서에_의존하지_않는다(tmp_path):
     assert RecipeDocument.load(tmp_path, MODEL).placements == RecipeDocument.load(FIXTURES, MODEL).placements
 
 
-@pytest.mark.parametrize('drop', ['block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256'])
+@pytest.mark.parametrize('drop', ['block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema'])
 def test_CSV_필수_칸이_빠지면_거절(tmp_path, drop):
     copy_pair(tmp_path)
     rows = list(csv.DictReader(io.StringIO((tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8'))))
@@ -326,3 +326,31 @@ def test_웹이_import하는_두_파일은_ROS를_가져오지_않는다(name):
         elif isinstance(n, ast.ImportFrom) and n.module: mods.add(n.module.split('.')[0])
     ros = {'rclpy', 'std_msgs', 'geometry_msgs', 'd2_interfaces', 'd2_motion', 'ament_index_python', 'rosidl_runtime_py'}
     assert not (mods & ros), mods & ros
+
+
+def test_CSV_schema_칸이_옛_형식이면_받은_schema를_적어_거절(tmp_path):
+    """한세교 E-69 PR: CSV 에 schema 칸(모든 줄 placements/2.0)을 더했다 — 읽는 쪽이 앞자리 확인으로 거절할 수 있게."""
+    copy_pair(tmp_path)
+    text = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8')
+    (tmp_path / f'{MODEL}_placements.csv').write_text(text.replace('placements/2.0', 'cad_recipe/1.0'), encoding='utf-8')
+    with pytest.raises(ValueError, match='cad_recipe/1.0'):
+        RecipeDocument.load(tmp_path, MODEL)
+
+
+def test_CSV_schema_칸이_줄마다_다르면_거절(tmp_path):
+    copy_pair(tmp_path)
+    lines = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8').splitlines()
+    lines[-1] = lines[-1].replace('placements/2.0', 'placements/3.0')
+    (tmp_path / f'{MODEL}_placements.csv').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    with pytest.raises(ValueError, match='schema'):
+        RecipeDocument.load(tmp_path, MODEL)
+
+
+@pytest.mark.parametrize('model_id', ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL'])
+def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
+    """생성 쪽(RecipeBuilder.calculate_recipe_sha256, 한세교)과 읽는 쪽(recipe_sha256)이 같은 값을 내야 모든 파일이 해시 때문에 거절되지 않는다."""
+    from d2_task.recipe_builder import RecipeBuilder
+    doc = RecipeDocument.load(FIXTURES, model_id)
+    assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
+    if model_id == '001_CHAIR_BENCH':
+        assert doc.placements['recipe_sha256'].startswith('d3f0f71d') and doc.placements['recipe_sha256'].endswith('f1e8')     # 한세교 시험에 고정된 벤치 값

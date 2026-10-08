@@ -1,6 +1,7 @@
-"""recipe_manager(CAD → 레시피, E-52) — 기본 설계 4종을 DXF에서 다시 만들면 저장된 구조 · 조립 · 배치표와 같고,
-이름 규칙 · 번호 순서 · 겹침 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · 빠진 CAD 속성을 거부한다."""
+"""recipe_manager(CAD → 레시피 recipe/2.0 + 조립 방법 placements/2.0, 10/8 E-69) — 기본 설계 4종을 DXF에서 다시 만들면
+저장된 _recipe.json · _placements.csv 와 같고, 짝 해시 · 이름 규칙 · 번호 순서 · 겹침 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · 빠진 CAD 속성을 거부한다."""
 import copy
+import csv
 import hashlib
 import itertools
 import json
@@ -11,18 +12,18 @@ import pytest
 from conftest import ROOT
 
 RM = ROOT / 'src' / 'recipe_manager'
-sys.path.insert(0, str(RM))
-from recipe_manager.recipe_builder import RecipeBuilder  # noqa: E402
+sys.path.insert(0, str(ROOT / 'src' / 'd2_task'))
+from d2_task.recipe_builder import PLACEMENT_COLUMNS, RecipeBuilder  # noqa: E402
 
 DESIGNS = [('001_CHAIR_BENCH', '001_chair_bench'), ('002_CHAIR_BACK', '002_chair_back'), ('003_DESK_STAND', '003_desk_stand'),
            ('004_DESK_PEDESTAL', '004_desk_pedestal')]
 
 
-def make_boxes(structure):
-    """저장된 구조(중심 · 회전 · 치수)로 블록 꼭짓점 8개씩을 만든다 — DXF 없이 RecipeBuilder 를 시험한다."""
-    sizes = {p['part_id']: p['size_mm'] for p in structure['parts']}
+def make_boxes(recipe):
+    """저장된 레시피(중심 · 회전 · 치수)로 블록 꼭짓점 8개씩을 만든다 — DXF 없이 RecipeBuilder 를 시험한다."""
+    sizes = {p['part_id']: p['size_mm'] for p in recipe['parts']}
     boxes = []
-    for b in structure['blocks']:
+    for b in recipe['blocks']:
         R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['part_id']]]
         corners = [tuple(c[i] + sum(R[i][k] * sg[k] * half[k] for k in range(3)) for i in range(3))
                    for sg in itertools.product((-1, 1), repeat=3)]
@@ -31,64 +32,94 @@ def make_boxes(structure):
 
 
 def load_saved(model_id):
-    """저장된 구조 · 조립 파일 → (구조 dict, 조립 dict, 조립에서 되살린 CAD 속성 hints)."""
-    structure = json.loads((RM / 'recipes' / f'{model_id}_structure.json').read_text(encoding='utf-8'))
+    """recipes/ 의 두 파일 → (레시피 dict, CSV 에서 읽은 조립 steps, steps 에서 되살린 CAD 속성 hints).
+
+    CSV 는 글자라 sequence · stage 는 정수로, supports 는 ';' 로 나눠 placements/2.0 steps 와 같은 모양으로 바꾼다.
+    """
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
-    hints = {s['block']: {'SEQ': str(s['sequence']), 'STAGE': str(s['stage']), 'GRASP': s['grasp']} for s in recipe['steps']}
-    return structure, recipe, hints
+    with open(RM / 'recipes' / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
+        rows = list(csv.DictReader(f))
+    steps = [{'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+              'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]}
+             for r in rows]
+    hints = {s['block']: {'SEQ': str(s['sequence']), 'STAGE': str(s['stage']), 'GRASP': s['grasp']} for s in steps}
+    return recipe, steps, hints
 
 
 @pytest.fixture
 def bench():
-    """벤치(001) 저장 레시피 → (builder, 구조, 조립, hints)."""
+    """벤치(001) 저장 레시피 → (builder, 레시피, 조립 steps, hints)."""
     return (RecipeBuilder(), *load_saved('001_CHAIR_BENCH'))
 
 
-# 기본 설계 4종: DXF → 구조 · 조립 · 배치표가 저장된 파일과 같다 (블록 이름 · 순서 · 잡기는 DXF 에서만 온다 — 계획 파일 없음)
+# 기본 설계 4종: DXF → 두 파일이 저장된 recipes/ 파일과 글자까지 같다 (블록 이름 · 순서 · 잡기는 DXF 에서만 온다 — 계획 파일 없음)
 @pytest.mark.parametrize('model_id, cad', DESIGNS)
-def test_dxf_rebuild_matches_saved_files(model_id, cad):
+def test_dxf_build_matches_saved_files(model_id, cad, tmp_path):
     pytest.importorskip('ezdxf')
     sys.path.insert(0, str(RM / 'recipe_manager'))
     from main import RecipeManager
-    manager = RecipeManager(RM / 'recipes')
-    structure, hints = manager.load_structure(RM / 'cads' / f'{cad}.dxf', model_id)
-    text = manager.builder.make_json_text(structure)
-    assert text == (RM / 'recipes' / f'{model_id}_structure.json').read_text(encoding='utf-8')
-    recipe = manager.builder.make_recipe(structure, hashlib.sha256(text.encode('utf-8')).hexdigest(), hints)
-    assert manager.builder.make_json_text(recipe) == (RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8')
-    csv_lines = (RM / 'recipes' / f'{model_id}_placements.csv').read_text(encoding='utf-8').splitlines()
-    assert len(csv_lines) == len(recipe['steps']) + 1 and csv_lines[1].startswith(f'{model_id}_{recipe["steps"][0]["block"]},')
+    RecipeManager(tmp_path).build_recipe(RM / 'cads' / f'{cad}.dxf')
+    names = [f'{model_id}_placements.csv', f'{model_id}_recipe.json']
+    assert sorted(p.name for p in tmp_path.iterdir()) == names
+    for name in names:
+        assert (tmp_path / name).read_bytes() == (RM / 'recipes' / name).read_bytes(), name
 
 
-# 폴더: cads/ 에는 CAD 만(계획 파일 없음), recipes/ 에는 모형마다 구조 · 조립 · 배치표 3개만(블록 JSON 파일은 두지 않음 — 웹이 변환기 ②로 바꿈, E-59)
+# 폴더: cads/ 에는 CAD 만(계획 파일 없음), recipes/ 에는 모형마다 _recipe.json · _placements.csv 2개만(_structure.json 없앰 — E-69)
 def test_folders_hold_only_cad_and_results():
     assert not list((RM / 'cads').glob('*plan*'))
     names = sorted(p.name for p in (RM / 'recipes').iterdir())
-    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('structure.json', 'recipe.json', 'placements.csv'))
+    assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('recipe.json', 'placements.csv'))
 
 
-# 조립 파일의 structure_sha256 = 저장된 구조 파일 바이트의 sha256 (읽는 쪽이 이 값으로 구조가 바뀌었는지 본다)
+# 저장된 두 파일의 짝: 레시피 schema recipe/2.0, CSV 칸 = PLACEMENT_COLUMNS, 모든 줄 recipe_sha256 = 레시피 객체 해시 · schema placements/2.0
 @pytest.mark.parametrize('model_id, cad', DESIGNS)
-def test_structure_sha256_matches_saved_bytes(model_id, cad):
-    raw = (RM / 'recipes' / f'{model_id}_structure.json').read_bytes()
+def test_saved_placements_match_recipe(model_id, cad):
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
-    assert recipe['schema'] == 'cad_recipe/1.0' and recipe['structure_sha256'] == hashlib.sha256(raw).hexdigest()
+    with open(RM / 'recipes' / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert recipe['schema'] == 'recipe/2.0' and recipe['model_id'] == model_id
+    assert tuple(reader.fieldnames) == PLACEMENT_COLUMNS
+    assert {(r['recipe_sha256'], r['schema']) for r in rows} == {(RecipeBuilder().calculate_recipe_sha256(recipe), 'placements/2.0')}
+    assert sorted(r['block'] for r in rows) == sorted(b['block'] for b in recipe['blocks'])
 
 
-# 저장 구조로 다시 만든 구조 · 조립이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)
+# 짝 확인 해시: 키 정렬 · 공백 없는 JSON 의 sha256 — 키 순서 · 들여쓰기가 바뀌어도(DB · MQTT 로 다시 써도) 같고, 값이 바뀌면 달라진다.
+# 값은 고정(10/8 한세교) — 계산 방법을 바꾸면 이 시험이 깨져야 한다.
+def test_recipe_sha256_is_fixed_canonical_json(bench):
+    builder, recipe, _, _ = bench
+    rewritten = json.loads(json.dumps(dict(reversed(list(recipe.items()))), indent=4))
+    assert builder.calculate_recipe_sha256(rewritten) == builder.calculate_recipe_sha256(recipe)
+    canonical = json.dumps(recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    assert builder.calculate_recipe_sha256(recipe) == hashlib.sha256(canonical).hexdigest()
+    assert builder.calculate_recipe_sha256(recipe) == BENCH_RECIPE_SHA256
+    moved = copy.deepcopy(recipe)
+    moved['blocks'][0]['center_mm'][0] += 1
+    assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
+
+
+BENCH_RECIPE_SHA256 = 'd3f0f71dd838de67ca30e13a1185412899a45e37091b4ba5aee12dc20fa9f1e8'   # 벤치 레시피(recipe/2.0) 해시 — 계산 방법이 바뀌면 깨진다
+
+
+# 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)
 def test_boxes_round_trip_to_same_recipe(bench):
-    builder, structure, recipe, hints = bench
-    rebuilt = builder.make_structure(make_boxes(structure), structure['model_id'],
-                                     structure['source_cad']['filename'], structure['source_cad']['sha256'])
-    assert rebuilt == structure
-    assert builder.make_recipe(rebuilt, recipe['structure_sha256'], hints) == recipe
-    assert recipe['steps'][-1]['supports'] == ['LEG_001_04', 'LEG_002_04']
-    assert {s['grasp']: s['grasp_axis'] for s in recipe['steps']} == {'FLAT_SHORT': 'WIDTH', 'FLAT_LONG': 'LENGTH'}
+    builder, recipe, steps, hints = bench
+    rebuilt = builder.make_recipe(make_boxes(recipe), recipe['model_id'],
+                                  recipe['source_cad']['filename'], recipe['source_cad']['sha256'])
+    assert rebuilt == recipe
+    placements = builder.make_placements(rebuilt, hints)
+    assert placements['schema'] == 'placements/2.0' and placements['recipe_sha256'] == builder.calculate_recipe_sha256(recipe)
+    assert placements['steps'] == steps
+    assert placements['steps'][0]['block_id'] == '001_CHAIR_BENCH_' + placements['steps'][0]['block']
+    assert placements['steps'][-1]['supports'] == ['LEG_001_04', 'LEG_002_04']
+    assert {s['grasp']: s['grasp_axis'] for s in placements['steps']} == {'FLAT_SHORT': 'WIDTH', 'FLAT_LONG': 'LENGTH'}
 
 
-# 이름 규칙: 꼴이 틀림 · 같은 이름 두 번 · 번호가 위치 순서와 다름(아래층부터 · 앞 → 뒤 · 왼 → 오른) · 번호 빠짐 → 거부
+# 이름 규칙: 꼴이 틀림 · 옵션 두 개(역할 한 단어 + 옵션 0~1) · 같은 이름 두 번 · 번호가 위치 순서와 다름(아래층부터 · 앞 → 뒤 · 왼 → 오른) · 번호 빠짐 → 거부
 @pytest.mark.parametrize('rename, message', [
     ({'LEG_001_01': 'B001'}, 'block name must be'),
+    ({'SEAT_001_01': 'SEAT_ARM_REST_001_01'}, 'block name must be'),
     ({'LEG_001_01': 'LEG_001_02', 'LEG_001_02': 'LEG_001_02'}, 'used twice'),
     ({'LEG_001_01': 'LEG_001_02', 'LEG_001_02': 'LEG_001_01'}, 'bottom → top'),
     ({'SEAT_001_01': 'SEAT_001_03', 'SEAT_001_03': 'SEAT_001_01'}, 'front → rear'),
@@ -97,21 +128,29 @@ def test_boxes_round_trip_to_same_recipe(bench):
     ({'SEAT_001_03': 'SEAT_001_04'}, 'must run 01..03'),
 ])
 def test_bad_block_names_rejected(bench, rename, message):
-    builder, structure, _, _ = bench
-    boxes = [dict(b, block=rename.get(b['block'], b['block'])) for b in make_boxes(structure)]
+    builder, recipe, _, _ = bench
+    boxes = [dict(b, block=rename.get(b['block'], b['block'])) for b in make_boxes(recipe)]
     with pytest.raises(ValueError, match=message):
-        builder.make_structure(boxes, 'X', 'x.dxf', '0')
+        builder.make_recipe(boxes, 'X', 'x.dxf', '0')
 
 
-# 형상 오류: 같은 자리에 두 블록(겹침) · 책상 아래 블록은 구조를 만들 때 거부한다
+# 옵션 하나(LEG_WHEEL)는 받는다 — 부품 번호는 역할 + 옵션 조합마다 따로
+def test_one_option_name_accepted(bench):
+    builder, recipe, _, _ = bench
+    rename = {f'LEG_002_0{k}': f'LEG_WHEEL_001_0{k}' for k in range(1, 5)}
+    boxes = [dict(b, block=rename.get(b['block'], b['block'])) for b in make_boxes(recipe)]
+    assert {b['block'] for b in builder.make_recipe(boxes, 'X', 'x.dxf', '0')['blocks']} >= set(rename.values())
+
+
+# 형상 오류: 같은 자리에 두 블록(겹침) · 책상 아래 블록은 레시피를 만들 때 거부한다
 def test_overlap_and_below_table_rejected(bench):
-    builder, structure, _, _ = bench
-    boxes = make_boxes(structure)
+    builder, recipe, _, _ = bench
+    boxes = make_boxes(recipe)
     with pytest.raises(ValueError, match='overlap'):
-        builder.make_structure(boxes + [dict(boxes[8], block='SEAT_002_01')], 'X', 'x.dxf', '0')
+        builder.make_recipe(boxes + [dict(boxes[8], block='SEAT_002_01')], 'X', 'x.dxf', '0')
     sunk = [dict(b, vertices=[(x, y, z - 10) for x, y, z in b['vertices']]) for b in boxes]
     with pytest.raises(ValueError, match='below table'):
-        builder.make_structure(sunk, 'X', 'x.dxf', '0')
+        builder.make_recipe(sunk, 'X', 'x.dxf', '0')
 
 
 # CAD 속성 오류: 받침보다 먼저 놓기(뜬 블록) · 순서 빠짐 · 단계 건너뜀 · 잡기 상태가 CAD와 다름 · 속성 빠짐 · 모르는 잡기 이름
@@ -125,61 +164,17 @@ def test_overlap_and_below_table_rejected(bench):
     (lambda h: h['LEG_001_01'].update(SEQ='one'), 'must be integers'),
 ])
 def test_bad_cad_attributes_rejected(bench, break_hints, message):
-    builder, structure, recipe, hints = bench
+    builder, recipe, _, hints = bench
     hints = copy.deepcopy(hints)
     break_hints(hints)
     with pytest.raises(ValueError, match=message):
-        builder.make_recipe(structure, recipe['structure_sha256'], hints)
+        builder.make_placements(recipe, hints)
 
 
-# 옛 GRASP 속성(SIDE_25 · END_75 — 지금 DXF 값)은 CAD 배치를 보고 6가지 이름으로, 수직 닫힘 축은 거부
+# 옛 GRASP 속성(SIDE_25 · END_75)은 CAD 배치를 보고 6가지 이름으로, 수직 닫힘 축은 거부
 def test_legacy_grasp_attributes(bench):
-    builder, structure, recipe, hints = bench
+    builder, recipe, steps, hints = bench
     legacy = {k: dict(v, GRASP={'FLAT_SHORT': 'SIDE_25', 'FLAT_LONG': 'END_75'}[v['GRASP']]) for k, v in hints.items()}
-    assert builder.make_recipe(structure, recipe['structure_sha256'], legacy) == recipe
+    assert builder.make_placements(recipe, legacy)['steps'] == steps
     with pytest.raises(ValueError, match='vertical'):
-        builder.make_recipe(structure, recipe['structure_sha256'], dict(legacy, LEG_001_01=dict(hints['LEG_001_01'], GRASP='THICKNESS')))
-
-
-# 변환기 ①(W110 · W139): 기본 설계 4종을 블록 JSON(변환기 ②)으로 바꿨다가 다시 레시피로 — 로봇 목표(중심 · 회전 · 순서 · 단계 · 잡기)가
-# CAD 레시피와 같다(V-45). 이름은 역할을 모르므로 BLOCK_001_<번호>. 검사 묶음에 붙이면 check_design 이 두 파일을 돌려준다.
-@pytest.mark.parametrize('model_id, cad', DESIGNS)
-def test_blocks_to_recipe_matches_cad_recipe(model_id, cad, robot_cfg):
-    # E-69 전환(10/8): task 의 RecipeDocument · 변환기 ② · 검사 묶음이 recipe/2.0 + placements/2.0 두 문서로 바뀌었다. 레시피 도구의 recipes/ 와 변환기 ①이
-    # 아직 E-52 형식이면(한세교 E-69 PR 병합 전) 이 연결 시험은 켜지 않는다. 그 PR이 이 시험을 새 계약({recipe, placements})으로 고친다.
-    if json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8')).get('schema') != 'recipe/2.0':
-        pytest.skip('recipes/ 가 아직 E-52 형식 — 한세교 E-69 PR 병합 때 이 시험을 새 계약으로 고친다')
-    sys.path.insert(0, str(ROOT / 'src' / 'd2_task'))
-    from d2_motion import motion_math as mm
-    from d2_task.design_checker import DesignChecker
-    from d2_task.recipe_document import RecipeDocument
-    from d2_task.recipe_to_blocks import RecipeToBlocks
-    from recipe_manager.blocks_to_recipe import BlocksToRecipe
-    block_mm = [v * 1000.0 for v in robot_cfg['block_size_m']]
-    doc = RecipeDocument.load(RM / 'recipes', model_id)
-    request = RecipeToBlocks(model_id.lower(), 'test', block_mm).convert(doc.recipe, doc.structure)
-    checker = DesignChecker(robot_cfg)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, block_mm).convert
-    result = checker.check(request)
-    assert result['ok'], result['errors']
-    converted = {'structure': result['structure'], 'recipe': result['recipe']}
-    assert converted['recipe']['steps'][0]['block'].startswith('BLOCK_001_')
-    cad = mm.recipe_blocks(robot_cfg, mm.load_recipe(str(RM / 'recipes' / f'{model_id}_recipe.json')))
-    gen = mm.recipe_blocks(robot_cfg, dict(converted['recipe'], structure=converted['structure']))
-    assert [(b['sequence'], b['stage'], b['grasp'], b['rot']) for b in gen] == [(b['sequence'], b['stage'], b['grasp'], b['rot']) for b in cad]
-    assert all(max(abs(p - q) for p, q in zip(g['center'], c['center'])) < 1e-9 for g, c in zip(gen, cad))
-
-
-# 변환기 ①: 잡을 후보가 없는 블록 · order 빠짐 · 모르는 ori 는 거부한다
-def test_blocks_to_recipe_rejects_bad_input(robot_cfg):
-    from recipe_manager.blocks_to_recipe import BlocksToRecipe
-    block_mm = [v * 1000.0 for v in robot_cfg['block_size_m']]
-    one = {'design_id': 't', 'blocks': [{'order': 1, 'x': 0, 'y': 0, 'z': 0, 'ori': 'x'}]}
-    with pytest.raises(ValueError, match='no grasp'):
-        BlocksToRecipe(lambda blocks: {1: []}, block_mm).convert(one)
-    with pytest.raises(ValueError, match='order must run'):
-        BlocksToRecipe(lambda blocks: {2: ['FLAT_SHORT']}, block_mm).convert(dict(one, blocks=[dict(one['blocks'][0], order=2)]))
-    with pytest.raises(ValueError, match='unknown ori'):
-        BlocksToRecipe(lambda blocks: {1: ['FLAT_SHORT']}, block_mm).convert(dict(one, blocks=[dict(one['blocks'][0], ori='q')]))
-    out = BlocksToRecipe(lambda blocks: {1: ['FLAT_LONG', 'FLAT_SHORT']}, block_mm).convert(one)
-    assert out['recipe']['steps'][0]['grasp'] == 'FLAT_SHORT' and out['structure']['source_cad'] is None
+        builder.make_placements(recipe, dict(legacy, LEG_001_01=dict(hints['LEG_001_01'], GRASP='THICKNESS')))

@@ -61,16 +61,17 @@ class RecipeDocument:
     def placements_from_csv(text, model_id):
         """placements.csv 글자 → placements/2.0 객체(전달 JSON 모양). 칸 이름(머리줄)으로 읽어 열 순서에 의존하지 않는다.
 
-        쓰는 칸: block · block_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256(모든 줄 같은 값).
-        표시 칸(크기 · 중심 · 축 · cad_handle)은 읽지 않는다. 칸이 빠졌거나 숫자가 아니면 ValueError.
+        쓰는 칸: block · block_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256 · schema(두 칸 다 모든 줄 같은 값 —
+        schema 는 placements/2.0 이어야 하고 아니면 받은 값을 적어 거절한다, 한세교 E-69 PR). 표시 칸(크기 · 중심 · 축 · cad_handle)은 읽지 않는다.
+        칸이 빠졌거나 숫자가 아니면 ValueError.
         """
         rows = list(csv.DictReader(io.StringIO(text)))
-        need = ('block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256')
+        need = ('block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema')
         if not rows or any(k not in rows[0] for k in need):
             raise ValueError(f'placements.csv 에 {", ".join(need)} 칸이 모두 있고 한 줄 이상이어야 한다')
-        shas = {r['recipe_sha256'] for r in rows}
-        if len(shas) != 1:
-            raise ValueError('placements.csv 의 recipe_sha256 이 줄마다 다르다')
+        shas, schemas = {r['recipe_sha256'] for r in rows}, {r['schema'] for r in rows}
+        if len(shas) != 1 or len(schemas) != 1:
+            raise ValueError('placements.csv 의 recipe_sha256 · schema 가 줄마다 다르다')
         steps = []
         for r in rows:
             try:
@@ -79,7 +80,7 @@ class RecipeDocument:
                 raise ValueError(f'placements.csv 의 sequence · stage 가 정수가 아니다: {e}') from e
             steps.append({'block': r['block'], 'block_id': r['block_id'], 'sequence': seq, 'stage': stage, 'grasp': r['grasp'],
                           'grasp_axis': r['grasp_axis'], 'supports': [k for k in r['supports'].split(';') if k]})
-        return {'schema': PLACEMENTS_SCHEMA, 'model_id': model_id, 'recipe_sha256': shas.pop(), 'steps': steps}
+        return {'schema': schemas.pop(), 'model_id': model_id, 'recipe_sha256': shas.pop(), 'steps': steps}
 
     def design(self, design_id):
         """원본 두 문서를 design/2.0 로컬 파일 모양으로 반환한다(design_id · recipe · placements 만 — IRD 6장 로컬 파일). 입력 문서를 변경하지 않는다."""
