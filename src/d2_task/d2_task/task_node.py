@@ -40,6 +40,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from d2_task.blocks_to_recipe import BlocksToRecipe
 from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
@@ -93,7 +94,8 @@ class TaskNode(Node):
             self.get_logger().warn('[작업 관리자] 조립 기록 파일이 꺼져 있다(log_dir 이 비어 있음) — run_id 와 요약만 만든다')
         self.manager = TaskManager(cfg, self, logger,
                                    monitor_hmi=bool(self.get_parameter('monitor_hmi').value))
-        self.checker = DesignChecker(cfg)         # 변환기 ①(한세교 W110)이 정해지면 blocks_to_recipe 인자로 붙인다
+        self.checker = DesignChecker(cfg)
+        self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
