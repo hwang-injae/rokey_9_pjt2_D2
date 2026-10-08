@@ -54,7 +54,7 @@ recover:
   speed_ratio: 0.5             # 정지 해제 뒤 첫 관측 이동은 평소 속도의 절반. 성공 뒤 평소 속도로 돌아감 (IRD W121 C-1)
 
 mqtt:
-  lost_after_s: 3              # 웹 생존 신호 수신 간격. task 는 MQTT 를 직접 쓰지 않고 /d2/hmi/alive 만 본다 (IRD 10.3)
+  lost_after_s: 3              # 웹 연결 신호 수신 간격. task 는 MQTT 를 직접 쓰지 않고 /d2/hmi/alive 만 본다 (IRD 10.3)
 
 scan:
   poses: [observe, observe_front, observe_side]  # 촬영·poses_used 모두 이 순서. 자세 값은 W134 교시값을 사용한다(SDD 5장)

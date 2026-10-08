@@ -929,7 +929,7 @@ class TaskManager:
         if self._timeout_pending:
             return False, 'STOPPED', '시간 초과 뒤 정지 상태 확인을 기다린다'
         if not self._hmi_fresh():
-            return False, '', '웹 생존 신호를 못 받았어요. 연결을 확인하세요'      # IRD 7장 BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → 맞는 코드가 없어 비움(E-62)
+            return False, '', '웹 연결 신호를 못 받았어요. 연결을 확인하세요'      # IRD 7장 BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → 맞는 코드가 없어 비움(E-62)
         st = self.safety
         if st is None:
             return False, '', '정지 노드 신호를 아직 못 받았다'

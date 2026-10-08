@@ -2,6 +2,9 @@
 
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
+## 2026-10-09
+- 공통(1시, PM): **남은 '생존 신호' 2곳 → '연결 신호'(PL)** — `task_manager.py` 화면 문구('웹 연결 신호를 못 받았어요') · `robot.yaml` `mqtt.lost_after_s` 주석. 동작 · 키 이름은 그대로.
+
 ## 2026-10-08
 - 공통(22시, PM): **용어 '생존 신호' → '연결 신호'(PL, HMI 세션 전달)** — 문서의 우리말 용어만(다리 연결 신호 `d2/bridge/alive` · 웹 연결 신호 `d2/web/alive` · 웹 연결 신호 없음 거절 · 웹 연결 감시 `monitor_hmi`). 토픽 · 키 이름(`alive` · `hmi_lost` · `mqtt.lost_after_s`)과 코드는 그대로.
 - 공통(21시, PM): **10/8 밤 옛 부분 점검(PL) — E-57 ~ E-69 · #99 · #100 기준** — IRD · SDD · 01 · 04 · 05 · 06 · 시스템 아키텍처 설명 · 작명 규칙 v3 · YOLO 규칙 · 복구 절차 · README · AGENTS/CLAUDE/GEMINI · src · tests README의 옛 형식(`_structure.json` · `cad_*` · `design/1` · 템플릿 길 · `STOP_REQUEST` · `surface_z_m` · `tcp_length_m`)과 날짜(HMI 다시 잡음 · W122 10/11 오전)를 고침, 변환기 ① 본체 · 연결 끝(#99 · #100) · `roles.json` 정함 반영, 결정 기록의 옛 결정 30곳에 '(→ E-nn)' 주석, 에이전트 프롬프트 v4_100821(생성기 고침). 코드 쪽 옛 부분은 담당자 메시지로.
