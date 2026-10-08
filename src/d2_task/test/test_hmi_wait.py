@@ -41,7 +41,7 @@ def go():
 
 def test_원격모드는_첫_생존_신호_전에_출발하지_않는다():
     m, io, _clock = make()
-    assert m.command('select_design', 'bench') == (False, 'BUSY')
+    assert m.command('select_design', 'bench') == (False, '')            # IRD BUSY 는 '기다렸다 다시'라 웹이 자동 재시도한다 → reason 비움 + message(E-62)
     assert m.state == 'IDLE' and m.run_id is None and not picks(io)
 
 
@@ -133,7 +133,7 @@ def test_계속은_같은_run으로_진행을_확인한_뒤_다음_블록을_고
     assert m.state == 'WAIT_HMI'
     run_id = m.run_id
     m.planner.mark_slot_empty(1)
-    assert m.command('start') == (False, 'BUSY')         # 웹이 아직 안 돌아왔다
+    assert m.command('start') == (False, '')             # 웹이 아직 안 돌아왔다(reason 비움 — 웹이 BUSY 로 자동 재시도하지 않게)
     m.on_hmi_alive({'alive': True})
     if voice:
         m.on_intent('start')
