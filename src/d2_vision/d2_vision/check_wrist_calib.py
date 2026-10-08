@@ -13,11 +13,18 @@
   --rs      카메라를 ROS 대신 pyrealsense2 로 직접 연다 (카메라 노드가 안 떠 있을 때).
   --fix-tilt OUT.npy  (10/7 추가) 작업면 평면 맞춤으로 잰 기울기를 보정값의 **회전**에 반영하고, 높이 차이도 0 이 되게 맞춘
             새 보정 파일을 OUT 에 쓴다. 원본 --calib 는 건드리지 않는다(OUT 이 이미 있으면 --overwrite 가 있어야 덮어쓴다).
+  --slot N  (10/8 추가, E-54 ③) 수평(x · y) 확인 — robot.yaml supply_slots 의 N번 칸(1~6)에 놓인 블록 하나를 찾아
+            잰 윗면 중심을 칸 좌표(블록 중심, m)와 비교한다.
+  --ref-xy X Y  (10/8 추가) --slot 대신 블록 중심을 아는 자리(m, base)로 수평 확인. 둘 중 하나만 쓴다.
 출력
   구역 5곳(가운데 + 네 귀퉁이)의 base 기준 높이(mm)와 table_z 와의 차이(mm). JSON 기록 한 줄도 남긴다.
   (10/7 추가) 작업면 전체 점으로 맞춘 평면의 기울기 — x · y 로 100 mm 갈 때 몇 mm 오르내리는지, 각도(°), 맞춤 잔차.
   10/6 W058 기록은 구역 중앙값이 −0.5 mm 였지만 구역마다 +0.5 ~ −3.1 mm 로 화면 아래쪽이 낮게 보였다(기울기 약 1.5°) —
   10/7 박진용 실기에서 블록 윗면이 −2.8 mm 로 나온 원인. 평면 맞춤이 이것을 숫자로 보여 주고 --fix-tilt 가 고친다.
+  (10/8 추가) --slot · --ref-xy 를 주면: 블록 윗면 중심 x · y(mm, base)와 기준과의 차이 dx · dy · 거리, 윗면 크기 · 긴 변 방향.
+  거리가 XY_TOL_MM(2 mm)를 넘으면 '다시 보정'(E-54). 높이 확인은 수평 오차를 못 본다 — 10/7 박진용 4각도 실측에서
+  높이는 맞는데 수평이 약 10.7 mm 틀렸다. 이 결과는 **지금 자세에서만** 맞다(수평 오차는 자세마다 다르다) —
+  배치 확인에 쓰는 관측 자세(observe)에서도 따로 확인한다.
 바깥 영향
   없음 — 로봇 이동·그리퍼 명령·설정 변경을 하지 않는다. 자세와 깊이를 읽기만 한다.
 실패 때
@@ -29,6 +36,8 @@
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --rs                       # 카메라 직접 열기
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --fix-tilt /tmp/T_fix.npy   # 빈 작업대를 보는 관측 자세에서: 기울기 보정본 만들기
     → 같은 자세에서 --calib /tmp/T_fix.npy 로 다시 확인해 기울기 ≈ 0 · 차이 ≈ 0 이면 config/T_gripper2camera.npy 에 복사(json 에 기록)
+  python3 src/d2_vision/d2_vision/check_wrist_calib.py --slot 1                 # 공급 칸 1번에 놓인 블록으로 수평 확인
+  python3 src/d2_vision/d2_vision/check_wrist_calib.py --ref-xy <x_m> <y_m>     # 중심을 아는 자리에 놓은 블록으로 수평 확인
 기록은 실행한 폴더의 check_wrist_calib_log.jsonl 에 쌓인다(git 에 안 올림).
 """
 import argparse
@@ -66,6 +75,14 @@ PLANE_BAND_MM = 15.0
 PLANE_RESID_MM = 3.0
 PLANE_STRIDE = 4            # 640×480 을 4픽셀마다 → 약 19,000 점. 평면 셋 계수에 충분
 PLANE_MIN_PTS = 200
+# 수평 확인(10/8, E-54 ③): 기준 자리 근처 블록 하나의 윗면을 찾아 중심 x · y 를 기준과 비교한다.
+XY_TOL_MM = 2.0             # E-54: 이보다 크게 어긋나면 다시 보정
+XY_SEARCH_MM = 60.0         # 기준 자리에서 이 반경 안만 본다 — 블록 반 길이 37 mm + 지금 수평 오차 약 11 mm 가 들어가게
+BLOCK_ABOVE_MM = 7.0        # 작업면보다 이만큼 높은 점만 블록 — 가장 낮은 눕힘(14.8 mm)의 절반쯤, 작업면 잡음 · 기울기(몇 mm)보다 크게
+TOP_BAND_MM = 3.0           # 덩어리 윗면 높이에서 이 안쪽 점만 윗면 — 옆면 · 가장자리 번짐 점을 뺀다
+XY_CELL_MM = 2.0            # 덩어리 나누기 격자 — 반경 안에 들어온 이웃 칸 블록(틈 수십 mm)을 떼어 내기에 충분히 작게
+XY_MIN_PTS = 50
+XY_SIZE_WARN_MM = 5.0       # 잰 윗면 크기가 기대와 이만큼 넘게 다르면 경고(가려짐 · 블록 두 개가 붙음 — 중심을 믿기 어렵다)
 
 
 def posx_to_matrix(x, y, z, rx, ry, rz):
@@ -182,6 +199,85 @@ def plane_lines(fit, table_mm, label):
     return [line]
 
 
+def read_supply_slot(path, n):
+    """robot.yaml 의 공급 칸 n번(1부터)과 실측 블록 크기를 읽는다.
+    돌려줌: (칸 dict — x_m · y_m(블록 중심) · yaw_deg · block_up …, block_actual_m [L, W, T] m). 칸이 없으면 ValueError."""
+    import yaml
+    cfg = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    slots = cfg.get("supply_slots") or []
+    if not 1 <= n <= len(slots):
+        raise ValueError(f"공급 칸 {n} 이 없다 (1 ~ {len(slots)})")
+    return slots[n - 1], cfg["block_actual_m"]
+
+
+def expected_top_mm(block_up, block_m):
+    """위를 향한 축에 따라 블록 윗면의 (긴 변, 짧은 변) mm. 모르는 축이면 None."""
+    L, W, T = (v * 1000.0 for v in block_m)
+    return {"THICKNESS": (L, W), "WIDTH": (L, T), "LENGTH": (W, T)}.get(block_up)
+
+
+def wrap_deg(a):
+    """각도를 −90° 이상 90° 미만으로(블록은 180° 대칭 — IRD find_blocks yaw 와 같은 경계)."""
+    return (a + 90.0) % 180.0 - 90.0
+
+
+def find_block_xy(pts_base, ref_mm, table_mm):
+    """기준 자리 근처 블록 하나의 윗면 중심을 base 점에서 찾는다.
+    입력: base 점 (N, 3) mm · 기준 (x, y) mm · 작업면 높이 mm.
+    돌려줌: (dict(x, y, top_z, size=(긴 변, 짧은 변), yaw_deg, n) — 모두 mm · °, '') 또는 (None, 못 찾은 이유).
+    왜 윗면만 쓰나: 비스듬히 내려다보면 옆면도 보여 덩어리 전체의 가운데가 카메라 반대쪽으로 쏠린다.
+    왜 1~99 % 폭의 가운데를 쓰나: 점 밀도가 고르지 않아도(원근) 양 끝만으로 정해지고, 튀는 점 몇 개에 흔들리지 않는다."""
+    from scipy import ndimage
+    ref = np.asarray(ref_mm, dtype=float)
+    dist = np.hypot(pts_base[:, 0] - ref[0], pts_base[:, 1] - ref[1])
+    sel = (dist <= XY_SEARCH_MM) & (pts_base[:, 2] >= table_mm + BLOCK_ABOVE_MM)
+    pts, dist = pts_base[sel], dist[sel]
+    if len(pts) < XY_MIN_PTS:
+        return None, f"기준 자리 반경 {XY_SEARCH_MM:.0f} mm 안에 작업면보다 {BLOCK_ABOVE_MM:.0f} mm 넘게 높은 점이 없다 — 블록이 화면에 있는지 확인"
+    # 덩어리 나누기 — 반경 안에 이웃 블록이 걸쳐도 기준 자리에 가장 가까운 덩어리 하나만 쓴다
+    ij = np.floor((pts[:, :2] - (ref - XY_SEARCH_MM)) / XY_CELL_MM).astype(int)
+    n = int(2 * XY_SEARCH_MM / XY_CELL_MM) + 2              # 격자 칸 수 — 반경 끝 점(칸 번호 = 2·반경/칸)까지 들어가게
+    occ = np.zeros((n, n), dtype=bool)
+    occ[ij[:, 0], ij[:, 1]] = True
+    lab, k = ndimage.label(occ, structure=np.ones((3, 3)))
+    pl = lab[ij[:, 0], ij[:, 1]]
+    best = min(range(1, k + 1), key=lambda m: dist[pl == m].min())
+    blk = pts[pl == best]
+    top = float(np.percentile(blk[:, 2], 90))
+    face = blk[blk[:, 2] >= top - TOP_BAND_MM][:, :2]
+    if len(face) < XY_MIN_PTS:
+        return None, f"블록 윗면 점이 {len(face)}개뿐 — 가려졌거나 깊이가 비었다"
+    mean = face.mean(axis=0)
+    w, v = np.linalg.eigh(np.cov((face - mean).T))
+    axes = v[:, np.argsort(w)[::-1]]                       # 열 0 = 윗면 긴 변 방향
+    lo, hi = np.percentile((face - mean) @ axes, [1, 99], axis=0)
+    cx, cy = mean + axes @ ((lo + hi) / 2.0)
+    size = (hi - lo) / 0.98                                # 고르게 퍼진 점이면 1~99 % 폭 = 실제 폭의 98 %
+    yaw = wrap_deg(float(np.degrees(np.arctan2(axes[1, 0], axes[0, 0]))))
+    return {"x": float(cx), "y": float(cy), "top_z": top, "size": (float(size[0]), float(size[1])),
+            "yaw_deg": yaw, "n": int(len(face))}, ""
+
+
+def xy_lines(got, why, ref_mm, table_mm, expect_mm=None, expect_yaw=None, label="기준"):
+    """수평 확인 결과를 사람이 읽을 줄들로. expect_mm · expect_yaw 는 공급 칸일 때만(윗면 크기 · 긴 변 방향 비교)."""
+    lines = [f"\n수평(x · y) 확인 — {label} ({ref_mm[0]:.1f}, {ref_mm[1]:.1f}) mm (base)"]
+    if got is None:
+        return lines + [f"  블록을 못 찾음: {why}"]
+    dx, dy = got["x"] - ref_mm[0], got["y"] - ref_mm[1]
+    lines.append(f"  잰 윗면 중심 ({got['x']:.1f}, {got['y']:.1f}) mm · 윗면 높이 작업면 위 {got['top_z'] - table_mm:.1f} mm · 점 {got['n']}")
+    lines.append(f"  차이 dx {dx:+.1f} · dy {dy:+.1f} mm → 거리 {np.hypot(dx, dy):.1f} mm")
+    size = f"  윗면 {got['size'][0]:.1f} × {got['size'][1]:.1f} mm · 긴 변 방향 {got['yaw_deg']:+.1f}°"
+    if expect_mm is not None:
+        size += f"  (기대 {expect_mm[0]:.1f} × {expect_mm[1]:.1f} mm"
+        size += ")" if expect_yaw is None else f" · {expect_yaw:+.1f}°, 차이 {wrap_deg(got['yaw_deg'] - expect_yaw):+.1f}°)"
+    lines.append(size)
+    if expect_mm is not None and max(abs(a - b) for a, b in zip(got["size"], expect_mm)) > XY_SIZE_WARN_MM:
+        lines.append(f"  → 윗면 크기가 기대와 {XY_SIZE_WARN_MM:.0f} mm 넘게 다르다 — 가려졌거나 블록 두 개가 붙었을 수 있어 중심을 믿기 어렵다. 블록 하나만 두고 다시")
+    lines.append(f"판정(수평): {'맞다' if np.hypot(dx, dy) <= XY_TOL_MM else '어긋남 — 다시 보정(E-54)'} (기준 ≤ {XY_TOL_MM:.0f} mm)")
+    lines.append("  ※ 지금 자세에서만의 결과다(수평 오차는 자세마다 다르다). 블록을 손으로 놓았으면 놓은 오차도 들어 있다.")
+    return lines
+
+
 # ---------- 카메라 읽기: pyrealsense2 직접 ----------
 def grab_rs():
     """pyrealsense2 로 깊이 N_FRAMES 장을 모아 중앙값 깊이(mm)와 내부 파라미터를 돌려준다."""
@@ -286,6 +382,9 @@ def main():
     ap.add_argument("--fix-tilt", metavar="OUT.npy", default=None,
                     help="작업면 평면 기울기 · 높이 차이를 보정한 새 보정 파일을 여기에 쓴다(원본은 안 건드림)")
     ap.add_argument("--overwrite", action="store_true", help="--fix-tilt 의 OUT 이 이미 있어도 덮어쓴다")
+    ref = ap.add_mutually_exclusive_group()
+    ref.add_argument("--slot", type=int, metavar="N", help="수평 확인: robot.yaml 공급 칸 N번(1~6)에 놓인 블록을 칸 좌표와 비교")
+    ref.add_argument("--ref-xy", type=float, nargs=2, metavar=("X", "Y"), help="수평 확인: 블록 중심을 아는 자리 (m, base)")
     a = ap.parse_args()
     if a.fix_tilt and Path(a.fix_tilt).exists() and not a.overwrite:
         sys.exit(f"{a.fix_tilt} 이 이미 있다 — 다른 이름을 쓰거나 --overwrite")
@@ -297,6 +396,15 @@ def main():
     T_g2c = np.load(a.calib)
     if T_g2c.shape != (4, 4):
         sys.exit(f"보정 파일 모양이 4x4 가 아니다: {T_g2c.shape}")
+    ref_mm, slot, block_m = None, None, None
+    if a.slot is not None:
+        try:
+            slot, block_m = read_supply_slot(yaml_path, a.slot)
+            ref_mm = np.array([slot["x_m"], slot["y_m"]], dtype=float) * 1000.0
+        except Exception as e:            # 파일 · yaml · 칸 번호 · 키 — 어느 것이든 카메라를 읽기 전에 알린다
+            sys.exit(f"공급 칸 {a.slot} 을 못 읽음 ({yaml_path}): {e}")
+    elif a.ref_xy is not None:
+        ref_mm = np.array(a.ref_xy, dtype=float) * 1000.0
 
     # 1) 깊이 + posx. 카메라는 --rs 면 직접, 아니면 ROS 토픽. posx 는 --posx 가 없으면 두산 서비스.
     try:
@@ -339,6 +447,21 @@ def main():
         print(line)
     if plane is not None and plane["tilt_deg"] > 0.3:
         print("  → 0.3° 넘으면 자리에 따라 높이가 달라진다(100 mm 에 0.5 mm 이상). --fix-tilt 로 고친다")
+    # 3-2) 수평(x · y) 확인 (--slot · --ref-xy) — 높이가 맞아도 수평은 틀릴 수 있다(10/7 4각도 실측 약 10.7 mm)
+    xy_rec = None
+    if ref_mm is not None:
+        got, why = find_block_xy(depth_to_base(depth, *intr, T_b2c, stride=1), ref_mm, table_mm)
+        expect = expected_top_mm(slot.get("block_up", "THICKNESS"), block_m) if slot is not None else None
+        label = f"공급 칸 {a.slot}" if slot is not None else "기준 자리"
+        for line in xy_lines(got, why, ref_mm, table_mm, expect, None if slot is None else slot.get("yaw_deg"), label):
+            print(line)
+        xy_rec = {"ref_mm": [round(float(v), 2) for v in ref_mm], "slot": a.slot}
+        if got is None:
+            xy_rec["fail"] = why
+        else:
+            xy_rec.update(x_mm=round(got["x"], 2), y_mm=round(got["y"], 2), dx_mm=round(got["x"] - ref_mm[0], 2),
+                          dy_mm=round(got["y"] - ref_mm[1], 2), size_mm=[round(v, 1) for v in got["size"]],
+                          yaw_deg=round(got["yaw_deg"], 2), n=got["n"])
     if zs:
         med = float(np.median(zs))
         spread = float(max(zs) - min(zs))
@@ -346,14 +469,19 @@ def main():
         verdict = ("보정이 맞다(|차이| ≤ 5 mm)" if abs(med - table_mm) <= 5 else
                    "어긋남 — 재보정 필요" if abs(med - table_mm) > 15 else "애매함 — 한 번 더 재기")
         print(f"판정: {verdict}")
+        rec = {
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "calib": a.calib, "posx": posx,
+            "table_z_mm": table_mm, "base_z_mm": {n: (None if pb is None else round(float(pb[2]), 2)) for n, _, pb in rows},
+            "median_diff_mm": round(med - table_mm, 2), "spread_mm": round(spread, 2),
+            "plane": None if plane is None else {k: round(v, 4) if isinstance(v, float) else v for k, v in plane.items()},
+        }
+        if xy_rec is not None:              # 수평 확인을 했을 때만 — 기본 기록 모양은 그대로
+            rec["xy"] = xy_rec
         with open(RECORD, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "time": time.strftime("%Y-%m-%d %H:%M:%S"), "calib": a.calib, "posx": posx,
-                "table_z_mm": table_mm, "base_z_mm": {n: (None if pb is None else round(float(pb[2]), 2)) for n, _, pb in rows},
-                "median_diff_mm": round(med - table_mm, 2), "spread_mm": round(spread, 2),
-                "plane": None if plane is None else {k: round(v, 4) if isinstance(v, float) else v for k, v in plane.items()},
-            }, ensure_ascii=False) + "\n")
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         print(f"기록: {RECORD}")
+    else:       # 10/8 고침: 이 else 가 --fix-tilt 쪽에 붙어 있어 정상으로 끝나도 이 글과 함께 코드 1 로 끝났다
+        sys.exit("깊이가 있는 구역이 없다 — 카메라가 작업면을 보고 있는지, 거리가 28 cm 넘는지 확인")
 
     # 4) 기울기 보정본 쓰기 (--fix-tilt). 원본 --calib 는 그대로 둔다
     if a.fix_tilt:
@@ -372,8 +500,6 @@ def main():
             cam_xy = (T_b2g @ T_new)[:2, 3]
             print(f"  보정 뒤 카메라 아래 작업면 높이 차이: {after['a'] * cam_xy[0] + after['b'] * cam_xy[1] + after['c'] - table_mm:+.2f} mm")
         print("  같은 자세에서 `--calib " + a.fix_tilt + "` 로 다시 확인한 뒤 config/T_gripper2camera.npy 에 복사하고 json 에 적는다")
-    else:
-        sys.exit("깊이가 있는 구역이 없다 — 카메라가 작업면을 보고 있는지, 거리가 28 cm 넘는지 확인")
 
 
 if __name__ == "__main__":
