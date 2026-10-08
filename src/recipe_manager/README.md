@@ -75,6 +75,8 @@ python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/
 |---|---|---|
 | `recipe_manager/cad_reader.py` | `CadReader` | DXF → 블록 목록 `[{'block', 'handle', 'vertices', 'hints'}]` |
 | `src/d2_task/d2_task/recipe_builder.py` | `RecipeBuilder` | 블록 → 레시피(`make_recipe` — 이름 · 번호 · 겹침 검사) → 조립 방법(`make_placements` — 순서 · 잡기 · 받침 · `recipe_sha256`) · CSV 줄(`make_placement_rows`). ROS·파일 없음. 변환기 ①(W110, 10/10)과 한 벌로 쓰려고 d2_task 에 있다(E-58) — `main.py`가 소스 폴더를 import 경로에 넣어 쓴다 |
+| `src/d2_task/d2_task/blocks_to_recipe.py` | `BlocksToRecipe` | **변환기 ①**(W110, E-69): AI 설계도 `blocks/2.0` → `recipe/2.0` + `placements/2.0`. AI 값(역할 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로, 번호 · 중심 · R · 받침 · 닫힘 축만 계산(`RecipeBuilder`). AI 실수 ① 역할 목록 ② 같은 부품 면 맞닿음 ③ 고른 잡기(`DesignChecker.grasp_options`)는 `DesignRejected(errors)` → 검사 묶음이 `CHECK_FAILED` |
+| `src/d2_task/d2_task/roles.json` | — | 역할 · 옵션 목록(작명 규칙 v3 3장). HMI 프롬프트와 변환기 ①이 같이 읽는다. 새 이름은 뜻 한 줄과 함께 PR로 |
 | `recipe_manager/main.py` | `RecipeManager` | 명령(`build`) · 파일 저장(덮어쓰기 질문) |
 
 시험: 저장소 루트에서 `python3 -m pytest tests/test_recipe_manager.py -q` — 4종을 DXF에서 다시 만들어 저장 파일(`_recipe.json` · `_placements.csv`)과 같은지 + 폴더엔 모형마다 2개 · 짝 해시 `recipe_sha256`(구조 객체의 키 정렬 · 공백 없는 JSON, 값 고정) · 이름 · 옵션 하나 · 번호 · 겹침 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · 빠진 속성 거부 · 옛 잡기 이름 변환. 변환기 ① 시험은 W110 PR(10/10)과 함께 온다(지금 없음).

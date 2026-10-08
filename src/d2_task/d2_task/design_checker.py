@@ -10,6 +10,7 @@ import math
 import re
 
 from d2_task.recipe_to_blocks import ori_extents
+from d2_task.blocks_to_recipe import DesignRejected
 from d2_task.recipe_document import RecipeDocument
 
 SCHEMA_REQUEST = 'blocks/2.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
@@ -77,7 +78,9 @@ class DesignChecker:
                     raise ValueError('변환기 ① 결과에 recipe · placements 가 없다')
                 document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
                 result.update(recipe=document.recipe, placements=document.placements)
-            except Exception as e:   # 변환기는 다른 파트 코드라 어떤 예외든 ERROR 로 알린다
+            except DesignRejected as e:      # 변환기 ①이 찾은 AI 실수(역할 목록 · 면 맞닿음 · 잡기) — 설계 탓이므로 CHECK_FAILED 로 돌려 재생성한다
+                return self._result(False, margin, [{'block': x['block'], 'reason': 'CHECK_FAILED', 'detail': x['detail']} for x in e.errors])
+            except Exception as e:   # 그 밖의 예외는 변환기 쪽 고장이라 ERROR 로 알린다
                 return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result
 
@@ -86,7 +89,8 @@ class DesignChecker:
 
         요청은 blocks/2.0 객체 글자 그대로(schema 가 'blocks/2.0' 이어야 하고, 옛 blocks/1 은 받은 schema 를 적어 ERROR). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
         설계 불합격은 (True, '', ok:false + errors) — 좌표가 유한한 수가 아닌 것(NaN · Infinity · 1e999 처럼 읽으면 무한대가 되는 수)은 불합격이 아니라 요청 오류다.
-        JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 실패 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
+        변환기 ①이 AI 실수(DesignRejected — 역할 목록 · 면 맞닿음 · 잡기)를 찾으면 불합격 CHECK_FAILED 로 errors 에 그대로 옮긴다(재생성 대상, success true).
+        JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 그 밖의 예외 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
         변환기 ①이 안 붙은 동안은 검사에 통과해도 레시피가 없어 완성된 합격 응답이 아니므로 (False, 'ERROR') 로 답한다.
         바깥 영향: 없음(계산만). 시간 제한 5초는 부르는 쪽이 건다 — 이 함수는 계산을 중간에 끊지 못한다.
         """
