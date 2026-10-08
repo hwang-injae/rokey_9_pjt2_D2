@@ -6,6 +6,8 @@
 정지 · 새 요청 뒤에 도착한 답은 적용되지 않는 것을 확인한다.
 """
 import copy
+import threading
+import time
 
 import pytest
 
@@ -129,6 +131,14 @@ def test_열림_폭이_정해지지_않으면_ERROR로_집기를_시작하지_�
     assert '열림 폭' in io.states[-1]['message'] and not picks(io)
 
 
+def test_설정이_미완이면_로봇을_움직이기_전에_멈춘다():
+    """설정 점검은 observe_supply 이동 · find_blocks 조회보다 앞이다 — 쓸 수 없는 설정으로 팔을 공급 영역에 보내지 않는다."""
+    m, io = make(open_width_m=None)
+    start(m)
+    drive(m, 'ERROR')
+    assert ('move_to', 'observe_supply') not in [c[:2] for c in io.calls] and not calls(io, 'find_blocks')
+
+
 def test_조회가_정지로_끝나면_STOPPED():
     m, io = make()
     io.find_script = [(False, 'STOPPED', None)]
@@ -183,3 +193,31 @@ def test_공급_칸_방식은_find_blocks를_부르지_않는다():
     start(m)
     drive(m, 'DONE')
     assert not calls(io, 'find_blocks') and all(p[1] != '' for p in picks(io))
+
+
+def test_commit과_PICK_PLACE_전환_사이에는_정지가_끼지_못한다():
+    """commit 확인 → 목표 적용 → PICK_PLACE 전환이 한 잠금 안이라, 그 사이에 오는 정지 신호는 전환이 끝난 뒤에야 반영된다(Codex 검토).
+
+    전환 도중(_start_goal 안)에 다른 스레드가 정지 신호를 보낸다. 잠금 때문에 전환이 끝날 때까지 막혀 있다가(그 사이 m.safety 는 그대로),
+    전환 뒤 첫 run_once 가 STOPPED 로 보내고 집기 요청은 나가지 않는다. 예전처럼 잠금 밖에서 전환했다면 m.safety 가 이미 바뀌어 있다.
+    """
+    m, io = make()
+    start(m)
+    seen = {}
+    real = m._start_goal
+
+    def start_goal_with_stop(found):
+        t = threading.Thread(target=m.on_safety, args=(SAFE_STOP,))
+        t.start()
+        time.sleep(0.15)                                    # 정지 스레드가 잠금에서 막혀 있을 시간
+        seen['blocked'] = m.safety == SAFE_OK               # 아직 정지 신호가 반영되지 않았다
+        seen['thread'] = t
+        real(found)
+
+    m._start_goal = start_goal_with_stop
+    drive(m, 'PICK_PLACE')
+    seen['thread'].join(2)
+    assert seen['blocked'] is True and not seen['thread'].is_alive()
+    assert m.safety == SAFE_STOP and not picks(io)
+    m.run_once()                                            # 다음 단계 맨 앞에서 정지를 반영 → 집기 요청 전에 STOPPED
+    assert m.state == 'STOPPED' and not picks(io)

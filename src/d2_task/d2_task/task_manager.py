@@ -384,7 +384,7 @@ class TaskManager:
             if self._hmi_pause:
                 return self._enter_wait_hmi()
         r = self._next_goal()
-        if r is None:                          # 이동 · 조회 실패는 이미 처리했고, 정지 뒤 늦은 답은 버렸다
+        if r is None:                          # 흩뿌림은 전환까지 끝냈거나(집기 · 대기 · 오류) 이동 · 조회 실패를 처리했거나 정지 뒤 늦은 답을 버렸다
             return None
         status = r['status']
         if status == 'FOUND':
@@ -403,61 +403,69 @@ class TaskManager:
         else:                                  # NO_SUPPORT · 재관측 뒤에도 UNKNOWN_BLOCK
             self._to_error(f'{r["block_id"]}: {status}')
 
-    def _next_goal(self):
-        """다음 집기 목표를 공급 방식에 맞게 돌려준다(목표 블록은 작업 판단이, 어디서 집을지는 방식이 정한다).
+    def _next_goal(self, pick_message='{block} 를 집으러 갑니다'):
+        """다음 집기 목표를 공급 방식에 맞게 정한다(목표 블록은 작업 판단이, 어디서 집을지는 방식이 정한다).
 
-        slots: planner.next_block() 그대로. scatter: planner.next_target() 로 블록을 정하고 _scatter_goal 로 관측 → 후보 고르기.
-        반환: next_block 과 같은 status dict, 또는 None(이동 · 조회 실패를 이미 처리했거나 정지 뒤 늦은 답이라 버린 경우 — 상태를 바꾸지 않는다).
+        slots: planner.next_block() 를 그대로 돌려준다(부르는 쪽이 목표를 적용한다).
+        scatter: planner.next_target() 로 블록을 정하고, 집을 블록이 있으면 _scatter_goal 이 관측 → 후보 고르기 → **목표 적용과 PICK_PLACE 전환까지**
+        한 잠금 안에서 끝내고 None 을 돌려준다. 블록이 없는 경우(DONE · NO_SUPPORT · UNKNOWN_BLOCK)는 그 status dict 를 돌려준다.
+        None = 이미 처리했다(전환 · 이동/조회 실패 · 설정 미완 · 정지 뒤 늦은 답 버림) — 부르는 쪽은 아무것도 더 하지 않는다.
         """
         if self._scatter is None:
             return self.planner.next_block()
         target = self.planner.next_target()
         if target['status'] != 'FOUND':
             return target
-        return self._scatter_goal(target)
+        self._scatter_goal(target, pick_message)
+        return None
 
-    def _scatter_goal(self, target):
-        """흩뿌린 공급에서 target 블록을 집을 후보를 고른다: observe_supply 로 가서 find_blocks 를 부르고 ScatterFlow 로 고른다.
+    def _scatter_goal(self, target, pick_message):
+        """흩뿌린 공급에서 target 블록을 집을 후보를 고르고 결과를 적용한다: 설정 점검 → observe_supply 이동 → find_blocks → ScatterFlow 고르기.
 
-        이동 · 조회는 잠금 밖에서 기다린다. 적용(commit)은 잠금 안에서 요청 번호 · 상태 변화 · 정지 횟수 · 정지 중 여부를 다시 확인한 뒤에만 한다 —
-        정지가 끼었거나(정지 뒤 [다시 시작]까지 끝났어도) 더 새 요청이 있으면 늦은 답은 버리고 None. 로봇은 move_to 외에 움직이지 않는다.
-        반환 status: FOUND(목표 = ScatterFlow 요청: supply_slot '' · pick_pose · place_pose · open_width_m) · WAIT_SUPPLY(alert = (message_id, 글자)) ·
-        None(위 설명). 설정 미완 · 응답 오류는 ERROR 로 보낸 뒤 None.
+        설정(열림 폭)이 안 정해졌으면 **로봇을 움직이기 전에** ERROR 로 끝낸다. 이동 · 조회는 잠금 밖에서 기다린다.
+        적용(commit)과 그 결과(목표 적용 · PICK_PLACE 또는 WAIT_SUPPLY 전환)는 **한 잠금 안에서** 한다 — 정지 신호(on_safety)는 같은 잠금을 얻어야
+        반영되므로 commit 확인 뒤 전환 전에 정지가 끼지 못한다. commit 은 요청 번호 · 상태 변화 · 정지 횟수 · 정지 중 여부를 그 안에서 다시 확인한다
+        (정지가 끼었거나, 정지 뒤 [다시 시작]까지 끝났어도 그 전 요청의 늦은 답은 적용하지 않는다). 로봇은 move_to 외에 움직이지 않는다.
         """
+        if not self._scatter.configured:
+            self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+            return
         stops_before = self._stop_count
         ticket = self._scatter.begin((self._epoch, stops_before))
         ok, why = self.io.move_to('observe_supply', self.halted)
         if not ok:
             self._failed(why, '공급 관측 자세 이동')
-            return None
+            return
         ok, why, body = self.io.find_blocks(self.run_id, self.halted)
         if not ok or self.halted():
             self._failed('STOPPED' if self.halted() else why, 'find_blocks 조회')
-            return None
+            return
         result = self._scatter.prepare(target, body)
         with self._lock:
             applied = self._scatter.commit(ticket, lambda: ((self._epoch, self._stop_count), self.halted()), result)
-        if not applied:
-            if self._stop_count != stops_before:       # 조회 중에 정지가 있었다(이미 [다시 시작]까지 끝났어도) → 다른 정지 때처럼 STOPPED 절차로
-                self._failed('STOPPED', 'find_blocks 조회 중 정지')
-            return None
-        status = result['status']
+            if applied:
+                self._apply_scatter_result(target, result, pick_message)
+                return
+        if self._stop_count != stops_before:       # 조회 중에 정지가 있었다(이미 [다시 시작]까지 끝났어도) → 다른 정지 때처럼 STOPPED 절차로
+            self._failed('STOPPED', 'find_blocks 조회 중 정지')
+
+    def _apply_scatter_result(self, target, result, pick_message):
+        """(잠금 안) commit 이 적용된 흩뿌림 결과를 상태에 반영한다: PICK → 목표 + PICK_PLACE, 비었음 · 맞는 블록 없음 → WAIT_SUPPLY, 그 밖은 ERROR."""
+        status, block_id = result['status'], target['block_id']
         if status == 'PICK':
-            return dict(result['request'], status='FOUND')
-        if status == 'EMPTY':
-            return {'status': 'WAIT_SUPPLY', 'block_id': target['block_id'],
-                    'alert': ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요')}
-        if status == 'NO_MATCH':
+            self._start_goal(dict(result['request'], status='FOUND'))
+            self._set('PICK_PLACE', None, pick_message.format(block=block_id))
+        elif status == 'EMPTY':
+            self._enter_wait_supply(block_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
+        elif status == 'NO_MATCH':
             counts = result['counts']
             only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k != 'tilted')
-            # 기울어진 블록만 남았으면 IRD 알림 tilted_block. 그 밖의 '맞는 블록 없음'은 이름이 정해질 때까지 message_id 없이 글자만(PL 확인 제안 사항)
-            return {'status': 'WAIT_SUPPLY', 'block_id': target['block_id'],
-                    'alert': ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요')}
-        if status == 'NOT_CONFIGURED':
+            # 기울어진 블록만 남았으면 IRD 알림 tilted_block. 그 밖의 '맞는 블록 없음'은 message_id 없이 글자만 — 새 이름(no_match_block)을 둘지는 PL 선택
+            self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
+        elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
-        else:                                  # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
+        else:                                      # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
             self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
-        return None
 
     def _pick_place(self):
         """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다."""
@@ -525,11 +533,9 @@ class TaskManager:
             self._scatter.after_wait_start()        # 흩뿌림은 다시 관측하고 조회한다. 공급 칸 표시는 건드리지 않는다
         else:
             self.planner.supply_refilled()
-        r = self._next_goal()
-        if r is None:
+        r = self._next_goal('공급을 채웠다. {block} 를 이어서 집습니다')
+        if r is None:                          # 흩뿌림은 전환까지 끝냈다(다시 기다림 · 집기 · 오류)
             return None
-        if r['status'] == 'WAIT_SUPPLY' and self._scatter is not None:
-            return self._enter_wait_supply(r['block_id'], r.get('alert'))      # 블록이 아직 없다 → 다시 기다린다
         if r['status'] != 'FOUND':
             return self._to_error(f'공급을 채웠는데 다음 블록을 못 골랐다({r["status"]})')
         self._start_goal(r)
