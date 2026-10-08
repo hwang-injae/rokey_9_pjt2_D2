@@ -1,5 +1,5 @@
-"""CAD(DXF) → 레시피 (E-52).
-build: cads/<모델ID 소문자>.dxf → recipes/<모델ID>_structure.json + _recipe.json + _placements.csv."""
+"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/2.0 + 조립 방법 placements/2.0).
+build: cads/<모델ID 소문자>.dxf → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)."""
 import argparse
 import csv
 import hashlib
@@ -8,10 +8,13 @@ import sys
 from pathlib import Path
 
 from cad_reader import CadReader
-from recipe_builder import RecipeBuilder
 
-# 레시피 · 배치표는 늘 src/recipe_manager/recipes/ 에 저장한다(어느 폴더에서 실행해도 같다).
-# d2_bringup 이 이 폴더의 *_structure.json · *_recipe.json 을 설치하고 task · 비전 · run_recipe 가 읽는다.
+# RecipeBuilder 는 변환기 ①과 한 벌로 쓰려고 d2_task 에 있다(10/8 E-58). 이 도구는 빌드 밖에서 돌아 소스 폴더를 import 경로에 넣는다.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'd2_task'))
+from d2_task.recipe_builder import PLACEMENT_COLUMNS, RecipeBuilder  # noqa: E402
+
+# 레시피 · 조립 방법은 늘 src/recipe_manager/recipes/ 에 저장한다(어느 폴더에서 실행해도 같다).
+# d2_bringup 이 이 폴더의 파일을 설치하고 task · 비전 · run_recipe 가 읽는다.
 RECIPE_DIR = Path(__file__).resolve().parents[1] / 'recipes'
 
 USAGE_EXAMPLES = """
@@ -25,13 +28,13 @@ USAGE_EXAMPLES = """
 
 
 class RecipeManager:
-    """명령(build)을 받아 DXF를 읽고(CadReader) 구조 · 조립 방법을 만들어(RecipeBuilder) 파일로 저장한다.
+    """명령(build)을 받아 DXF를 읽고(CadReader) 레시피 · 조립 방법을 만들어(RecipeBuilder) 파일로 저장한다.
 
     나중에 HMI 화면이 부르더라도 이 클래스를 쓰면 된다. 파일 저장 · 덮어쓰기 질문은 여기에만 있다.
     """
 
     def __init__(self, recipe_dir):
-        """레시피 · 배치표를 저장할 폴더를 정한다.
+        """레시피 · 조립 방법을 저장할 폴더를 정한다.
 
         입력:
             recipe_dir: 저장 폴더 (보통 RECIPE_DIR)
@@ -41,23 +44,22 @@ class RecipeManager:
         self.builder = RecipeBuilder()
 
     def build_recipe(self, cad_path):
-        """DXF → 검증 → recipes/<모델ID>_structure.json + _recipe.json + _placements.csv
+        """DXF → 검증 → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)
 
         모델 ID = CAD 파일 이름을 대문자로(작명 규칙: CAD 파일 이름 = 모델 ID 소문자, 예 001_chair_bench.dxf → 001_CHAIR_BENCH).
 
         입력:
             cad_path: DXF 파일 경로
-        바깥 영향: recipe_dir 에 세 파일을 쓰고(save_file), 배치표를 터미널에 출력한다.
+        바깥 영향: recipe_dir 에 두 파일을 쓰고(save_file), 배치표를 터미널에 출력한다.
         실패: CAD · 이름 · 속성 · 배치가 틀리면 ValueError (파일을 쓰지 않는다), ezdxf가 없으면 ImportError.
         """
-        # DXF → 구조 → 조립 방법. structure_sha256 은 저장할 구조 글자 그대로의 바이트로 계산한다.
+        # DXF → 레시피 → 조립 방법(recipe_sha256 = 레시피 객체의 해시)
         cad_path = Path(cad_path)
         model_id = cad_path.stem.upper()
-        structure, hints = self.load_structure(cad_path, model_id)
-        structure_text = self.builder.make_json_text(structure)
-        recipe = self.builder.make_recipe(structure, hashlib.sha256(structure_text.encode('utf-8')).hexdigest(), hints)
-        rows = self.builder.make_placement_rows(structure, recipe)
-        print(f'검증 완료: {model_id}, {len(recipe["steps"])}개 배치\n')
+        recipe, hints = self.load_recipe(cad_path, model_id)
+        placements = self.builder.make_placements(recipe, hints)
+        rows = self.builder.make_placement_rows(recipe, placements)
+        print(f'검증 완료: {model_id}, {len(placements["steps"])}개 배치\n')
 
 
         # 배치표 터미널 출력. 한글은 화면에서 두 칸을 차지해 머리글 공백은 직접 맞췄다.
@@ -72,32 +74,31 @@ class RecipeManager:
         print()
 
 
-        # 배치표 CSV. 열 이름은 make_placement_rows 키 그대로, 받침이 여럿이면 ';'로 잇는다.
+        # 조립 방법 CSV. 칸은 PLACEMENT_COLUMNS 순서, 받침이 여럿이면 ';'로 잇는다.
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=list(rows[0]), lineterminator='\n')
+        writer = csv.DictWriter(buffer, fieldnames=PLACEMENT_COLUMNS, lineterminator='\n')
         writer.writeheader()
         for row in rows:
             writer.writerow({**row, 'supports': ';'.join(row['supports'])})
 
 
-        # 구조 · 조립 방법 · 배치표 저장
-        self.save_file(self.recipe_dir / f'{model_id}_structure.json', structure_text)
+        # 레시피 · 조립 방법 저장
         self.save_file(self.recipe_dir / f'{model_id}_recipe.json', self.builder.make_json_text(recipe))
         self.save_file(self.recipe_dir / f'{model_id}_placements.csv', buffer.getvalue())
 
-    def load_structure(self, cad_path, model_id):
-        """DXF를 읽어 구조와 블록마다의 CAD 속성(순서 · 단계 · 잡기)을 만든다.
+    def load_recipe(self, cad_path, model_id):
+        """DXF를 읽어 레시피와 블록마다의 CAD 속성(순서 · 단계 · 잡기)을 만든다.
 
         입력:
             cad_path: DXF 파일 경로
             model_id: 모델 ID
-        출력: (구조 dict, {블록 이름: {'SEQ': ..., 'STAGE': ..., 'GRASP': ...}})
-        실패: CadReader · RecipeBuilder.make_structure 의 ValueError · ImportError 그대로.
+        출력: (레시피 dict, {블록 이름: {'SEQ': ..., 'STAGE': ..., 'GRASP': ...}})
+        실패: CadReader · RecipeBuilder.make_recipe 의 ValueError · ImportError 그대로.
         """
         boxes = self.reader.read_dxf(cad_path)
         sha256 = hashlib.sha256(Path(cad_path).read_bytes()).hexdigest()
-        structure = self.builder.make_structure(boxes, model_id, Path(cad_path).name, sha256)
-        return structure, {box['block']: box['hints'] for box in boxes}
+        recipe = self.builder.make_recipe(boxes, model_id, Path(cad_path).name, sha256)
+        return recipe, {box['block']: box['hints'] for box in boxes}
 
     def save_file(self, path, text):
         """text를 파일로 저장한다. 같은 이름이 있으면 덮어쓰기 / 다른 이름으로 저장 / 취소 중에서 고르게 한다.
@@ -148,7 +149,7 @@ def main(argv=None):
     # 명령 정의
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    build = sub.add_parser('build', help='DXF -> recipes/<model-id>_structure.json + _recipe.json + _placements.csv')
+    build = sub.add_parser('build', help='DXF -> recipes/<model-id>_recipe.json + _placements.csv')
     build.add_argument('cad')
 
 

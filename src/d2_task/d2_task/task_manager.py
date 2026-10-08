@@ -5,7 +5,7 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
 이 클래스는 MQTT 를 전혀 모른다. task 노드(task_node.py)가 콜백에서 on_* · command 를 부르고,
 작업 스레드 하나가 run_once() 를 되풀이한다.
 바깥 일(이동 · 관측 · 집기 · 방송)은 생성할 때 받은 io 객체로 한다. io 가 갖춰야 할 것(ROS 노드나 시험용 가짜):
-  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/1 dict). 제한 시간은 io 가 건다
+  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/2.0 dict). 제한 시간은 io 가 건다
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
   check_progress(block_ids, should_abort) -> (ok, reason, rows)   rows = {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}
@@ -39,7 +39,9 @@ from d2_task.run_logger import RunLogger
 from d2_task.scatter_pick import ScatterFlow, StepTracker
 from d2_task.task_planner import TaskPlanner
 
-RECIPE_SCHEMA = 'cad_recipe/1.0'
+RECIPE_SCHEMA = 'recipe/2.0'
+PLACEMENTS_SCHEMA = 'placements/2.0'
+DESIGN_SCHEMA = 'design/2.0'
 
 LOG = logging.getLogger('d2_task')
 
@@ -847,23 +849,23 @@ class TaskManager:
             return self._start()
 
     def _planner_from(self, design, design_id):
-        """조회 답(design/1)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
+        """조회 답(design/2.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
 
-        검증: 객체 · schema design/1 · 요청한 design_id 와 같음 · recipe 가 객체이고 schema 가 cad_recipe/1.0 · structure 가 객체(두 파일은
-        block 이름으로 연결한다).
-        레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
+        검증: 객체 · schema design/2.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/2.0 · placements/2.0 객체
+        (두 문서는 block 이름과 recipe_sha256 으로 연결한다). 칸 이름이 아니라 schema 로 내용을 확인하고, 옛 형식(design/1 · cad_*)은 받은 schema 를
+        적어 거절한다(변환하지 않음). 레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
         """
-        if not isinstance(design, dict) or design.get('schema') != 'design/1':
-            return None, '설계 조회 답이 design/1 이 아니다'
+        got = design.get('schema') if isinstance(design, dict) else None
+        if got != DESIGN_SCHEMA:
+            return None, f'설계 조회 답이 {DESIGN_SCHEMA} 가 아니다(받은 schema: {got!r}) — 옛 형식은 거절한다'
         if design.get('design_id') != design_id:
             return None, f'조회 답의 design_id({design.get("design_id")!r})가 요청({design_id!r})과 다르다'
-        recipe = design.get('recipe')
-        if not isinstance(recipe, dict) or recipe.get('schema') != RECIPE_SCHEMA:
-            return None, f'조회 답의 recipe 가 {RECIPE_SCHEMA} 객체가 아니다'
-        if not isinstance(design.get('structure'), dict):
-            return None, '조회 답에 structure 가 없다'
+        for key, schema in (('recipe', RECIPE_SCHEMA), ('placements', PLACEMENTS_SCHEMA)):
+            got = design.get(key, {}).get('schema') if isinstance(design.get(key), dict) else None
+            if got != schema:
+                return None, f'조회 답의 {key} 가 {schema} 객체가 아니다(받은 schema: {got!r})'
         try:
-            planner = TaskPlanner(self.cfg, recipe, design['structure'])
+            planner = TaskPlanner(self.cfg, design['recipe'], design['placements'])
         except (ValueError, KeyError, TypeError) as e:
             return None, f'레시피를 못 읽는다: {e}'
         if not planner.blocks:

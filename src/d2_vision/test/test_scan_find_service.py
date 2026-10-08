@@ -13,7 +13,7 @@ import pytest
 
 from d2_vision.block_checker import mean_depth_mm
 from d2_vision.block_finder import _largest_part, draw_found, masks_from_yolo
-from d2_vision.mock_scan import parse_request, structure_to_blocks
+from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
 from d2_vision.structure_scanner import family_of, scan_response
 
 RECIPES = Path(__file__).resolve().parents[2] / 'recipe_manager' / 'recipes'
@@ -156,14 +156,13 @@ def test_scan_response_without_cloud_and_failed():
 
 
 def test_family_of_and_bases_from_recipes():
-    """기본 설계 4개(레시피 두 파일) → blocks/1 + family(이름의 CHAIR · DESK) — scan_infer 의 nearest_base 후보."""
+    """기본 설계 4개(레시피 두 파일 _recipe.json + _placements.csv) → blocks/1 + family(이름의 CHAIR · DESK) — scan_infer 의 nearest_base 후보."""
     assert [family_of(d) for d in ('001_CHAIR_BENCH', '004_DESK_PEDESTAL', 'scan_x')] == ['chair', 'desk', 'unknown']
-    found = sorted(RECIPES.glob('*_structure.json'))
+    found = sorted(RECIPES.glob('*_recipe.json'))
     if not found:
         pytest.skip('레시피 폴더가 없다')
-    for s_path in found:
-        did = s_path.name[:-len('_structure.json')]
-        r_path = s_path.with_name(did + '_recipe.json')
-        b = structure_to_blocks(json.loads(s_path.read_text(encoding='utf-8')), json.loads(r_path.read_text(encoding='utf-8')),
-                                did, family_of(did), 0)
+    assert len(found) == 4
+    for r_path in found:
+        did = r_path.name[:-len('_recipe.json')]
+        b = structure_to_blocks(*load_recipe_files(str(RECIPES), did), did, family_of(did), 0)
         assert b['family'] in ('chair', 'desk') and b['blocks'] and not any(x['inferred'] for x in b['blocks'])

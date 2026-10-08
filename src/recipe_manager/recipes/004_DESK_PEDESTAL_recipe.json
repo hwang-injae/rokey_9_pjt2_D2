@@ -1,113 +1,339 @@
 {
-  "schema": "cad_recipe/1.0",
+  "schema": "recipe/2.0",
   "model_id": "004_DESK_PEDESTAL",
-  "structure_sha256": "5962c17e01aca4ad04c51828cb5d79f817651789125269a4a9b832644de6e63b",
-  "steps": [
+  "source_cad": {
+    "filename": "004_desk_pedestal.dxf",
+    "sha256": "5137dad7721fbb9df60297e7a9784db78add81ee99b41da981703ad302e67a3f"
+  },
+  "parts": [
+    {
+      "part_id": "PART_001",
+      "size_mm": [
+        75.0,
+        25.0,
+        15.0
+      ]
+    }
+  ],
+  "blocks": [
     {
       "block": "BASE_001_01",
-      "sequence": 1,
-      "stage": 1,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": []
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        -25.0,
+        7.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "9E"
+      }
     },
     {
       "block": "BASE_001_02",
-      "sequence": 2,
-      "stage": 1,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": []
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        7.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "A1"
+      }
     },
     {
       "block": "BASE_001_03",
-      "sequence": 3,
-      "stage": 1,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": []
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        7.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "A4"
+      }
     },
     {
       "block": "COLUMN_001_01",
-      "sequence": 4,
-      "stage": 2,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "BASE_001_01",
-        "BASE_001_02",
-        "BASE_001_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        22.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "A7"
+      }
     },
     {
       "block": "COLUMN_001_02",
-      "sequence": 5,
-      "stage": 3,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "COLUMN_001_01"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        37.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "AA"
+      }
     },
     {
       "block": "COLUMN_001_03",
-      "sequence": 6,
-      "stage": 4,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "COLUMN_001_02"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        52.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "AD"
+      }
     },
     {
       "block": "COLUMN_001_04",
-      "sequence": 7,
-      "stage": 5,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "COLUMN_001_03"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        67.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "B0"
+      }
     },
     {
       "block": "COLUMN_001_05",
-      "sequence": 8,
-      "stage": 6,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "COLUMN_001_04"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        82.5
+      ],
+      "R": [
+        [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        [
+          1.0,
+          -0.0,
+          0.0
+        ],
+        [
+          0.0,
+          -0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "B3"
+      }
     },
     {
       "block": "TOP_001_01",
-      "sequence": 9,
-      "stage": 7,
-      "grasp": "FLAT_SHORT",
-      "grasp_axis": "WIDTH",
-      "supports": [
-        "COLUMN_001_05"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        -25.0,
+        97.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "B6"
+      }
     },
     {
       "block": "TOP_001_02",
-      "sequence": 10,
-      "stage": 7,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": [
-        "COLUMN_001_05"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        0.0,
+        97.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "B9"
+      }
     },
     {
       "block": "TOP_001_03",
-      "sequence": 11,
-      "stage": 7,
-      "grasp": "FLAT_LONG",
-      "grasp_axis": "LENGTH",
-      "supports": [
-        "COLUMN_001_05"
-      ]
+      "part_id": "PART_001",
+      "center_mm": [
+        0.0,
+        25.0,
+        97.5
+      ],
+      "R": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "cad": {
+        "handle": "BC"
+      }
     }
   ]
 }

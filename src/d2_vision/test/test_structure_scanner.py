@@ -18,6 +18,7 @@ import numpy as np
 import pytest
 import yaml
 
+from d2_vision.mock_scan import load_recipe_files
 from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extents, read_ply_header
 
 SRC = Path(__file__).resolve().parents[2]
@@ -38,10 +39,8 @@ REAL_STEMS = {'observe': 's11_001_a_observe', 'observe_front': 's11_002_a_front'
 
 
 def truth(design_id):
-    """레시피 두 파일 → 정답 blocks/1 (변환기 ②)."""
-    s = json.loads((RECIPES / f'{design_id}_structure.json').read_text(encoding='utf-8'))
-    r = json.loads((RECIPES / f'{design_id}_recipe.json').read_text(encoding='utf-8'))
-    return RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(r, s)
+    """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — blocks/2.0, 자리 · 방향 칸은 blocks/1 과 같다)."""
+    return RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
 
 
 def cam_rot(look):

@@ -2,7 +2,7 @@
 
 작업 관리자(task_manager._scan_capture · _scan_infer)가 응답에서 확인하는 칸을 여기서 그대로 확인한다(d2_task 를 import 하지 않고).
 변환기 ②(d2_task RecipeToBlocks)와 같은 blocks 를 내는지는 d2_task 를 읽을 수 있을 때만 비교한다(없으면 건너뜀).
-레시피는 저장소 src/recipe_manager/recipes 의 기본 설계 두 파일을 읽는다. 파일은 pytest 임시 폴더에 쓴다.
+레시피는 저장소 src/recipe_manager/recipes 의 기본 설계 두 파일(E-69 _recipe.json + _placements.csv)을 읽는다. 파일은 pytest 임시 폴더에 쓴다.
 """
 import json
 import struct
@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import yaml
 
-from d2_vision.mock_scan import DEFAULT_FIND_BLOCK, MAX_RUNS, MockScan, blocks_to_points, structure_to_blocks
+from d2_vision.mock_scan import DEFAULT_FIND_BLOCK, MAX_RUNS, MockScan, blocks_to_points, load_recipe_files, structure_to_blocks
 
 ROOT = Path(__file__).resolve().parents[3]
 RECIPES = ROOT / 'src/recipe_manager/recipes'
@@ -30,11 +30,11 @@ def scanner(tmp_path):
 
 
 def load(design_id):
-    s = RECIPES / f'{design_id}_structure.json'
-    r = RECIPES / f'{design_id}_recipe.json'
-    if not s.is_file() or not r.is_file():
+    """기본 설계 → (구조, 조립 방법). 두 파일이 없으면 건너뜀."""
+    pair = load_recipe_files(str(RECIPES), design_id)
+    if pair is None:
         pytest.skip(f'{design_id} 레시피 두 파일이 없다')
-    return json.loads(s.read_text(encoding='utf-8')), json.loads(r.read_text(encoding='utf-8'))
+    return pair
 
 
 def task_accepts_infer(body):
@@ -85,8 +85,7 @@ def test_bad_requests_fail_with_scan_failed(tmp_path, text):
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_infer_gives_blocks_task_accepts_and_real_files(tmp_path, design_id, n):
     """scan_infer: 기본 설계 4개 모두 task 형식 검사 통과 · 블록 수 = 레시피 · 사진 · 점군 파일이 실제로 있다."""
-    if not (RECIPES / f'{design_id}_structure.json').is_file():
-        pytest.skip(f'{design_id} 레시피가 없다')
+    load(design_id)                                                                # 두 파일이 없으면 건너뜀
     m = scanner(tmp_path)
     m.capture(json.dumps({'pose_id': 'observe_front', 'run_id': 'R20261011_101502_5b7e'}))
     ok, reason, body = m.infer(json.dumps({'run_id': 'R20261011_101502_5b7e'}), str(RECIPES), design_id, 'chair', 2)
@@ -111,8 +110,7 @@ def test_infer_numbering_and_inferred_clamp(tmp_path):
     """scan 설계 이름은 성공할 때마다 번호 +1, inferred 수는 0 ~ 블록 수로 자른다."""
     m = scanner(tmp_path)
     m.capture(json.dumps({'pose_id': 'p', 'run_id': 'R1'}))
-    if not (RECIPES / '001_CHAIR_BENCH_structure.json').is_file():
-        pytest.skip('벤치 레시피가 없다')
+    load('001_CHAIR_BENCH')
     _, _, a = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', 99)
     _, _, b = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', -3)
     assert a['inferred_count'] == 11 and b['inferred_count'] == 0
@@ -142,16 +140,19 @@ def test_bench_blocks_match_ird_example():
 
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
-    """변환기 ②(d2_task RecipeToBlocks)와 같은 blocks 를 낸다. d2_task 를 못 읽으면 건너뜀."""
+    """변환기 ②(d2_task RecipeToBlocks)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
+    변환기 ②는 blocks/2.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/1 이라 order · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:
         rtb = pytest.importorskip('d2_task.recipe_to_blocks')
     finally:
         sys.path.remove(str(ROOT / 'src/d2_task'))
-    want = rtb.RecipeToBlocks('scan_chair_01', 'chair', BLOCK_MM).convert(r, s)
+    want = rtb.RecipeToBlocks('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
     got = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)
-    assert got == want and len(got['blocks']) == n
+    keys = ('order', 'x', 'y', 'z', 'ori')
+    assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['blocks']]
+    assert (got['design_id'], got['family'], len(got['blocks'])) == (want['design_id'], want['family'], n)
 
 
 def test_points_follow_origin_yaw():

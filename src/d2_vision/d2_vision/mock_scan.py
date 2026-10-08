@@ -2,7 +2,8 @@
 
 IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) 의 응답을 카메라 없이 만든다.
 노드와 나눈 이유: ROS 없이 pytest 로 응답 모양을 시험하려고(CLAUDE.md 2장 — 계산 파일은 같은 패키지 다른 파일로).
-- scan_infer 의 blocks/1 은 레시피 두 파일(`<id>_structure.json` + `<id>_recipe.json`, E-52)에서 직접 만든다.
+- scan_infer 의 blocks/1 은 레시피 두 파일(구조 `<id>_recipe.json` recipe/2.0 + 조립 방법 `<id>_placements.csv` placements/2.0, E-69)에서
+  직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
   d2_task 의 변환기 ②(RecipeToBlocks)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
   d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
   결과가 같은지는 시험(test_mock_scan.py)이 d2_task 가 있을 때 비교한다.
@@ -14,6 +15,7 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
       답은 냈지만 결과가 실패(촬영 안 한 run_id · 레시피 못 읽음 · scan_fail 흉내) → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail"}).
       작업 관리자는 두 경우 모두 SCAN_FAILED(또는 받은 코드)로 다룬다(task_manager._scan_capture · _scan_infer).
 """
+import csv
 import json
 import math
 import re
@@ -25,7 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
-from d2_vision.block_checker import recipe_path
+from d2_vision.block_checker import PLACEMENTS_SCHEMA, RECIPE_SCHEMA, recipe_path, recipe_sha256
 
 MOCK_POINTS = 180000            # scan_capture 가 답하는 '모은 점 수'(가짜 — IRD 예시와 비슷한 크기)
 MAX_RUNS = 20                   # 기억하는 run_id 수(오래된 것부터 지운다 — 노드를 오래 띄워도 메모리가 늘지 않게)
@@ -71,16 +73,48 @@ def ori_table(size_mm):
     return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 
 
-def structure_to_blocks(structure, recipe, design_id, family, inferred_count):
-    """레시피 두 파일 dict → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
+def load_recipe_files(recipe_dir, design_id):
+    """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/2.0 dict, 조립 방법 placements/2.0 dict). 바깥 영향 없음(파일 읽기만).
 
-    order = 레시피 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
+    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, block_id, sequence, stage, grasp,
+    grasp_axis, supports[]}]} — CSV 에서 sequence · stage 는 정수, supports 는 ';' 로 나눈 목록(빈 칸이면 []).
+    d2_motion.load_recipe 를 쓰지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣는다. 거절 규칙은 load_recipe 와 같다.
+    출력: 두 파일 중 하나라도 없으면(이름 비었음 · 경로 문자 포함) None.
+    실패: 형식이 recipe/2.0 · placements/2.0 이 아님(옛 cad_* 는 바꿔 읽지 않음) · 줄마다 schema · recipe_sha256 이 다름 ·
+          recipe_sha256 이 구조와 다름 · model_id 다름 → ValueError. 칸이 없으면 KeyError, 숫자가 아니면 ValueError."""
+    r_path = recipe_path(recipe_dir, design_id, ('_recipe.json',))
+    p_path = recipe_path(recipe_dir, design_id, ('_placements.csv',))
+    if r_path is None or p_path is None:
+        return None
+    recipe = json.loads(r_path.read_text(encoding='utf-8'))
+    if not isinstance(recipe, dict) or recipe.get('schema') != RECIPE_SCHEMA:
+        got = recipe.get('schema') if isinstance(recipe, dict) else None
+        raise ValueError(f'{r_path.name}: 형식 {got!r} 는 읽지 않는다({RECIPE_SCHEMA} 만)')
+    with p_path.open(encoding='utf-8', newline='') as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        raise ValueError(f'{p_path.name}: 줄이 없다')
+    if {r['schema'] for r in rows} != {PLACEMENTS_SCHEMA}:
+        raise ValueError(f'{p_path.name}: 형식 {sorted({r["schema"] for r in rows})} 는 읽지 않는다({PLACEMENTS_SCHEMA} 만)')
+    shas = {r['recipe_sha256'] for r in rows}
+    if shas != {recipe_sha256(recipe)}:
+        raise ValueError(f'{p_path.name} 의 recipe_sha256 이 {r_path.name} 와 다르다(구조가 바뀜 — 레시피 도구로 다시 만든다)')
+    steps = [{'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+              'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]}
+             for r in rows]
+    return recipe, {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'], 'recipe_sha256': shas.pop(), 'steps': steps}
+
+
+def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
+    """레시피 두 파일 dict(구조 recipe/2.0 + 조립 방법 placements/2.0, load_recipe_files 출력) → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
+
+    order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
-    parts = {p['part_id']: [float(v) for v in p['size_mm']] for p in structure['parts']}
-    by_name = {b['block']: b for b in structure['blocks']}
+    parts = {p['part_id']: [float(v) for v in p['size_mm']] for p in recipe['parts']}
+    by_name = {b['block']: b for b in recipe['blocks']}
     rows = []
-    for st in sorted(recipe['steps'], key=lambda s: s['sequence']):
+    for st in sorted(placements['steps'], key=lambda s: s['sequence']):
         b = by_name[st['block']]
         size = parts[b['part_id']]
         ext = tuple(sum(abs(b['R'][i][k]) * size[k] for k in range(3)) for i in range(3))
@@ -90,7 +124,7 @@ def structure_to_blocks(structure, recipe, design_id, family, inferred_count):
         x, y, cz = (float(v) for v in b['center_mm'])
         rows.append({'order': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
     if not rows:
-        raise ValueError('레시피에 steps 가 없다')
+        raise ValueError('조립 방법에 steps 가 없다')
     for r in rows[:max(0, min(int(inferred_count), len(rows)))]:
         r['inferred'] = True
     return {'schema': 'blocks/1', 'design_id': design_id, 'family': family, 'blocks': rows}
@@ -204,14 +238,11 @@ class MockScan:
             return _result_fail(f'run_id {rid} 로 촬영한 자세가 없다(scan_capture 먼저)')
         if fail:
             return _result_fail('scan_fail 파라미터 — 격자 맞추기 실패 흉내')
-        s_path = recipe_path(recipe_dir, design_id, ('_structure.json',))
-        r_path = recipe_path(recipe_dir, design_id, ('_recipe.json',))
-        if s_path is None or r_path is None:
-            return _result_fail(f'레시피 {design_id} 두 파일을 못 찾음(recipe_dir={recipe_dir!r})')
         try:
-            structure = json.loads(s_path.read_text(encoding='utf-8'))
-            recipe = json.loads(r_path.read_text(encoding='utf-8'))
-            blocks = structure_to_blocks(structure, recipe, f'scan_{family}_{self.n_designs + 1:02d}', family, inferred_count)
+            pair = load_recipe_files(recipe_dir, design_id)
+            if pair is None:
+                return _result_fail(f'레시피 {design_id} 두 파일(_recipe.json · _placements.csv)을 못 찾음(recipe_dir={recipe_dir!r})')
+            blocks = structure_to_blocks(*pair, f'scan_{family}_{self.n_designs + 1:02d}', family, inferred_count)
         except (OSError, KeyError, TypeError, ValueError, IndexError) as e:
             return _result_fail(f'레시피 {design_id} 를 blocks/1 로 못 바꿈: {e}')
         out = self.out_root / rid

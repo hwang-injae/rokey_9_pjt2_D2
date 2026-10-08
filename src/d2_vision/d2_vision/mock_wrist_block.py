@@ -1,11 +1,11 @@
 """가짜 손목 블록 인식 (mock_wrist_block) — IRD 4.2 `/d2/vision/check_progress` · `scan_capture` · `scan_infer` · `find_blocks`
-· 4.1 `camera_status/1` (W034 · W140 E-52).
+· 4.1 `camera_status/1` (W034 · W140 E-52 → E-69).
 
 카메라·로봇 없이 작업 관리자(task)가 진행 확인 · 스캔 · 흩뿌림 찾기 흐름을 돌릴 수 있게 한다.
 - `/d2/vision/check_progress`(CheckProgress): 요청한 block_id 마다 state 와 높이를 답한다.
   설계는 요청 design_id 칸으로만 고른다(E-52 ④ — 블록 이름에서 잘라 내지 않는다). 비었으면 success=false, reason ERROR(wrist_block 과 같음).
   block_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_LEG_001_01)을 그대로 맞춘다.
-  레시피 파일은 wrist_block 과 같다: `<recipe_dir>/<design_id>_recipe.json`(새, 옆 `_structure.json` 도) → 없으면 `.recipe.json`(옛).
+  레시피 파일은 wrist_block 과 같다: `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 옆 `_placements.csv` 도).
   기본은 전부 present. 파라미터로 absent·occluded 블록을 고를 수 있다.
   top_z_m = 팀 공용 `d2_motion.motion_math.recipe_blocks()` 가 계산한 블록 윗면 높이(base, m — 실측 두께로 쌓은 값). dz_m = 0.
   dx_m·dy_m 은 1차 규칙대로 늘 NaN(안 잼). absent·unknown 블록은 dz·top_z 도 NaN.
@@ -65,10 +65,9 @@ QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
 def load_recipe_tops(recipe_dir, design_id, cfg):
     """설계 이름 → {block_id: 윗면 높이 m(base)}. 바깥 영향 없음(파일 읽기만).
 
-    파일은 wrist_block 과 같은 규칙(recipe_path): `<recipe_dir>/<design_id>_recipe.json`(새 — load_recipe 가 옆 `_structure.json` 도 붙임)
-    → 없으면 `<design_id>.recipe.json`(옛). recipe_blocks 가 형식을 가려 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다.
-    block_id 는 recipe_blocks 가 만든 이름(새 형식 '<model_id>_<블록 이름>', 옛 '<model_id>_B<순서>').
-    실패(이름 비었음 · 경로 문자 · 파일 없음 · 구조 파일 없음 · 형식 틀림) → 빈 dict(요청 블록은 unknown)."""
+    파일은 wrist_block 과 같은 규칙(recipe_path): `<recipe_dir>/<design_id>_recipe.json`(구조 — load_recipe 가 옆 `_placements.csv` 도 붙임).
+    recipe_blocks 가 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다. block_id 는 조립 방법의 block_id 칸('<model_id>_<블록 이름>').
+    실패(이름 비었음 · 경로 문자 · 파일 없음 · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) · recipe_sha256 다름) → 빈 dict(요청 블록은 unknown)."""
     path = recipe_path(recipe_dir, design_id, RECIPE_SUFFIXES)
     if path is None:
         return {}

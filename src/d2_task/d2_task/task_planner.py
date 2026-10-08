@@ -18,21 +18,21 @@ def _nan_to_none(v):
 
 
 class TaskPlanner:
-    """structure/recipe 와 관측 결과로 진행표를 만들고 다음 블록을 고른다.
+    """recipe(구조) · placements(조립 방법)와 관측 결과로 진행표를 만들고 다음 블록을 고른다.
 
     입력: robot.yaml 을 읽은 dict(cfg), 레시피 dict. 단위는 노드끼리 m·rad.
     바깥 영향: 없음(계산만). 로봇·메시지를 건드리지 않는다.
     실패: 레시피 · 설정이 서로 안 맞으면 만들 때 ValueError. 다음 블록을 못 고르면 예외 대신 status 로 알린다.
     """
 
-    def __init__(self, cfg, recipe, structure):
+    def __init__(self, cfg, recipe, placements):
         """레시피 블록을 sequence 순서로 펼치고, 블록마다 받침 block_id 를 붙인다. 진행표는 모두 unknown 으로 시작한다.
 
-        recipe 는 조립 dict, structure 는 구조 dict(mm). 바깥 영향 없음.
+        recipe 는 구조 dict(recipe/2.0, mm), placements 는 조립 방법 dict(placements/2.0). 바깥 영향 없음.
         블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_blocks 한 곳에서 한다.
         """
         self.cfg = cfg
-        document = RecipeDocument(recipe, structure)
+        document = RecipeDocument(recipe, placements)
         recipe = document.geometry
         self.design_id = recipe['model']['model_id']
         blocks = recipe_blocks(cfg, recipe)
