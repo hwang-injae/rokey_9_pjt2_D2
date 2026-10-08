@@ -11,11 +11,10 @@ import re
 
 from d2_task.recipe_to_blocks import ori_extents
 from d2_task.blocks_to_recipe import DesignRejected
-from d2_task.recipe_document import RecipeDocument
+from d2_task.recipe_document import GRASPS, RecipeDocument
 
 SCHEMA_REQUEST = 'blocks/2.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/2.0'
-GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG')
 ROLE_RE = re.compile(r'[A-Z]+(?:_[A-Z]+)?')     # 역할 한 단어 + 옵션 0~1개 한 단어(영문 대문자, 작명 규칙 v3)
 PENETRATION_MM = 0.1     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 (SDD 6.7 검사 2)
 FLAT, EDGE, STAND = 'FLAT', 'EDGE', 'STAND'
@@ -33,7 +32,7 @@ class DesignChecker:
     """
 
     def __init__(self, cfg, blocks_to_recipe=None):
-        """cfg 를 mm 로 바꾼다. 변환기 ①은 {structure, recipe} 를 반환한다. 미연결이면 레시피를 안 낸다."""
+        """cfg 를 mm 로 바꾼다. 변환기 ①(blocks_to_recipe)은 {recipe, placements} 를 반환한다(E-69 · #100 에서 task_node 가 연결). 안 붙이면 합격해도 레시피를 못 내 ERROR 로 답한다."""
         try:
             self.block_mm = [v * 1000.0 for v in cfg['block_size_m']]
             self.extent = ori_extents(self.block_mm)

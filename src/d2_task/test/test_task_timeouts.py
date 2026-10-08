@@ -223,7 +223,7 @@ def test_시간초과는_정지접수만으로_복구하지_않는다(script):
     drive(m, 'ERROR')
     before = list(io.calls)
     assert ('stop', 'TIMEOUT') in before
-    m.on_safety(SAFE_OK)                                     # 실제 stopped 확인 없는 resume · 생존 방송은 허가가 아니다
+    m.on_safety(SAFE_OK)                                     # 실제 stopped 확인 없는 resume · 연결 방송은 허가가 아니다
     for _ in range(3):
         m.run_once()
     assert m.state == 'ERROR' and io.calls == before and m.halted()

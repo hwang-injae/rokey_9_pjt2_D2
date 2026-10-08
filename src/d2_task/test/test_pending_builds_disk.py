@@ -240,7 +240,7 @@ def test_디스크가_멈춘_동안에도_정지와_종료는_기다리지_않�
         assert m.command('select_design', 'bench') == (True, '')
         assert m.command('start') == (True, '')
         drive(m, 'SELECT')
-        m.on_safety({'stopped': True, 'locked': True, 'reason': 'STOP_REQUEST'})
+        m.on_safety({'stopped': True, 'locked': True, 'reason': 'STOP_WEB'})
         m.run_once()
         assert m.state == 'STOPPED'
         m.on_safety(SAFE_OK)
