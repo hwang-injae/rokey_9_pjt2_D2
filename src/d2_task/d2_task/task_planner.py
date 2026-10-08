@@ -74,6 +74,24 @@ class TaskPlanner:
         """사람이 공급을 채우고 [계속](start)을 눌렀을 때 부른다. 모든 칸을 다시 '있음'으로 본다."""
         self.empty_slots.clear()
 
+    def next_target(self):
+        """다음에 놓을 블록(어디서 집을지는 정하지 않는다)을 돌려준다. 공급 방식(칸 · 흩뿌림)과 상관없는 목표 선택이다.
+
+        status: FOUND(block_id · grasp · place_pose · index) · DONE · NO_SUPPORT(block_id) · UNKNOWN_BLOCK(block_id). 규칙은 next_block 과 같다.
+        계산만 한다(진행표를 바꾸지 않는다).
+        """
+        for index, b in enumerate(self.blocks):
+            state = self.progress[b['block_id']]['state']
+            if state == 'present':
+                continue
+            if state != 'absent':
+                return {'status': 'UNKNOWN_BLOCK', 'block_id': b['block_id']}
+            if any(self.progress[s]['state'] != 'present' for s in b['supports']):
+                return {'status': 'NO_SUPPORT', 'block_id': b['block_id']}
+            return {'status': 'FOUND', 'block_id': b['block_id'], 'grasp': b['grasp'],
+                    'place_pose': (b['center'], b['quat']), 'index': index}
+        return {'status': 'DONE'}
+
     def next_block(self, avoid_slots=()):
         """레시피 sequence 에서 아직 안 놓인 첫 블록을 골라 집기·놓기 목표를 돌려준다.
 
@@ -93,22 +111,16 @@ class TaskPlanner:
         place_pose 높이는 recipe_blocks 가 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
         robot.yaml 에 그 잡기의 공급 칸이 아예 없으면 ValueError(설정 오류).
         """
-        for index, b in enumerate(self.blocks):
-            state = self.progress[b['block_id']]['state']
-            if state == 'present':
-                continue
-            if state != 'absent':
-                return {'status': 'UNKNOWN_BLOCK', 'block_id': b['block_id']}
-            if any(self.progress[s]['state'] != 'present' for s in b['supports']):
-                return {'status': 'NO_SUPPORT', 'block_id': b['block_id']}
-            slot = self._pick_slot(index, avoid_slots)
-            if slot is None:
-                return {'status': 'WAIT_SUPPLY', 'block_id': b['block_id']}
-            center, rot = slot_block_pose(self.cfg, slot)
-            return {'status': 'FOUND', 'block_id': b['block_id'], 'supply_slot': str(slot), 'grasp': b['grasp'],
-                    'pick_pose': (center, quat_from_axes(*(column(rot, k) for k in range(3)))),
-                    'place_pose': (b['center'], b['quat'])}
-        return {'status': 'DONE'}
+        t = self.next_target()
+        if t['status'] != 'FOUND':
+            return t
+        slot = self._pick_slot(t['index'], avoid_slots)
+        if slot is None:
+            return {'status': 'WAIT_SUPPLY', 'block_id': t['block_id']}
+        center, rot = slot_block_pose(self.cfg, slot)
+        return {'status': 'FOUND', 'block_id': t['block_id'], 'supply_slot': str(slot), 'grasp': t['grasp'],
+                'pick_pose': (center, quat_from_axes(*(column(rot, k) for k in range(3)))),
+                'place_pose': t['place_pose']}
 
     def judge(self, expect_present=()):
         """진행표에서 확실히 어긋난 블록을 찾는다(IRD 7장 OFFSET_OVER). 문제가 없으면 빈 목록.

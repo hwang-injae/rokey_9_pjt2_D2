@@ -201,3 +201,23 @@ def test_빈_칸이_다_차면_WAIT_SUPPLY_채우면_FOUND():
     assert p.next_block() == {'status': 'WAIT_SUPPLY', 'block_id': IDS[0]}
     p.supply_refilled()
     assert p.next_block()['status'] == 'FOUND'
+
+
+def test_next_target은_어디서_집을지_빼고_next_block과_같은_블록을_고른다():
+    """목표 선택(블록 · 잡기 · 놓을 자세)과 공급 칸 선택을 가른 것: next_block = next_target + 칸."""
+    for n in (0, 3, 8):
+        p = planner(n)
+        t, b = p.next_target(), p.next_block()
+        assert t['status'] == b['status'] == 'FOUND'
+        assert (t['block_id'], t['grasp'], t['place_pose']) == (b['block_id'], b['grasp'], b['place_pose'])
+        assert 'supply_slot' not in t and 'pick_pose' not in t
+
+
+def test_next_target은_진행표를_바꾸지_않고_DONE_UNKNOWN_NO_SUPPORT도_같다():
+    assert planner(11).next_target() == {'status': 'DONE'}
+    p = planner(2)
+    p.update_progress({IDS[2]: {'state': 'unknown'}})
+    assert p.next_target() == p.next_block() == {'status': 'UNKNOWN_BLOCK', 'block_id': IDS[2]}
+    before = copy.deepcopy(p.progress)
+    p.next_target()
+    assert p.progress == before
