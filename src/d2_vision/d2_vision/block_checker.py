@@ -5,8 +5,8 @@
 
 입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_blocks(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-69 두 파일:
 구조 recipe/2.0 + 조립 방법 placements/2.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(block_id · center(m, base) · rot 3x3)만 받는다.
-block_id 는 글자 그대로 맞춘다 — 레시피가 만든 전체 이름(001_CHAIR_BENCH_LEG_001_01)과 같으면 된다.
-check_progress 요청의 설계 레시피 파일을 고르는 것(recipe_path)과 get_design 답(design/2.0)을
+block_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
+(E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/2.0)을
 recipe_blocks 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
 단위: 이 파일 안은 모두 m · rad(레시피 dict 는 파일과 같은 mm 그대로 넘긴다). 좌표: base_link.
@@ -39,6 +39,19 @@ def depth_to_base_points(depth_m, intr, T_base2cam, stride=2, z_min_m=0.1, z_max
     z = d[ok]
     pts_cam = np.stack([(u[ok] - ppx) * z / fx, (v[ok] - ppy) * z / fy, z, np.ones_like(z)], axis=1)
     return (pts_cam @ T_base2cam.T)[:, :3]
+
+
+def mean_depth_mm(frames):
+    """깊이 프레임 여러 장(mm) → 화소마다 평균(mm). scan_capture · find_blocks 가 쓴다(SDD §6.9 '깊이 ~10장 평균').
+
+    입력: frames = 같은 크기 (H, W) 깊이 목록(mm, 구멍은 0 또는 NaN). 출력: (H, W) float32 mm — 구멍은 빼고 평균,
+    모든 장에서 구멍인 화소는 0(StructureScanner.add_capture · BlockFinder 가 '없음'으로 읽는 값).
+    실패: 목록이 비거나 크기가 다르면 ValueError(np.stack). 바깥 영향 없음."""
+    st = np.stack([np.asarray(f, np.float32) for f in frames])
+    ok = np.isfinite(st) & (st > 0)
+    n = ok.sum(axis=0)
+    s = np.where(ok, st, 0.0).sum(axis=0)
+    return np.where(n > 0, s / np.maximum(n, 1), 0.0).astype(np.float32)
 
 
 def height_map(points, origin_xy, half_m, cell_m=CELL_M):
