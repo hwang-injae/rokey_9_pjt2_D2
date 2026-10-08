@@ -467,6 +467,8 @@ class TaskManager:
             self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+        elif status == 'BLOCKED':                  # 장애물 블록 중 형식이 틀린 것이 있다(E-68) — 일부만 보내지 않고 서서 사람을 부른다
+            self._to_error(result['message'])
         else:                                      # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
             self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
 

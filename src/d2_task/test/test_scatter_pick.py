@@ -490,10 +490,12 @@ def test_장애물은_자르지_않고_모두_보낸다():
     assert len(r['request']['obstacles']) == 40
 
 
-def test_다른_블록이_기울어졌으면_범위를_모르니_요청을_막는다():
-    r = flow().prepare(TARGET, resp(blk(length=40), blk(x=0.5, tilted=True), blk(x=0.6, tilted=True)))
-    assert (r['status'], r['reason'], r['indexes'], r['guide']) == ('BLOCKED', 'TILTED_UNBOUNDED', [1, 2], 'CHECK_BLOCKS')
-    assert 'request' not in r
+def test_다른_블록이_기울어져도_요청은_막지_않고_반듯한_상자로_싣는다():
+    """E-68(10/8 PL): tilted 는 집기 요청을 막지 않고 '윗면 = 가장 높은 점인 반듯한 상자'(top_z_m 기준)로 장애물에 넣는다."""
+    tilted = blk(x=0.5, tilted=True)
+    r = flow().prepare(TARGET, resp(blk(length=40), tilted, blk(x=0.6, tilted=True)))
+    assert r['status'] == 'PICK' and len(r['request']['obstacles']) == 2
+    assert r['request']['obstacles'][0] == block_pose(CFG, tilted['up'], tilted['yaw_deg'], tilted['x_m'], tilted['y_m'], tilted['top_z_m'])
 
 
 def test_기울어진_블록만_남으면_기존대로_NO_MATCH_안내():
