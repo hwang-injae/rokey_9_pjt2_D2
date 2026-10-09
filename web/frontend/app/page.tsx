@@ -43,11 +43,11 @@ export default function Home() {
 
         <div className="layout">
           <div className="col">
-            <RobotPanel robot={robot} onLog={addLog} picked={picked} onPick={setPicked} />
+            <RobotPanel robot={robot} onLog={addLog} picked={picked} />
             <WristCamera robot={robot} />
           </div>
           <div className="col">
-            <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} />
+            <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} onPick={setPicked} />
           </div>
         </div>
 

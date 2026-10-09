@@ -126,6 +126,11 @@ def test_robot_request_answered_by_handler_once(mc):
                                                          'design_id': '001_CHAIR_BENCH', 'req_id': 'g1'}, False)]
 
 
+def test_snapshot_tells_screen_the_request_timeout(mc):
+    """화면이 붙을 때 받는 값에 요청 시간 제한(robot.yaml mqtt.req_timeout_s)이 있다 — 화면 코드에 숫자를 두지 않게."""
+    assert mc.snapshot()['timing'] == {'req_timeout_s': 0.3}
+
+
 def test_wrist_image_kept_as_bytes_and_only_seq_announced(mc):
     """손목 검출 그림은 JSON 이 아닌 JPEG 바이트 — 마지막 한 장을 들고 /ws 에는 번호만 알린다. 구독은 QoS 0(IRD 10.1)."""
     mc._on_connect(mc.client, None, None, 0)

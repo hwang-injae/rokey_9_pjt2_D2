@@ -20,6 +20,13 @@
   --canvas-bg: #eef1f5;
   --grid-major: #9aa3ae;
   --grid-minor: #cfd5dc;
+  --mill-bg: #eeeeee;          /* 설계 고르기 열 보기 — CodePen 원본 색 */
+  --mill-item: #ffffff;
+  --mill-hover: #e8f7fc;
+  --mill-sel: #30afff;
+  --mill-sel-line: #0098fc;
+  --mill-title: #2a80d5;
+  --mill-icon: #adb5b8;
   color-scheme: light;
 }
 
@@ -43,6 +50,13 @@
   --canvas-bg: #11161c;
   --grid-major: #4b5563;
   --grid-minor: #262d36;
+  --mill-bg: #12161b;
+  --mill-item: #1f252d;
+  --mill-hover: #1b2a44;
+  --mill-sel: #1d8fd8;
+  --mill-sel-line: #1577b5;
+  --mill-title: #5aa9f0;
+  --mill-icon: #5f6b78;
   color-scheme: dark;
 }
 
@@ -166,19 +180,32 @@ main { max-width: 1440px; margin: 0 auto; padding: 16px; display: flex; flex-dir
 .design-row { display: flex; flex-direction: column; gap: 8px; }
 .design-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .design-now strong { font-family: ui-monospace, monospace; font-size: 16px; }
-.tree { border: 1px solid var(--line); border-radius: 8px; padding: 8px; max-height: 320px; overflow-y: auto; font-size: 14px; background: var(--panel-2); }
-.tree ul { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 1px dashed var(--line); }
-.tree > div > ul { border-left: none; padding-left: 0; }
-.tree-family { font-weight: 700; color: var(--muted); font-size: 13px; margin: 6px 4px 2px; }
-button.tree-node {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; width: 100%; min-width: 0; min-height: 0;
-  padding: 6px 8px; margin: 1px 0; text-align: left; font-size: 14px; font-weight: 400;
-  background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text);
+.tree { border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 14px; background: var(--panel-2); }
+
+/* 설계 고르기 — 열 보기(Miller columns, CodePen 원본을 React · CSS 로 옮김. 아이콘 글꼴 대신 CSS 동그라미) */
+.miller { display: flex; gap: 8px; overflow-x: auto; padding: 10px; border-radius: 8px; background: var(--mill-bg); scroll-snap-type: x proximity; }
+.mcol { flex: 0 0 200px; display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; scroll-snap-align: start; animation: mcol-in 0.3s linear; }
+@keyframes mcol-in { from { opacity: 0; } to { opacity: 1; } }
+.mcol-title { height: 26px; font-size: 13px; color: var(--mill-title); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.mitem {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  flex: none; width: 98%; min-width: 0; min-height: 0; margin-bottom: 3px; padding: 7px 10px 7px 2em;
+  text-align: left; font-size: 14px; font-weight: 400; color: var(--text);
+  background: var(--mill-item); border: 1px solid var(--mill-item); border-radius: 2px;
 }
-button.tree-node:hover { background: var(--pick-soft); }
-button.tree-node.picked { background: var(--pick-soft); border-color: var(--primary); }
-.tree-id { font-family: ui-monospace, monospace; font-weight: 600; }
-.tree-meta { color: var(--muted); font-size: 12px; }
+button.mitem::before {
+  content: ''; position: absolute; left: 9px; top: 10px; width: 14px; height: 14px;
+  border: 2px solid var(--mill-icon); border-radius: 50%; box-sizing: border-box;
+}
+button.mitem:hover { background: var(--mill-hover); }
+button.mitem.selected { background: var(--mill-sel); border-color: var(--mill-sel-line); color: #fff; }
+button.mitem.selected::before { content: '✓'; background: #fff; border-color: #fff; color: var(--mill-sel); font-size: 10px; font-weight: 700; line-height: 10px; text-align: center; }
+button.mitem.selected .mitem-meta { color: rgba(255, 255, 255, 0.85); }
+button.mitem.selected .tag.ok { color: #fff; border-color: #fff; }
+.mitem-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-family: ui-monospace, monospace; font-weight: 600; overflow-wrap: anywhere; }
+.mitem-meta { font-size: 12px; color: var(--muted); }
+.mitem-meta b { font-weight: 600; white-space: nowrap; }
+.head-btn { margin-left: auto; min-width: 0; padding: 6px 12px; font-size: 14px; }
 
 /* 버튼 */
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
@@ -230,5 +257,4 @@ button.resume { border-color: var(--ok); color: var(--ok); }
 @media (max-width: 600px) {
   button { flex: 1 1 40%; }
   button.stop { flex-basis: 100%; }
-  button.tree-node { flex: none; }
 }

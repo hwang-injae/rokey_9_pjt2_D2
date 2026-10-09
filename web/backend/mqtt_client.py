@@ -99,11 +99,15 @@ class MqttClient:
             self.clock() - self._bridge_seen_at < self.lost_after_s
 
     def snapshot(self):
-        """지금 값 전부(화면이 처음 붙을 때 · GET /api/robot/state): 상태 5종 · 손목 그림 번호 + 브로커 · 다리 연결."""
+        """지금 값 전부(화면이 처음 붙을 때 · GET /api/robot/state): 상태 5종 · 손목 그림 번호 + 브로커 · 다리 연결 + 요청 시간 제한.
+
+        timing.req_timeout_s = robot.yaml 값(한 곳) — 화면은 이것으로 '웹 서버 답을 언제까지 기다릴지'를 정한다(숫자를 화면 코드에 두지 않게).
+        """
         with self._lock:
             out = {k: v for k, v in self.state.items()}
             out['bridge_alive'] = self._fresh()
         out['broker'] = self.connected()
+        out['timing'] = {'req_timeout_s': self.req_timeout_s}
         return out
 
     def _on_connect(self, client, _userdata, _flags, rc):

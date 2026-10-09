@@ -1,12 +1,13 @@
 'use client';
-// 설계 3D 패널 — 트리에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑦ ⑧).
+// 설계 3D 패널 — [설계 고르기](열 보기 DesignTree)에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑥ ⑦ ⑧).
+// 열 보기는 넓은 이 칸 위에 연다 — 고르면 바로 아래 3D 로 보인다. 로봇에 보내는 것은 왼쪽 [설계 선택].
 // 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/1.1) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
 // 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = blocks.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import type { Design, Rules } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
-import { MADE_KO } from './DesignTree';
+import DesignTree, { MADE_KO } from './DesignTree';
 import Preview3D, { type Item3D } from './Preview3D';
 
 const ROLE: Record<string, { ko: string; color: string }> = {
@@ -22,9 +23,23 @@ const OTHER = '#a8a29e'; // 목록에 없는 새 역할(AI 가 지은 이름 —
 const PROG = { present: '#22c55e', current: '#facc15', unsure: '#f97316', todo: '#9ca3af' };
 const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 색을 나누지 않음)
 
-export default function DesignView({ robot, viewId, rules, dark }: { robot: Robot; viewId: string | null; rules: Rules | null; dark: boolean }) {
+interface Props {
+  robot: Robot;
+  viewId: string | null; // 보여 줄 설계 = 고른 설계 ?? 로봇에 선택된 설계
+  rules: Rules | null;
+  dark: boolean;
+  onPick: (id: string) => void;
+}
+
+export default function DesignView({ robot, viewId, rules, dark, onPick }: Props) {
   const [design, setDesign] = useState<Design | null>(null);
   const [failed, setFailed] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const robotDesign = robot.state?.design_id ?? null;
+
+  useEffect(() => {
+    setPickerOpen(false); // 로봇 설계가 바뀌면([설계 선택] 받음 · 음성) 열 보기를 닫는다 — 고르기가 끝났으니
+  }, [robotDesign]);
 
   useEffect(() => {
     setFailed(false);
@@ -86,7 +101,11 @@ export default function DesignView({ robot, viewId, rules, dark }: { robot: Robo
         )}
         {design &&
           (onRobot ? <span className="tag ok">로봇에 선택됨</span> : <span className="tag">미리보기 — [설계 선택]을 눌러야 로봇에 가요</span>)}
+        <button className="head-btn" aria-expanded={pickerOpen} onClick={() => setPickerOpen((o) => !o)}>
+          {pickerOpen ? '닫기 ▴' : '설계 고르기 ▾'}
+        </button>
       </div>
+      {pickerOpen && <DesignTree picked={viewId} onRobot={robotDesign} onPick={onPick} />}
       {body}
       {design && (
         <div className="legend">

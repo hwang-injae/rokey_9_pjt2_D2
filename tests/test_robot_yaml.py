@@ -128,6 +128,30 @@ def test_motion_and_stop(robot_cfg):
     assert num(robot_cfg['stop']['first_wait_s']) and robot_cfg['stop']['first_wait_s'] > 0
 
 
+def test_timeouts_inner_shorter_than_outer(robot_cfg):
+    """기다리는 시간은 안쪽일수록 짧다: timeout.service_s < timeout.command_s < mqtt.req_timeout_s (두 PC 에 걸친 약속).
+
+    웹(req_timeout_s)이 '시간 초과'라고 보여 준 명령이 로봇에서 뒤늦게 실행되면, 사람이 멈춘 줄 알고 작업 영역에 들어갈 수 있다.
+    작업 관리자는 command_s 안에 확정 못 하면 실행하지 않으므로 command_s 가 웹보다 짧아야 하고(10/7 PL E-55),
+    설계 꺼내기(get_design, service_s)는 그 확정 안에서 끝나야 한다. 숫자를 바꿔도 이 순서만 지키면 통과한다.
+    """
+    t, m = robot_cfg['timeout'], robot_cfg['mqtt']
+    for v in (t['service_s'], t['command_s'], m['req_timeout_s']):
+        assert num(v) and v > 0
+    assert t['service_s'] < t['command_s'] < m['req_timeout_s'], (
+        f"timeout.service_s {t['service_s']} < timeout.command_s {t['command_s']} < mqtt.req_timeout_s {m['req_timeout_s']} "
+        '순서가 깨졌다 — 웹이 시간 초과로 보여 준 명령이 로봇에서 뒤늦게 실행될 수 있다(IRD 9 · 10장)')
+
+
+def test_alive_signal_survives_one_late_signal(robot_cfg):
+    """연결 신호 끊김 기준(mqtt.lost_after_s)은 보내는 주기(mqtt.alive_s)의 2배보다 길다 — 신호 하나가 늦은 것만으로
+    끊김(조립 WAIT_HMI · 화면 배너)이 되지 않게(IRD 10.3). 숫자를 바꿔도 이 관계만 지키면 통과한다."""
+    m = robot_cfg['mqtt']
+    assert num(m['alive_s']) and m['alive_s'] > 0 and num(m['lost_after_s'])
+    assert m['lost_after_s'] > 2 * m['alive_s'], (
+        f"mqtt.lost_after_s {m['lost_after_s']} 가 alive_s {m['alive_s']} 의 2배 이하 — 신호 하나만 늦어도 끊김으로 본다")
+
+
 def test_no_personal_paths():
     """robot.yaml 에 개인 절대 경로(/home/)가 없다 (팀 규칙 — 경로는 패키지 share 로)."""
     assert '/home/' not in ROBOT_YAML.read_text(encoding='utf-8')

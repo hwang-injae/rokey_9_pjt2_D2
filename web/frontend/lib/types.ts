@@ -70,7 +70,8 @@ export type WsEvent =
   | { type: 'intent'; data: Intent }
   | { type: 'bridge_alive'; data: { alive: boolean } }
   | { type: 'broker'; data: { connected: boolean } }
-  | { type: 'wrist_image'; data: { seq: number; stamp: number } };
+  | { type: 'wrist_image'; data: { seq: number; stamp: number } }
+  | { type: 'timing'; data: { req_timeout_s: number } };
 
 /** 버튼 응답 — 다리가 넘긴 ROS 응답 칸 그대로(명령은 success · reason, 정지 · 다시 시작은 success · message) */
 export interface CmdResult {

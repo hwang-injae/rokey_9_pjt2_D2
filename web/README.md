@@ -9,7 +9,7 @@
 | 어디 | 무엇 | 쓰는 데이터 | 언제 |
 |---|---|---|---|
 | **공통 띠**(모든 페이지 위, `ConnectionBadge` · `RobotPanel` — W047 ✅ ①②③⑤) | ① 상태 알림 줄: `state` 한글 + `message` + 정지 때 **누가 · 왜**(`safety_state.reason` = `STOP_WEB` · `STOP_KEY` · `STOP_TASK` · `ROBOT_ALARM:<상태>` · `CTRL_C`, E-62) ② **로봇 PC 끊김 배너**(`bridge/alive` 3초 없음 → 크게, [출발] · [스캔] 막음, "정지는 키 · 펜던트") ③ 그리퍼 표시(폭 · 잡힘) ④ 음성 의도 표시("음성: 출발") ⑤ [정지] · [다시 시작] — 늘 보임 | `task/state` · `safety/state` · `bridge/alive` · `gripper/state` · `hmi/intent` | W047 |
-| **메인** `app/page.tsx` | ⑥ [설계 고르기] → 설계 트리(`DesignTree` — 가구별 기본 4개 → 파생본, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**, 로봇에는 [설계 선택]이 보냄 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼 [설계 선택] [출발] [계속] [스캔] [취소] — 켜짐은 3장 ⑩ 글상자 + [생성](`RequestBox` — 음성 `request_design` 문장이 오면 채우고 사람이 [생성], E-07) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 · 출발을 누르세요" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/2.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
+| **메인** `app/page.tsx` | ⑥ 설계 3D 칸의 [설계 고르기] → **열 보기**(`DesignTree` — Miller columns, 10/9 황인재가 고른 CodePen 모양: 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**, 로봇에는 왼쪽 [설계 선택]이 보냄 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼 [설계 선택] [출발] [계속] [스캔] [취소] — 켜짐은 3장 ⑩ 글상자 + [생성](`RequestBox` — 음성 `request_design` 문장이 오면 채우고 사람이 [생성], E-07) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 · 출발을 누르세요" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/2.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
 | **설계 상세** `app/designs/page.tsx?id=…` | 미리보기 · 검사 결과 · 버전 트리 · 조립 기록(builds: 결과 · 놓은 수/전체 · 시간 · 정지 횟수 · 블록별 dz) | `/api/designs` | W112 |
 | **스캔 비교** `app/scan/page.tsx`(`SCAN_REVIEW`일 때 자동, `ScanCompare`) | 실물 사진(`scan_image`) ↔ 추론 설계 3D(`inferred` 블록 반투명) + 추정 블록 수 · **점군 창**(`scan_cloud` PLY, 닫을 수 있음, E-35 — `cloud_path`가 없거나 빈 글자면 점군 창만 안 띄움) · 버튼 [그대로 저장] [AI로 고치기] [다시 스캔] [취소] | `task/scan_result` · `vision/scan_image` · `vision/scan_cloud` | W116 |
 | 메인 왼쪽 아래 | **손목 카메라 검출 화면**(`WristCamera`) — 비전이 YOLO-seg 결과를 그려 보낸 JPEG를 그대로(겹쳐 그리기 없음). `wrist_block`은 `find_blocks` 때마다 그림을 내므로 공급 칸(`slots`) 방식에서는 그림이 없다 | `vision/wrist_image` | ✅ 화면 · 다리(10/9) — 실물은 W150 |
@@ -23,7 +23,10 @@
 ## 1-B. 실행 (compose 전 — 웹 PC 또는 개발 PC 호스트)
 
 ```bash
-# 화면 빌드(Node 18.19 = Ubuntu 24.04 apt → Next.js 15.5 + React 19. Next 16 은 Node 20 이상이라 안 씀)
+# 화면 빌드 — Next.js 16.4 + React 19 + Node 24 LTS(10/9 황인재). 화면은 정적 파일이라 Node 는 빌드 때만 쓴다:
+#   compose(W102)에서는 web 이미지의 빌드 단계(node:24)에서 만들고 out/ 만 backend 이미지로 복사 — 호스트 Node 와 무관.
+#   호스트에서 빌드할 때만 Node 24 가 필요하다(우분투 apt 는 18 이라 안 됨): 사용자 폴더에 nvm 으로
+#   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.8/install.sh | bash   → 터미널 다시 열고 → nvm install 24
 cd web/frontend && npm ci && npm run build            # → web/frontend/out — backend 가 / 에서 내려 준다
 # backend(FastAPI :8000 — 화면 · REST · /ws). 브로커는 호스트 mosquitto(1883)
 cd web/backend && MQTT_HOST=localhost python3 -m uvicorn app:app --host 0.0.0.0 --port 8000
@@ -49,6 +52,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 다시 시작 | `POST /api/robot/resume` | `d2/safety/resume/req` | `/d2/safety/resume` |
 | 상태 · 진행도 · 정지 · 그리퍼 · 스캔 결과 | `GET /api/robot/state`(지금 값) + `/ws` | `d2/task/state` · `progress` · `scan_result` · `d2/safety/state` · `d2/gripper/state`(retained) | 토픽 |
 | 로봇 PC 끊김 | `/ws` `{type: bridge_alive, alive}` | `d2/bridge/alive`(LWT `alive: false`) | — |
+| 버튼 기다림 시간 | `/ws` 붙을 때 `{type: timing, req_timeout_s}` — 화면은 이 값 + 3초까지 기다림(숫자를 화면 코드에 두지 않음, 10/9). 아직 못 받았으면 보내지 않고 안내 | — | — (`robot.yaml` `mqtt.req_timeout_s`) |
 | 웹 연결 신호 | backend가 1초마다 냄 | `d2/web/alive` | 다리 → `/d2/hmi/alive` |
 | 음성 문장 · 출발 | `/ws` `{type: intent, …}` | `d2/hmi/intent`(voice.py → 브로커, backend도 구독) | 다리 → `/d2/hmi/intent` |
 | 설계 규칙 숫자 | `GET /api/designs/rules` | — | — (backend가 `robot.yaml`을 읽음, 10/9 ①) |
@@ -162,6 +166,7 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 | 10/9 저녁 | ✅ W127 다리 최소형 + `mock_bridge`(+ get_design · save_build · check_design · intent · progress · scan_result · gripper 까지 — 사진 · 점군 · 영상만 남음 → 영상은 10/9 밤) → ✅ W126 backend MQTT 층 → W047 화면(가능한 데까지) |
 | 10/9 저녁 | ✅ W047 화면 최소형 — 연결 표시 · 끊김 배너 · 상태 줄(누가 · 왜 멈췄는지) · 설계 입력 · 버튼 7개(상태표대로) · 진행도 % · 그리퍼 · 상태 로그. 설계 목록 · 3D 미리보기 · 진행도 3D 색은 W111 · W112 |
 | 10/9 밤 | ✅ W111 최소형(`DesignStore` — 기본 설계 4개 등록 · 목록 · 꺼내기 · 결과 저장 + 로봇 `get_design` · `save_build` 답) · ✅ 화면 더함: [설계 고르기] 트리 → 3D 보기(three.js) · 진행도 위 가운데 + 3D 색 · 손목 검출 화면 · 다크 모드 · ✅ 다리 `wrist_image` 전달(W127 — 사진 · 점군만 남음) |
+| 10/9 밤 | ✅ Next.js 16.4 + Node 24 LTS(컨테이너 빌드 단계 기준 — 호스트 Node 18 제약 없음) · 설계 고르기를 열 보기로 · 다크 모드 버튼 크게 · 가짜 로봇 다시 시작 = 이어서 · 버튼 기다림 시간을 backend 값으로 · `tests/test_robot_yaml.py` 시간 순서 시험(3 < 4 < 5 · 1 × 2 < 3) |
 | 10/10 낮(로봇) | W149 손목 TCP · W150 손목 노드 실기 · W129 PC 2대 MQTT 확인(한세교) · W151 화면 출발 첫 실기(화면이 없으면 예비 절차 — 명령 출발) · 18시 W158 보고 |
 | 10/10 저녁 | W127 나머지(`get_design` · `save_build` · `check_design` · `intent` · `gripper/state` · `progress/1.1` · `scan_result/1.1`) · W111 저장소 · W108 · W112 |
 | 10/11 | W108 · W112 · W122 생성 흐름 통합(한석형) · W045 음성 · W127 사진 · 점군 · 손목 영상 — 그 뒤는 10/10 18시 보고 뒤 PL이 다시 짬 |

@@ -1,7 +1,7 @@
 'use client';
 // /ws 받기 한 곳 — 붙으면 backend 가 들고 있는 값이 먼저 오고, 그 뒤 바뀔 때마다 온다. 끊기면 2초마다 다시 붙는다.
 import { useEffect, useRef, useState } from 'react';
-import { BASE } from './api';
+import { BASE, setReqTimeout } from './api';
 import type { GripperState, Intent, Progress, SafetyState, ScanResult, TaskState, WsEvent } from './types';
 
 const RETRY_MS = 2000;
@@ -61,6 +61,7 @@ export function useRobot(): [Robot, (kind: string, text: string) => void] {
         } catch {
           return;
         }
+        if (e.type === 'timing') setReqTimeout(e.data.req_timeout_s); // 버튼 기다림 시간(lib/api) — 화면 상태는 아님
         setRobot((r) => apply(r, e));
       };
     };

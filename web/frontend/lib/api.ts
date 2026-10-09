@@ -3,11 +3,23 @@
 import type { Cmd, CmdResult, Design, DesignSummary, Rules } from './types';
 
 export const BASE = process.env.NEXT_PUBLIC_BACKEND ?? '';
-const TIMEOUT_MS = 8000; // backend 가 MQTT 응답을 5초(req_timeout_s)까지 기다린 뒤 답하므로 그보다 길게. 넘으면 실패로 보고 버튼을 푼다
+// 버튼 답을 기다리는 시간 = backend 의 req_timeout_s(robot.yaml 한 곳 — /ws 가 붙을 때 timing 으로 알려 줌) + 여유.
+// backend 는 MQTT 답을 req_timeout_s 까지 기다린 뒤 답하므로 그보다 길어야 한다. 넘으면 실패로 보고 버튼을 푼다
+const MARGIN_MS = 3000; // backend 가 시간 초과를 정한 뒤 그 답이 화면까지 오는 여유
+let reqTimeoutS: number | null = null;
+
+/** /ws 가 붙을 때 backend 가 알려 준 요청 시간 제한(초)을 기억한다(ws.ts 가 부름) */
+export function setReqTimeout(s: number) {
+  reqTimeoutS = s;
+}
 
 async function post(path: string, body?: unknown): Promise<CmdResult> {
+  if (reqTimeoutS == null) {
+    // 화면을 막 열어 아직 웹 서버와 한 번도 못 붙음 — 배너와 같은 안내(얼마나 기다릴지도 모르는 채 보내지 않는다)
+    return { success: false, reason: 'ERROR', message: '웹 서버와 아직 연결 전 — 잠시 뒤 다시. 급하면 정지는 로봇 PC 키 · 펜던트로' };
+  }
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), reqTimeoutS * 1000 + MARGIN_MS);
   try {
     const res = await fetch(BASE + path, {
       method: 'POST',
