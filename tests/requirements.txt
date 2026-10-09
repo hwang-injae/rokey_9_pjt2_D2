@@ -8,3 +8,6 @@ pyyaml
 numpy          # src/d2_vision/test(BlockChecker) — 10/7
 scipy          # src/d2_vision/test(StructureScanner — ndimage 라벨 · 모폴로지) — 10/8 민범진. 로봇 PC는 package.xml python3-scipy
 ruff
+paho-mqtt      # tests/test_web_backend(웹 backend MQTT 층 W126) — 10/9 황인재
+fastapi        # 같음(REST · /ws 시험 — TestClient)
+httpx          # 같음(TestClient 가 쓴다)

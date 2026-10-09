@@ -1,0 +1,5 @@
+# web/backend (웹 PC, ROS 없음) — FastAPI :8000 · MQTT · (W108) OpenAI · (W088) PostgreSQL
+fastapi
+uvicorn[standard]     # /ws 에 websockets 가 필요하다
+paho-mqtt
+pyyaml                # robot.yaml 설계 규칙 키 읽기(E-78)

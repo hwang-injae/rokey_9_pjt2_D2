@@ -111,20 +111,25 @@ scan_result/1.x 의 blocks/1(위치 · 방향 + inferred, family = 추론기 값
 
 ```
 web/backend/
-├── app.py            WebApp — 앱 만들기 · routes 등록 · frontend/out 정적 서빙 · 시작 점검(브로커 · DB · 키)
-│                     · robot.yaml 설계 규칙 키 읽기(한 곳, 읽기 전용 — 10/9 ①: block_size_m · check.margin_mm · check.max_blocks ·
-│                       finger.thickness_m · finger.width_m · assembly_area_half_m, 측정값은 안 읽음) → DesignGenerator · DesignStore에 넘김
+├── app.py            WebApp(W126 ✅) — 앱 만들기 · routes 등록 · frontend/out 정적 서빙 · 시작 점검(브로커 · 키 유무 · 화면)
+│                     · load_rules(): robot.yaml 읽기(한 곳, 읽기 전용 — E-78: block_size_m · check.margin_mm · check.max_blocks ·
+│                       finger.thickness_m · finger.width_m · assembly_area_half_m + 다리와 같은 MQTT 시간 mqtt.req_timeout_s · alive_s ·
+│                       lost_after_s, 측정값은 안 읽음) · d2_bridge · d2_task 의 ROS 없는 파일을 같은 저장소에서 import
 ├── routes/
-│   ├── robot.py      /api/robot   명령 · 정지 · 다시 시작 · 상태 · 스캔 사진 · 점군 · 손목 영상 → MqttClient
+│   ├── robot.py      /api/robot(W126 ✅) command · stop · resume · state → MqttClient. 로봇 PC 끊김이면 start · scan 은 안 보냄
+│   │                 (스캔 사진 · 점군 · 손목 영상은 W127 나머지 뒤)
 │   ├── designs.py    /api/designs 목록 · 상세 · 트리 · 규칙 숫자 · 생성 · 고르기 · 스캔 저장 → DesignGenerator · DesignStore
-│   └── ws.py         /ws          마지막 값 먼저 보낸 뒤 바뀔 때마다 {"type": …} 한 겹
-├── mqtt_client.py    MqttClient — 다리와 통신 한 곳: req/res(req_id · 5초) · retained 상태 보관 · d2/web/alive 1초 · bridge/alive 감시 ·
-│                     get_design · save_build 답하기(DesignStore 호출)
+│   └── ws.py         /ws(W126 ✅) {"type", "data"} 한 겹 — 붙으면 들고 있는 값 먼저, 그 뒤 바뀔 때마다(밀리면 오래된 것부터 버림)
+├── mqtt_client.py    MqttClient(W126 ✅) — 브로커와 통신 한 곳: req/res(req_id · req_timeout_s, 자동 재전송 없음) · 상태 마지막 값 ·
+│                     d2/web/alive 1초(LWT false) · 다리 연결 신호 3초 끊김 · serve()로 등록한 함수가 get_design · save_build 답함
+│                     (토픽 이름 · req/res 짝은 d2_bridge/bridge_codec.py 를 같이 씀)
 ├── design_gen.py     DesignGenerator — GPT-4o 호출 한 곳(4-A · 4-C)
 ├── design_store.py   DesignStore — 저장 한 곳(JSON 폴더 → PostgreSQL) + 형식 이름 상수 · 기본 설계 등록(d2_task 변환기 ② import, E-59)
 ├── prompts/          design_system.txt(설계 직접 작성 + 역할 목록 + 잡기 규칙 · 스캔 채우기 절) · blocks_schema.json(blocks/2.0 후보 3개)
 ├── voice.py          VoiceListener — 호스트(마이크 → Whisper → 의도 → MQTT d2/hmi/intent)
-├── mock_robot.py     로봇 PC 없이: 상태 내기 · req에 res 답하기(IRD 11장)
+├── mock_robot.py     가짜 로봇 PC(W126 ✅, MQTT 만): 다리 연결 신호 · 처음 상태 · 가짜 조립(블록마다 progress) · 정지 · 스캔(→ SCAN_REVIEW +
+│                     scan_result, 추정 2개) · check_design 늘 합격(벤치). 실행 python3 web/backend/mock_robot.py --step 1.0
+├── requirements.txt  fastapi · uvicorn[standard] · paho-mqtt · pyyaml (W108 openai · W088 psycopg 더함)
 └── data/             designs/ · builds/ · rejected/ · scan/<run_id>/ (gitignore)
 ```
 
@@ -136,7 +141,7 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 
 | 언제 | 무엇 |
 |---|---|
-| 10/9 저녁 | W127 다리 최소형 + `mock_bridge` → W126 backend MQTT 층(`mqtt_client.py` · `routes/robot.py` · `ws.py` · `mock_robot.py`) → W047 화면(가능한 데까지) |
+| 10/9 저녁 | ✅ W127 다리 최소형 + `mock_bridge`(+ get_design · save_build · check_design · intent · progress · scan_result · gripper 까지 — 사진 · 점군 · 영상만 남음) → ✅ W126 backend MQTT 층 → W047 화면(가능한 데까지) |
 | 10/10 낮(로봇) | W149 손목 TCP · W150 손목 노드 실기 · W129 PC 2대 MQTT 확인(한세교) · W151 화면 출발 첫 실기(화면이 없으면 예비 절차 — 명령 출발) · 18시 W158 보고 |
 | 10/10 저녁 | W127 나머지(`get_design` · `save_build` · `check_design` · `intent` · `gripper/state` · `progress/1.1` · `scan_result/1.1`) · W111 저장소 · W108 · W112 |
 | 10/11 | W108 · W112 · W122 생성 흐름 통합(한석형) · W045 음성 · W127 사진 · 점군 · 손목 영상 — 그 뒤는 10/10 18시 보고 뒤 PL이 다시 짬 |
@@ -147,6 +152,7 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 | 무엇 | 누구 | 상태 |
 |---|---|---|
 | SDD 3.4 "웹 PC 코드는 robot.yaml을 읽지 않는다" → 설계 규칙 키만 읽기 전용(10/9 PL ①) | PM | PR #109 |
+| E-78 키 목록에 다리와 같은 MQTT 시간 값(`mqtt.req_timeout_s` · `alive_s` · `lost_after_s`)도 — 웹이 robot.yaml 에서 같이 읽음(W126 코드). 브로커 주소는 PC 마다 달라 `.env` `MQTT_HOST` | PL 확인 → PM(SDD 3.4 한 줄) | 10/9 |
 | `nearest_base` 선택 칸(E-78 ~ E-80, PR #109) — 추론기가 `scan_infer` 응답에 넣고(민범진) 작업 관리자가 `scan_result/1.2`로 넘김(한석형). **웹은 없을 수 있다고 보고 짠다**(없으면 GPT 결과만, GPT도 실패하면 같은 family 기본 설계 중 블록 수가 가장 가까운 것) | 민범진 · 한석형 | 10/9 PM 전달 |
 | IRD 8.4 ⑦ · SDD 6.9 스캔 설계 부모 = GPT가 DB 목록에서 고른 같은 family 설계(실패 땐 `nearest_base`) · [AI로 고치기] 버튼(10/9 PL ② ③) | PM | PR #109 |
 | SDD 3.1.1 `designs/[id]/page.tsx` → `designs/page.tsx?id=`(정적 내보내기 제약) | PM | W047 · W112 때 전달 |
