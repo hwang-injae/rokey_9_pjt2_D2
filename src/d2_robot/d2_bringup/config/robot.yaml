@@ -53,8 +53,13 @@ timeout:                       # 작업 관리자가 답을 기다리는 시간 
 recover:
   speed_ratio: 0.5             # 정지 해제 뒤 첫 관측 이동은 평소 속도의 절반. 성공 뒤 평소 속도로 돌아감 (IRD W121 C-1)
 
-mqtt:
-  lost_after_s: 3              # 웹 연결 신호 수신 간격. task 는 MQTT 를 직접 쓰지 않고 /d2/hmi/alive 만 본다 (IRD 10.3)
+mqtt:                          # PC 사이 MQTT (IRD 9 · 10장). host · port · qos · req_timeout_s · alive_s 는 다리(d2_bridge)만 읽는다
+  host: localhost              # 브로커(웹 PC) 주소 — 웹 PC IP 는 W129 때 정함. 그 전엔 실행 때 -p mqtt_host:=<IP> 로 바꾼다
+  port: 1883
+  qos: 1                       # 명령 · 요청 · 응답 · 상태 토픽 QoS (그리퍼 상태만 0 — IRD 10.1 표)
+  req_timeout_s: 5             # 로봇이 부른 get_design · save_build 의 웹 응답을 기다리는 시간. 화면 쪽 요청 제한과 같은 값 (IRD 7장)
+  alive_s: 1                   # 다리 연결 신호 d2/bridge/alive 보내는 주기
+  lost_after_s: 3              # 웹 연결 신호 끊김 판정. task 는 MQTT 를 직접 쓰지 않고 /d2/hmi/alive 만 본다 (IRD 10.3)
 
 scan:
   poses: [observe, observe_front, observe_side]  # 촬영·poses_used 모두 이 순서. 자세 값은 W134 교시값을 사용한다(SDD 5장)

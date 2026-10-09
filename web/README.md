@@ -1,6 +1,6 @@
 # web — HMI 설계 노트 (10/8 · 10/9 황인재, PL 결정)
 
-> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_100916.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_100916.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
+> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_100917.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_100917.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
 
 구조(E-32 · E-41): 브라우저 `frontend`(Next.js 정적 `out/`, three.js) ↔ REST + WebSocket `/ws` ↔ `backend`(FastAPI :8000, paho-mqtt) ↔ MQTT 브로커 ↔ 로봇 PC `d2_bridge`. 브라우저는 브로커 · DB · OpenAI · ROS를 모른다. DB는 10/12까지 JSON 파일 폴더, 그 뒤 PostgreSQL(W088).
 
@@ -103,6 +103,7 @@ scan_result/1.x 의 blocks/1(위치 · 방향 + inferred, family = 추론기 값
    → 그 설계를 참고해 role · part · order · stage · grasp만 채움(inferred는 '추측' 힌트). 블록 위치 · 방향은 바꾸지 않는다(복제가 목적)
    → 고른 설계 = parent_id, family = GPT 판단
 → 코드 규칙: 부모는 같은 family만 — 다르거나 도구 실패면 nearest_base(추론기 값)를 부모로, family도 그것을 따름
+   (nearest_base 는 선택 칸 — 없으면 같은 family 기본 설계 중 블록 수가 가장 가까운 것)
 → blocks/2.0 → check_design → 저장(made_by scan) → select_design → READY
 ```
 
@@ -145,8 +146,8 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 
 | 무엇 | 누구 | 상태 |
 |---|---|---|
-| SDD 3.4 "웹 PC 코드는 robot.yaml을 읽지 않는다" → 설계 규칙 키만 읽기 전용(10/9 PL ①) | PM | 10/9 전달 |
-| `scan_result`에 `nearest_base` 선택 칸(→ `scan_result/1.2`) — task_manager가 `scan_infer` 응답의 값을 넘김 + IRD 4.1 · 6장 | 한석형 · PM(PL 확인 PR) | 10/9 전달 |
-| IRD 8.4 ⑦ · SDD 6.9 스캔 설계 부모 = GPT가 DB 목록에서 고른 같은 family 설계(실패 땐 `nearest_base`) · [AI로 고치기] 버튼(10/9 PL ② ③) | PM | 10/9 전달 |
+| SDD 3.4 "웹 PC 코드는 robot.yaml을 읽지 않는다" → 설계 규칙 키만 읽기 전용(10/9 PL ①) | PM | PR #109 |
+| `nearest_base` 선택 칸(E-78 ~ E-80, PR #109) — 추론기가 `scan_infer` 응답에 넣고(민범진) 작업 관리자가 `scan_result/1.2`로 넘김(한석형). **웹은 없을 수 있다고 보고 짠다**(없으면 GPT 결과만, GPT도 실패하면 같은 family 기본 설계 중 블록 수가 가장 가까운 것) | 민범진 · 한석형 | 10/9 PM 전달 |
+| IRD 8.4 ⑦ · SDD 6.9 스캔 설계 부모 = GPT가 DB 목록에서 고른 같은 family 설계(실패 땐 `nearest_base`) · [AI로 고치기] 버튼(10/9 PL ② ③) | PM | PR #109 |
 | SDD 3.1.1 `designs/[id]/page.tsx` → `designs/page.tsx?id=`(정적 내보내기 제약) | PM | W047 · W112 때 전달 |
 | FR-G02 · `count = 2` 처리 | PL — W108 결과 보고 | 10/10 이후 |

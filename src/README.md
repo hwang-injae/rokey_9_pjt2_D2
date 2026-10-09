@@ -16,7 +16,7 @@ src/
 ```
 
 [d2_robot/ 안내](d2_robot/README.md)에 장치 구성과 빌드 방법을 정리했다. `d2_robot/`은 폴더 묶음이며,
-ROS 패키지 이름·Python import·launch 이름은 유지한다. `d2_bridge`는 아래 표의 예정 패키지다.
+ROS 패키지 이름·Python import·launch 이름은 유지한다. `d2_bridge`는 `src/d2_bridge/`(10/9 W127 최소형).
 
 ROS 2 Jazzy 패키지 8개(로봇 PC) + 레시피 도구 **(안)** + 저장소 루트 `web/`(웹 PC, ROS 아님). **10/6 18시 PC 배치(E-26~E-33):** 웹 PC에는 ROS가 없고, `d2_hmi` 대신 **`d2_bridge`(ROS ↔ MQTT 다리)** 가 로봇 PC에서 웹 자리를 대신한다. **10/6 주제 개편(E-01~E-25)** — 설계는 블록 JSON으로 오가고 로봇에는 레시피로 간다. 로봇 동작 노드 5개는 10/6 corecode에서 옮김, `d2_interfaces` 8개는 main(10/7 W121 JsonQuery 추가). 노드는 파트별로 나뉘어 있고, 서로 `/d2/` 아래 토픽·서비스·액션으로 주고받는다. 요청-결과는 전용 메시지 패키지 `d2_interfaces`, 상태 방송은 JSON 문자열이다. 이름·칸·단위 약속은 [인터페이스 문서](../docs/02_인터페이스_IRD_v3_100917.md), 구조는 [설계 문서](../docs/03_설계_SDD_v3_100917.md)에 있다.
 
@@ -53,7 +53,7 @@ ROS 2 Jazzy 패키지 8개(로봇 PC) + 레시피 도구 **(안)** + 저장소 �
 
 ## 빌드 · 시험
 
-지금 있는 패키지는 `d2_interfaces` · `d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety` · `d2_vision` · `d2_task`다(`d2_bridge`는 아직 없음). 로봇 패키지 4개(`d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety`)는 `src/d2_robot/` 아래에 있다(10/7 PR #51 — 옮긴 뒤 처음 빌드는 [d2_robot/ 안내](d2_robot/README.md)). 아래처럼 빌드한다.
+지금 있는 패키지는 `d2_interfaces` · `d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety` · `d2_vision` · `d2_task` · `d2_bridge`다(`d2_bridge` — 10/9 W127: `bridge` · `mock_bridge`, 웹 PC 브로커 주소는 `robot.yaml` `mqtt.host` 또는 실행 때 `-p mqtt_host:=<IP>`). 로봇 패키지 4개(`d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety`)는 `src/d2_robot/` 아래에 있다(10/7 PR #51 — 옮긴 뒤 처음 빌드는 [d2_robot/ 안내](d2_robot/README.md)). 아래처럼 빌드한다.
 
 ```bash
 # 저장소 루트(rokey_9_pjt2_D2)에서
