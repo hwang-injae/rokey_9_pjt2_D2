@@ -89,7 +89,7 @@ ros2 launch d2_bringup real_moveit.launch.py mode:=real host:=192.168.1.100
 
 - **실기 PC 유선 IP:** IPv4를 수동으로 `192.168.1.x`, 넷마스크 255.255.255.0. x는 로봇(.100)·그리퍼(.1)와 겹치지 않게 한다. 연결 확인은 `ping -c 3 192.168.1.100`, `ping -c 3 192.168.1.1`.
 - 실기 모드 사전 설정(재부팅하면 풀린다): `sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0`
-- 티치펜던트와 ROS가 로봇을 동시에 제어하지 않게 한다. **실기 중 펜던트 안전 설정 화면에 들어가지 않는다** — 서보가 꺼지고(SAFE_OFF) ROS 서보 명령이 무시돼 브링업을 다시 켜야 풀린다([복구 절차](../복구절차_정지뒤다시시작_v1_100821.md) §3-2, 10/7 실기).
+- 티치펜던트와 ROS가 로봇을 동시에 제어하지 않게 한다. **실기 중 펜던트 안전 설정 화면에 들어가지 않는다** — 서보가 꺼지고(SAFE_OFF) ROS 서보 명령이 무시돼 브링업을 다시 켜야 풀린다([복구 절차](../복구절차_정지뒤다시시작_v1_100916.md) §3-2, 10/7 실기).
 - 런치는 **패키지 이름으로** 실행한다(`ros2 launch d2_bringup …`). `src/…` 경로로 실행하면 `__pycache__`가 생긴다.
 - 정지 처리가 들어간 프로그램은 시작할 때 아래 두 줄이 나와야 한다. `없음`이나 `안 보인다`가 나오면 실기를 하지 않는다(R-01).
 
@@ -154,7 +154,7 @@ sudo apt install python3-paho-mqtt        # 없으면 pip3 install --user paho-m
 | 다리가 붙었나 | 웹 PC `mosquitto_sub -t 'd2/bridge/alive' -v` | 1초마다 `{"alive":true,…}` |
 | 끝까지 | 화면 [출발] → `d2/hmi/command/req` → 로봇 PC → `d2/task/state`가 바뀜 | `mosquitto_sub -t 'd2/#' -v`로 전부 보임 |
 
-- 웹 PC IP는 `robot.yaml` `mqtt.host`(로봇 PC가 읽음). 브로커는 유선 LAN 안에서만 연다(인터넷 노출 없음). 인증은 10/8 결정(안: 없음).
+- 웹 PC IP는 `robot.yaml` `mqtt.host`(로봇 PC가 읽음). 브로커는 유선 LAN 안에서만 연다(인터넷 노출 없음). 인증은 compose(W102) 때 정함(안: 없음 — IRD 12장, 일정표 기준).
 - 로봇 쪽 개발 PC는 웹 PC 없이 `mock_bridge`(ROS — 아직 없음)로, 웹 쪽 개발은 로봇 PC 없이 로컬 `docker run -p 1883:1883 eclipse-mosquitto` + `web/backend/mock_robot.py`로 한다. 다리 없이 task를 가상으로 돌릴 때는 웹 연결 감시를 끈다 — `ros2 run d2_task task --ros-args -p monitor_hmi:=false`(기본 true라 안 끄면 `/d2/hmi/alive`가 없어 출발 · 스캔이 거절됨, 10/8 E-62). 설계도 웹 없이 읽으려면 `-p design_source:=local -p recipe_dir:=<레시피 폴더>`([src/README](../../src/README.md) '빌드 · 시험').
 
 
@@ -171,8 +171,8 @@ docker --version
 | 컨테이너(서비스 이름) | 안에서 도는 것 | 따로 두는 이유 | 만드는 사람 (S-17) |
 |---|---|---|---|
 | `mosquitto` | MQTT 브로커(eclipse-mosquitto, 1883) — `web/mosquitto/mosquitto.conf` | PC 사이 통신의 가운데 서버. 설치 없이 이미지 1줄 | 황인재 · 10/6 저녁~10/7 (W102) |
-| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · 10/12 저녁 ~ 10/13 오전 (W088 — 10/8 HMI 일정 다시 잡음) |
-| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. compose(10/12) 전에는 호스트로 띄워도 된다 | 황인재 · backend 10/8 · 화면 · 저장소(JSON 폴더) 10/10 오전 · compose 10/12 (W102 · W126 — 10/8 HMI 일정 다시 잡음) |
+| `db` | PostgreSQL 16(`designs` · `builds`, 10/6 E-39) | DB 프로그램은 컨테이너로 띄우는 것이 가장 쉽다. 데이터는 볼륨 · 로컬 폴더 | 황인재 · W088(일정표 기준) |
+| `web`(안) | backend(FastAPI :8000 — REST · WebSocket `/ws` · paho-mqtt · **AI 설계 생성(GPT-4o) · 저장소 인터페이스**) 한 프로세스 + frontend 정적 파일(Next.js + three.js — 브라우저에서 실행, 10/7 E-41) | 웹 서버 · OpenAI 라이브러리를 한 이미지에. `env_file .env`로 키. compose(W102) 전에는 호스트로 띄워도 된다 | 황인재 · backend 최소형(W126) 10/9 · 저장소(W111, JSON 폴더) · 화면 10/10 저녁부터 · compose(W102) — 일정표 기준(10/8에 잡은 날짜는 못 지킴) |
 
 | 호스트에서 바로 | 이유 |
 |---|---|
