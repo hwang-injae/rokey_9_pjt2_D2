@@ -37,7 +37,7 @@ class SceneManagerNode(Node):
     받는 것: /d2/motion/scene/attach (SceneAttach — 잡은 뒤 붙이기 / 놓은 뒤 떼기 = 놓인 블록으로),
              /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
-    파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 쥔 블록 상자 크기·위치와 놓은 자리를 여기서 계산한다.
+    파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 요청에 쥔 상자 · 놓은 자리가 없을 때(옛 방식)만 여기서 계산한다(E-76).
                     비우면 share/d2_bringup/recipes/ 의 레시피(*_recipe.json)를 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
     """
 
@@ -158,12 +158,18 @@ class SceneManagerNode(Node):
         return pick_place_tcp(self.cfg, center, rot, b['center'], b['rot'], b['grasp'], slots[0])[4]
 
     def _on_attach(self, req, res):
-        """쥔 블록 붙이기 (attach=True: TCP 에 상자) / 떼기 (False: 쥔 상자를 지우고 레시피 자리에 놓인 블록으로).
+        """쥔 블록 붙이기 (attach=True: TCP 에 상자) / 떼기 (False: 쥔 상자를 지우고 놓인 블록으로).
 
-        레시피에 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
+        붙이기: 요청에 held_size_m · held_offset_m(각 3개)이 있으면 그 상자를 쓴다 — 집기·놓기가 실제로 집은 자세로 계산한 값이라
+        레시피 파일에 없는 설계(AI · 스캔) · 흩뿌림 · 다시 집기도 맞다(10/9 PL E-76). 없으면 설치된 레시피로 계산하고,
+        레시피에도 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
+        떼기: placed_center_m(3) · placed_quat(4)가 있으면 그 자리에, 없으면 레시피 자리에 놓인 블록을 넣는다.
+        둘 다 없으면 쥔 상자만 지운다(놓인 블록은 다음 진행표 progress 가 넣는다).
         """
         b = self.blocks.get(req.block_id)
-        if b is None:
+        held_given = len(req.held_size_m) == 3 and len(req.held_offset_m) == 3
+        placed_given = len(req.placed_center_m) == 3 and len(req.placed_quat) == 4
+        if req.attach and not held_given and b is None:
             res.success, res.reason = False, 'UNKNOWN_BLOCK'
             return res
         tcp = self.cfg['tcp_link']
@@ -171,7 +177,8 @@ class SceneManagerNode(Node):
         aco = AttachedCollisionObject(link_name=tcp)
         aco.object.id = HELD
         if req.attach:
-            held = self._held_box(b)
+            held = ({'size_m': list(req.held_size_m), 'offset_m': list(req.held_offset_m)} if held_given
+                    else self._held_box(b))
             aco.object.header.frame_id = tcp
             aco.object.operation = CollisionObject.ADD
             aco.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in held['size_m']])]
@@ -184,7 +191,12 @@ class SceneManagerNode(Node):
         sc.robot_state.attached_collision_objects = [aco]
         res.success = self.apply(sc)
         if res.success and not req.attach:
-            self.add_placed(req.block_id, b['center'], b['quat'])
+            if placed_given:
+                self.add_placed(req.block_id, list(req.placed_center_m), list(req.placed_quat))
+            elif b is not None:
+                self.add_placed(req.block_id, b['center'], b['quat'])
+            else:
+                self.get_logger().warn(f'{req.block_id}: 놓은 자리를 몰라 쥔 상자만 지웠다 — 놓인 블록은 진행표가 넣는다')
         res.reason = '' if res.success else 'TIMEOUT'
         return res
 

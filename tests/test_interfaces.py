@@ -128,6 +128,16 @@ def test_json_query_fields():
     assert {'success', 'reason', 'response_json'} <= set(res)
 
 
+def test_scene_attach_fields():
+    """SceneAttach.srv(E-76) — 요청 block_id·attach + 쥔 상자(held_size_m · held_offset_m)·놓은 자리(placed_center_m · placed_quat) 배열, 응답 success·reason.
+    배열 칸이 빠지면 장면 관리가 레시피 파일에 없는 설계(AI · 스캔)의 쥔 블록을 못 그려 집은 뒤 ERROR 로 멈춘다."""
+    req, res = (fields(s) for s in sections(IFACE / 'srv' / 'SceneAttach.srv'))
+    assert req.get('block_id') == 'string' and req.get('attach') == 'bool'
+    for name in ('held_size_m', 'held_offset_m', 'placed_center_m', 'placed_quat'):
+        assert req.get(name) == 'float64[]', name
+    assert {'success', 'reason'} <= set(res)
+
+
 def test_cmakelists_registers_every_interface():
     """srv/·action/ 의 모든 파일이 CMakeLists.txt 의 rosidl_generate_interfaces 에 적혀 있다 (빠지면 빌드돼도 메시지가 없다)."""
     cmake = (IFACE / 'CMakeLists.txt').read_text(encoding='utf-8')

@@ -1,6 +1,12 @@
 # 쥔 블록을 MoveIt 장면에 붙이기·떼기 — 집기·놓기 → 장면 관리 (/d2/motion/scene/attach)
+# 아래 네 칸은 10/9 PL(E-76): 집기·놓기가 실제로 쥔 자세 · 놓은 자리를 보낸다 — 레시피 파일에 없는 설계(AI · 스캔) · 흩뿌림 · 다시 집기도 장면에 맞게 들어간다.
+# 비워 보내면 장면 관리가 예전처럼 설치된 레시피에서 계산한다(레시피에도 없으면 붙이기는 UNKNOWN_BLOCK).
 string block_id
 bool attach                       # true 붙이기, false 떼기(놓인 블록으로)
+float64[] held_size_m             # 붙이기: 쥔 블록 상자의 TCP 축별 길이 m (3개)
+float64[] held_offset_m           # 붙이기: TCP 기준 블록 중심 m (3개)
+float64[] placed_center_m         # 떼기: 실제로 놓은 블록 중심 base_link m (3개)
+float64[] placed_quat             # 떼기: 그 블록 자세 쿼터니언 x y z w (4개)
 ---
 bool success
 string reason
