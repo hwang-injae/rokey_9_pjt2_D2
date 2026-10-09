@@ -6,14 +6,19 @@
   tcp_z: rg2_base_link 원점에서 손가락 끝까지 (공구 축 방향, m).
          rg2_base_link 원점은 플랜지에서 공구 축으로 4 mm 이므로, 플랜지 -> 손가락 끝 = tcp_z + 0.004.
          기본 0.224 = 플랜지 -> 손가락 끝 228 mm (작업 2 TCP 값). 실측값이 다르면 바꾼다.
+  tcp_x · tcp_y: 손가락 가운데가 공구 축에서 옆으로 비켜난 양 (m, rg2_tcp 틀 — y = 닫힘 방향). 기본 0.
+         브링업(real_moveit.launch.py)이 config/tcp.json 에서 tcp_z 와 함께 넘긴다 — 10/8: 손목을 돌리면 손가락 가운데가
+         회전축에서 비켜 있어 놓는 블록이 어긋남(004 실기), x -2.7 mm (10/10 E-81 — 펜던트 GripperDA_v1 값 편집).
 -->
 <robot xmlns:xacro="http://ros.org/wiki/xacro" name="m0609_rg2_camera">
   <xacro:arg name="tcp_z" default="0.224"/>
+  <xacro:arg name="tcp_x" default="0.0"/>
+  <xacro:arg name="tcp_y" default="0.0"/>
   <xacro:include filename="$(find m0609_rg2_bringup)/urdf/m0609_with_rg2_camera.urdf.xacro"/>
   <link name="rg2_tcp"/>
   <joint name="rg2_base_to_tcp" type="fixed">
     <parent link="rg2_base_link"/>
     <child link="rg2_tcp"/>
-    <origin xyz="0 0 $(arg tcp_z)" rpy="0 0 0"/>
+    <origin xyz="$(arg tcp_x) $(arg tcp_y) $(arg tcp_z)" rpy="0 0 0"/>
   </joint>
 </robot>

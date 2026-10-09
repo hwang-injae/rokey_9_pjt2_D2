@@ -1,14 +1,28 @@
 {
   "name": "GripperDA_v1",
   "reference_frame": "FLANGE",
-  "pos": [0.0, 0.0, 228.0, 0.0, 0.0, 0.0],
-  "axis_order": ["X", "Y", "Z", "A", "B", "C"],
+  "pos": [
+    0.0,
+    2.7,
+    228.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "axis_order": [
+    "X",
+    "Y",
+    "Z",
+    "A",
+    "B",
+    "C"
+  ],
   "units": {
     "translation": "mm",
     "rotation": "deg"
   },
-  "source": "2026-10-06 실물 제어기 192.168.1.100 직접 조회 (DRFL, DRCF_VERSION=2, 제어기 버전 GF02120100).",
-  "verified_at": "2026-10-06",
-  "verification": "ROS get_current_tcp와 DRFL get_tcp로 활성 이름 GripperDA_v1 확인. get_safety_configuration의 현재 TCP와 같은 이름의 등록 TCP에서 위치·각도 [0, 0, 228, 0, 0, 0]이 일치함. 각도는 Euler ZYZ. 조회만 수행, 로봇 이동·그리퍼 조작·서보 켜기·설정 변경 없음.",
-  "note": "LV1 실기(2026-10-06) 때 활성 TCP. MoveIt rg2_tcp FK (0, 0, 228.0) mm 와 같다. 같은 자세에서 펜던트 z 11 mm / 모델 12.2 mm."
+  "source": "2026-10-10 PL(E-81 — E-70 방법): 펜던트의 기존 GripperDA_v1 값을 손가락 가운데 [0, 2.7, 228]로 편집(새 이름 등록 안 함 — GripperDA_v2는 값 · 주인 기록 없음). 비킴 = 004 실기 사진으로 잰 rg2_tcp x -2.7 mm = posx y +2.7 mm (x_rg2 = -y_posx, 박진용 10/8). 옛 값 GripperDA_v1 [0, 0, 228, 0, 0, 0](10/6 제어기 조회) — 10/9까지의 posx 기록 · 로그 · 손목 보정은 옛 값 기준이니 섞지 않는다.",
+  "verified_at": null,
+  "verification": "편집 전 — 펜던트에서 GripperDA_v1 값을 [0, 2.7, 228, 0, 0, 0]으로 고친 뒤 get_current_tcp(이름) · get_tcp(값)로 확인하고 이 칸과 verified_at 을 고친다. 이름이 같아 pick_place 이름 검사(v1 = v1)는 편집 전에도 통과하므로 펜던트를 먼저 고친다(안 고치면 펜던트 손끝과 MoveIt rg2_tcp 가 2.7 mm 다르다). posx 축 매핑(x_rg2 = -y_posx)은 3동작 실기(W149)로 확정.",
+  "note": "MoveIt rg2_tcp 는 브링업이 이 파일에서 만든다(x -0.0027 · y 0 · z 0.224 m, rg2_base_link 기준). 같은 자세에서 펜던트 z 11 mm / 모델 12.2 mm(10/6) — 모델 · 제어기 계산 차이는 TCP 와 별개(10/8 004 로그: 자리마다 xy 1~3 mm, 손목 각도와 무관)."
 }

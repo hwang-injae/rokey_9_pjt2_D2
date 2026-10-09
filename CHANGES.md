@@ -2,6 +2,9 @@
 
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
+## 2026-10-10
+- 로봇 동작(9시, 황인재 · PM): **E-81 손끝 = 손가락 가운데 — 펜던트 `GripperDA_v1` 값을 [0, 2.7, 228]로 편집**(새 이름 등록 안 함), `tcp.json` 한 곳이 정본 · 브링업이 `rg2_tcp` x −2.7 mm를 만듦 · 공급 칸 y +2.7 mm(94f8c09 코드). 10/9까지 posx 기록 · 보정값은 옛 v1 기준. 복구 절차 4절에 그리퍼 응답 없음 때 순서. **펜던트 편집 → 3동작(W149) 확인 뒤 merge.**
+
 ## 2026-10-09
 - HMI(황인재, 밤): **W047 완료 — 웹 화면 · backend · 다리 첫 판 main(1289d41 ~ 3f0a34d)** — 다리 `d2_bridge` 최소형 + `mock_bridge`(W127) · backend MQTT 층 REST `/api/robot` · `/ws` · `mock_robot`(W126) · 화면(Next.js 16.4 + Node 24 — 컨테이너 빌드 단계 기준): 연결 표시 · 끊김 배너 · 상태 줄(누가 · 왜 멈췄는지) · 버튼 7개 · 진행도(위 가운데) · 설계 열 보기 → three.js 3D(진행 색) · 손목 검출 화면 · 다크 모드 · 설계 저장소 최소형 `DesignStore`(W111 — 기본 설계 4개 등록 · 로봇 `get_design` · `save_build` 답) · 다리 `wrist_image` 전달. **로봇 PC: pull 뒤 `colcon build --packages-select d2_bridge`(`sensor_msgs` 추가).** `tests/test_robot_yaml.py`에 두 PC 시간 순서 시험(`service_s < command_s < mqtt.req_timeout_s` · `lost_after_s > 2 × alive_s`) — 시간 키를 바꿀 때 순서만 지키면 통과.
 - 공통(18시, PM): **E-78 ~ E-80(PL, HMI 세션)** — 웹 backend가 `robot.yaml` 설계 규칙 키 6개만 읽기 전용 · 스캔 설계 부모 · family = GPT가 DB 목록에서 고름(`scan_infer` 응답 · `scan_result/1.2`에 `nearest_base` 선택 칸 — 비전 · 작업 관리자 코드 후속) · 스캔 → AI 후보 3개는 비교 화면 [AI로 고치기]를 누를 때만(W125).
