@@ -82,9 +82,9 @@ h2 { font-size: 17px; margin: 0; }
 
 .theme { justify-self: end; }
 
-/* 다크 모드 토글 — 코드펜 원본(크기는 font-size 하나로 바꾼다: 원본 2rem → 띠에 맞게) */
+/* 다크 모드 토글 — 코드펜 원본(크기는 font-size 하나로 바꾼다: 원본 2rem → 띠에 맞게 1.3rem ≈ 78 × 42 px) */
 .toggle {
-  font-size: 0.8rem;
+  font-size: 1.3rem;
   border: 0.125em solid currentColor;
   border-radius: 2em;
   cursor: pointer;

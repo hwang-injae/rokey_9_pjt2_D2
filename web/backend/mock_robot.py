@@ -4,7 +4,9 @@
 - d2/bridge/alive 를 1초마다(LWT alive false), 처음 상태를 retained 로(task/state IDLE · safety/state · gripper/state)
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
   hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.1 · cancel
-  safety/stop → 잠금 + STOPPED(reason STOP_WEB) · safety/resume → 풀림 → IDLE · check_design → 늘 ok + 벤치 recipe · placements
+  safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 늘 ok + 벤치 recipe · placements
+  safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
+  조립 중이 아니었으면 IDLE(설계 다시 고름) — task_manager._recover · 복구 절차 문서 5장
 - 가짜 조립 중 블록마다 가짜 손목 검출 그림(d2/vision/wrist_image, 640×480 JPEG — 진짜는 find_blocks 때 손목 비전이 그림). PIL 이 없으면 그림만 안 보냄
 - 설계는 저장소 레시피 파일만 안다(웹 저장소 W111 전). 로봇을 움직이는 코드는 없다.
 실행: python3 web/backend/mock_robot.py [--host localhost] [--step 1.0]
@@ -33,6 +35,7 @@ ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 BENCH = '001_CHAIR_BENCH'           # check_design 응답 · 스캔 결과에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')
 CANCEL_OK = ('READY', 'ERROR', 'SCAN_REVIEW')     # 취소를 받는 상태(SDD 5.1, 10/8 E-62)
+RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'WAIT_HMI', 'VERIFY', 'RECOVER', 'ERROR')   # 조립 중(task_manager 와 같음)
 
 
 def fake_wrist_jpeg(seed, text):
@@ -69,6 +72,8 @@ class MockRobot:
         self.lock = threading.Lock()
         self.st = dict(state='IDLE', run_id=None, design_id=None, block_id=None, message_id=None, message='대기')
         self.locked = False
+        self.assembling = False       # 멈췄을 때 조립 중이었나 — 다시 시작 뒤 이어 갈지 정한다(진짜 작업 관리자와 같음)
+        self.placed = []              # 이번 조립(run)에서 놓은 블록 이름 — 다시 시작 뒤 건너뛴다
         self.worker = None
         self.abort = threading.Event()
         self.c = make_mqtt_client('d2_mock_robot')
@@ -103,13 +108,23 @@ class MockRobot:
         self.pub('d2/safety/state', dict(schema='safety_state/1', stopped=locked, locked=locked, reason=reason))
 
     # ---------- 가짜 흐름 ----------
-    def _assemble(self, design_id, run_id):
-        """블록마다 PICK_PLACE → VERIFY → progress 를 step_s 간격으로. 정지(abort)면 바로 멈춘다."""
+    def _assemble(self, design_id, run_id, placed, recovering=False):
+        """블록마다 PICK_PLACE → VERIFY → progress 를 step_s 간격으로. placed 에 있는 블록은 건너뛴다. 정지(abort)면 바로 멈춘다.
+
+        recovering = 다시 시작 뒤: RECOVER(쥔 블록 확인) → CHECK(진행 확인) 를 거친 뒤 남은 블록부터(진짜 작업 관리자 순서).
+        """
         doc, _ = self.design(design_id)
         steps = sorted(doc.placements['steps'], key=lambda s: s['sequence'])
         ids = [s['block_id'] for s in steps]
-        placed = []
+        if recovering:
+            for state, text in (('RECOVER', '다시 시작 — 쥔 블록을 확인합니다'),
+                                ('CHECK', f'진행 확인부터 다시 합니다 — 놓인 블록 {len(placed)}개는 건너뜀')):
+                self.set_state(state, text, block_id=None)
+                if self.abort.wait(self.step_s):
+                    return
         for n, bid in enumerate(ids, 1):
+            if bid in placed:
+                continue
             jpeg = fake_wrist_jpeg(n, f'MOCK wrist  {n}/{len(ids)}  {bid}')
             if jpeg:
                 self.c.publish('d2/vision/wrist_image', jpeg, qos=0)   # 진짜와 같이 retained 아님(IRD 10.1)
@@ -170,8 +185,9 @@ class MockRobot:
             if state not in ('READY', 'WAIT_SUPPLY', 'WAIT_HMI') or not design_id:
                 return False, 'BUSY'
             run_id = time.strftime('R%Y%m%d_%H%M%S_') + 'm0ck'
+            self.placed = []
             self.set_state('CHECK', '출발 — 관측', run_id=run_id, design_id=design_id)
-            self._run(self._assemble, design_id, run_id)
+            self._run(self._assemble, design_id, run_id, self.placed)
             return True, ''
         if cmd == 'scan':
             if state not in ('IDLE', 'DONE', 'SCAN_REVIEW'):
@@ -194,13 +210,17 @@ class MockRobot:
             return {'success': ok, 'reason': reason}
         if name == '/d2/safety/stop':
             self.abort.set()
+            if not self.locked:
+                self.assembling = self.st['state'] in RUN_STATES
             self.set_safety(True, b.get('reason') or 'STOP_' + (b.get('source') or 'web').upper())
             self.set_state('STOPPED', '멈췄어요. 원인을 없앤 뒤 [다시 시작]을 누르세요', 'stopped')
             return {'success': True, 'message': '세우는 중'}
         if name == '/d2/safety/resume':
             was = self.locked
             self.set_safety(False)
-            if was:
+            if was and self.assembling and self.st['design_id'] and self.st['run_id']:
+                self._run(self._assemble, self.st['design_id'], self.st['run_id'], self.placed, True)   # 같은 run_id 로 이어서
+            elif was:
                 self.set_state('IDLE', '정지가 풀렸어요. 설계를 다시 고르세요', design_id=None, run_id=None, block_id=None)
             return {'success': True, 'message': '잠금을 풀었다' if was else '잠겨 있지 않았다'}
         doc, _ = self.design(BENCH)                           # check_design — 늘 합격 + 벤치 레시피(IRD 11장)

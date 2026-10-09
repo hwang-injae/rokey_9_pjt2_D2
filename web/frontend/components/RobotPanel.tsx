@@ -127,7 +127,7 @@ export default function RobotPanel({ robot, onLog, picked, onPick }: Props) {
           <button className="resume" disabled={!can.resume} onClick={() => send('다시 시작', api.resume)}>
             {busy === '다시 시작' ? '보내는 중…' : '다시 시작'}
           </button>
-          <small>로봇 작업 영역에서 손을 빼고 누르세요</small>
+          <small>로봇 작업 영역에서 손을 빼고 누르세요. 조립 중이었으면 놓인 블록은 건너뛰고 이어서 해요</small>
         </div>
       </div>
 
