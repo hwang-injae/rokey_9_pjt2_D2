@@ -5,4 +5,4 @@ string request_json               # 요청 JSON 글자 (예: {"design_id": "001_
 ---
 bool success                      # 서비스가 요청을 처리했나. 검사 불합격(ok:false)처럼 '답은 나왔는데 결과가 나쁨'은 true + response_json 안 ok
 string reason                     # IRD 7장 실패 코드 (success false 일 때)
-string response_json              # 응답 JSON 글자. 맨 앞 "schema": "<이름>/1" (blocks/1 · check_result/1 · design/1 …)
+string response_json              # 응답 JSON 글자. 맨 앞 "schema": "<이름>/<앞>.<뒤>" 또는 "<이름>/1" (design/2.0 · blocks/2.0 · check_result/2.0 · blocks/1(스캔) … — IRD 6장)

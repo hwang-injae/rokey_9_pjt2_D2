@@ -1,6 +1,6 @@
 # 정지 요청 — 화면·키·작업 관리자(시간 초과) → 정지 노드 (/d2/safety/stop). 서비스라서 정지 노드가 받았는지 부른 쪽이 바로 안다 (S-20)
 string source                     # web | key | task (작업 관리자 — TIMEOUT 때 먼저 세움, 10/7) · voice (나중에)
-string reason                     # 예: stop_button · TIMEOUT
+string reason                     # 비우면 정지 노드가 STOP_<SOURCE>로 적음(화면 = STOP_WEB — 화면 · 키는 비워 보냄). 작업 관리자는 TIMEOUT · CTRL_C (IRD 7장, E-62)
 ---
 bool success                      # 정지 노드가 받아서 세우기 시작했으면 true
 string message
