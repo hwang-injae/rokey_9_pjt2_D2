@@ -160,12 +160,22 @@ class PickPlaceNode(Node):
         req = GripperCommand.Request(width_m=float(width_m), force_n=float(self.cfg['gripper']['force_n']))
         return self.exe.wait_future(self.grip_cli.call_async(req), GRIPPER_TIMEOUT_S)
 
-    def scene_attach(self, block_id, attach):
-        """장면 관리 노드에 쥔 블록 붙이기(attach=True)·떼기를 부탁한다. 장면은 그 노드만 고친다. 반환: 성공하면 True."""
+    def scene_attach(self, block_id, attach, held=None, placed=None):
+        """장면 관리 노드에 쥔 블록 붙이기(attach=True)·떼기를 부탁한다. 장면은 그 노드만 고친다. 반환: 성공하면 True.
+
+        held = 붙이기 때 쥔 블록 상자 {'size_m', 'offset_m'}(TCP 기준 m, pick_place_tcp 가 실제 집은 자세로 계산),
+        placed = 떼기 때 실제로 놓은 블록 (중심 m, 쿼터니언 xyzw)(base_link). 둘 다 보내 장면 관리가 레시피 없이도 그린다
+        (AI · 스캔 설계, 흩뿌림, 다시 집기 — 10/9 PL E-76). None 이면 칸을 비워 장면 관리가 레시피로 계산한다.
+        """
         if not self.attach_cli.wait_for_service(timeout_sec=2.0):
             self.get_logger().warn('장면 관리 노드가 없다 — 쥔 블록 없이 계획한다')
             return False
-        res = self.exe.wait_future(self.attach_cli.call_async(SceneAttach.Request(block_id=block_id, attach=attach)), 5.0)
+        req = SceneAttach.Request(block_id=block_id, attach=attach)
+        if held is not None:
+            req.held_size_m, req.held_offset_m = [float(v) for v in held['size_m']], [float(v) for v in held['offset_m']]
+        if placed is not None:
+            req.placed_center_m, req.placed_quat = [float(v) for v in placed[0]], [float(v) for v in placed[1]]
+        res = self.exe.wait_future(self.attach_cli.call_async(req), 5.0)
         return bool(res and res.success)
 
     # ---------- 블록 1개 ----------
@@ -178,7 +188,7 @@ class PickPlaceNode(Node):
         (pc, pr), (lc, lr) = pose(g.pick_pose), pose(g.place_pose)
         slot = int(g.supply_slot) if g.supply_slot.isdigit() else None
         try:
-            pick_xyz, pick_q, place_xyz, place_q, _ = pick_place_tcp(self.cfg, pc, pr, lc, lr, g.grasp, slot)
+            pick_xyz, pick_q, place_xyz, place_q, held = pick_place_tcp(self.cfg, pc, pr, lc, lr, g.grasp, slot)
         except (ValueError, KeyError) as e:
             self.get_logger().error(f'{g.block_id}: 목표 계산 실패 — {e}')
             return None
@@ -197,13 +207,17 @@ class PickPlaceNode(Node):
                 return None
             out[kind] = {'qa': qa, 'quat': quat, 'high': high, 'low': low}
             seed = qa
+        # 장면 관리에 넘길 값(E-76): 쥔 블록 상자(실제 집는 칸 · 잡기 기준)와 놓을 블록 자세(목표 그대로)
+        o = g.place_pose.orientation
+        out['held'], out['placed'] = held, (lc, (o.x, o.y, o.z, o.w))
         return out
 
     def _execute(self, gh):
         """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
 
         집기 전 여는 폭은 open_width_m(0 이면 robot.yaml grasp_open_pick_m, 블록 폭 이하면 움직이기 전에 PLAN_FAILED).
-        잡은 뒤 장면에 쥔 블록을 못 붙이면(장면 관리 없음 · 모르는 블록) 그 자리에 다시 내려놓고 올라와 ERROR.
+        잡은 뒤 장면에 쥔 블록을 못 붙이면(장면 관리 없음 · 장면 적용 실패) 그 자리에 다시 내려놓고 올라와 ERROR.
+        쥔 상자 · 놓은 자리는 이 노드가 계산해 보내므로 레시피 파일에 없는 설계도 붙는다(E-76).
 
         바깥 영향: 로봇 팔·그리퍼가 움직이고, 장면 관리에 쥔 블록 붙이기·떼기를 부탁한다.
         실패·정지·취소 때는 세운 뒤 success=false 와 이유 코드(IRD 7장, 정지면 halt 이유)로 끝낸다.
@@ -278,7 +292,7 @@ class PickPlaceNode(Node):
                 return finish(False, 'GRASP_FAILED', width)
             # 쥔 블록이 장면에 안 붙으면 운반 계획이 들고 가는 블록의 충돌을 못 본다 → 들지 않는다.
             # 블록은 아직 바닥에 닿아 있으므로 그 자리에서 다시 열면 원래 자리에 그대로 남는다(공중 개방 아님)
-            if not self.scene_attach(g.block_id, True) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+            if not self.scene_attach(g.block_id, True, held=p['held']) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
                 self.get_logger().error(f'{g.block_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 올라와 멈춘다')
                 self.grip(open_pick)
                 self.go_line(pk['high'], pk['quat'], halted)
@@ -298,7 +312,7 @@ class PickPlaceNode(Node):
             r = self.grip(self.cfg['grasp_open_place_m'][g.grasp])
             if r is None or not r.success:
                 return finish(False, 'GRASP_FAILED', width)
-            if not self.scene_attach(g.block_id, False) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+            if not self.scene_attach(g.block_id, False, placed=p['placed']) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
                 # 떼기 실패는 장면에 블록이 남아 다음 계획이 더 조심스러워질 뿐이라 멈추지 않는다
                 self.get_logger().warn(f'{g.block_id}: 장면에서 쥔 블록을 못 뗐다')
             step('retreat')

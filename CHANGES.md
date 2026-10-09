@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-09
+- 로봇 동작(15시, 황인재 · PM): **E-76 — `SceneAttach`에 쥔 상자 · 놓은 자리 배열 칸**(집기 · 놓기가 실제 계산값을 보내고 장면 관리는 그 값으로 그림, 비면 옛 방식). AI · 스캔 설계를 집은 뒤 `UNKNOWN_BLOCK` → ERROR로 멈추던 것을 막음. **`d2_interfaces` 바뀜 → 모든 PC `colcon build --packages-select d2_interfaces d2_motion`.**
 - 공통(12시, PM): **IRD 6장 JSON 예시 · E-75(PL)** — W028 문서 몫: `camera_status/1` · `safety_state/1` · `gripper_state/1` 칸을 "v1과 같음" 대신 코드 그대로 적고, 예시 5줄(`progress/1` · `scan_result/1` · 그리퍼 · 정지 · 카메라 상태) 더함. **E-75: `progress/1` · `scan_result/1`에 `stamp`를 더하고 이름을 `progress/1.1` · `scan_result/1.1`로(E-69 형식 버전 규칙, 뒷자리 첫 적용) — 코드는 한석형, 웹은 1.1로 받기(HMI).**
 - 공통(1시, PM): **10/9 PL 결정 E-70 ~ E-74** — 손목 TCP를 손가락 가운데로(방법은 박진용 확인 중, TCP PR 황인재) · `gen_path` 없앰 · RAG = AI가 DB 목록을 보고 도구 `get_design`으로 직접 골라 읽음(실패 땐 코드 예시) · 알림 `no_match_block` · 그리퍼 응답 없음 = 작업 관리자 ERROR(정지 노드 잠금 없음, 집기 · 놓기가 이유를 그대로 넘김). W113 = 10/10 벤치 화면 출발 + 손으로 쓴 변형 1개. `d2_interfaces` 옛 주석 4곳(칸 그대로). #102 반영(IRD 11장 · SDD · src/README에 `block_finder.py` · `mock_scan.py`).
 - 공통(1시, PM): **남은 '생존 신호' 2곳 → '연결 신호'(PL)** — `task_manager.py` 화면 문구('웹 연결 신호를 못 받았어요') · `robot.yaml` `mqtt.lost_after_s` 주석. 동작 · 키 이름은 그대로.
