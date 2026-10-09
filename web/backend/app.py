@@ -3,7 +3,8 @@
 
 하는 일: 앱 만들기 · routes 등록 · frontend/out 정적 서빙 · robot.yaml 규칙 읽기(한 곳, 읽기 전용 — 10/9 PL E-78) · MqttClient 시작.
 실행(웹 PC 호스트, compose 전): cd web/backend && MQTT_HOST=localhost uvicorn app:app --host 0.0.0.0 --port 8000
-설정: 환경 변수 MQTT_HOST · MQTT_PORT(.env), ROBOT_YAML(컨테이너에서 robot.yaml 을 읽기 전용으로 연결한 경로, 비우면 저장소 파일).
+설정: 환경 변수 MQTT_HOST · MQTT_PORT(.env), ROBOT_YAML(컨테이너에서 robot.yaml 을 읽기 전용으로 연결한 경로, 비우면 저장소 파일),
+      CORS_ORIGINS(화면 개발 때만 — 예 http://localhost:3000).
 OpenAI 키는 있는지만 로그에 찍고 값은 절대 찍지 않는다(팀 규칙 4).
 """
 import asyncio
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import yaml
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 REPO = Path(__file__).resolve().parents[2]
@@ -73,6 +75,9 @@ def create_app(mqtt=None, rules=None):
 
     app = FastAPI(title='D2 web backend', lifespan=lifespan)
     app.state.mqtt, app.state.hub, app.state.rules = mqtt, hub, rules
+    origins = [o for o in os.environ.get('CORS_ORIGINS', '').split(',') if o]
+    if origins:   # 화면 개발(next dev :3000)에서만 — 운영은 backend 가 화면을 같은 주소에서 내려 주므로 필요 없다
+        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
     app.include_router(robot.router)
     app.include_router(ws.router)
     if FRONTEND_OUT.is_dir():

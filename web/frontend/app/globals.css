@@ -1,0 +1,84 @@
+/* D2 화면 기본 스타일 — 정지는 크고 빨강 · 늘 보임(web/README 3장). 시연장 밝은 조명에서 읽히게 대비를 크게 */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --text: #1c1f23;
+  --muted: #6b7280;
+  --line: #d9dde3;
+  --ok: #16a34a;
+  --bad: #dc2626;
+  --warn: #d97706;
+  --primary: #2563eb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  font-size: 16px;
+}
+
+main { max-width: 960px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-direction: column; gap: 8px; }
+h1 { font-size: 22px; margin: 0; }
+h2 { font-size: 17px; margin: 0 0 8px; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 12px; font-size: 14px; }
+.dot.ok { color: var(--ok); }
+.dot.bad { color: var(--bad); }
+
+.banner { padding: 12px 16px; border-radius: 8px; font-weight: 700; color: #fff; }
+.banner.danger { background: var(--bad); font-size: 18px; }
+.banner.warn { background: var(--warn); }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.status { border-left: 6px solid var(--primary); padding: 8px 12px; background: #f8fafc; border-radius: 6px; }
+.status.locked { border-left-color: var(--bad); background: #fef2f2; }
+.status.error { border-left-color: var(--warn); background: #fffbeb; }
+.status-main { display: flex; align-items: baseline; gap: 10px; }
+.state-name { font-size: 24px; font-weight: 700; }
+.state-code { font-family: ui-monospace, monospace; color: var(--muted); font-size: 13px; }
+.state-stale { color: var(--bad); font-size: 13px; font-weight: 600; }
+.status-msg { font-size: 17px; margin-top: 4px; }
+.status-stop { color: var(--bad); font-weight: 700; margin-top: 4px; }
+.status-sub { color: var(--muted); font-size: 14px; }
+
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row input { flex: 1 1 220px; padding: 8px 10px; font-size: 16px; border: 1px solid var(--line); border-radius: 6px; }
+
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.btn-col { display: flex; flex-direction: column; gap: 4px; max-width: 220px; }
+.btn-col small { color: var(--muted); font-size: 12px; }
+
+button {
+  min-width: 110px; padding: 10px 16px; font-size: 16px; font-weight: 600;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer;
+}
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+button.stop { min-width: 180px; min-height: 64px; font-size: 22px; background: var(--bad); border-color: var(--bad); color: #fff; }
+button.resume { border-color: var(--ok); color: var(--ok); }
+
+.result { font-size: 14px; padding: 6px 10px; border-radius: 6px; }
+.result.ok { background: #f0fdf4; color: var(--ok); }
+.result.bad { background: #fef2f2; color: var(--bad); }
+
+.progress-head { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); }
+.bar { height: 14px; background: #e5e7eb; border-radius: 7px; overflow: hidden; }
+.fill { height: 100%; background: var(--ok); transition: width 0.3s; }
+
+.log { margin: 0; padding: 0; list-style: none; max-height: 280px; overflow-y: auto; font-size: 14px; }
+.log li { padding: 3px 0; border-bottom: 1px solid #f0f1f3; }
+.log time { color: var(--muted); font-family: ui-monospace, monospace; margin-right: 6px; }
+.log-safety, .log-bridge_alive { color: var(--bad); }
+.log-button { color: var(--primary); }
+.muted { color: var(--muted); }
+
+@media (max-width: 600px) {
+  button { flex: 1 1 40%; }
+  button.stop { flex-basis: 100%; }
+}
