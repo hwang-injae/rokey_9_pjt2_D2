@@ -5,11 +5,14 @@
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
   hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.1 · cancel
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · safety/resume → 풀림 → IDLE · check_design → 늘 ok + 벤치 recipe · placements
+- 가짜 조립 중 블록마다 가짜 손목 검출 그림(d2/vision/wrist_image, 640×480 JPEG — 진짜는 find_blocks 때 손목 비전이 그림). PIL 이 없으면 그림만 안 보냄
 - 설계는 저장소 레시피 파일만 안다(웹 저장소 W111 전). 로봇을 움직이는 코드는 없다.
 실행: python3 web/backend/mock_robot.py [--host localhost] [--step 1.0]
 """
 import argparse
+import io
 import json
+import random
 import sys
 import threading
 import time
@@ -30,6 +33,26 @@ ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 BENCH = '001_CHAIR_BENCH'           # check_design 응답 · 스캔 결과에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')
 CANCEL_OK = ('READY', 'ERROR', 'SCAN_REVIEW')     # 취소를 받는 상태(SDD 5.1, 10/8 E-62)
+
+
+def fake_wrist_jpeg(seed, text):
+    """가짜 손목 검출 그림(640×480 JPEG, IRD 10.5 크기) — 회색 바탕에 블록 3개 + 윤곽 · 점수 글자. PIL 이 없으면 None."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return None
+    img = Image.new('RGB', (640, 480), (70, 72, 76))
+    draw = ImageDraw.Draw(img)
+    rng = random.Random(seed)
+    for i in range(3):
+        x, y = rng.randint(40, 440), rng.randint(60, 300)
+        w, h = (150, 50) if rng.random() < 0.5 else (50, 150)
+        draw.rectangle([x, y, x + w, y + h], fill=(196, 160, 112), outline=(0, 230, 0) if i == 0 else (255, 200, 0), width=3)
+        draw.text((x, y - 14), f'block {0.93 - i * 0.07:.2f}' + (' <- pick' if i == 0 else ''), fill=(255, 255, 255))
+    draw.text((10, 10), text, fill=(255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, 'JPEG', quality=70)
+    return buf.getvalue()
 
 
 class MockRobot:
@@ -86,7 +109,10 @@ class MockRobot:
         steps = sorted(doc.placements['steps'], key=lambda s: s['sequence'])
         ids = [s['block_id'] for s in steps]
         placed = []
-        for bid in ids:
+        for n, bid in enumerate(ids, 1):
+            jpeg = fake_wrist_jpeg(n, f'MOCK wrist  {n}/{len(ids)}  {bid}')
+            if jpeg:
+                self.c.publish('d2/vision/wrist_image', jpeg, qos=0)   # 진짜와 같이 retained 아님(IRD 10.1)
             for state in ('PICK_PLACE', 'VERIFY'):
                 self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', block_id=bid)
                 if self.abort.wait(self.step_s):

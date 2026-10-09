@@ -20,6 +20,7 @@ STATE_TOPICS = {            # MQTT 상태 토픽(retained) → /ws 이벤트 typ
     'd2/gripper/state': 'gripper',
 }
 INTENT_TOPIC = 'd2/hmi/intent'
+WRIST_TOPIC = 'd2/vision/wrist_image'   # 손목 검출 그림 JPEG 바이트(JSON 아님 — IRD 10.1 · 10.5). QoS 0 · retained 아님
 BRIDGE_ALIVE_TOPIC = 'd2/bridge/alive'
 WEB_ALIVE_TOPIC = 'd2/web/alive'
 WEB_CALLS = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')   # 웹이 부름
@@ -55,6 +56,7 @@ class MqttClient:
         self.pending, self.seen = PendingReplies(), SeenIds()
         self._lock = threading.Lock()
         self.state = {}                  # /ws type → 마지막 상태 dict
+        self._wrist, self._wrist_seq = None, 0   # 마지막 손목 검출 그림(바이트) · 받은 번호(화면이 새 그림인지 아는 데 씀)
         self._bridge_alive, self._bridge_seen_at = False, None
         self._stop = threading.Event()
         self.client = client or make_mqtt_client(CLIENT_ID)
@@ -97,7 +99,7 @@ class MqttClient:
             self.clock() - self._bridge_seen_at < self.lost_after_s
 
     def snapshot(self):
-        """지금 값 전부(화면이 처음 붙을 때 · GET /api/robot/state): 상태 5종 + 브로커 · 다리 연결."""
+        """지금 값 전부(화면이 처음 붙을 때 · GET /api/robot/state): 상태 5종 · 손목 그림 번호 + 브로커 · 다리 연결."""
         with self._lock:
             out = {k: v for k, v in self.state.items()}
             out['bridge_alive'] = self._fresh()
@@ -110,7 +112,7 @@ class MqttClient:
             return
         topics = list(STATE_TOPICS) + [BRIDGE_ALIVE_TOPIC, INTENT_TOPIC] + \
             [res_topic(n) for n in WEB_CALLS] + [req_topic(n) for n in ROBOT_CALLS]
-        client.subscribe([(t, 1) for t in topics])
+        client.subscribe([(t, 1) for t in topics] + [(WRIST_TOPIC, 0)])
         self._emit('broker', {'connected': True})
 
     def _alive_loop(self):
@@ -145,6 +147,11 @@ class MqttClient:
             return {'success': False, 'reason': 'TIMEOUT', 'message': f'{self.req_timeout_s:g}초 안에 답이 없다 — 실제 상태는 화면 상태 줄로'}
         return {k: v for k, v in body.items() if k != 'req_id'}
 
+    def wrist_jpeg(self):
+        """마지막 손목 검출 그림(JPEG 바이트). 아직 없으면 None."""
+        with self._lock:
+            return self._wrist
+
     def serve(self, ros_name, fn):
         """로봇이 부르는 요청(get_design · save_build)에 답할 함수를 등록한다(저장소 W111). fn(body) → 응답 dict."""
         self.handlers[ros_name] = fn
@@ -153,6 +160,9 @@ class MqttClient:
     def _on_message(self, client, _userdata, msg):
         """(paho 스레드) 토픽마다 나눈다. 깨진 JSON · 빈 payload(retained 지우기)는 버린다. 예외는 삼켜 paho 스레드를 살린다."""
         if not msg.payload:
+            return
+        if msg.topic == WRIST_TOPIC:           # 그림은 JSON 이 아니라 따로 — 들고만 있고 화면에는 번호만 알린다
+            self._on_wrist(bytes(msg.payload))
             return
         try:
             if msg.topic in STATE_TOPICS:
@@ -176,6 +186,15 @@ class MqttClient:
         with self._lock:
             self.state[kind] = data
         self._emit(kind, data)
+
+    def _on_wrist(self, jpeg):
+        """손목 검출 그림을 마지막 한 장만 들고 있고 {"seq"} 를 알린다(그림 자체는 GET /api/robot/wrist.jpg — /ws 를 무겁게 하지 않게)."""
+        with self._lock:
+            self._wrist_seq += 1
+            self._wrist = jpeg
+            info = {'seq': self._wrist_seq, 'stamp': round(time.time(), 3)}   # stamp = 웹 PC 가 받은 시각(화면 '몇 초 전' 표시용)
+            self.state['wrist_image'] = info
+        self._emit('wrist_image', info)
 
     def _on_bridge_alive(self, data):
         """다리 연결 신호. alive 가 정확히 true 일 때만 수신 시각을 갱신(받은 시각 기준 — 두 PC 시계를 맞추지 않는다)."""

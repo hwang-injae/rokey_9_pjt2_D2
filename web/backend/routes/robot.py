@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""/api/robot — 화면 버튼(설계 선택 · 출발 · [계속] · 스캔 · 취소 · 정지 · 다시 시작)과 지금 상태 (IRD 10.1, web/README 2장, W126).
+"""/api/robot — 화면 버튼(설계 선택 · 출발 · [계속] · 스캔 · 취소 · 정지 · 다시 시작) · 지금 상태 · 손목 검출 그림 (IRD 10.1, web/README 2장, W126).
 
 버튼 하나 = MQTT 요청 하나(MqttClient.request). 응답은 다리가 넘긴 ROS 응답 칸 그대로(success · reason 또는 message) — 판단은 로봇 쪽이 한다.
 자동 재전송 없음: 시간 초과 · BUSY · 빈 reason 거절 모두 그대로 돌려주고 사람이 다시 누른다. 버튼이 '보내는 중'에 머물지 않게 늘 답한다.
 """
 from typing import Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 router = APIRouter(prefix='/api/robot')
@@ -45,3 +45,12 @@ def resume(request: Request):
 def state(request: Request):
     """지금 값 전부(state · progress · scan_result · safety · gripper + bridge_alive · broker). 화면이 처음 붙을 때."""
     return request.app.state.mqtt.snapshot()
+
+
+@router.get('/wrist.jpg')
+def wrist(request: Request):
+    """마지막 손목 검출 그림(JPEG — 손목 비전이 그려 보낸 그대로, E-67). 아직 없으면 404. 브라우저가 옛 그림을 쓰지 않게 캐시 끔."""
+    jpeg = request.app.state.mqtt.wrist_jpeg()
+    if jpeg is None:
+        raise HTTPException(404, '손목 검출 그림이 아직 없다')
+    return Response(jpeg, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})

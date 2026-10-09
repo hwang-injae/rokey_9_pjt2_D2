@@ -1,7 +1,8 @@
-"""웹 backend MQTT 층(web/backend — mqtt_client · routes, W126)이 IRD 10장대로 요청 · 응답 · 상태 · 연결 신호를 다루는지 지킨다.
+"""웹 backend(web/backend — mqtt_client · design_store · routes, W126 · W111)가 IRD 6 · 10장대로 동작하는지 지킨다.
 
 브로커 없이 가짜 paho 클라이언트로 돈다. 지키는 것: 요청 = …/req + req_id, 답을 req_id 로 짝지음 · 시간 초과 TIMEOUT · 자동 재전송 없음,
-상태는 마지막 값 + 화면 이벤트, 다리 연결 신호 3초 끊김, retained 로 남은 옛 요청에는 답하지 않음, 로봇 PC 가 끊기면 출발 · 스캔을 막음.
+상태는 마지막 값 + 화면 이벤트, 다리 연결 신호 3초 끊김, retained 로 남은 옛 요청에는 답하지 않음, 로봇 PC 가 끊기면 출발 · 스캔을 막음,
+손목 검출 그림(JPEG)은 마지막 한 장 + 번호만 알림, 저장소는 기본 설계 4개를 design/2.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
 """
 import json
 import sys
@@ -125,6 +126,18 @@ def test_robot_request_answered_by_handler_once(mc):
                                                          'design_id': '001_CHAIR_BENCH', 'req_id': 'g1'}, False)]
 
 
+def test_wrist_image_kept_as_bytes_and_only_seq_announced(mc):
+    """손목 검출 그림은 JSON 이 아닌 JPEG 바이트 — 마지막 한 장을 들고 /ws 에는 번호만 알린다. 구독은 QoS 0(IRD 10.1)."""
+    mc._on_connect(mc.client, None, None, 0)
+    assert 'd2/vision/wrist_image' in mc.client.subs
+    assert mc.wrist_jpeg() is None
+    mc._on_message(mc.client, None, msg('d2/vision/wrist_image', b'\xff\xd8jpeg-1'))
+    mc._on_message(mc.client, None, msg('d2/vision/wrist_image', b'\xff\xd8jpeg-2'))
+    assert mc.wrist_jpeg() == b'\xff\xd8jpeg-2'
+    seqs = [e['data']['seq'] for e in mc.events if e['type'] == 'wrist_image']
+    assert seqs == [1, 2] and mc.snapshot()['wrist_image']['seq'] == 2
+
+
 def test_robot_request_without_store_is_error(mc):
     """저장소가 아직 없으면(W111 전) success false · ERROR 로 바로 답한다 — 다리가 TIMEOUT 까지 기다리지 않게."""
     mc._on_message(mc.client, None, msg('d2/hmi/save_build/req', {'req_id': 's1', 'schema': 'build/1'}))
@@ -143,6 +156,13 @@ class FakeMqtt:
     def __init__(self, bridge=True):
         self.calls, self.bridge, self.on_event = [], bridge, None
         self.host, self.port = 'localhost', 1883
+        self.handlers, self.wrist = {}, None
+
+    def serve(self, name, fn):
+        self.handlers[name] = fn
+
+    def wrist_jpeg(self):
+        return self.wrist
 
     def request(self, name, fields):
         self.calls.append((name, fields))
@@ -165,16 +185,29 @@ RULES = {'block_size_m': [0.075, 0.025, 0.015], 'margin_mm': 7, 'max_blocks': 54
          'finger_width_m': 0.02, 'assembly_area_half_m': 0.15, 'req_timeout_s': 5, 'alive_s': 1, 'lost_after_s': 3}
 
 
-def make_client(bridge=True):
-    """가짜 MQTT 로 앱을 만든다(lifespan 은 돌리지 않음)."""
+RECIPES = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
+BASES = ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL']
+
+
+@pytest.fixture
+def store(tmp_path):
+    """임시 폴더 저장소 + 저장소의 기본 설계 레시피 4개 등록."""
+    from design_store import DesignStore
+    s = DesignStore(tmp_path, RECIPES, [75, 25, 15])
+    s.registered = s.register_bases()
+    return s
+
+
+def make_client(store, bridge=True):
+    """가짜 MQTT · 임시 저장소로 앱을 만든다(lifespan 은 돌리지 않음)."""
     import app as web_app
     fake = FakeMqtt(bridge)
-    return TestClient(web_app.create_app(mqtt=fake, rules=RULES)), fake
+    return TestClient(web_app.create_app(mqtt=fake, rules=RULES, store=store)), fake
 
 
-def test_command_stop_resume_map_to_ird_names():
+def test_command_stop_resume_map_to_ird_names(store):
     """버튼 → IRD ROS 이름 · 칸: 명령은 /d2/hmi/command, 정지는 source web + 빈 reason(→ STOP_WEB), 다시 시작은 빈 칸."""
-    client, fake = make_client()
+    client, fake = make_client(store)
     assert client.post('/api/robot/command', json={'cmd': 'select_design', 'design_id': '001_CHAIR_BENCH'}).json()['success']
     client.post('/api/robot/stop')
     client.post('/api/robot/resume')
@@ -183,9 +216,9 @@ def test_command_stop_resume_map_to_ird_names():
                           ('/d2/safety/resume', {})]
 
 
-def test_unknown_cmd_rejected_and_bridge_lost_blocks_start_scan_not_stop():
+def test_unknown_cmd_rejected_and_bridge_lost_blocks_start_scan_not_stop(store):
     """모르는 cmd 는 422. 로봇 PC 가 끊기면 출발 · 스캔은 보내지 않지만 정지 · 취소는 보낸다(IRD 10.3)."""
-    client, fake = make_client(bridge=False)
+    client, fake = make_client(store, bridge=False)
     assert client.post('/api/robot/command', json={'cmd': 'turn_done'}).status_code == 422
     for cmd in ('start', 'scan'):
         body = client.post('/api/robot/command', json={'cmd': cmd}).json()
@@ -195,11 +228,78 @@ def test_unknown_cmd_rejected_and_bridge_lost_blocks_start_scan_not_stop():
     assert [n for n, _ in fake.calls] == ['/d2/hmi/command', '/d2/safety/stop']
 
 
-def test_ws_sends_snapshot_first():
+def test_ws_sends_snapshot_first(store):
     """화면이 /ws 에 붙으면 들고 있는 값을 type 별로 먼저 보낸다({"type", "data"})."""
-    client, _ = make_client()
+    client, _ = make_client(store)
     with client.websocket_connect('/ws') as ws:
         got = [ws.receive_json() for _ in range(3)]
     assert {'type': 'state', 'data': {'state': 'IDLE'}} in got
     assert {'type': 'bridge_alive', 'data': {'alive': True}} in got
     assert {'type': 'broker', 'data': {'connected': True}} in got
+
+
+# ---------- 저장소(DesignStore, W111 최소형) ----------
+def test_store_registers_four_bases_as_design_2(store):
+    """기본 설계 4개 = 레시피 두 파일 → 변환기 ② → design/2.0(v1.0 · made_by cad · 부모 없음 · recipe · placements · blocks/2.0)."""
+    assert store.registered == BASES
+    d = store.get_design('001_CHAIR_BENCH')
+    assert d['schema'] == 'design/2.0' and d['family'] == 'chair' and d['version'] == '1.0'
+    assert d['made_by'] == 'cad' and d['parent_id'] is None
+    assert d['recipe']['schema'] == 'recipe/2.0' and d['placements']['schema'] == 'placements/2.0'
+    assert d['blocks']['schema'] == 'blocks/2.0' and len(d['blocks']['blocks']) == 11
+    # 3D 진행도 색을 잇는 길: placements 의 sequence = blocks 의 order
+    assert sorted(s['sequence'] for s in d['placements']['steps']) == sorted(b['order'] for b in d['blocks']['blocks'])
+
+
+def test_store_list_is_summary_for_tree(store):
+    """목록 = 트리용 요약(블록 수 · 바깥 크기 mm), family 로 거름."""
+    rows = store.list_designs()
+    assert [r['design_id'] for r in rows] == BASES
+    bench = rows[0]
+    assert bench['block_count'] == 11 and all(v > 0 for v in bench['size_mm'])
+    assert [r['design_id'] for r in store.list_designs('desk')] == BASES[2:]
+
+
+def test_store_rejects_old_schema_and_unsafe_ids(store):
+    """옛 형식(design/1)은 변환하지 않고 거절 · 목록에서 뺀다(E-69). 경로 글자가 든 ID 는 없는 설계와 같다."""
+    (store.designs_dir / 'old_v1.0.json').write_text('{"schema": "design/1", "design_id": "old_v1.0"}', encoding='utf-8')
+    with pytest.raises(ValueError):
+        store.get_design('old_v1.0')
+    assert 'old_v1.0' not in [r['design_id'] for r in store.list_designs()]
+    for bad in ('../secret', 'a/b', '', None):
+        with pytest.raises(KeyError):
+            store.get_design(bad)
+
+
+def test_get_design_answer_for_robot(store):
+    """로봇의 get_design: 있으면 success true + design/2.0 칸을 펼침, 없으면 success false · ERROR(IRD 10.1)."""
+    ok = store.answer_get_design({'req_id': 'r1', 'design_id': '003_DESK_STAND'})
+    assert ok['success'] is True and ok['reason'] == '' and ok['schema'] == 'design/2.0' and ok['design_id'] == '003_DESK_STAND'
+    bad = store.answer_get_design({'req_id': 'r2', 'design_id': 'nope'})
+    assert bad['success'] is False and bad['reason'] == 'ERROR'
+
+
+def test_save_build_once_per_run_id(store):
+    """같은 run_id 가 또 오면(작업 관리자는 확인될 때까지 다시 보냄) 한 번만 저장하고 ok true. 형식이 다르면 ok false."""
+    build = {'schema': 'build/1', 'run_id': 'R20261010_143512_a3f9', 'design_id': '001_CHAIR_BENCH', 'result': 'DONE',
+             'placed': 11, 'total': 11, 'duration_s': 300.0, 'stop_count': 0, 'blocks': []}
+    assert store.answer_save_build({**build, 'req_id': 'a'}) == {'success': True, 'reason': '', 'ok': True}
+    (store.builds_dir / 'R20261010_143512_a3f9.json').write_text('{"keep": true}', encoding='utf-8')
+    assert store.answer_save_build({**build, 'req_id': 'b'})['ok'] is True
+    assert json.loads((store.builds_dir / 'R20261010_143512_a3f9.json').read_text()) == {'keep': True}   # 덮어쓰지 않음
+    bad = store.answer_save_build({'schema': 'build/9', 'run_id': 'x', 'req_id': 'c'})
+    assert bad['success'] is True and bad['ok'] is False
+
+
+def test_designs_rest_and_robot_handlers(store):
+    """REST: 목록 · 규칙(블록 크기 mm) · 하나 · 없으면 404. 앱이 get_design · save_build 를 저장소에 잇는다. 손목 그림은 없으면 404."""
+    client, fake = make_client(store)
+    assert [r['design_id'] for r in client.get('/api/designs').json()] == BASES
+    assert client.get('/api/designs/rules').json() == {'block_size_mm': [75.0, 25.0, 15.0], 'assembly_area_half_mm': 150.0}
+    assert client.get('/api/designs/002_CHAIR_BACK').json()['design_id'] == '002_CHAIR_BACK'
+    assert client.get('/api/designs/nope').status_code == 404
+    assert set(fake.handlers) == {'/d2/hmi/get_design', '/d2/hmi/save_build'}
+    assert client.get('/api/robot/wrist.jpg').status_code == 404
+    fake.wrist = b'\xff\xd8jpeg'
+    res = client.get('/api/robot/wrist.jpg')
+    assert res.content == b'\xff\xd8jpeg' and res.headers['content-type'] == 'image/jpeg'

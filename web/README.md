@@ -9,14 +9,15 @@
 | 어디 | 무엇 | 쓰는 데이터 | 언제 |
 |---|---|---|---|
 | **공통 띠**(모든 페이지 위, `ConnectionBadge` · `RobotPanel` — W047 ✅ ①②③⑤) | ① 상태 알림 줄: `state` 한글 + `message` + 정지 때 **누가 · 왜**(`safety_state.reason` = `STOP_WEB` · `STOP_KEY` · `STOP_TASK` · `ROBOT_ALARM:<상태>` · `CTRL_C`, E-62) ② **로봇 PC 끊김 배너**(`bridge/alive` 3초 없음 → 크게, [출발] · [스캔] 막음, "정지는 키 · 펜던트") ③ 그리퍼 표시(폭 · 잡힘) ④ 음성 의도 표시("음성: 출발") ⑤ [정지] · [다시 시작] — 늘 보임 | `task/state` · `safety/state` · `bridge/alive` · `gripper/state` · `hmi/intent` | W047 |
-| **메인** `app/page.tsx` | ⑥ 설계 목록 · 트리(`DesignTree` — 기본 4개 → 파생본, `parent_id` · `version` · `made_by`) → 1개 고르면 ⑦ 3D 미리보기(`Preview3D`, E-40) ⑧ **진행도**: 놓은 블록 / 전체 = %, 3D에서 놓인 블록 초록 · 다음 블록 노랑 · 없는 블록 빨강 ⑨ 버튼 [설계 선택] [출발] [계속] [스캔] [취소] — 켜짐은 3장 ⑩ 글상자 + [생성](`RequestBox` — 음성 `request_design` 문장이 오면 채우고 사람이 [생성], E-07) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 · 출발을 누르세요" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/2.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ W047 · ⑩ ⑪ W112 · ⑫ 10/11 |
+| **메인** `app/page.tsx` | ⑥ [설계 고르기] → 설계 트리(`DesignTree` — 가구별 기본 4개 → 파생본, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**, 로봇에는 [설계 선택]이 보냄 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼 [설계 선택] [출발] [계속] [스캔] [취소] — 켜짐은 3장 ⑩ 글상자 + [생성](`RequestBox` — 음성 `request_design` 문장이 오면 채우고 사람이 [생성], E-07) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 · 출발을 누르세요" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/2.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
 | **설계 상세** `app/designs/page.tsx?id=…` | 미리보기 · 검사 결과 · 버전 트리 · 조립 기록(builds: 결과 · 놓은 수/전체 · 시간 · 정지 횟수 · 블록별 dz) | `/api/designs` | W112 |
 | **스캔 비교** `app/scan/page.tsx`(`SCAN_REVIEW`일 때 자동, `ScanCompare`) | 실물 사진(`scan_image`) ↔ 추론 설계 3D(`inferred` 블록 반투명) + 추정 블록 수 · **점군 창**(`scan_cloud` PLY, 닫을 수 있음, E-35 — `cloud_path`가 없거나 빈 글자면 점군 창만 안 띄움) · 버튼 [그대로 저장] [AI로 고치기] [다시 스캔] [취소] | `task/scan_result` · `vision/scan_image` · `vision/scan_cloud` | W116 |
-| 메인 안(나중) | **손목 카메라 검출 화면** — 비전이 YOLO-seg 결과를 그려 보낸 JPEG를 그대로(겹쳐 그리기 없음) | `vision/wrist_image` | W150 뒤 |
+| 메인 왼쪽 아래 | **손목 카메라 검출 화면**(`WristCamera`) — 비전이 YOLO-seg 결과를 그려 보낸 JPEG를 그대로(겹쳐 그리기 없음). `wrist_block`은 `find_blocks` 때마다 그림을 내므로 공급 칸(`slots`) 방식에서는 그림이 없다 | `vision/wrist_image` | ✅ 화면 · 다리(10/9) — 실물은 W150 |
+| 위 띠 오른쪽 | **다크 모드 토글**(`ThemeToggle` — 코드펜 해 · 달 모양). 이 브라우저에만 기억(`localStorage`), 처음엔 운영체제 설정 | — | ✅ 10/9 |
 
 - **설계 상세는 `designs/[id]`가 아니라 `designs?id=…`:** Next.js 정적 내보내기(`output: 'export'`)는 동적 경로를 빌드 때 아는 ID만 만든다 — AI가 새로 만든 설계가 열리지 않는다(SDD 3.1.1 고칠 것, 8장).
 - 3D 블록 크기 = `robot.yaml` `block_size_m`(backend가 `GET /api/designs/rules`로 줌 — 10/9 PL 결정 ①). `blocks/2.0`(저장 설계) · `blocks/1`(스캔 추론, 위치 · 방향 + `inferred`) 둘 다 같은 칸(`x` · `y` · `z` · `ori`)으로 같은 `Preview3D`가 그린다.
-- 진행도 색은 `progress/1.1.blocks[].state`(`present` 초록 · `absent` 빨강) + 다음 블록(`state/1.block_id`) 노랑. **판정은 하지 않는다**(dx · dy는 측정값만 — 지금은 NaN). % = `present` 수 / 설계 블록 수, `DONE`이면 100 %.
+- 진행도 색은 `progress/1.1.blocks[].state`(`present` 초록 · `occluded` · `unknown` 주황 · 그 밖 = 아직, 흐린 회색) + 지금 블록(`state/1.block_id`) 노랑 — 조립 전에는 모든 블록이 `absent`라 빨강은 쓰지 않는다(경고로 읽혀서, 10/9). 블록 이름 ↔ 3D 블록은 `placements.steps[].sequence` = `blocks[].order`로 잇는다. 진행도 색은 `state/1.run_id`와 `progress.run_id`가 같을 때만. **판정은 하지 않는다**(dx · dy는 측정값만 — 지금은 NaN). % = `present` 수 / 설계 블록 수, `DONE`이면 100 %.
 - 카메라 표시기는 넣지 않는다 — `camera_status`는 MQTT로 넘기지 않는다(IRD 10.1).
 
 ## 1-B. 실행 (compose 전 — 웹 PC 또는 개발 PC 호스트)
@@ -53,13 +54,13 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 설계 규칙 숫자 | `GET /api/designs/rules` | — | — (backend가 `robot.yaml`을 읽음, 10/9 ①) |
 | 설계 생성 | `POST /api/designs/generate {text}` → `{job_id}`, 진행은 `/ws` `{type: gen, job_id, stage, candidates, reference}` | 검사만 `d2/task/check_design/req` × 3 | `/d2/task/check_design` |
 | 후보 고르기 → 저장 | `POST /api/designs/generate/{job_id}/pick {index}` → `design/2.0` | — (검사 결과를 이미 받아 둠) | — |
-| 설계 목록 · 트리 · 1개 | `GET /api/designs` · `GET /api/designs/tree` · `GET /api/designs/{id}` | — | — |
+| 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/2.0`, 없으면 404) ✅ | — | — |
 | 조립 기록 | `GET /api/designs/{id}/builds` | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
 | 스캔 [AI로 고치기] | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
 | 사진 · 점군 | `GET /api/robot/scan/{run_id}/image.jpg` · `/cloud.ply`(backend가 MQTT로 받아 파일로 둠) | `d2/vision/scan_image` · `scan_cloud` | 다리가 파일을 읽어 보냄 |
-| 손목 검출 화면 | `GET /api/robot/wrist.jpg`(1~2 Hz) | `d2/vision/wrist_image` | `/d2/vision/wrist_image` |
-| (로봇이 부름) 설계 꺼내기 · 결과 저장 | backend가 답함 | `d2/hmi/get_design/req` → `/res` · `d2/hmi/save_build/req` → `/res` | `/d2/hmi/get_design` · `save_build` |
+| 손목 검출 화면 | `/ws` `{type: wrist_image, seq, stamp}` → `GET /api/robot/wrist.jpg?seq=`(마지막 한 장, 없으면 404) ✅ | `d2/vision/wrist_image`(JPEG 바이트, QoS 0) | `/d2/vision/wrist_image` |
+| (로봇이 부름) 설계 꺼내기 · 결과 저장 | backend가 `DesignStore`로 답함 ✅(10/9) | `d2/hmi/get_design/req` → `/res` · `d2/hmi/save_build/req` → `/res` | `/d2/hmi/get_design` · `save_build` |
 
 - 요청 시간 제한 5초(IRD `mqtt.req_timeout_s`). **자동 재전송은 어디에도 없다** — 시간 초과 · `BUSY` · 웹 연결 신호 없음 거절(`success: false` + reason 빈 값, #83) 모두 사람이 다시 누른다. 실제 상태는 `state/1` retained로 보여 준다. 버튼은 응답이나 시간 초과 뒤 바로 풀린다.
 - `get_design`은 작업 관리자 `timeout.service_s` 3초 안에 답해야 한다 → backend는 파일 폴더에서 바로 읽는다(LLM · 검사 호출 없음). `save_build`는 같은 `run_id`가 또 오면 한 번만 저장하고 `ok: true`.
@@ -133,13 +134,15 @@ web/backend/
 ├── routes/
 │   ├── robot.py      /api/robot(W126 ✅) command · stop · resume · state → MqttClient. 로봇 PC 끊김이면 start · scan 은 안 보냄
 │   │                 (스캔 사진 · 점군 · 손목 영상은 W127 나머지 뒤)
-│   ├── designs.py    /api/designs 목록 · 상세 · 트리 · 규칙 숫자 · 생성 · 고르기 · 스캔 저장 → DesignGenerator · DesignStore
+│   ├── designs.py    /api/designs 목록 · 상세 · 규칙 숫자(W111 최소형 ✅) · 생성 · 고르기 · 스캔 저장(W108 · W112 · W116) → DesignGenerator · DesignStore
 │   └── ws.py         /ws(W126 ✅) {"type", "data"} 한 겹 — 붙으면 들고 있는 값 먼저, 그 뒤 바뀔 때마다(밀리면 오래된 것부터 버림)
 ├── mqtt_client.py    MqttClient(W126 ✅) — 브로커와 통신 한 곳: req/res(req_id · req_timeout_s, 자동 재전송 없음) · 상태 마지막 값 ·
 │                     d2/web/alive 1초(LWT false) · 다리 연결 신호 3초 끊김 · serve()로 등록한 함수가 get_design · save_build 답함
 │                     (토픽 이름 · req/res 짝은 d2_bridge/bridge_codec.py 를 같이 씀)
 ├── design_gen.py     DesignGenerator — GPT-4o 호출 한 곳(4-A · 4-C)
 ├── design_store.py   DesignStore — 저장 한 곳(JSON 폴더 → PostgreSQL) + 형식 이름 상수 · 기본 설계 등록(d2_task 변환기 ② import, E-59)
+│                     W111 최소형 ✅(10/9): register_bases · list_designs · get_design · save_build(같은 run_id 한 번) + 로봇 get_design · save_build 답.
+│                     기본 설계는 도면에서 온 것이라 등록 때 check_design 을 부르지 않는다(로봇 PC 없이도 목록이 떠야 함). save_design · children · examples_for 는 W108 · W112
 ├── prompts/          design_system.txt(설계 직접 작성 + 역할 목록 + 잡기 규칙 · 스캔 채우기 절) · blocks_schema.json(blocks/2.0 후보 3개)
 ├── voice.py          VoiceListener — 호스트(마이크 → Whisper → 의도 → MQTT d2/hmi/intent)
 ├── mock_robot.py     가짜 로봇 PC(W126 ✅, MQTT 만): 다리 연결 신호 · 처음 상태 · 가짜 조립(블록마다 progress) · 정지 · 스캔(→ SCAN_REVIEW +
@@ -156,8 +159,9 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 
 | 언제 | 무엇 |
 |---|---|
-| 10/9 저녁 | ✅ W127 다리 최소형 + `mock_bridge`(+ get_design · save_build · check_design · intent · progress · scan_result · gripper 까지 — 사진 · 점군 · 영상만 남음) → ✅ W126 backend MQTT 층 → W047 화면(가능한 데까지) |
+| 10/9 저녁 | ✅ W127 다리 최소형 + `mock_bridge`(+ get_design · save_build · check_design · intent · progress · scan_result · gripper 까지 — 사진 · 점군 · 영상만 남음 → 영상은 10/9 밤) → ✅ W126 backend MQTT 층 → W047 화면(가능한 데까지) |
 | 10/9 저녁 | ✅ W047 화면 최소형 — 연결 표시 · 끊김 배너 · 상태 줄(누가 · 왜 멈췄는지) · 설계 입력 · 버튼 7개(상태표대로) · 진행도 % · 그리퍼 · 상태 로그. 설계 목록 · 3D 미리보기 · 진행도 3D 색은 W111 · W112 |
+| 10/9 밤 | ✅ W111 최소형(`DesignStore` — 기본 설계 4개 등록 · 목록 · 꺼내기 · 결과 저장 + 로봇 `get_design` · `save_build` 답) · ✅ 화면 더함: [설계 고르기] 트리 → 3D 보기(three.js) · 진행도 위 가운데 + 3D 색 · 손목 검출 화면 · 다크 모드 · ✅ 다리 `wrist_image` 전달(W127 — 사진 · 점군만 남음) |
 | 10/10 낮(로봇) | W149 손목 TCP · W150 손목 노드 실기 · W129 PC 2대 MQTT 확인(한세교) · W151 화면 출발 첫 실기(화면이 없으면 예비 절차 — 명령 출발) · 18시 W158 보고 |
 | 10/10 저녁 | W127 나머지(`get_design` · `save_build` · `check_design` · `intent` · `gripper/state` · `progress/1.1` · `scan_result/1.1`) · W111 저장소 · W108 · W112 |
 | 10/11 | W108 · W112 · W122 생성 흐름 통합(한석형) · W045 음성 · W127 사진 · 점군 · 손목 영상 — 그 뒤는 10/10 18시 보고 뒤 PL이 다시 짬 |

@@ -1,10 +1,12 @@
 'use client';
-// 로봇 패널 — 상태 줄 · 정지 이유 · 설계 선택 · 버튼 · 진행도 · 그리퍼 (web/README 1 · 3장, W047).
+// 로봇 패널 — 상태 줄 · 정지 이유 · 설계 고르기(트리) · 버튼 · 그리퍼 (web/README 1 · 3장, W047). 진행도는 위쪽 가운데(ProgressTop).
 // 버튼 하나 = REST 하나(lib/api). 판단은 로봇 쪽이 한다 — 여기서는 상태표대로 켜고 끄기만 한다. 자동 재전송 없음.
-import { useEffect, useState } from 'react';
+// 트리에서 누르는 것은 3D 로 '보기'만, 로봇에 가는 것은 [설계 선택]뿐. [출발]은 로봇에 선택된 설계로 간다(미리보기 중인 설계가 아님).
+import { useState } from 'react';
 import * as api from '@/lib/api';
 import type { CmdResult } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
+import DesignTree from './DesignTree';
 
 const STATE_KO: Record<string, string> = {
   IDLE: '대기', READY: '출발 대기', CHECK: '관측 중', SELECT: '다음 블록 고르는 중', PICK_PLACE: '집고 놓는 중',
@@ -25,28 +27,35 @@ function stopReason(reason: string): string {
 
 const has = (list: string[], s?: string) => !!s && list.includes(s);
 
-export default function RobotPanel({ robot, onLog }: { robot: Robot; onLog: (kind: string, text: string) => void }) {
+interface Props {
+  robot: Robot;
+  onLog: (kind: string, text: string) => void;
+  picked: string | null; // 트리에서 눌러 3D 로 보는 설계(아직 로봇에 안 보냈을 수 있음)
+  onPick: (id: string) => void;
+}
+
+export default function RobotPanel({ robot, onLog, picked, onPick }: Props) {
   const st = robot.state?.state;
   const locked = !!robot.safety?.locked;
-  const [designId, setDesignId] = useState('');
-  const [ids, setIds] = useState<string[]>([]);
+  const robotDesign = robot.state?.design_id ?? null;
+  const target = picked ?? robotDesign ?? ''; // [설계 선택]이 보낼 설계
+  const [treeOpen, setTreeOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null); // 보내는 중인 버튼(정지는 따로 — 늘 누를 수 있게)
   const [stopping, setStopping] = useState(false);
   const [last, setLast] = useState<{ label: string; r: CmdResult } | null>(null);
 
-  useEffect(() => {
-    api.listDesignIds().then(setIds);
-  }, []);
-  useEffect(() => {
-    if (robot.state?.design_id) setDesignId(robot.state.design_id);
-  }, [robot.state?.design_id]);
-
-  async function send(label: string, call: () => Promise<CmdResult>, isStop = false) {
+  async function send(label: string, call: () => Promise<CmdResult>, isStop = false): Promise<CmdResult> {
     isStop ? setStopping(true) : setBusy(label);
     const r = await call();
     isStop ? setStopping(false) : setBusy(null); // 응답이나 시간 초과 뒤 바로 푼다 — '보내는 중'에 머물지 않게
     setLast({ label, r });
     onLog('button', `${label} → ${r.success ? '받음' : '거절'}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
+    return r;
+  }
+
+  async function select() {
+    const r = await send('설계 선택', () => api.command('select_design', target));
+    if (r.success) setTreeOpen(false);
   }
 
   // 상태표(web/README 3장, SDD 5.1). 로봇 PC 가 끊기면 출발 · 계속 · 스캔은 막는다(IRD 10.3)
@@ -60,10 +69,6 @@ export default function RobotPanel({ robot, onLog }: { robot: Robot; onLog: (kin
     resume: !busy && (locked || has(['STOPPED', 'ERROR'], st)),
   };
 
-  const blocks = robot.progress?.blocks ?? [];
-  const present = blocks.filter((b) => b.state === 'present').length;
-  const total = blocks.length;
-  const pct = st === 'DONE' ? 100 : total ? Math.round((present / total) * 100) : 0;
   const width = robot.gripper?.width_m;
 
   return (
@@ -79,24 +84,31 @@ export default function RobotPanel({ robot, onLog }: { robot: Robot; onLog: (kin
         {robot.state?.design_id && <div className="status-sub">설계 {robot.state.design_id}{robot.state.run_id ? ` · 실행 ${robot.state.run_id}` : ''}</div>}
       </div>
 
-      <div className="row">
-        <label htmlFor="design">설계</label>
-        <input id="design" list="design-ids" value={designId} onChange={(e) => setDesignId(e.target.value.trim())}
-          placeholder="예: 001_CHAIR_BENCH" />
-        <datalist id="design-ids">{ids.map((id) => <option key={id} value={id} />)}</datalist>
-        <button disabled={!can.select || !designId} onClick={() => send('설계 선택', () => api.command('select_design', designId))}>
-          {busy === '설계 선택' ? '보내는 중…' : '설계 선택'}
-        </button>
+      <div className="design-row">
+        <div className="design-now">
+          <span className="muted">설계</span>
+          <strong>{target || '아직 안 고름'}</strong>
+          {target && (target === robotDesign ? <span className="tag ok">로봇에 선택됨</span> : <span className="tag">미리보기만</span>)}
+        </div>
+        <div className="buttons">
+          <button aria-expanded={treeOpen} onClick={() => setTreeOpen((o) => !o)}>
+            {treeOpen ? '트리 닫기 ▴' : '설계 고르기 ▾'}
+          </button>
+          <button disabled={!can.select || !target} onClick={select}>
+            {busy === '설계 선택' ? '보내는 중…' : '설계 선택'}
+          </button>
+        </div>
+        {treeOpen && <DesignTree picked={target || null} onRobot={robotDesign} onPick={onPick} />}
       </div>
 
       <div className="buttons">
         <div className="btn-col">
-          <button className="primary" disabled={!can.start} onClick={() => send('출발', () => api.command('start', designId))}>
+          <button className="primary" disabled={!can.start} onClick={() => send('출발', () => api.command('start', robotDesign ?? ''))}>
             {busy === '출발' ? '보내는 중…' : '출발'}
           </button>
           <small>사람이 로봇 작업 영역 밖인지 확인하고 누르세요</small>
         </div>
-        <button disabled={!can.cont} onClick={() => send('계속', () => api.command('start', designId))}>
+        <button disabled={!can.cont} onClick={() => send('계속', () => api.command('start', robotDesign ?? ''))}>
           {busy === '계속' ? '보내는 중…' : '계속'}
         </button>
         <button disabled={!can.scan} onClick={() => send('스캔', () => api.command('scan'))}>
@@ -127,15 +139,6 @@ export default function RobotPanel({ robot, onLog }: { robot: Robot; onLog: (kin
           {!last.r.success && !last.r.reason && !last.r.message ? ' — 상태 줄의 안내를 보세요' : ''}
         </div>
       )}
-
-      <div className="progress">
-        <div className="progress-head">
-          <span>진행도</span>
-          <span>{total ? `${present} / ${total} 블록 · ${pct}%` : '진행표 없음'}</span>
-        </div>
-        <div className="bar"><div className="fill" style={{ width: `${pct}%` }} /></div>
-        {robot.state?.block_id && <div className="status-sub">지금 블록 {robot.state.block_id}</div>}
-      </div>
 
       <div className="status-sub">
         그리퍼: {robot.gripper ? `${width == null ? '폭 모름' : `폭 ${(width * 1000).toFixed(1)} mm`} · ${robot.gripper.grasped ? '잡음' : '안 잡음'}` : '신호 없음'}

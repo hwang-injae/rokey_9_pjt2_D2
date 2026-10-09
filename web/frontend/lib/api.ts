@@ -1,6 +1,6 @@
 // REST 한 곳(SDD 3.3 — 화면은 backend 의 REST · /ws 만 쓴다, E-41).
 // 운영: backend 가 이 화면을 같은 주소에서 내려 주므로 BASE 는 빈 글자. 개발(next dev :3000): NEXT_PUBLIC_BACKEND=http://localhost:8000
-import type { Cmd, CmdResult } from './types';
+import type { Cmd, CmdResult, Design, DesignSummary, Rules } from './types';
 
 export const BASE = process.env.NEXT_PUBLIC_BACKEND ?? '';
 const TIMEOUT_MS = 8000; // backend 가 MQTT 응답을 5초(req_timeout_s)까지 기다린 뒤 답하므로 그보다 길게. 넘으면 실패로 보고 버튼을 푼다
@@ -31,14 +31,20 @@ export const stop = () => post('/api/robot/stop');
 /** /d2/safety/resume — 다시 시작(잠금 풀기 한 번) */
 export const resume = () => post('/api/robot/resume');
 
-/** 설계 이름 목록(설계 선택 상자용). 저장소(W111) 전에는 빈 목록 — 직접 입력 */
-export async function listDesignIds(): Promise<string[]> {
+async function getJson<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(BASE + '/api/designs');
-    if (!res.ok) return [];
-    const rows = (await res.json()) as { design_id: string }[];
-    return Array.isArray(rows) ? rows.map((r) => r.design_id) : [];
+    const res = await fetch(BASE + path);
+    return res.ok ? ((await res.json()) as T) : null;
   } catch {
-    return [];
+    return null;
   }
 }
+
+/** 설계 요약 목록(트리용). 못 받으면 null — 화면이 '못 받음'을 보여 준다 */
+export const listDesigns = () => getJson<DesignSummary[]>('/api/designs');
+/** design/2.0 하나(3D 보기용). 없으면 null */
+export const getDesign = (id: string) => getJson<Design>('/api/designs/' + encodeURIComponent(id));
+/** 설계 규칙 숫자 — 3D 블록 크기(robot.yaml block_size_m 한 곳, 10/9 PL E-78) */
+export const getRules = () => getJson<Rules>('/api/designs/rules');
+/** 손목 검출 그림 주소 — seq 가 바뀔 때마다 새로 받는다(브라우저가 옛 그림을 다시 쓰지 않게) */
+export const wristUrl = (seq: number) => `${BASE}/api/robot/wrist.jpg?seq=${seq}`;

@@ -19,6 +19,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
@@ -46,6 +47,7 @@ WEB_CALLS = {
 }
 ROBOT_CALLS = ('/d2/hmi/get_design', '/d2/hmi/save_build')   # 로봇 노드가 부르고 웹 backend(design_store)가 답한다
 INTENT = '/d2/hmi/intent'
+WRIST_IMAGE = '/d2/vision/wrist_image'   # 손목 검출 그림(CompressedImage JPEG) — 바이트 그대로 d2/vision/wrist_image 로(IRD 10.1 · 10.5)
 HMI_ALIVE = '/d2/hmi/alive'
 WEB_ALIVE_TOPIC = 'd2/web/alive'
 BRIDGE_ALIVE_TOPIC = 'd2/bridge/alive'
@@ -72,7 +74,7 @@ def make_mqtt_client(client_id):
 class MqttBridge(Node):
     """ROS ↔ MQTT 변환 하나(IRD 10.1 표).
 
-    로봇 → 웹: 상태 토픽 5개 → MQTT retained, 연결 신호 d2/bridge/alive(alive_s 마다, LWT alive false).
+    로봇 → 웹: 상태 토픽 5개 → MQTT retained, 손목 검출 그림 → JPEG 바이트(QoS 0), 연결 신호 d2/bridge/alive(alive_s 마다, LWT alive false).
     웹 → 로봇: d2/hmi/intent → /d2/hmi/intent, d2/web/alive → /d2/hmi/alive, …/req → 서비스 호출 → …/res(req_id 그대로).
     로봇이 부름: /d2/hmi/get_design · save_build 를 제공하고, MQTT …/req 로 웹에 묻고 …/res 를 req_timeout_s 동안 기다린다.
     실패: 브로커가 없으면 혼자 다시 붙는다. 서비스가 안 떠 있거나 요청이 틀리면 success false 로 답한다(자동 재시도 없음).
@@ -95,6 +97,7 @@ class MqttBridge(Node):
         for name, ros_qos, mqtt_qos in STATE_TOPICS:
             self.create_subscription(String, name, partial(self._on_state, mqtt_topic(name), mqtt_qos), ros_qos,
                                      callback_group=cb)
+        self.create_subscription(CompressedImage, WRIST_IMAGE, self._on_wrist_image, 10, callback_group=cb)
         self.intent_pub = self.create_publisher(String, INTENT, 10)
         self.alive_pub = self.create_publisher(String, HMI_ALIVE, 10)
         self.calls = {}              # MQTT 요청 토픽 → (ROS 이름, 클라이언트, 형식, 요청 칸, 응답 칸)
@@ -165,6 +168,10 @@ class MqttBridge(Node):
         with self._lock:
             self.last_state[topic] = (msg.data, mqtt_qos)
         self._publish(topic, msg.data, mqtt_qos, retain=True)
+
+    def _on_wrist_image(self, msg):
+        """손목 검출 그림 JPEG 바이트를 그대로 옮긴다. QoS 0 · retained 아님 — 하나 잃어도 다음 검출 때 새로 오고, 옛 그림을 남기지 않게(IRD 10.1)."""
+        self._publish(mqtt_topic(WRIST_IMAGE), bytes(msg.data), 0)
 
     # ---------- 웹 → 로봇 ----------
     def _on_message(self, _client, _userdata, msg):

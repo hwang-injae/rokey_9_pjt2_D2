@@ -23,10 +23,11 @@ export interface Robot {
   gripper: GripperState | null;
   scan: ScanResult | null;
   intent: Intent | null;
+  wrist: { seq: number; at: number } | null; // 손목 검출 그림 번호 · 웹 PC 가 받은 시각(ms)
   log: LogLine[];
 }
 
-const EMPTY: Robot = { ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null, log: [] };
+const EMPTY: Robot = { ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null, wrist: null, log: [] };
 
 function wsUrl(): string {
   const base = BASE || window.location.origin;
@@ -100,6 +101,8 @@ function apply(r: Robot, e: WsEvent): Robot {
       return { ...r, bridge: e.data.alive, log: r.bridge === e.data.alive ? r.log : log(e.data.alive ? '로봇 PC 연결됨' : '로봇 PC 연결 끊김') };
     case 'broker':
       return { ...r, broker: e.data.connected };
+    case 'wrist_image': // 그림 자체는 /api/robot/wrist.jpg 로 받는다 — 로그에는 남기지 않음(검출 때마다 와서)
+      return { ...r, wrist: { seq: e.data.seq, at: e.data.stamp * 1000 } };
     default:
       return r;
   }

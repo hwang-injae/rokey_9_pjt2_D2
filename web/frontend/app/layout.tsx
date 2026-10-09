@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { THEME_BOOT } from '@/lib/themeBoot';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -7,8 +8,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // data-theme 는 그리기 전에 THEME_BOOT 가 넣는다 — 서버에서 만든 HTML 과 달라도 경고하지 않게 suppressHydrationWarning
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
