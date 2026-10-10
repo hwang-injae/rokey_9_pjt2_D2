@@ -18,14 +18,14 @@ export default function WristCamera({ robot }: { robot: Robot }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>손목 카메라 — 블록 검출</h2>
-        <span className="muted">{w ? `마지막 그림 ${new Date(w.at).toTimeString().slice(0, 8)} · ${age}초 전` : '그림 없음'}</span>
+        <h2>손목 카메라</h2>
+        <span className="muted" title={w ? new Date(w.at).toTimeString().slice(0, 8) : undefined}>{w ? `${age}초 전` : ''}</span>
       </div>
       <div className="cam">
         {w ? (
           <img src={wristUrl(w.seq)} alt="손목 카메라 블록 검출 그림" />
         ) : (
-          <div className="cam-empty">손목 비전이 흩뿌린 공급 영역에서 블록을 찾을 때(find_blocks)마다 그림이 와요 — 공급 칸 방식(slots)에서는 오지 않아요</div>
+          <div className="cam-empty" title="손목 비전이 흩뿌린 공급 영역에서 블록을 찾을 때(find_blocks)마다 그림이 와요 — 공급 칸 방식(slots)에서는 오지 않아요">블록을 찾을 때 그림이 와요</div>
         )}
       </div>
     </section>

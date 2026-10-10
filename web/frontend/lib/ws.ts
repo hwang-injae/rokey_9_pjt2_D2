@@ -2,6 +2,7 @@
 // /ws 받기 한 곳 — 붙으면 backend 가 들고 있는 값이 먼저 오고, 그 뒤 바뀔 때마다 온다. 끊기면 2초마다 다시 붙는다.
 import { useEffect, useRef, useState } from 'react';
 import { BASE, setReqTimeout } from './api';
+import { stateName, stopReasonKo } from './names';
 import type { GenEvent, GripperState, Intent, Progress, SafetyState, ScanResult, TaskState, WsEvent } from './types';
 
 const RETRY_MS = 2000;
@@ -84,12 +85,12 @@ function apply(r: Robot, e: WsEvent): Robot {
     case 'state': {
       const s = e.data;
       const same = r.state && r.state.state === s.state && r.state.message === s.message;
-      return { ...r, state: s, log: same ? r.log : log(`${s.state}${s.message ? ' — ' + s.message : ''}`) };
+      return { ...r, state: s, log: same ? r.log : log(`${stateName(s.state)}${s.message ? ' — ' + s.message : ''}`) };
     }
     case 'safety': {
       const s = e.data;
       const same = r.safety && r.safety.locked === s.locked && r.safety.reason === s.reason;
-      return { ...r, safety: s, log: same ? r.log : log(s.locked ? `멈춤 — ${s.reason}` : '정지 풀림') };
+      return { ...r, safety: s, log: same ? r.log : log(s.locked ? stopReasonKo(s.reason) : '정지 풀림') };
     }
     case 'progress':
       return { ...r, progress: e.data };

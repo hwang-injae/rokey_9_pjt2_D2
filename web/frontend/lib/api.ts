@@ -96,4 +96,5 @@ export const getGenJob = (jobId: string) => getJson<GenJob>('/api/designs/genera
 export const pickCandidate = (jobId: string, index: number, madeBy: 'web' | 'voice' = 'web') =>
   postJson<{ design_id: string; version: string; parent_id: string | null; index: number }>(
     `/api/designs/generate/${encodeURIComponent(jobId)}/pick`, { index, made_by: madeBy }, 15000);
-
+/** 모양(Template) 이름 · 설명 — 설계 ID 대신 '벤치 V001' 처럼 보여 줄 때(lib/names) */
+export const getTemplates = () => getJson<{ id: string; name: string; label: string }[]>('/api/designs/templates');

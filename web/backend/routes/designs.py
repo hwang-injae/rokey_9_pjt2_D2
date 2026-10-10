@@ -179,6 +179,13 @@ def rules(request: Request):
             'assembly_area_half_mm': round(r['assembly_area_half_m'] * 1000, 3)}
 
 
+@router.get('/templates')
+def templates(request: Request):
+    """모양(Template) 이름 · 설명 — 화면이 설계 ID 대신 '벤치 V001' 처럼 보여 줄 때 쓴다(이름은 DesignGenerator 한 곳).
+    /{design_id} 보다 먼저 둔다(아니면 'templates' 를 설계 ID 로 읽는다)."""
+    return [{'id': k, 'name': v.split(' — ')[0], 'label': v} for k, v in request.app.state.gen.templates().items()]
+
+
 @router.get('/{design_id}')
 def get_design(design_id: str, request: Request):
     """design/2.0 하나. 없으면 404, 저장된 형식이 다르면 409(옛 형식은 변환하지 않는다 — E-69)."""

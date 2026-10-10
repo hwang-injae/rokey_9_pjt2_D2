@@ -1,6 +1,6 @@
 'use client';
 // 메인 페이지 — 위 띠(제목 · 연결 점 · 진행도 가운데 · 다크 모드) · 끊김 배너 · 왼쪽(로봇 패널 · 손목 카메라) ·
-// 오른쪽(AI 설계 만들기 W112 · 설계 3D) · 상태 로그. 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임). 스캔 비교(W116)는 뒤에 붙는다.
+// 오른쪽(AI 설계 만들기 W112 · 설계 3D) · 기록(접어 둠 — 마지막 한 줄만). 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임). 스캔 비교(W116)는 뒤에 붙는다.
 import { useEffect, useState } from 'react';
 import { ConnectionBanners, ConnectionDots } from '@/components/ConnectionBadge';
 import DesignView from '@/components/DesignView';
@@ -10,6 +10,7 @@ import RobotPanel from '@/components/RobotPanel';
 import ThemeToggle from '@/components/ThemeToggle';
 import WristCamera from '@/components/WristCamera';
 import * as api from '@/lib/api';
+import { setTemplateNames } from '@/lib/names';
 import { useTheme } from '@/lib/theme';
 import type { Rules } from '@/lib/types';
 import { useRobot } from '@/lib/ws';
@@ -19,11 +20,18 @@ export default function Home() {
   const [dark, setDark] = useTheme();
   const [picked, setPicked] = useState<string | null>(null);
   const [rules, setRules] = useState<Rules | null>(null);
+  const [named, setNamed] = useState(false); // 모양 이름을 받았나 — 받으면 다시 그려 설계 ID 대신 '벤치 V001'
   const robotDesign = robot.state?.design_id ?? null;
 
   useEffect(() => {
     if (robot.ws && !rules) api.getRules().then(setRules); // backend 가 늦게 떠도 붙는 순간 다시 받는다
-  }, [robot.ws, rules]);
+    if (robot.ws && !named)
+      api.getTemplates().then((t) => {
+        if (!t) return;
+        setTemplateNames(t);
+        setNamed(true);
+      });
+  }, [robot.ws, rules, named]);
   useEffect(() => {
     setPicked(null); // 로봇 설계가 바뀌면(설계 선택 · 음성) 3D 도 로봇 설계를 따라간다
   }, [robotDesign]);
@@ -56,15 +64,17 @@ export default function Home() {
         {robot.state?.state === 'SCAN_REVIEW' && robot.scan && (
           <section className="panel">
             <h2>스캔 결과</h2>
-            <p>
-              블록 {robot.scan.blocks.blocks.length}개(가려져 추정한 블록 {robot.scan.inferred_count}개). 비교 화면 · [그대로 저장] · [AI로 고치기]는 스캔 비교
-              페이지(W116)에서 붙습니다. 지금은 [다시 스캔] · [취소]만 됩니다.
+            <p title="비교 화면과 [그대로 저장]은 W116 에서 붙어요 — 지금은 [다시 스캔] · [취소]만">
+              블록 {robot.scan.blocks.blocks.length}개 · 가려져 추정한 블록 {robot.scan.inferred_count}개
             </p>
           </section>
         )}
 
-        <section className="panel">
-          <h2>상태 로그</h2>
+        <details className="panel log-panel">
+          <summary>
+            <h2>기록</h2>
+            <span className="muted small">{robot.log[0] ? robot.log[0].text : '아직 없음'}</span>
+          </summary>
           <ol className="log">
             {robot.log.map((l, i) => (
               <li key={`${l.t}-${i}`} className={`log-${l.kind}`}>
@@ -73,7 +83,7 @@ export default function Home() {
             ))}
             {robot.log.length === 0 && <li className="muted">아직 없음</li>}
           </ol>
-        </section>
+        </details>
       </main>
     </>
   );

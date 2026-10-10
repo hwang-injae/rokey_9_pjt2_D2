@@ -4,10 +4,10 @@
 // 누르면 3D 로 보기만 한다. 로봇에 보내는 것은 3D 아래 [이 설계로 조립 준비] 하나(DesignView) — 보는 것과 보내는 것을 나눈다.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '@/lib/api';
+import { MADE_KO, designName } from '@/lib/names';
 import type { DesignSummary } from '@/lib/types';
 
 const FAMILY_KO: Record<string, string> = { chair: '의자', desk: '책상' };
-export const MADE_KO: Record<string, string> = { cad: '도면', web: '웹 글', voice: '음성', scan: '스캔' };
 
 interface Column {
   title: string;
@@ -57,8 +57,8 @@ export default function DesignTree({ picked, onRobot, onPick }: { picked: string
 
   const item = (d: DesignSummary) => ({
     key: d.design_id,
-    label: d.design_id,
-    meta: `${d.version} · ${MADE_KO[d.made_by] ?? d.made_by} · 블록 ${d.block_count}`, // version = V000 · V001 …(E-84)
+    label: designName(d.design_id), // 코드 ID 대신 '벤치 V001'(10/10) — ID 는 title 로
+    meta: `${MADE_KO[d.made_by] ?? d.made_by} · 블록 ${d.block_count}`,
     kids: kids.get(d.design_id)?.length ?? 0,
     design: d,
   });
@@ -74,7 +74,7 @@ export default function DesignTree({ picked, onRobot, onPick }: { picked: string
   if (path[0]) columns.push({ title: '기본 설계', items: (kids.get(`family:${path[0]}`) ?? []).map(item) });
   for (let i = 1; i < path.length; i++) {
     const children = kids.get(path[i]) ?? [];
-    if (children.length) columns.push({ title: `${path[i]} 에서 파생`, items: children.map(item) });
+    if (children.length) columns.push({ title: `${designName(path[i])}에서 만든 것`, items: children.map(item) });
   }
 
   const choose = (col: number, key: string, design?: DesignSummary) => {
@@ -93,7 +93,7 @@ export default function DesignTree({ picked, onRobot, onPick }: { picked: string
               type="button"
               className={`mitem${path[ci] === it.key ? ' selected' : ''}`}
               onClick={() => choose(ci, it.key, it.design)}
-              title={it.kids ? `파생 ${it.kids}개 — 오른쪽 열에 열림` : undefined}
+              title={it.design ? it.design.design_id : undefined}
             >
               <span className="mitem-name">
                 {it.label}
@@ -102,7 +102,7 @@ export default function DesignTree({ picked, onRobot, onPick }: { picked: string
               {it.meta && (
                 <span className="mitem-meta">
                   {it.meta}
-                  {it.design && it.kids > 0 && <b> · 파생 {it.kids} ▸</b>}
+                  {it.design && it.kids > 0 && <b> · {it.kids} ▸</b>}
                 </span>
               )}
             </button>

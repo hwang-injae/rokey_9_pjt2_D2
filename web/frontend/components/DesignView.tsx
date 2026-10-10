@@ -8,21 +8,12 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import type { Block2, CmdResult, Design, Rules } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
-import DesignTree, { MADE_KO } from './DesignTree';
+import { MADE_KO, ROLE, designName, roleOf, stateName } from '@/lib/names';
+import DesignTree from './DesignTree';
 import Preview3D, { type Item3D } from './Preview3D';
 
-const ROLE: Record<string, { ko: string; color: string }> = {
-  LEG: { ko: '다리', color: '#b7794a' },
-  SEAT: { ko: '좌판', color: '#e3b341' },
-  BACK: { ko: '등받이', color: '#5b8fd6' },
-  BEAM: { ko: '보', color: '#8f7ad6' },
-  TOP: { ko: '상판', color: '#e8a33c' },
-  BASE: { ko: '바닥 받침', color: '#6fa36b' },
-  COLUMN: { ko: '기둥', color: '#d0705f' },
-};
 const OTHER = '#a8a29e'; // 목록에 없는 새 역할(AI 가 지은 이름 — roles.json PR 전)
 const PROG = { present: '#22c55e', current: '#facc15', unsure: '#f97316', todo: '#9ca3af' };
-const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 색을 나누지 않음)
 
 /** 블록 → 3D 상자(역할별 색, 스캔 추정 블록은 반투명). 설계 3D · AI 후보 미리보기(GeneratePanel)가 같이 쓴다 */
 export const roleItems = (blocks: Block2[]): Item3D[] =>
@@ -105,8 +96,8 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
   const loading = !!viewId && !failed && design?.design_id !== viewId;
 
   let body: React.ReactNode;
-  if (!viewId) body = <div className="view3d-empty">[설계 목록]에서 설계를 누르거나 위에서 AI로 만들면 여기에 3D로 보여요</div>;
-  else if (failed) body = <div className="view3d-empty">{viewId} 설계를 못 받았어요 — 저장소에 없거나 웹 서버 문제</div>;
+  if (!viewId) body = <div className="view3d-empty">[설계 목록]에서 고르거나 위에서 AI로 만들면 여기에 보여요</div>;
+  else if (failed) body = <div className="view3d-empty">설계를 못 받았어요</div>;
   else if (!rules) body = <div className="view3d-empty">블록 크기(robot.yaml)를 아직 못 받았어요</div>;
   else if (design) body = <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={design.design_id} dark={dark} />;
   else body = <div className="view3d-empty">받는 중…</div>;
@@ -116,12 +107,12 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
       <div className="panel-head">
         <h2>설계 3D</h2>
         {design && (
-          <span className="muted">
-            {design.design_id} · {design.version} · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.blocks.blocks.length}개
-            {loading ? ' (바꾸는 중…)' : ''}
+          <span className="head-sub" title={design.design_id}>
+            <strong>{designName(design.design_id)}</strong>
+            <span className="muted"> · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.blocks.blocks.length}개{loading ? ' · 바꾸는 중…' : ''}</span>
           </span>
         )}
-        {design && onRobot && <span className="tag ok">로봇에 선택됨 — 왼쪽 [출발]</span>}
+        {design && onRobot && <span className="tag ok">로봇에 선택됨</span>}
         <button className="head-btn list-btn" aria-expanded={pickerOpen} onClick={() => setPickerOpen((o) => !o)}>
           {pickerOpen ? '목록 닫기 ▴' : '설계 목록 ▾'}
         </button>
@@ -133,12 +124,8 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
           <button className="primary" disabled={!canSend} onClick={sendToRobot}>
             {sending ? '보내는 중…' : '이 설계로 조립 준비'}
           </button>
-          <small className="muted">
-            {canSend || sending
-              ? '로봇에 이 설계를 보내요(로봇은 아직 안 움직여요) — 그다음 왼쪽 [출발]'
-              : robot.safety?.locked
-                ? '멈춤 상태예요 — 왼쪽 [다시 시작]부터'
-                : `로봇이 ${st?.state ?? '연결 전'} 상태라 지금은 설계를 바꿀 수 없어요(대기 · 출발 대기 · 완성일 때만)`}
+          <small className="muted" title="로봇에 이 설계를 보내요(로봇은 아직 안 움직여요). 대기 · 출발 대기 · 완성일 때만 바꿀 수 있어요">
+            {canSend || sending ? '그다음 왼쪽 [출발]' : robot.safety?.locked ? '멈춤 — 먼저 왼쪽 [다시 시작]' : `지금은 바꿀 수 없어요(${stateName(st?.state) || '연결 전'})`}
           </small>
           {sent && !sent.success && (
             <span className="result bad">
@@ -165,7 +152,6 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
             ))
           )}
           {!running && design.blocks.blocks.some((b) => b.inferred) && <span><i className="ghost" style={{ background: OTHER }} />스캔 추정</span>}
-          <span className="muted hint">끌기: 돌리기 · 휠: 확대 · 오른쪽 끌기: 옮기기</span>
         </div>
       )}
     </section>

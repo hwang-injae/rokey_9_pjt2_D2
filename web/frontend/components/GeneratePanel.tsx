@@ -5,6 +5,7 @@
 // 진행: /ws {type: gen} 알림이 오면 job 을 GET 으로 다시 받는다(알림이 몰려와도 빠짐없이). 알림이 끊겨도 만드는 동안 1초마다 다시 받는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
+import { checkReasonKo, designName } from '@/lib/names';
 import type { Design, GenCandidate, GenJob, Rules, TemplateChoice } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
 import { roleItems } from './DesignView';
@@ -106,8 +107,7 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
   return (
     <section className="panel gen-panel">
       <div className="panel-head">
-        <h2>AI 설계 만들기</h2>
-        <span className="muted">의자 · 책상만 · 저장까지만 해요 — 조립은 아래 [이 설계로 조립 준비] → [출발]</span>
+        <h2 title="의자 · 책상만 만들어요. 저장까지만 하고, 조립은 아래 [이 설계로 조립 준비] → 왼쪽 [출발]">AI 설계 만들기</h2>
         {(choice || job || error) && (
           <button className="head-btn" onClick={reset} disabled={busy || running}>
             새로 만들기
@@ -132,11 +132,11 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
       {choice && !job && (
         <div className="gen-confirm">
           {choice.template ? (
-            <p>
-              AI가 고른 모양: <b>{title(label(choice.template))}</b> — {choice.reason} <span className="muted">(다른 모양을 눌러 바꿀 수 있어요)</span>
+            <p title={choice.reason}>
+              AI 추천: <b>{title(label(choice.template))}</b> <span className="muted">— 다른 모양을 눌러 바꿀 수 있어요</span>
             </p>
           ) : choice.success ? (
-            <p className="bad-text">지금 만들 수 있는 모양이 아니에요 — {choice.reason} 꼭 만들려면 아래에서 모양을 직접 고르세요.</p>
+            <p className="bad-text" title={choice.reason}>지금 만들 수 있는 모양이 아니에요 — 꼭 만들려면 직접 고르세요</p>
           ) : (
             <p>AI가 모양을 고르지 못했어요 — 아래에서 직접 고르세요.</p>
           )}
@@ -191,6 +191,7 @@ function TemplateCards(props: {
       {templates.map((t) => {
         const d = designs[t.id];
         const [name, ...rest] = t.label.split(' — ');
+        const desc = rest.join(' — ').split(' (기본 설계')[0]; // 블록 수 · 크기 글은 빼고 생김새만
         return (
           <div
             key={t.id}
@@ -210,7 +211,7 @@ function TemplateCards(props: {
             ) : (
               <div className="view3d-empty">{d === null ? '그림을 못 받았어요' : '그림 받는 중…'}</div>
             )}
-            <small className="muted">{rest.join(' — ')}</small>
+            <small className="muted">{desc}</small>
           </div>
         );
       })}
@@ -228,17 +229,19 @@ function JobView({ job, rules, dark, canPick, onPick }: { job: GenJob; rules: Ru
   const again = (job.attempt ?? 1) > 1 ? ` (다시 만들기 ${job.attempt}/${MAX_TRIES})` : '';
   let status: string;
   if (job.state === 'running') {
-    if (job.candidates.length) status = '후보를 검사하는 중…' + again;
-    else if (job.reading?.length) status = `참고 설계를 읽었어요(${job.reading.join(', ')}) — 후보를 쓰는 중…` + again;
-    else status = '디자인 만드는 중 — 참고할 설계를 고르는 중…';
-  } else if (job.state === 'ready') status = `합격한 후보 중 하나를 고르세요 · ${job.elapsed_s ?? '?'}초`;
-  else if (job.state === 'saved') status = `저장됨: ${job.saved?.design_id} — 아래 설계 3D 에 보여요. 조립하려면 그 아래 [이 설계로 조립 준비] → 왼쪽 [출발]`;
+    if (job.candidates.length) status = '후보 검사 중…' + again;
+    else if (job.reading?.length) status = '후보 만드는 중…' + again;
+    else status = '참고할 설계 고르는 중…';
+  } else if (job.state === 'ready') status = '합격한 후보 하나를 고르세요';
+  else if (job.state === 'saved') status = `${designName(job.saved?.design_id)} 저장했어요 — 아래에서 [이 설계로 조립 준비]`;
   else status = `${FAIL_KO[job.code ?? ''] ?? job.code} — ${job.message ?? ''}`;
 
   return (
     <>
       <p className={`result ${job.state === 'failed' ? 'bad' : job.state === 'running' ? '' : 'ok'}`}>{status}</p>
-      {job.reference && job.reference.length > 0 && <p className="muted">AI가 참고한 설계: {job.reference.join(', ')}</p>}
+      {job.reference && job.reference.length > 0 && (
+        <p className="muted small">참고한 설계: {job.reference.map((r) => designName(r)).join(', ')}{job.elapsed_s ? ` · ${job.elapsed_s}초` : ''}</p>
+      )}
       {job.candidates.length > 0 && (
         <div className="cands">
           {job.candidates.map((c, i) => (
@@ -265,13 +268,14 @@ function CandidateCard(props: { cand: GenCandidate; index: number; rules: Rules 
   const ck = cand.check;
   const items = useMemo(() => roleItems(cand.blocks.blocks), [cand.blocks.blocks]);
   let verdict = '검사 중…';
-  if (ck?.ok) verdict = `합격 · 최소 여유 ${ck.min_margin_mm ?? '–'} mm`;
-  else if (ck) verdict = `불합격 — ${ck.errors[0]?.detail ?? ck.reason}${ck.errors.length > 1 ? ` 외 ${ck.errors.length - 1}개` : ''}`;
+  if (ck?.ok) verdict = '합격';
+  else if (ck) verdict = `불합격 · ${[...new Set(ck.errors.map((e) => checkReasonKo(e.detail ?? '')))].slice(0, 2).join(', ') || '규칙 위반'}`;
+  const detail = ck ? (ck.ok ? `최소 여유 ${ck.min_margin_mm ?? '–'} mm` : ck.errors.map((e) => e.detail).join('\n')) : undefined;
   return (
     <div className={`cand${ck && !ck.ok ? ' failed' : ''}${picked ? ' picked' : ''}`}>
       <div className="cand-head">
         <b>후보 {index + 1}</b>
-        <span className="muted">블록 {cand.blocks.blocks.length}개</span>
+        <span className="muted small">블록 {cand.blocks.blocks.length}개</span>
       </div>
       {rules ? (
         <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={`${cand.blocks.design_id}-${index}-${cand.blocks.blocks.length}`} dark={dark} />
@@ -279,7 +283,7 @@ function CandidateCard(props: { cand: GenCandidate; index: number; rules: Rules 
         <div className="view3d-empty">블록 크기를 아직 못 받았어요</div>
       )}
       <p className="cand-idea">{cand.idea}</p>
-      <p className={ck ? (ck.ok ? 'ok-text' : 'bad-text') : 'muted'}>{verdict}</p>
+      <p className={`verdict ${ck ? (ck.ok ? 'ok-text' : 'bad-text') : 'muted'}`} title={detail}>{verdict}</p>
       <button className={ck?.ok ? 'primary' : ''} disabled={!canPick || !ck?.ok || picked} onClick={onPick}>
         {picked ? '저장됨' : '이걸로'}
       </button>

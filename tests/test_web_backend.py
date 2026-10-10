@@ -508,6 +508,7 @@ def test_designs_rest_and_robot_handlers(store):
     assert set(fake.handlers) == {'/d2/hmi/get_design', '/d2/hmi/save_build'}
     assert client.get('/api/designs/001_CHAIR_BENCH_V000/builds').json() == []
     assert client.get('/api/designs/nope/builds').status_code == 404
+    assert client.get('/api/designs/templates').json()[0] == {'id': '001_CHAIR_BENCH', 'name': '벤치', 'label': '벤치'}
     for url in ('/api/robot/wrist.jpg', '/api/robot/scan.jpg', '/api/robot/scan_cloud.ply'):
         assert client.get(url).status_code == 404
     fake.blobs = {'wrist_image': b'\xff\xd8jpeg', 'scan_image': b'\xff\xd8scan', 'scan_cloud': b'ply\n'}
