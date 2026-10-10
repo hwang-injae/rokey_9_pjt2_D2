@@ -163,6 +163,7 @@ class SceneManagerNode(Node):
         붙이기: 요청에 held_size_m · held_offset_m(각 3개)이 있으면 그 상자를 쓴다 — 집기·놓기가 실제로 집은 자세로 계산한 값이라
         레시피 파일에 없는 설계(AI · 스캔) · 흩뿌림 · 다시 집기도 맞다(10/9 PL E-76). 없으면 설치된 레시피로 계산하고,
         레시피에도 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
+        붙이기 때 같은 블록이 놓인 블록(blk_<block_id>)으로 장면에 있으면 같은 변경에서 지운다(다시 집기).
         떼기: placed_center_m(3) · placed_quat(4)가 있으면 그 자리에, 없으면 레시피 자리에 놓인 블록을 넣는다.
         둘 다 없으면 쥔 상자만 지운다(놓인 블록은 다음 진행표 progress 가 넣는다).
         """
@@ -185,11 +186,17 @@ class SceneManagerNode(Node):
             aco.object.primitive_poses = [make_pose(held['offset_m'])]
             aco.touch_links = FINGER_LINKS + [tcp]      # 손가락이 쥔 블록에 닿는 것은 충돌이 아니다
             sc.object_colors = [self._color(HELD, HELD_RGBA)]
+            # 장면에 '놓인 블록'으로 남은 같은 블록을 다시 집으면(다시 집기 W135 · 세우기 W131 · 3동작 시험) 쥔 상자와 겹쳐
+            # 다음 계획이 시작 자세 충돌(CheckStartStateCollision)로 막힌다(10/10 실기) — 같은 변경에서 놓인 블록을 지운다
+            if req.block_id in self.placed:
+                sc.world.collision_objects = [self._remove(f'blk_{req.block_id}')]
         else:
             aco.object.operation = CollisionObject.REMOVE
             sc.world.collision_objects = [self._remove(HELD)]
         sc.robot_state.attached_collision_objects = [aco]
         res.success = self.apply(sc)
+        if res.success and req.attach:
+            self.placed.discard(req.block_id)
         if res.success and not req.attach:
             if placed_given:
                 self.add_placed(req.block_id, list(req.placed_center_m), list(req.placed_quat))

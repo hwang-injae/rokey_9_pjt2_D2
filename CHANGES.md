@@ -2,6 +2,9 @@
 
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
+## 2026-10-10
+- 로봇 동작(10시, 황인재 · PM): **E-76 고침 — 놓인 블록을 다시 집으면 장면에서 지움.** #106 뒤로 놓인 블록(`blk_<id>`)이 장면에 남은 채 같은 블록을 다시 집으면 쥔 상자와 겹쳐 시작 자세 충돌 → `PLAN_FAILED`(10/10 3동작 시험 2번). 붙이기 때 같은 블록의 놓인 상자를 같은 변경에서 지운다(다시 집기 W135 · 세우기 W131에도 필요).
+
 ## 2026-10-09
 - HMI(황인재, 밤): **W047 완료 — 웹 화면 · backend · 다리 첫 판 main(1289d41 ~ 3f0a34d)** — 다리 `d2_bridge` 최소형 + `mock_bridge`(W127) · backend MQTT 층 REST `/api/robot` · `/ws` · `mock_robot`(W126) · 화면(Next.js 16.4 + Node 24 — 컨테이너 빌드 단계 기준): 연결 표시 · 끊김 배너 · 상태 줄(누가 · 왜 멈췄는지) · 버튼 7개 · 진행도(위 가운데) · 설계 열 보기 → three.js 3D(진행 색) · 손목 검출 화면 · 다크 모드 · 설계 저장소 최소형 `DesignStore`(W111 — 기본 설계 4개 등록 · 로봇 `get_design` · `save_build` 답) · 다리 `wrist_image` 전달. **로봇 PC: pull 뒤 `colcon build --packages-select d2_bridge`(`sensor_msgs` 추가).** `tests/test_robot_yaml.py`에 두 PC 시간 순서 시험(`service_s < command_s < mqtt.req_timeout_s` · `lost_after_s > 2 × alive_s`) — 시간 키를 바꿀 때 순서만 지키면 통과.
 - 공통(18시, PM): **E-78 ~ E-80(PL, HMI 세션)** — 웹 backend가 `robot.yaml` 설계 규칙 키 6개만 읽기 전용 · 스캔 설계 부모 · family = GPT가 DB 목록에서 고름(`scan_infer` 응답 · `scan_result/1.2`에 `nearest_base` 선택 칸 — 비전 · 작업 관리자 코드 후속) · 스캔 → AI 후보 3개는 비교 화면 [AI로 고치기]를 누를 때만(W125).
