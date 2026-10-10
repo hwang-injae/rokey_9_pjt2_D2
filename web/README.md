@@ -11,7 +11,7 @@
 | **공통 띠**(모든 페이지 위, `ConnectionBadge` · `RobotPanel` — W047 ✅ ①②③⑤) | ① 상태 알림 줄: `state` 한글 + `message` + 정지 때 **누가 · 왜**(`safety_state.reason` = `STOP_WEB` · `STOP_KEY` · `STOP_TASK` · `ROBOT_ALARM:<상태>` · `CTRL_C`, E-62) ② **로봇 PC 끊김 배너**(`bridge/alive` 3초 없음 → 크게, [출발] · [스캔] 막음, "정지는 키 · 펜던트") ③ 그리퍼 표시(폭 · 잡힘) ④ 음성 의도 표시("음성: 출발") ⑤ [정지] · [다시 시작] — 늘 보임 | `task/state` · `safety/state` · `bridge/alive` · `gripper/state` · `hmi/intent` | W047 |
 | **메인** `app/page.tsx` | ⑥ 설계 3D 칸의 [설계 고르기] → **열 보기**(`DesignTree` — Miller columns, 10/9 황인재가 고른 CodePen 모양: 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**, 로봇에는 왼쪽 [설계 선택]이 보냄 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼 [설계 선택] [출발] [계속] [스캔] [취소] — 켜짐은 3장 ⑩ 글상자 + [생성](`RequestBox` — 음성 `request_design` 문장이 오면 채우고 사람이 [생성], E-07) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 · 출발을 누르세요" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/2.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
 | **설계 상세** `app/designs/page.tsx?id=…` | 미리보기 · 검사 결과 · 버전 트리 · 조립 기록(builds: 결과 · 놓은 수/전체 · 시간 · 정지 횟수 · 블록별 dz) | `/api/designs` | W112 |
-| **스캔 비교** `app/scan/page.tsx`(`SCAN_REVIEW`일 때 자동, `ScanCompare`) | 실물 사진(`scan_image`) ↔ 추론 설계 3D(`inferred` 블록 반투명) + 추정 블록 수 · **점군 창**(`scan_cloud` PLY, 닫을 수 있음, E-35 — `cloud_path`가 없거나 빈 글자면 점군 창만 안 띄움) · 버튼 [그대로 저장] [AI로 고치기] [다시 스캔] [취소] | `task/scan_result` · `vision/scan_image` · `vision/scan_cloud` | W116 |
+| **스캔 비교** `app/scan/page.tsx`(`SCAN_REVIEW`일 때 자동, `ScanCompare`) | 실물 사진(`scan_image`) ↔ 추론 설계 3D(`inferred` 블록 반투명) + 추정 블록 수 · **점군 창**(`scan_cloud` PLY, 닫을 수 있음, E-35 — `cloud_path`가 없거나 빈 글자면 점군 창만 안 띄움) · 버튼 [그대로 저장] [다시 스캔] [취소]([AI로 고치기]는 10/14 이후 — 10/10 PL 보류). **촬영 자세 수는 정해 두지 않는다**(`poses_used` · 점군 미리보기 `index` · `pose_id` 그대로 — W166 움직이며 작업공간 전체 스캔이면 3개보다 많다, 10/10 PL) | `task/scan_result` · `vision/scan_image` · `vision/scan_cloud` | W116 |
 | 메인 왼쪽 아래 | **손목 카메라 검출 화면**(`WristCamera`) — 비전이 YOLO-seg 결과를 그려 보낸 JPEG를 그대로(겹쳐 그리기 없음). `wrist_block`은 `find_blocks` 때마다 그림을 내므로 공급 칸(`slots`) 방식에서는 그림이 없다 | `vision/wrist_image` | ✅ 화면 · 다리(10/9) — 실물은 W150 |
 | 위 띠 오른쪽 | **다크 모드 토글**(`ThemeToggle` — 코드펜 해 · 달 모양). 이 브라우저에만 기억(`localStorage`), 처음엔 운영체제 설정 | — | ✅ 10/9 |
 
@@ -61,7 +61,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/2.0`, 없으면 404) ✅ | — | — |
 | 조립 기록 | `GET /api/designs/{id}/builds`(build/1 전부, 최근 것 먼저 · 설계가 없으면 404) ✅(10/10) — 목록 요약에도 `last_build` 한 줄 | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
-| 스캔 [AI로 고치기] | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
+| 스캔 [AI로 고치기](10/14 이후 — 10/10 PL 보류, 지금 안 만듦) | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
 | 사진 · 점군 | `/ws` `{type: scan_image · scan_cloud, seq, stamp, bytes, run_id}` → `GET /api/robot/scan.jpg` · `/api/robot/scan_cloud.ply`(마지막 스캔 것만 메모리에, 없으면 404) ✅(10/10). `run_id` = 직전 `scan_result`의 것 — 화면은 `scan_result.run_id`와 같을 때만 보여 줌. 새 스캔이 오면 앞 것은 지움(점군 없는 스캔에 옛 점군이 안 남게) | `d2/vision/scan_image`(JPEG ≤ 500 KB) · `scan_cloud`(PLY ≤ 2 MB), QoS 1 | 다리가 `scan_result`의 `image_path`(PNG → JPEG로 줄임) · `cloud_path` 파일을 읽어 `scan_result` 바로 뒤에 보냄 ✅ |
 | 손목 검출 화면 | `/ws` `{type: wrist_image, seq, stamp}` → `GET /api/robot/wrist.jpg?seq=`(마지막 한 장, 없으면 404) ✅ | `d2/vision/wrist_image`(JPEG 바이트, QoS 0) | `/d2/vision/wrist_image` |
 | (로봇이 부름) 설계 꺼내기 · 결과 저장 | backend가 `DesignStore`로 답함 ✅(10/9) | `d2/hmi/get_design/req` → `/res` · `d2/hmi/save_build/req` → `/res` | `/d2/hmi/get_design` · `save_build` |
@@ -79,7 +79,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | `WAIT_SUPPLY` | 계속(= start) | `supply_empty` · `tilted_block` · `no_match_block`("맞는 블록이 없어요. 블록을 정리하거나 더 넣고 [계속]", E-73) |
 | `WAIT_HMI` | 계속(= start) | 웹 연결이 끊겼었어요. [계속]을 누르세요(`hmi_lost`) |
 | `SCAN_MOVE` · `SCAN_CAPTURE` · `SCAN_INFER` | (정지) | 스캔 중(`scan_running`) |
-| `SCAN_REVIEW` | 그대로 저장 · AI로 고치기 · 다시 스캔 · 취소 | 비교 화면(`scan_review`) |
+| `SCAN_REVIEW` | 그대로 저장 · 다시 스캔 · 취소(AI로 고치기는 10/14 이후) | 비교 화면(`scan_review`) |
 | `STOPPED` | 다시 시작 | 멈췄어요 — `reason` + "로봇 작업 영역에서 손을 빼고 누르세요" |
 | `RECOVER` | (정지) | 다시 시작 중(저속) |
 | `ERROR` | 다시 시작 · 취소 | 오류 — `message`(그리퍼 응답 없음 · 피드백 없음도 여기, E-74 · E-77) |
@@ -91,6 +91,8 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 ## 4. AI 흐름 (E-67 · E-69 · E-72, 10/9 PL)
 
 ### 4-A. 생성 — 후보 3개 → 사람이 1개
+
+**범위(10/10 PL):** 가구는 의자 · 책상 둘만(기본 설계 4개 = Template 4개 — E-84). 그 밖의 가구 · 예외 상황은 시나리오에서 뺀다 — 프롬프트도 의자 · 책상만, 다른 가구 요청은 `OUT_OF_SCOPE`.
 
 ```text
 ①  글상자 [생성]  또는  음성 request_design → 글상자에 문장 → 사람이 [생성]          화면 "디자인 만드는 중"
@@ -114,7 +116,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 - `save_design`이 거절하는 것(저장하지 않음, 마지막 방어선): 검사 불합격(SR-09) · `made_by`가 web · voice · scan 아님 · ID가 E-84 꼴이 아님 · V000(기본 설계 몫) · 모르는 Template · `blocks.family`가 Template과 다름 · 레시피 짝(`model_id` · `recipe_sha256` — 로봇 작업 판단과 같은 `RecipeDocument` 확인) · 부모 없음 · 부모가 다른 Template. 저장 칸 = `design/2.0` + `prompt` · `check`(ok · min_margin_mm · errors) · `created`(FR-D02).
 - 검사 요청 · 응답은 IRD 그대로(`blocks/2.0`만 → `check_result/2.0`). **형식 버전 규칙(IRD 6장):** 앞자리 같으면 받고 모르는 칸 무시, 다르면 거절(이유에 받은 schema). 형식 이름 상수는 `design_store.py` 한 곳. 옛 `cad_structure/1.0` · `cad_recipe/1.0` · `blocks/1` 설계는 거절(변환 안 함, E-69 ⑧).
 
-### 4-B. 스캔 → [AI로 고치기] (W125 챌린지, 10/9 PL ③)
+### 4-B. 스캔 → [AI로 고치기] (W125 챌린지, 10/9 PL ③ — **10/10 PL: 10/14 이후로 보류, 지금 만들지 않음**)
 
 스캔 비교 화면의 **[AI로 고치기]를 누를 때만** 돈다(스캔마다 자동으로 돌리지 않음 — 핵심 W116 복제가 GPT 시간 · 비용에 묶이지 않게). 스캔 원본을 먼저 4-C로 저장한 뒤 그 설계를 부모로 4-A를 그대로 돈다(요청 문장은 비어도 됨 — "검사에 맞게 고쳐 줘" · "한 층 높여 줘"). 화면 = 스캔 원본 3D 1개 + 후보 3개. 고른 1개는 `made_by web` · `parent_id` = 스캔 설계. 스캔 원본이 검사에 떨어졌을 때도 같은 길(`detail` 피드백 → 후보 3개).
 

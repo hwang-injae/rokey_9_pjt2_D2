@@ -24,9 +24,10 @@ export interface SafetyState {
   reason: string;
 }
 
-/** progress/1.1 — 진행표. 판정은 없다(dx · dy 는 측정값, 지금은 NaN) */
+/** progress/1.1 — 진행표(1.1 = 보낸 시각 stamp 더함, E-75). 판정은 없다(dx · dy 는 측정값, 지금은 NaN). 형식은 앞자리만 본다 */
 export interface Progress {
   schema: string;
+  stamp?: number;
   design_id: string | null;
   run_id: string | null;
   blocks: { block_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
@@ -39,9 +40,11 @@ export interface GripperState {
   grasped: boolean;
 }
 
-/** scan_result/1.1 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 는 선택 칸) */
+/** scan_result/1.2 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
+ *  nearest_base(1.2, E-79 선택 칸). poses_used 개수는 정해져 있지 않다(W166 — 3개를 가정하지 않는다) */
 export interface ScanResult {
   schema: string;
+  stamp?: number;
   run_id: string;
   blocks: { schema: string; design_id: string; family: string; blocks: { order: number; x: number; y: number; z: number; ori: string; inferred: boolean }[] };
   inferred_count: number;
