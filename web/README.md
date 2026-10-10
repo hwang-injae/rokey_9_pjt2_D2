@@ -1,6 +1,6 @@
 # web — HMI 설계 노트 (10/8 · 10/9 황인재, PL 결정)
 
-> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101012.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101012.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
+> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101013.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101012.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
 
 구조(E-32 · E-41): 브라우저 `frontend`(Next.js 정적 `out/`, three.js) ↔ REST + WebSocket `/ws` ↔ `backend`(FastAPI :8000, paho-mqtt) ↔ MQTT 브로커 ↔ 로봇 PC `d2_bridge`. 브라우저는 브로커 · DB · OpenAI · ROS를 모른다. DB는 10/12까지 JSON 파일 폴더, 그 뒤 PostgreSQL(W088).
 
