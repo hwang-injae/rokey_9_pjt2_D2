@@ -20,7 +20,7 @@
   --canvas-bg: #eef1f5;
   --grid-major: #9aa3ae;
   --grid-minor: #cfd5dc;
-  --mill-bg: #eeeeee;          /* 설계 고르기 열 보기 — CodePen 원본 색 */
+  --mill-bg: #eeeeee;          /* 설계 목록 열 보기 — CodePen 원본 색 */
   --mill-item: #ffffff;
   --mill-hover: #e8f7fc;
   --mill-sel: #30afff;
@@ -176,13 +176,13 @@ main { max-width: 1440px; margin: 0 auto; padding: 16px; display: flex; flex-dir
 .status-stop { color: var(--bad); font-weight: 700; margin-top: 4px; }
 .status-sub { color: var(--muted); font-size: 14px; }
 
-/* 설계 고르기 · 트리 */
+/* 설계 목록 · 트리 */
 .design-row { display: flex; flex-direction: column; gap: 8px; }
 .design-now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .design-now strong { font-family: ui-monospace, monospace; font-size: 16px; }
 .tree { border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 14px; background: var(--panel-2); }
 
-/* 설계 고르기 — 열 보기(Miller columns, CodePen 원본을 React · CSS 로 옮김. 아이콘 글꼴 대신 CSS 동그라미) */
+/* 설계 목록 — 열 보기(Miller columns, CodePen 원본을 React · CSS 로 옮김. 아이콘 글꼴 대신 CSS 동그라미) */
 .miller { display: flex; gap: 8px; overflow-x: auto; padding: 10px; border-radius: 8px; background: var(--mill-bg); scroll-snap-type: x proximity; }
 .mcol { flex: 0 0 200px; display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; scroll-snap-align: start; animation: mcol-in 0.3s linear; }
 @keyframes mcol-in { from { opacity: 0; } to { opacity: 1; } }
@@ -206,6 +206,10 @@ button.mitem.selected .tag.ok { color: #fff; border-color: #fff; }
 .mitem-meta { font-size: 12px; color: var(--muted); }
 .mitem-meta b { font-weight: 600; white-space: nowrap; }
 .head-btn { margin-left: auto; min-width: 0; padding: 6px 12px; font-size: 14px; }
+.head-btn.list-btn { padding: 8px 16px; font-size: 16px; border-color: var(--primary); color: var(--primary); }
+.send-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.send-row button { min-width: 200px; }
+.send-row small { font-size: 13px; }
 
 /* 버튼 */
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }

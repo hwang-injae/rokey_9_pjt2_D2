@@ -1,7 +1,7 @@
 'use client';
-// 로봇 패널 — 상태 줄 · 정지 이유 · [설계 선택] · 버튼 · 그리퍼 (web/README 1 · 3장, W047). 진행도는 위쪽 가운데(ProgressTop).
+// 로봇 패널 — 상태 줄 · 정지 이유 · 로봇 설계 · 버튼 · 그리퍼 (web/README 1 · 3장, W047). 진행도는 위쪽 가운데(ProgressTop).
 // 버튼 하나 = REST 하나(lib/api). 판단은 로봇 쪽이 한다 — 여기서는 상태표대로 켜고 끄기만 한다. 자동 재전송 없음.
-// 설계는 오른쪽 설계 3D 칸의 [설계 고르기](열 보기)에서 고르면 3D 로 '보기'만 하고, 로봇에 가는 것은 여기 [설계 선택]뿐.
+// 설계를 로봇에 보내는 것은 오른쪽 설계 3D 의 [이 설계로 조립 준비](보는 곳에서 보냄 — 10/10). 여기는 로봇 설계를 보여 주고
 // [출발]은 로봇에 선택된 설계로 간다(미리보기 중인 설계가 아님).
 import { useState } from 'react';
 import * as api from '@/lib/api';
@@ -30,14 +30,12 @@ const has = (list: string[], s?: string) => !!s && list.includes(s);
 interface Props {
   robot: Robot;
   onLog: (kind: string, text: string) => void;
-  picked: string | null; // 열 보기에서 눌러 3D 로 보는 설계(아직 로봇에 안 보냈을 수 있음)
 }
 
-export default function RobotPanel({ robot, onLog, picked }: Props) {
+export default function RobotPanel({ robot, onLog }: Props) {
   const st = robot.state?.state;
   const locked = !!robot.safety?.locked;
   const robotDesign = robot.state?.design_id ?? null;
-  const target = picked ?? robotDesign ?? ''; // [설계 선택]이 보낼 설계
   const [busy, setBusy] = useState<string | null>(null); // 보내는 중인 버튼(정지는 따로 — 늘 누를 수 있게)
   const [stopping, setStopping] = useState(false);
   const [last, setLast] = useState<{ label: string; r: CmdResult } | null>(null);
@@ -55,7 +53,6 @@ export default function RobotPanel({ robot, onLog, picked }: Props) {
   // 상태표(web/README 3장, SDD 5.1). 로봇 PC 가 끊기면 출발 · 계속 · 스캔은 막는다(IRD 10.3)
   const bridge = robot.bridge;
   const can = {
-    select: !busy && !locked && has(['IDLE', 'READY', 'DONE'], st),
     start: !busy && !locked && bridge && st === 'READY',
     cont: !busy && !locked && bridge && has(['WAIT_SUPPLY', 'WAIT_HMI'], st),
     scan: !busy && !locked && bridge && has(['IDLE', 'DONE', 'SCAN_REVIEW'], st),
@@ -80,16 +77,10 @@ export default function RobotPanel({ robot, onLog, picked }: Props) {
 
       <div className="design-row">
         <div className="design-now">
-          <span className="muted">설계</span>
-          <strong>{target || '아직 안 고름'}</strong>
-          {target && (target === robotDesign ? <span className="tag ok">로봇에 선택됨</span> : <span className="tag">미리보기만</span>)}
+          <span className="muted">로봇 설계</span>
+          <strong>{robotDesign ?? '아직 없음'}</strong>
         </div>
-        <div className="btn-col">
-          <button disabled={!can.select || !target} onClick={() => send('설계 선택', () => api.command('select_design', target))}>
-            {busy === '설계 선택' ? '보내는 중…' : '설계 선택'}
-          </button>
-          <small>오른쪽 설계 3D 의 [설계 고르기]에서 고른 설계를 로봇에 보내요</small>
-        </div>
+        {!robotDesign && <small className="muted">오른쪽 설계 3D 에서 설계를 보고 [이 설계로 조립 준비]를 누르세요</small>}
       </div>
 
       <div className="buttons">

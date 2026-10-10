@@ -1,11 +1,12 @@
 'use client';
-// 설계 3D 패널 — [설계 고르기](열 보기 DesignTree)에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑥ ⑦ ⑧).
-// 열 보기는 넓은 이 칸 위에 연다 — 고르면 바로 아래 3D 로 보인다. 로봇에 보내는 것은 왼쪽 [설계 선택].
+// 설계 3D 패널 — [설계 목록](열 보기 DesignTree)에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑥ ⑦ ⑧).
+// 보는 곳에서 보낸다(10/10 황인재): 보고 있는 설계 바로 아래 [이 설계로 조립 준비](= select_design)가 로봇에 보내는 유일한 버튼.
+// 그다음 [출발]은 왼쪽 로봇 패널(사람이 영역 밖 확인 — SR-09).
 // 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/1.1) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
 // 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = blocks.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
-import type { Block2, Design, Rules } from '@/lib/types';
+import type { Block2, CmdResult, Design, Rules } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
 import DesignTree, { MADE_KO } from './DesignTree';
 import Preview3D, { type Item3D } from './Preview3D';
@@ -33,16 +34,21 @@ interface Props {
   rules: Rules | null;
   dark: boolean;
   onPick: (id: string) => void;
+  onLog: (kind: string, text: string) => void;
 }
 
-export default function DesignView({ robot, viewId, rules, dark, onPick }: Props) {
+const SELECTABLE = ['IDLE', 'READY', 'DONE']; // 설계를 바꿀 수 있는 작업 관리자 상태(web/README 3장 상태표)
+
+export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }: Props) {
   const [design, setDesign] = useState<Design | null>(null);
   const [failed, setFailed] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<CmdResult | null>(null); // [이 설계로 조립 준비] 답(성공이면 상태가 READY 로 바뀐다)
   const robotDesign = robot.state?.design_id ?? null;
 
   useEffect(() => {
-    setPickerOpen(false); // 로봇 설계가 바뀌면([설계 선택] 받음 · 음성) 열 보기를 닫는다 — 고르기가 끝났으니
+    setPickerOpen(false); // 로봇 설계가 바뀌면([이 설계로 조립 준비] 받음 · 음성) 열 보기를 닫는다 — 고르기가 끝났으니
   }, [robotDesign]);
 
   useEffect(() => {
@@ -64,6 +70,18 @@ export default function DesignView({ robot, viewId, rules, dark, onPick }: Props
 
   const st = robot.state;
   const onRobot = !!design && st?.design_id === design.design_id;
+  const canSend = !!design && !onRobot && !sending && !robot.safety?.locked && SELECTABLE.includes(st?.state ?? '');
+
+  useEffect(() => setSent(null), [viewId]); // 다른 설계를 보면 앞 결과는 지운다
+
+  async function sendToRobot() {
+    if (!design) return;
+    setSending(true);
+    const r = await api.command('select_design', design.design_id);
+    setSending(false);
+    setSent(r);
+    onLog('button', `조립 준비(${design.design_id}) → ${r.success ? '받음' : '거절'}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
+  }
   const running = onRobot && !!st?.run_id && !st.state.startsWith('SCAN');
 
   const items: Item3D[] = useMemo(() => {
@@ -87,7 +105,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick }: Props
   const loading = !!viewId && !failed && design?.design_id !== viewId;
 
   let body: React.ReactNode;
-  if (!viewId) body = <div className="view3d-empty">[설계 고르기]에서 설계를 누르면 여기에 3D로 보여요</div>;
+  if (!viewId) body = <div className="view3d-empty">[설계 목록]에서 설계를 누르거나 위에서 AI로 만들면 여기에 3D로 보여요</div>;
   else if (failed) body = <div className="view3d-empty">{viewId} 설계를 못 받았어요 — 저장소에 없거나 웹 서버 문제</div>;
   else if (!rules) body = <div className="view3d-empty">블록 크기(robot.yaml)를 아직 못 받았어요</div>;
   else if (design) body = <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={design.design_id} dark={dark} />;
@@ -103,14 +121,32 @@ export default function DesignView({ robot, viewId, rules, dark, onPick }: Props
             {loading ? ' (바꾸는 중…)' : ''}
           </span>
         )}
-        {design &&
-          (onRobot ? <span className="tag ok">로봇에 선택됨</span> : <span className="tag">미리보기 — [설계 선택]을 눌러야 로봇에 가요</span>)}
-        <button className="head-btn" aria-expanded={pickerOpen} onClick={() => setPickerOpen((o) => !o)}>
-          {pickerOpen ? '닫기 ▴' : '설계 고르기 ▾'}
+        {design && onRobot && <span className="tag ok">로봇에 선택됨 — 왼쪽 [출발]</span>}
+        <button className="head-btn list-btn" aria-expanded={pickerOpen} onClick={() => setPickerOpen((o) => !o)}>
+          {pickerOpen ? '목록 닫기 ▴' : '설계 목록 ▾'}
         </button>
       </div>
       {pickerOpen && <DesignTree picked={viewId} onRobot={robotDesign} onPick={onPick} />}
       {body}
+      {design && !onRobot && (
+        <div className="send-row">
+          <button className="primary" disabled={!canSend} onClick={sendToRobot}>
+            {sending ? '보내는 중…' : '이 설계로 조립 준비'}
+          </button>
+          <small className="muted">
+            {canSend || sending
+              ? '로봇에 이 설계를 보내요(로봇은 아직 안 움직여요) — 그다음 왼쪽 [출발]'
+              : robot.safety?.locked
+                ? '멈춤 상태예요 — 왼쪽 [다시 시작]부터'
+                : `로봇이 ${st?.state ?? '연결 전'} 상태라 지금은 설계를 바꿀 수 없어요(대기 · 출발 대기 · 완성일 때만)`}
+          </small>
+          {sent && !sent.success && (
+            <span className="result bad">
+              거절{sent.reason ? ` (${sent.reason})` : ''}{sent.message ? ` — ${sent.message}` : ''}
+            </span>
+          )}
+        </div>
+      )}
       {design && (
         <div className="legend">
           {running ? (

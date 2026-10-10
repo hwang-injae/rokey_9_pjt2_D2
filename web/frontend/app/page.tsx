@@ -44,12 +44,12 @@ export default function Home() {
 
         <div className="layout">
           <div className="col">
-            <RobotPanel robot={robot} onLog={addLog} picked={picked} />
+            <RobotPanel robot={robot} onLog={addLog} />
             <WristCamera robot={robot} />
           </div>
           <div className="col">
             <GeneratePanel robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
-            <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} onPick={setPicked} />
+            <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} onPick={setPicked} onLog={addLog} />
           </div>
         </div>
 

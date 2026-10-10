@@ -1,7 +1,7 @@
 'use client';
 // AI 설계 만들기 패널(W112 · W163) — 글상자 → AI 가 고른 모양(Template) 확인 · 바꾸기 → 후보 3개 3D + 검사 결과 → 사람이 1개 고름 → 저장
 // (web/README 4-A · IRD 8.3 · E-84 ③). 모양은 기본 설계 4개를 작은 3D 카드로 보여 주고 누르면 고른다(AI 추천 표시).
-// 로봇을 움직이지 않는다 — 저장까지만. 로봇에 보내는 것은 왼쪽 [설계 선택] → [출발](사람, SR-09).
+// 로봇을 움직이지 않는다 — 저장까지만. 로봇에 보내는 것은 설계 3D 의 [이 설계로 조립 준비] → 왼쪽 [출발](사람, SR-09).
 // 진행: /ws {type: gen} 알림이 오면 job 을 GET 으로 다시 받는다(알림이 몰려와도 빠짐없이). 알림이 끊겨도 만드는 동안 1초마다 다시 받는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
@@ -107,7 +107,7 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
     <section className="panel gen-panel">
       <div className="panel-head">
         <h2>AI 설계 만들기</h2>
-        <span className="muted">의자 · 책상만 · 저장까지만 해요 — 로봇은 [설계 선택] · [출발]로</span>
+        <span className="muted">의자 · 책상만 · 저장까지만 해요 — 조립은 아래 [이 설계로 조립 준비] → [출발]</span>
         {(choice || job || error) && (
           <button className="head-btn" onClick={reset} disabled={busy || running}>
             새로 만들기
@@ -232,7 +232,7 @@ function JobView({ job, rules, dark, canPick, onPick }: { job: GenJob; rules: Ru
     else if (job.reading?.length) status = `참고 설계를 읽었어요(${job.reading.join(', ')}) — 후보를 쓰는 중…` + again;
     else status = '디자인 만드는 중 — 참고할 설계를 고르는 중…';
   } else if (job.state === 'ready') status = `합격한 후보 중 하나를 고르세요 · ${job.elapsed_s ?? '?'}초`;
-  else if (job.state === 'saved') status = `저장됨: ${job.saved?.design_id} — 오른쪽 설계 3D 에 보여요. 로봇에 보내려면 왼쪽 [설계 선택]`;
+  else if (job.state === 'saved') status = `저장됨: ${job.saved?.design_id} — 아래 설계 3D 에 보여요. 조립하려면 그 아래 [이 설계로 조립 준비] → 왼쪽 [출발]`;
   else status = `${FAIL_KO[job.code ?? ''] ?? job.code} — ${job.message ?? ''}`;
 
   return (

@@ -1,7 +1,7 @@
 'use client';
-// 설계 고르기 — 열 보기(Miller columns, 10/9 황인재가 고른 CodePen 모양). 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로.
+// 설계 목록 — 열 보기(Miller columns, 10/9 황인재가 고른 CodePen 모양). 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로.
 // 한 열에서 고르면 오른쪽에 그 설계에서 파생된 설계들이 열린다. 설계가 많아져도 한 열에는 한 부모의 자식만 보여 덜 복잡하다.
-// 누르면 3D 로 보기만 한다. 로봇에 보내는 것은 [설계 선택] 버튼 하나(RobotPanel) — 고르는 것과 로봇에 보내는 것을 나눈다.
+// 누르면 3D 로 보기만 한다. 로봇에 보내는 것은 3D 아래 [이 설계로 조립 준비] 하나(DesignView) — 보는 것과 보내는 것을 나눈다.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as api from '@/lib/api';
 import type { DesignSummary } from '@/lib/types';
