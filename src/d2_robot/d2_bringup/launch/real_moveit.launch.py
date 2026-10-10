@@ -36,18 +36,19 @@ CFG_PKG = 'dsr_moveit_config_m0609'
 RG2_BASE_OFFSET_M = 0.004   # 플랜지 -> rg2_base_link 원점 (수업 모델 m0609_with_rg2_camera)
 
 
-def load_tcp_z():
-    """config/tcp.json (제어기에 등록된 활성 TCP) 에서 MoveIt 손가락 끝 rg2_tcp 의 rg2_base_link 기준 높이 (m) 를 만든다.
+def load_tcp():
+    """config/tcp.json (제어기에 등록된 활성 TCP, 플랜지 기준 mm · posx 축) 에서 MoveIt 손가락 가운데 rg2_tcp 의
+    rg2_base_link 기준 위치 (x, y, z m) 를 만든다 — MoveIt 모델과 제어기가 같은 손가락 가운데를 쓰게 한다(10/8 PL A안 → 10/10 E-81: 펜던트 GripperDA_v1 값 편집).
 
-    MoveIt 모델과 제어기가 같은 손가락 끝을 쓰게 한다. TCP 가 플랜지 +Z 방향으로만 떨어져 있지 않으면
-    (x·y·회전이 0 이 아니면) 모델에 그대로 옮길 수 없으므로 ValueError 로 브링업을 멈춘다.
+    rg2_tcp 축은 posx 를 손목 Z 로 -90° 돌린 틀이라 x_rg2 = -y_posx, y_rg2 = +x_posx (10/7 W134 FK · posx 비교, motion_math 머리말).
+    회전(A · B · C)이 0 이 아니거나 기준이 플랜지가 아니면 모델에 그대로 옮길 수 없으므로 ValueError 로 브링업을 멈춘다.
     """
     with open(os.path.join(SHARE, 'config', 'tcp.json')) as f:
         tcp = json.load(f)
     x, y, z, a, b, c = tcp['pos']
-    if tcp['reference_frame'] != 'FLANGE' or any(abs(v) > 1e-6 for v in (x, y, a, b, c)):
-        raise ValueError(f'tcp.json {tcp["name"]}: 플랜지 +Z 로만 떨어진 TCP 만 쓸 수 있다 ({tcp["pos"]})')
-    return round(z / 1000.0 - RG2_BASE_OFFSET_M, 6)
+    if tcp['reference_frame'] != 'FLANGE' or any(abs(v) > 1e-6 for v in (a, b, c)):
+        raise ValueError(f'tcp.json {tcp["name"]}: 회전 없는 플랜지 기준 TCP 만 쓸 수 있다 ({tcp["pos"]})')
+    return round(-y / 1000.0, 6), round(x / 1000.0, 6), round(z / 1000.0 - RG2_BASE_OFFSET_M, 6)
 
 
 def generate_launch_description():
@@ -56,13 +57,13 @@ def generate_launch_description():
     컨트롤러는 joint_state_broadcaster -> dsr_controller2 -> dsr_moveit_controller 순서로 하나씩 켠다
     (앞 것이 끝나야 다음 것을 켤 수 있다). move_group·RViz 는 dsr_moveit_controller 가 켜진 뒤에 띄운다.
     """
-    tcp = load_tcp_z()
+    tcp_x, tcp_y, tcp_z = load_tcp()
     args = [
         DeclareLaunchArgument('mode', default_value='virtual', description='virtual | real'),
         DeclareLaunchArgument('host', default_value='127.0.0.1', description='로봇 IP (real 이면 192.168.1.100)'),
         DeclareLaunchArgument('port', default_value='12345'),
         DeclareLaunchArgument('rt_host', default_value='192.168.137.50'),
-        DeclareLaunchArgument('tcp_z', default_value=str(tcp), description='rg2_base_link -> 손가락 끝 (m), 기본 = config/tcp.json'),
+        DeclareLaunchArgument('tcp_z', default_value=str(tcp_z), description='rg2_base_link -> 손가락 끝 (m), 기본 = config/tcp.json'),
         DeclareLaunchArgument('gripper_ip', default_value='192.168.1.1'),
         DeclareLaunchArgument('rviz', default_value='true'),
     ]
@@ -72,7 +73,7 @@ def generate_launch_description():
         FindExecutable(name='xacro'), ' ', XACRO,
         ' host:=', LaunchConfiguration('host'), ' port:=', LaunchConfiguration('port'),
         ' rt_host:=', LaunchConfiguration('rt_host'), ' mode:=', LaunchConfiguration('mode'),
-        ' model:=m0609 update_rate:=100 tcp_z:=', LaunchConfiguration('tcp_z'),
+        ' model:=m0609 update_rate:=100 tcp_z:=', LaunchConfiguration('tcp_z'), f' tcp_x:={tcp_x} tcp_y:={tcp_y}',
     ]), value_type=str)
     with open(SRDF) as f:
         srdf = f.read()

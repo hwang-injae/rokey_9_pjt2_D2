@@ -8,7 +8,7 @@ pick_place 노드·scene_manager 노드·run_recipe 도구가 같이 쓴다. ROS
   - 위치 m, 쿼터니언 (x, y, z, w), 기준 base_link. 설정은 robot.yaml(cfg dict)에서 읽는다.
   - 블록 자세 = 블록 중심 + 블록 자신의 축(x = LENGTH 75, y = WIDTH 25, z = THICKNESS 15 mm 방향).
   - TCP(rg2_tcp, 손가락 끝 중심): 접근 축 +Z 가 아래(base -Z), 닫힘 축 Y 가 블록의 잡는 축과 평행.
-  - rg2_tcp 와 두산 posx(활성 TCP GripperDA_v1) 틀: 위치는 같고(2 mm 안) 방향은 손목 Z 로 -90° 다르다
+  - rg2_tcp 와 두산 posx(활성 TCP GripperDA_v1 = 손가락 가운데 — 10/10 값 편집 [0, 2.7, 228], config/tcp.json) 틀: 같은 점이고 방향은 손목 Z 로 -90° 다르다
     R_rg2tcp = R_posx · Rz(-90°) → x_rg2 = -y_posx, y_rg2 = +x_posx, z 같음. 그래서 닫힘 축 = posx 의 x 축.
     (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정(T_gripper2camera)은 posx 기준이다.
   - 잡기 이름 6가지(IRD 2장) = <바닥 상태>_<LONG|SHORT>. 그리퍼 폭은 '손가락 사이에 끼우는 블록 축'만으로 정해진다.
