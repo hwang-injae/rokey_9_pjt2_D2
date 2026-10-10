@@ -1,7 +1,7 @@
 {
   "file": "T_gripper2camera.npy",
   "meaning": "카메라 → 그리퍼(TCP) 4x4 변환, mm. p_base = T_base2gripper(posx) @ T_gripper2camera @ p_cam",
-  "tcp": "GripperDA_v1 (플랜지 +Z 228 mm, config/tcp.json) — posx 는 이 TCP 기준이어야 한다",
+  "tcp": "GripperDA_v1 — 10/10부터 손가락 가운데 [0, 2.7, 228](E-81, config/tcp.json). posx 는 이 TCP 기준이어야 한다(10/9까지는 [0, 0, 228])",
   "origin": "2월(2026-02-25) 수업 hand-eye 보정값 (corecode/Calibration_Tutorial). 보정 때 TCP 는 2FG_TCP 로 추정(data_recording.py)",
   "original_translation_mm": [
     33.0937,
@@ -63,5 +63,11 @@
     "remaining": "공급 칸 모든 칸에 같은 (-3, +3.6) mm 가 남음 — 4각도의 c 와 같아 블록 놓은 어긋남 · 칸 좌표 오차로 추정, 이 측정으로는 못 가름",
     "data": "민범진 PC ~/d2_data/W058_1008_minbj/ (후보 보정값 · 깊이 원자료 · 계산 스크립트), 박진용 로봇 PC ~/d2_data/handeye_1007 · handeye_1008",
     "tool": "src/d2_vision/d2_vision/check_wrist_calib.py"
+  },
+  "correction_1010": {
+    "date": "2026-10-10 (W156, E-81)",
+    "what": "카메라 위치(그리퍼 틀) y −2.7 mm — [35.45, 77.45, -184.65] → [35.45, 74.75, -184.65] mm, 회전 그대로",
+    "why": "펜던트 GripperDA_v1 값을 [0, 0, 228] → [0, 2.7, 228](플랜지 기준, 회전 없음)로 편집해 posx 원점이 플랜지 y +2.7 mm 옮겨짐. 카메라는 그대로라 그리퍼(posx) 틀에서 본 카메라 위치가 y −2.7 mm. 같은 로봇 자세에서 옛 posx @ 옛 값 = 새 posx @ 새 값(무작위 자세 100개 차이 0)",
+    "next": "임시 — W156에서 손목 자세를 TF base_link → rg2_tcp로 바꾸고 10/10 오후 4각도 측정으로 다시 계산(그때 rg2_tcp 틀로)"
   }
 }
