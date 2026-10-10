@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""손목 카메라 보정값(T_gripper2camera.npy)이 지금도 맞는지 — 로봇을 움직이지 않고 — 확인한다.
+"""손목 카메라 보정값(T_rg2tcp2camera.npy — 10/10 W156 rg2_tcp 틀)이 지금도 맞는지 — 로봇을 움직이지 않고 — 확인한다.
 
 무엇을 하나
   관측 자세에서 손목 깊이 카메라로 빈 작업대를 찍고, 카메라가 계산한 '책상면 높이'를
@@ -7,8 +7,8 @@
   차이가 거의 0 이면 보정이 맞고, 수십 mm 면 어긋난 것이다(문서 R-05 는 4.8 cm 높게 보인다고 적혀 있다).
 
 입력
-  --calib   T_gripper2camera.npy (카메라 → 그리퍼(TCP) 4x4, mm). 보정 때 활성이던 TCP 와 지금 TCP 가 같아야 한다.
-  --posx    펜던트에 보이는 현재 posx 6개 (mm, deg ZYZ). 주지 않으면 두산 ROS 서비스로 읽는다.
+  --calib   T_rg2tcp2camera.npy (카메라 → rg2_tcp 4x4, mm). 로봇 자세는 MoveIt TF base_link → rg2_tcp 로 읽는다(10/9 E-70 ③ —
+            펜던트 posx 아님, 그래서 브링업 real_moveit 이 떠 있어야 한다. 예전 --posx 는 10/10 W156 에서 뺐다).
   --table-z 작업면 높이 (m). 기본 robot.yaml 의 table_z_m.
   --rs      카메라를 ROS 대신 pyrealsense2 로 직접 연다 (카메라 노드가 안 떠 있을 때).
   --fix-tilt OUT.npy  (10/7 추가) 작업면 평면 맞춤으로 잰 기울기를 보정값의 **회전**에 반영하고, 높이 차이도 0 이 되게 맞춘
@@ -28,14 +28,13 @@
 바깥 영향
   없음 — 로봇 이동·그리퍼 명령·설정 변경을 하지 않는다. 자세와 깊이를 읽기만 한다.
 실패 때
-  카메라 프레임이나 posx 를 못 받으면 메시지를 내고 끝낸다(0 이 아닌 코드).
+  카메라 프레임이나 TF 자세를 못 받으면 메시지를 내고 끝낸다(0 이 아닌 코드).
 
 쓰는 법 (로봇 PC, 브링업과 카메라 노드가 떠 있는 터미널, 저장소 맨 위에서)
   python3 src/d2_vision/d2_vision/check_wrist_calib.py
-  python3 src/d2_vision/d2_vision/check_wrist_calib.py --posx 400 0 350 0 180 0   # 펜던트 값으로
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --rs                       # 카메라 직접 열기
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --fix-tilt /tmp/T_fix.npy   # 빈 작업대를 보는 관측 자세에서: 기울기 보정본 만들기
-    → 같은 자세에서 --calib /tmp/T_fix.npy 로 다시 확인해 기울기 ≈ 0 · 차이 ≈ 0 이면 config/T_gripper2camera.npy 에 복사(json 에 기록)
+    → 같은 자세에서 --calib /tmp/T_fix.npy 로 다시 확인해 기울기 ≈ 0 · 차이 ≈ 0 이면 config/T_rg2tcp2camera.npy 에 복사(json 에 기록)
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --slot 1                 # 공급 칸 1번에 놓인 블록으로 수평 확인
   python3 src/d2_vision/d2_vision/check_wrist_calib.py --ref-xy <x_m> <y_m>     # 중심을 아는 자리에 놓은 블록으로 수평 확인
 기록은 실행한 폴더의 check_wrist_calib_log.jsonl 에 쌓인다(git 에 안 올림).
@@ -50,7 +49,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 # 보정 파일은 이 패키지 config/ 에 둔다(재보정하면 덮어쓴다). 소스 트리에서 바로 돌릴 수 있게 __file__ 기준.
-CALIB_DEFAULT = Path(__file__).resolve().parents[1] / "config" / "T_gripper2camera.npy"
+from d2_vision.tcp_pose import CALIB_NAME, TcpPose   # noqa: E402 — 위 주석 · 상수 순서를 지키려고 여기서 읽는다
+
+CALIB_DEFAULT = Path(__file__).resolve().parents[1] / "config" / CALIB_NAME
 RECORD = Path.cwd() / "check_wrist_calib_log.jsonl"
 
 
@@ -87,7 +88,8 @@ XY_SIZE_WARN_MM = 5.0       # 잰 윗면 크기가 기대와 이만큼 넘게 �
 
 
 def posx_to_matrix(x, y, z, rx, ry, rz):
-    """두산 posx(mm, ZYZ deg) → T_base2gripper (그리퍼 점을 base 로 옮기는 4x4, mm).
+    """두산 posx(mm, ZYZ deg) → T_base2gripper (그리퍼 점을 base 로 옮기는 4x4, mm). 10/10 W156 뒤 이 도구는 TF 를 쓰고,
+    이 함수는 저장소 밖 보정 스크립트(hybrid 등)가 가져다 쓴다.
     이전 프로젝트 robot_control.py 와 같은 규약(intrinsic ZYZ)."""
     T = np.eye(4)
     T[:3, :3] = Rotation.from_euler("ZYZ", [rx, ry, rz], degrees=True).as_matrix()
@@ -160,7 +162,7 @@ def fit_table_plane(pts_base, table_mm):
 
 def fix_tilt(T_g2c, T_b2g, depth_mm, intr, table_mm):
     """보정값의 회전을 돌려 작업면 평면이 수평이 되게 하고, 카메라 광축 방향으로 밀어 높이 차이를 0 으로 맞춘 새 T_gripper2camera 를 만든다.
-    입력: 지금 보정값(4x4 mm) · T_base2gripper(posx) · 빈 작업대 깊이(mm) · 내부 파라미터 · 작업면 높이(mm).
+    입력: 지금 보정값(4x4 mm) · T_base←rg2_tcp(TF, mm — 10/10 W156) · 빈 작업대 깊이(mm) · 내부 파라미터 · 작업면 높이(mm).
     돌려줌: (새 4x4, 보정 전 평면, 보정 뒤 평면, 돌린 각도 °, 민 거리 mm). 평면을 못 맞추면 None.
     왜 회전을 카메라 좌표에서 돌리나: 오차의 원인이 카메라가 그리퍼에 붙은 각도이므로, 어느 posx 에서 재든 같은 보정이 되게 하려고."""
     T_b2c = T_b2g @ T_g2c
@@ -307,10 +309,10 @@ def grab_rs():
     return depth, (intr.fx, intr.fy, intr.ppx, intr.ppy)
 
 
-# ---------- ROS 2: 카메라 토픽 · 두산 posx 서비스 ----------
-def grab_ros(prefix, want_depth, want_posx, timeout_s=10.0):
-    """ROS 에서 깊이 N_FRAMES 장 + camera_info(want_depth) 와 두산 posx(want_posx)를 읽는다.
-    돌려주는 것: (depth_mm 또는 None, (fx, fy, ppx, ppy) 또는 None, posx 또는 None).
+# ---------- ROS 2: 카메라 토픽 · TF 자세 ----------
+def grab_ros(prefix, want_depth, want_tcp, timeout_s=10.0):
+    """ROS 에서 깊이 N_FRAMES 장 + camera_info(want_depth) 와 TF base_link → rg2_tcp(want_tcp, robot.yaml 이름)를 읽는다.
+    돌려주는 것: (depth_mm 또는 None, (fx, fy, ppx, ppy) 또는 None, T_base←rg2_tcp 4x4 mm 또는 None).
     시간 안에 못 받으면 RuntimeError. 로봇에는 아무 명령도 보내지 않는다."""
     import rclpy
     from rclpy.node import Node
@@ -337,25 +339,21 @@ def grab_ros(prefix, want_depth, want_posx, timeout_s=10.0):
         node.create_subscription(Image, f"{prefix}/aligned_depth_to_color/image_raw", on_depth, 10)
         node.create_subscription(CameraInfo, f"{prefix}/color/camera_info", on_info, 10)
 
-    if want_posx:
-        from dsr_msgs2.srv import GetCurrentPosx
-        # 팀 브링업(real_moveit.launch.py)은 두산 서비스를 컨트롤러 이름 아래에 둔다: /dsr_controller2/aux_control/...
-        cli = node.create_client(GetCurrentPosx, "/dsr_controller2/aux_control/get_current_posx")
+    tcp = None
+    if want_tcp:
+        import yaml
+        cfg = yaml.safe_load(robot_yaml_path().read_text(encoding="utf-8"))
+        tcp = TcpPose(node, cfg.get("frame_id", "base_link"), cfg.get("tcp_link", "rg2_tcp"))
 
-    posx, fut = None, None
+    T_tcp = None
     t0 = time.time()
     while time.time() - t0 < timeout_s:
         rclpy.spin_once(node, timeout_sec=0.1)
-        if cli is not None and fut is None and cli.service_is_ready():
-            req = GetCurrentPosx.Request()
-            req.ref = 0                          # DR_BASE
-            fut = cli.call_async(req)
-        if fut is not None and fut.done() and posx is None:
-            res = fut.result()
-            posx = list(res.task_pos_info[0].data[:6]) if res and res.task_pos_info else None
+        if tcp is not None and T_tcp is None:
+            T_tcp = tcp.matrix_mm(0.0)           # spin_once 로 받은 /tf 로만 — 여기서 기다리면 /tf 를 받을 스레드가 없다
         depth_ok = (not want_depth) or (len(frames) >= N_FRAMES and info)
-        posx_ok = (not want_posx) or posx is not None
-        if depth_ok and posx_ok:
+        tcp_ok = (not want_tcp) or T_tcp is not None
+        if depth_ok and tcp_ok:
             break
     node.destroy_node()
     rclpy.shutdown()
@@ -365,19 +363,16 @@ def grab_ros(prefix, want_depth, want_posx, timeout_s=10.0):
             f"카메라 토픽이 안 들어온다: {prefix}/aligned_depth_to_color/image_raw "
             f"(받은 프레임 {len(frames)}장). `ros2 topic list | grep depth` 로 이름을 확인하고 "
             "카메라는 align_depth.enable:=true 로 띄운다.")
-    if want_posx and posx is None:
-        raise RuntimeError("두산 posx 서비스(/dsr_controller2/aux_control/get_current_posx)가 답하지 않는다. "
-                           "브링업이 떠 있는지 보거나 --posx 로 펜던트 값을 넣는다.")
+    if want_tcp and T_tcp is None:
+        raise RuntimeError("TF base_link → rg2_tcp 를 못 받는다 — 브링업(real_moveit.launch.py)이 떠 있는지 본다.")
     depth = np.median(np.stack(frames), axis=0) if want_depth else None
     intr = (info["fx"], info["fy"], info["ppx"], info["ppy"]) if want_depth else None
-    return depth, intr, posx
+    return depth, intr, T_tcp
 
 
 def main():
     ap = argparse.ArgumentParser(description="손목 카메라 보정 확인 (로봇 안 움직임)")
-    ap.add_argument("--calib", default=str(CALIB_DEFAULT), help="T_gripper2camera.npy")
-    ap.add_argument("--posx", type=float, nargs=6, metavar=("X", "Y", "Z", "A", "B", "C"),
-                    help="펜던트 posx (mm, deg). 없으면 두산 서비스로 읽음")
+    ap.add_argument("--calib", default=str(CALIB_DEFAULT), help="T_rg2tcp2camera.npy (카메라 → rg2_tcp, mm)")
     ap.add_argument("--table-z", type=float, default=None, help="작업면 높이 m (기본 robot.yaml table_z_m)")
     ap.add_argument("--rs", action="store_true", help="ROS 대신 pyrealsense2 로 카메라 직접 열기")
     ap.add_argument("--cam-prefix", default="/camera/camera", help="realsense 토픽 접두 (Jazzy 기본 /camera/camera)")
@@ -408,19 +403,17 @@ def main():
     elif a.ref_xy is not None:
         ref_mm = np.array(a.ref_xy, dtype=float) * 1000.0
 
-    # 1) 깊이 + posx. 카메라는 --rs 면 직접, 아니면 ROS 토픽. posx 는 --posx 가 없으면 두산 서비스.
+    # 1) 깊이 + TF 자세. 카메라는 --rs 면 직접, 아니면 ROS 토픽. 자세는 늘 TF(브링업).
     try:
         if a.rs:
             depth, intr = grab_rs()
-            _, _, posx = (None, None, a.posx) if a.posx is not None else grab_ros(a.cam_prefix, False, True)
+            _, _, T_b2g = grab_ros(a.cam_prefix, False, True)
         else:
-            depth, intr, posx_ros = grab_ros(a.cam_prefix, True, a.posx is None)
-            posx = a.posx if a.posx is not None else posx_ros
+            depth, intr, T_b2g = grab_ros(a.cam_prefix, True, True)
     except RuntimeError as e:
         sys.exit(f"읽기 실패: {e}")
 
-    # 2) 카메라 점 → base
-    T_b2g = posx_to_matrix(*posx)
+    # 2) 카메라 점 → base (T_b2g = base ← rg2_tcp, mm)
     T_b2c = T_b2g @ T_g2c
     cam_pts = roi_points(depth, *intr)
     rows, zs = [], []
@@ -435,7 +428,7 @@ def main():
     # 3) 보고
     table_mm = table_z_m * 1000.0
     print(f"\n보정 파일: {a.calib}")
-    print(f"posx: {[round(v, 2) for v in posx]}  (mm, deg)")
+    print(f"rg2_tcp(TF) 위치: {[round(float(v), 1) for v in T_b2g[:3, 3]]} mm")
     print(f"기준 작업면 높이 table_z: {table_mm:.1f} mm (base)\n")
     print(f"{'구역':<6} {'카메라 거리 mm':>14} {'base 높이 mm':>13} {'차이 mm':>9}")
     for name, p, pb in rows:
@@ -472,7 +465,7 @@ def main():
                    "어긋남 — 재보정 필요" if abs(med - table_mm) > 15 else "애매함 — 한 번 더 재기")
         print(f"판정: {verdict}")
         rec = {
-            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "calib": a.calib, "posx": posx,
+            "time": time.strftime("%Y-%m-%d %H:%M:%S"), "calib": a.calib, "tcp_pose_mm": T_b2g.round(4).tolist(),
             "table_z_mm": table_mm, "base_z_mm": {n: (None if pb is None else round(float(pb[2]), 2)) for n, _, pb in rows},
             "median_diff_mm": round(med - table_mm, 2), "spread_mm": round(spread, 2),
             "plane": None if plane is None else {k: round(v, 4) if isinstance(v, float) else v for k, v in plane.items()},

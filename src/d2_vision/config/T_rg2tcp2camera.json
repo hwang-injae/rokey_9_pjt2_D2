@@ -1,0 +1,33 @@
+{
+  "file": "T_rg2tcp2camera.npy",
+  "meaning": "카메라 → rg2_tcp(MoveIt 손끝 = 손가락 가운데) 4x4, mm. p_base = T_base←rg2_tcp(TF, mm) @ T_rg2tcp2camera @ p_cam (10/9 E-70 ③ — 로봇 자세는 펜던트 posx 가 아니라 TF base_link → rg2_tcp)",
+  "tcp": "rg2_tcp — 브링업이 config/tcp.json(GripperDA_v1 [0, 2.7, 228], 10/10 E-81)에서 만든다",
+  "origin": "2026-10-10 W156(황인재 · PM): T_gripper2camera.npy(posx 틀 — 10/8 #88 값 + 10/10 #112 y −2.7 mm)를 rg2_tcp 틀로 옮김 — T = Rz(+90°) · T_gripper2camera (R_rg2tcp = R_posx · Rz(−90°), 같은 원점)",
+  "not_verified": "임시 — 펜던트 posx 와 MoveIt FK 사이 1 ~ 3 mm(모델 · 제어기 계산 차이)가 그대로 들어 있다. 10/10 오후 4각도 측정(capture_scene 이 TF · posx · 관절값을 같이 남김)으로 rg2_tcp 틀에서 다시 계산해 이 파일을 바꾼다(W156) → 그때 T_gripper2camera.npy 는 지운다",
+  "from_posx_calib": [
+    [
+      -0.99986,
+      0.01697,
+      -0.00127,
+      35.4515
+    ],
+    [
+      -0.01697,
+      -0.99985,
+      -0.00216,
+      74.74877
+    ],
+    [
+      -0.00131,
+      -0.00213,
+      1.0,
+      -184.65265
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ]
+}
