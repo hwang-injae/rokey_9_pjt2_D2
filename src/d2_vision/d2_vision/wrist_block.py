@@ -2,18 +2,18 @@
 · 4.1 `camera_status/1` · `wrist_image` (W041 · W140 E-52 → E-69 · W115 · W086 · W148).
 
 작업 관리자가 관측 자세에서 `check_progress`(design_id · block_ids)를 부르면:
-  손목 깊이 영상 10장(중앙값) + 두산 posx + hand-eye 보정값 → base 점군 → BlockChecker(block_checker.py)
+  손목 깊이 영상 10장(중앙값) + 로봇 자세(TF base_link → rg2_tcp, 10/9 E-70 ③) + hand-eye 보정값(rg2_tcp 틀) → base 점군 → BlockChecker(block_checker.py)
   → 블록마다 state(present·absent·occluded·unknown) · top_z_m · dz_m (dx·dy 는 1차 NaN) 로 답한다.
 카메라 연결 신호 `/d2/vision/camera_status` 를 2 Hz 로 낸다(마지막 프레임 시각).
-스캔 · 흩뿌림 찾기도 이 노드 하나가 맡는다(IRD 84줄 '노드를 나눌지는 비전이 정함' → 카메라 구독 · posx · 보정값을 같이 쓰려고 한 노드, 10/8).
-  `/d2/vision/scan_capture`(JsonQuery) {"pose_id","run_id"} → 요청 뒤 깊이 scan_frames 장 평균(구멍 0 은 빼고) + 지금 posx × 보정
+스캔 · 흩뿌림 찾기도 이 노드 하나가 맡는다(IRD 84줄 '노드를 나눌지는 비전이 정함' → 카메라 구독 · 로봇 자세 · 보정값을 같이 쓰려고 한 노드, 10/8).
+  `/d2/vision/scan_capture`(JsonQuery) {"pose_id","run_id"} → 요청 뒤 깊이 scan_frames 장 평균(구멍 0 은 빼고) + 지금 TF 자세 × 보정
       → StructureScanner.add_capture(structure_scanner.py) → {"ok":true,"points":n}. run_id 마다 따로 모으고, 같은 run_id 에 같은
       pose_id 가 다시 오면 덮어쓴다. 그때의 컬러 한 장도 둔다(scan_infer 의 사진).
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
       → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
       번호 = scan_dir 에 이미 있는 blocks.json 수 + 1(노드를 다시 켜도 이름이 겹치지 않게). 추론이 끝난 run_id 는 메모리에서 지운다.
-  `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + posx × 보정 → BlockFinder(block_finder.py)
+  `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + TF 자세 × 보정 → BlockFinder(block_finder.py)
       → {"ok":true,"blocks":[…]}(IRD 4.2 칸, 윗면 높이 순). 블록 0개도 ok true(빈 목록 — 작업 관리자가 WAIT_SUPPLY).
       마스크: yolo_model 파라미터가 있고 ultralytics 를 쓸 수 있으면 YOLO seg(본 방법 E-38), 아니면 예비(엣지 + 깊이, E-47).
   `/d2/vision/wrist_image`(sensor_msgs/CompressedImage, JPEG 품질 70, 640×480 그대로) — find_blocks 때마다 검출 결과
@@ -40,9 +40,9 @@
   design_source  'remote'(기본) · 'local' — task 노드와 같은 이름 · 기본값 · 뜻. 'local' 이 아니면 모두 remote 로 본다(task 와 같음)
   recipe_dir   레시피 폴더(task 노드와 같은 파라미터, 예 src/recipe_manager/recipes). design_source:=local 일 때 check_progress 설계,
                그리고 scan_infer 의 family 고르기(기본 설계 4개)에 쓴다 — 비우면 스캔 family 는 unknown
-  calib_path   T_gripper2camera.npy(카메라 → TCP 4x4, mm). 비우면 이 패키지 share/config 의 것
+  calib_path   T_rg2tcp2camera.npy(카메라 → rg2_tcp 4x4, mm — 10/10 W156). 비우면 이 패키지 share/config 의 것
   cam_prefix   realsense 토픽 접두 (Jazzy 기본 /camera/camera) — 깊이 · camera_info · 컬러(<접두>/color/image_raw)
-  posx         시험용 posx 6개(mm·deg, **실수로** 예: [460.5, -157.0, 294.8, 154.8, 180.0, 154.5]). 비우면 두산 서비스로 읽는다
+  tcp_pose_mm  시험용 rg2_tcp 자세 7개(x · y · z mm + 쿼터니언 x · y · z · w, **실수로**). 모두 0 이면 TF(robot.yaml frame_id → tcp_link)로 읽는다
   n_frames     check_progress 가 중앙값 낼 깊이 프레임 수(10 — V-17 경험: 정지 상태 10장이면 ±0.5 mm)
   scan_frames  scan_capture · find_blocks 가 평균 낼 깊이 프레임 수(10 — 30 fps 면 0.33초, task 의 3초 제한 안. 45장까지 1.5초 안)
   scan_dir     스캔 결과 폴더(비우면 ~/d2_data/scan) — <run_id>/color.png · cloud.ply · blocks.json
@@ -55,19 +55,19 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_si
   (scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 시작 확인(블록 전부)이면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
-실패 때: 새 프레임이 시간 안에 안 오거나 posx 를 못 받으면 success=false, reason=TIMEOUT.
+실패 때: 새 프레임이 시간 안에 안 오거나 TF 자세(브링업 robot_state_publisher)를 못 받으면 success=false, reason=TIMEOUT.
          get_design 이 timeout.service_s 안에 답하지 않으면 success=false, reason=TIMEOUT (task_node.get_design 과 같은 코드).
          get_design 서버 없음 · success=false · 응답 형식 오류(옛 design/1 포함), 보정값·레시피를 못 읽음, design_id 칸이 빔
          → 노드는 뜬 채 success=false, reason=ERROR.
          (배열은 모두 요청 길이, state unknown, 값 NaN.)
 스캔 · 찾기 실패 때(JsonQuery 두 층 — mock_wrist_block 과 같음. 응답 JSON 은 늘 {"ok":false,"reason","detail"}):
   요청 JSON 이 틀림(run_id · pose_id 없음 · 폴더 이름으로 못 쓰는 글자) → success=false, SCAN_FAILED.
-  보정값 없음 · 계산 예외 → success=false, ERROR. posx 못 받음 · 요청 뒤 새 깊이(find_blocks 는 컬러도)가 시간 안에 안 옴 → success=false, TIMEOUT.
+  보정값 없음 · 계산 예외 → success=false, ERROR. TF 자세 못 받음 · 요청 뒤 새 깊이(find_blocks 는 컬러도)가 시간 안에 안 옴 → success=false, TIMEOUT.
   촬영 안 한 run_id · 추론 신뢰도 미달(점 설명률 · 추정 블록 비율 · 자세 수 — StructureScanner ⑧) → success=true + ok:false SCAN_FAILED.
   PLY 저장만 실패하면 cloud_path 칸을 빼고 ok:true 로 답하고 경고 로그(IRD 4.2 cloud_path 선택 칸, 10/8 PL).
 NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_m 은 present 일 때만 값.
   top_z_m 은 present · occluded(설계 밖 물체 윗면, 참고값) 일 때 값. absent·unknown · 위 블록에 가려진 present 는 dz·top_z 둘 다 NaN.
-보정값은 TCP 기준이라(config/T_gripper2camera.json) 켤 때 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 다르면 경고한다(한 번).
+로봇 자세는 MoveIt 모델(관절값 + config/tcp.json 으로 만든 rg2_tcp)에서 나오므로 펜던트 활성 TCP 와 상관없다(10/10 W156 — 예전 posx × T_gripper2camera 길은 뺌).
 
 실행 (저장소 맨 위에서). **task 와 같은 design_source 값을 준다:**
   웹 · 다리와 함께(기본 remote — task 도 기본 remote):
@@ -111,19 +111,19 @@ from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_fr
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
 from d2_vision.structure_scanner import StructureScanner, family_of, scan_response
-from dsr_msgs2.srv import GetCurrentPosx, GetCurrentTcp
+from d2_vision.tcp_pose import TcpPose, default_calib_path, load_calib
 
 NAN = float('nan')
 QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
                         reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.VOLATILE)
 FRESH_WAIT_S = 1.5         # 요청 뒤 새 프레임 n장을 이만큼 기다린다(30 Hz 면 10장에 0.33초 — 여유 포함). 넘으면 TIMEOUT
-SERVICE_WAIT_S = 3.0       # 두산 서비스 기다림(없음 3초 + 답 3초 = 최대 6초 막힘)
+SERVICE_WAIT_S = 3.0       # TF 자세 · 서비스(get_design 은 timeout.service_s) 기본 기다림 — 10/10 W156 뒤 두산 서비스는 안 부름
 MAX_SCAN_RUNS = 5          # 추론 전 run_id 를 이만큼만 기억한다(scan_infer 가 안 온 판이 쌓여 메모리가 늘지 않게 — 한 판 점군 약 2~5 MB)
 JPEG_QUALITY = 70          # wrist_image (IRD E-67 — 640×480 · 품질 70 ≈ 65 KB)
 
 
 def posx_to_matrix(x, y, z, rx, ry, rz):
-    """두산 posx(mm, ZYZ deg) → T_base2gripper 4x4 (mm). check_wrist_calib.py 와 같은 규약(intrinsic ZYZ)."""
+    """두산 posx(mm, ZYZ deg) → T_base2gripper 4x4 (mm). 노드는 이제 TF 를 쓰고(W156), 이 함수는 저장소 밖 시험 스크립트(fs_rotate_test 등)가 가져다 쓴다."""
     T = np.eye(4)
     T[:3, :3] = Rotation.from_euler('ZYZ', [rx, ry, rz], degrees=True).as_matrix()
     T[:3, 3] = [x, y, z]
@@ -134,14 +134,14 @@ class WristBlock(Node):
     """check_progress · scan_capture · scan_infer · find_blocks 에 답하고 camera_status · wrist_image 를 내는 손목 블록 인식 노드."""
 
     def __init__(self):
-        """파라미터 · 설정 · 보정값 · YOLO 모델 · 기본 설계(스캔 family 용)를 읽고 구독 · 서비스 · 클라이언트(posx · tcp · get_design) ·
+        """파라미터 · 설정 · 보정값 · YOLO 모델 · 기본 설계(스캔 family 용)를 읽고 구독 · 서비스 · 클라이언트(get_design) · TF 리스너 ·
         발행 · 타이머를 만든다. check_progress 설계는 요청이 올 때 읽는다(설계마다 한 번). 레시피 폴더 · 보정 · 모델이 없어도 노드는 뜬다(경고)."""
         super().__init__('wrist_block')
         self.declare_parameter('recipe_dir', '')           # design_source:=local 설계 · 스캔 family 고르기에 쓰는 레시피 폴더(task 와 같음)
         self.declare_parameter('design_source', 'remote')  # task 와 같은 값: remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일
         self.declare_parameter('calib_path', '')
         self.declare_parameter('cam_prefix', '/camera/camera')
-        self.declare_parameter('posx', [0.0] * 6)
+        self.declare_parameter('tcp_pose_mm', [0.0] * 7)
         self.declare_parameter('n_frames', 10)
         self.declare_parameter('scan_frames', 10)
         self.declare_parameter('scan_dir', '')
@@ -164,7 +164,8 @@ class WristBlock(Node):
         self.find_lock = threading.Lock()     # BlockFinder 가 마지막 마스크를 들고 있어 한 번에 하나씩
 
         self.cfg = self._load_robot_yaml()
-        self.T_g2c = self._load_calib()
+        self.T_tcp2c = self._load_calib()
+        self.tcp = TcpPose(self, self.cfg.get('frame_id', 'base_link'), self.cfg.get('tcp_link', 'rg2_tcp'))
         self.finder = BlockFinder(finder_cfg(self.cfg))
         self.yolo = self._load_yolo()
         self.bases = self._load_bases()
@@ -182,8 +183,6 @@ class WristBlock(Node):
         self.create_subscription(Image, f'{prefix}/aligned_depth_to_color/image_raw', self.on_depth, 10, callback_group=group)
         self.create_subscription(CameraInfo, f'{prefix}/color/camera_info', self.on_info, 10, callback_group=group)
         self.create_subscription(Image, f'{prefix}/color/image_raw', self.on_color, 10, callback_group=group)
-        self.cli_posx = self.create_client(GetCurrentPosx, '/dsr_controller2/aux_control/get_current_posx', callback_group=group)
-        self.cli_tcp = self.create_client(GetCurrentTcp, '/dsr_controller2/tcp/get_current_tcp', callback_group=group)
         self.cli_design = self.create_client(JsonQuery, '/d2/hmi/get_design', callback_group=group)
         self.create_service(CheckProgress, '/d2/vision/check_progress', self.on_check, callback_group=group)
         self.create_service(JsonQuery, '/d2/vision/scan_capture', self.on_scan_capture, callback_group=group)
@@ -192,7 +191,6 @@ class WristBlock(Node):
         self.pub_status = self.create_publisher(String, '/d2/vision/camera_status', QOS_STATUS)
         self.pub_image = self.create_publisher(CompressedImage, '/d2/vision/wrist_image', 10)   # IRD E-67 QoS 기본(VOLATILE)
         self.create_timer(1.0 / self.get_parameter('status_hz').value, self.publish_status, callback_group=group)
-        self._tcp_timer = self.create_timer(2.0, self.check_tcp_once, callback_group=group)   # 브링업이 늦게 뜰 수 있어 2초 뒤 한 번(안에서 끈다)
         self.get_logger().info('wrist_block 시작: check_progress · scan_capture · scan_infer · find_blocks 대기 (카메라 %s, 스캔 폴더 %s)'
                                % (prefix, self.scan_dir))
 
@@ -203,12 +201,10 @@ class WristBlock(Node):
         return yaml.safe_load(p.read_text(encoding='utf-8'))
 
     def _load_calib(self):
-        """hand-eye 4x4(mm). calib_path 가 비면 d2_vision share/config. 못 읽으면 None(모든 답 unknown)."""
-        p = self.get_parameter('calib_path').value or str(Path(get_package_share_directory('d2_vision')) / 'config' / 'T_gripper2camera.npy')
+        """hand-eye 4x4(mm, 카메라 → rg2_tcp). calib_path 가 비면 d2_vision share/config. 못 읽으면 None(모든 답 unknown)."""
+        p = self.get_parameter('calib_path').value or str(default_calib_path())
         try:
-            T = np.load(p)
-            if T.shape != (4, 4):
-                raise ValueError('4x4 아님')
+            T = load_calib(p)
             self.get_logger().info('보정값 %s (카메라 위치 mm %s)' % (p, T[:3, 3].round(1).tolist()))
             return T
         except (OSError, ValueError) as e:
@@ -385,33 +381,16 @@ class WristBlock(Node):
             return None
         return fut.result()
 
-    def check_tcp_once(self):
-        """켤 때 한 번(타이머를 바로 끈다): 제어기 활성 TCP 가 d2_bringup config/tcp.json 과 같은지. 다르면 보정값이 안 맞으니 경고(답은 계속 한다)."""
-        self._tcp_timer.cancel()
-        try:
-            want = json.loads((Path(get_package_share_directory('d2_bringup')) / 'config' / 'tcp.json').read_text(encoding='utf-8'))['name']
-        except (OSError, KeyError, ValueError):
-            return
-        r = self._call(self.cli_tcp, GetCurrentTcp.Request())
-        got = r.info if r is not None and r.success else ''
-        if not got:
-            self.get_logger().warn('제어기 TCP 를 못 읽음(에뮬레이터면 정상) — 보정값은 %s 기준' % want)
-        elif got != want:
-            self.get_logger().error('제어기 활성 TCP "%s" != tcp.json "%s" — hand-eye 보정값이 맞지 않는다. 펜던트에서 맞춘 뒤 다시 켠다' % (got, want))
-        else:
-            self.get_logger().info('제어기 활성 TCP %s (보정값 기준과 같음)' % got)
-
-    def read_posx(self):
-        """posx 6개(mm·deg). 파라미터 posx 가 0 이 아니면 그것(시험용), 아니면 두산 서비스. 못 받으면 None."""
-        p = list(self.get_parameter('posx').value)
+    def read_tcp(self):
+        """지금 rg2_tcp 자세 T_base←rg2_tcp 4x4 (mm). 파라미터 tcp_pose_mm 가 0 이 아니면 그것(시험용), 아니면 TF(최대 SERVICE_WAIT_S).
+        못 받으면 None(브링업 · robot_state_publisher 없음). 바깥 영향 없음(/tf 구독뿐)."""
+        p = list(self.get_parameter('tcp_pose_mm').value)
         if any(abs(v) > 1e-9 for v in p):
-            return p
-        req = GetCurrentPosx.Request()
-        req.ref = 0                            # DR_BASE
-        r = self._call(self.cli_posx, req)
-        if r is None or not r.success or not r.task_pos_info:
-            return None
-        return list(r.task_pos_info[0].data[:6])
+            T = np.eye(4)
+            T[:3, :3] = Rotation.from_quat(p[3:7]).as_matrix()
+            T[:3, 3] = p[:3]
+            return T
+        return self.tcp.matrix_mm(SERVICE_WAIT_S)
 
     def fresh_frames(self, t_req, n=None):
         """t_req 뒤에 들어온 깊이 프레임이 n 장(기본 n_frames) 모일 때까지(최대 FRESH_WAIT_S) 기다렸다가 최근 n 장을 돌려준다. 부족하면 None."""
@@ -440,11 +419,11 @@ class WristBlock(Node):
         """check_progress 콜백. 입력 req.design_id(설계 이름 — 빈 값이면 ERROR) · req.block_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
 
         보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계 · 시작 확인(블록 전부)만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
-        + posx → 점군 → BlockChecker → 답. 바깥 영향: get_design · 두산 posx 조회 · 로그.
-        실패: 보정값 없음 · design_id 칸이 빔 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · posx 없음 → TIMEOUT
+        + TF 자세 → 점군 → BlockChecker → 답. 바깥 영향: get_design · 로그.
+        실패: 보정값 없음 · design_id 칸이 빔 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · TF 자세 없음 → TIMEOUT
         (모두 state unknown, 값 NaN)."""
         ids = list(req.block_ids)
-        if self.T_g2c is None:                # 보정값이 없으면 설계를 받아도 답할 수 없다 — get_design 을 부르지 않는다
+        if self.T_tcp2c is None:              # 보정값이 없으면 설계를 받아도 답할 수 없다 — get_design 을 부르지 않는다
             self.get_logger().error('보정값이 없어 답할 수 없다 → ERROR')
             return self._fill(res, ids, reason='ERROR')
         # 설계 = design_id 칸만(E-52 ④ — 블록 이름에서 잘라 내지 않는다. BACK · BASE · BEAM 에도 '_B' 가 있다).
@@ -458,9 +437,9 @@ class WristBlock(Node):
             self.get_logger().error('설계 %r 를 못 읽어 답할 수 없다 → %s' % (design_id, reason))
             return self._fill(res, ids, reason=reason)
         t_req = self.now()
-        posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
-        if posx is None:
-            self.get_logger().error('두산 posx 를 못 받음 → TIMEOUT')
+        T_b2t = self.read_tcp()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
+        if T_b2t is None:
+            self.get_logger().error('TF base_link → rg2_tcp 를 못 받음(브링업?) → TIMEOUT')
             return self._fill(res, ids, reason='TIMEOUT')
         frames = self.fresh_frames(t_req)
         if frames is None or self.intr is None:
@@ -470,7 +449,7 @@ class WristBlock(Node):
         with warnings.catch_warnings():                                    # 10장 모두 구멍인 화소는 numpy 가 'All-NaN slice' 를 알리지만 결과(NaN → 점에서 빠짐)는 의도한 것
             warnings.simplefilter('ignore', RuntimeWarning)
             depth_m = np.nanmedian(np.stack(frames), axis=0) / 1000.0    # 구멍(NaN)은 빼고 중앙값. 전부 구멍이면 NaN → 점에서 빠짐
-        T_b2c = posx_to_matrix(*posx) @ self.T_g2c
+        T_b2c = T_b2t @ self.T_tcp2c
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         pts = depth_to_base_points(depth_m, self.intr, T_b2c, stride=2)
         results = checker.check(pts, ids)
@@ -484,8 +463,8 @@ class WristBlock(Node):
         res.top_z_m = [r['top_z_m'] if r['state'] in ('present', 'occluded') else NAN for r in results]
         res.success, res.reason = True, ''
         # 로그에는 absent 때 보이는 면(작업면) 높이도 적는다 — 보정 기울기 진단용(10/7 박진용 실기: 윗면 −2.8 mm). 서비스 답은 IRD 5장대로 NaN
-        self.get_logger().info('check_progress %s %d개 (점 %d, posx z %.0f mm) → %s' % (
-            design_id, len(ids), len(pts), posx[2], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
+        self.get_logger().info('check_progress %s %d개 (점 %d, 손끝 z %.0f mm) → %s' % (
+            design_id, len(ids), len(pts), T_b2t[2, 3], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
         return res
 
     # ---------- 스캔 · 흩뿌림 찾기 (JsonQuery) ----------
@@ -514,16 +493,16 @@ class WristBlock(Node):
         return res
 
     def _snapshot(self, n, need_color):
-        """요청 뒤 새 깊이 n 장 평균 + 지금 posx × 손목 보정 + (need_color 면) 요청 뒤 컬러 한 장. on_check 와 같은 규칙.
+        """요청 뒤 새 깊이 n 장 평균 + 지금 TF 자세 × 손목 보정 + (need_color 면) 요청 뒤 컬러 한 장. on_check 와 같은 규칙.
 
         출력: ((깊이 (H, W) mm 평균 · 0 = 없음, 컬러 BGR 또는 None, frame_id, T_base2cam 4x4 m), None) 또는 (None, 실패 응답 셋).
-        실패: 보정값 없음 → ERROR · posx 못 받음 · 새 프레임(컬러)이 FRESH_WAIT_S 안에 안 옴 → TIMEOUT. 바깥 영향: 두산 posx 조회."""
-        if self.T_g2c is None:
+        실패: 보정값 없음 → ERROR · TF 자세 못 받음 · 새 프레임(컬러)이 FRESH_WAIT_S 안에 안 옴 → TIMEOUT. 바깥 영향 없음."""
+        if self.T_tcp2c is None:
             return None, self._fail(False, 'ERROR', '손목 보정값이 없다')
         t_req = self.now()
-        posx = self.read_posx()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
-        if posx is None:
-            return None, self._fail(False, 'TIMEOUT', '두산 posx 를 못 받음')
+        T_b2t = self.read_tcp()                                           # 로봇은 멈춰 있으니 프레임 모으기와 순서는 무관
+        if T_b2t is None:
+            return None, self._fail(False, 'TIMEOUT', 'TF base_link → rg2_tcp 를 못 받음(브링업?)')
         frames = self.fresh_frames(t_req, n)
         if frames is None or self.intr is None:
             return None, self._fail(False, 'TIMEOUT', '요청 뒤 새 깊이 프레임이 %.1f초 안에 %d장 안 모임(카메라 끊김?)' % (FRESH_WAIT_S, n))
@@ -533,7 +512,7 @@ class WristBlock(Node):
             color = None                                                  # 요청 앞의 컬러(로봇이 움직이던 때일 수 있다)는 쓰지 않는다
         if need_color and color is None:
             return None, self._fail(False, 'TIMEOUT', '요청 뒤 새 컬러 프레임이 없다(카메라 끊김?)')
-        T_b2c = posx_to_matrix(*posx) @ self.T_g2c
+        T_b2c = T_b2t @ self.T_tcp2c
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         img, frame_id = (color[1], color[2]) if color is not None else (None, '')
         return (mean_depth_mm(frames), img, frame_id, T_b2c), None
@@ -542,7 +521,7 @@ class WristBlock(Node):
         """scan_capture 콜백: {"pose_id","run_id"} → 깊이 scan_frames 장 평균 → StructureScanner.add_capture → {"ok":true,"points"}.
 
         run_id 마다 StructureScanner 하나(최근 MAX_SCAN_RUNS 개만), 같은 pose_id 가 다시 오면 그 자세 촬영을 바꾼다. 컬러 한 장도 둔다.
-        실패는 맨 위 '스캔 · 찾기 실패 때'. 바깥 영향: 두산 posx 조회 · 로그."""
+        실패는 맨 위 '스캔 · 찾기 실패 때'. 바깥 영향: 로그."""
         t0 = time.monotonic()
         try:
             body = parse_request(req.request_json, ('pose_id', 'run_id'))
@@ -666,7 +645,7 @@ class WristBlock(Node):
         """find_blocks 콜백: {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) → BlockFinder → {"ok":true,"blocks":[…]} + wrist_image 한 장.
 
         블록 0개도 ok true(빈 목록 → 작업 관리자 WAIT_SUPPLY). 계산 예외 → success=false ERROR. 나머지 실패는 맨 위.
-        바깥 영향: 두산 posx 조회 · wrist_image 발행 · 로그. run_id 는 기록용(로그)."""
+        바깥 영향: wrist_image 발행 · 로그. run_id 는 기록용(로그)."""
         t0 = time.monotonic()
         try:
             rid = parse_request(req.request_json, ('run_id',))['run_id']
