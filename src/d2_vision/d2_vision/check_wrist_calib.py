@@ -49,7 +49,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 # 보정 파일은 이 패키지 config/ 에 둔다(재보정하면 덮어쓴다). 소스 트리에서 바로 돌릴 수 있게 __file__ 기준.
-from d2_vision.tcp_pose import CALIB_NAME, TcpPose   # noqa: E402 — 위 주석 · 상수 순서를 지키려고 여기서 읽는다
+from d2_vision.tcp_pose import CALIB_NAME, TcpPose, camera_pose_mm, load_tilt_shift   # noqa: E402 — 위 주석 · 상수 순서를 지키려고 여기서 읽는다
 
 CALIB_DEFAULT = Path(__file__).resolve().parents[1] / "config" / CALIB_NAME
 RECORD = Path.cwd() / "check_wrist_calib_log.jsonl"
@@ -413,8 +413,8 @@ def main():
     except RuntimeError as e:
         sys.exit(f"읽기 실패: {e}")
 
-    # 2) 카메라 점 → base (T_b2g = base ← rg2_tcp, mm)
-    T_b2c = T_b2g @ T_g2c
+    # 2) 카메라 점 → base (T_b2g = base ← rg2_tcp, mm) — 기울기 밀림 고침은 쓰는 보정 파일 옆 json 값(내려다보면 0, 10/10 E-83)
+    T_b2c = camera_pose_mm(T_b2g, T_g2c, load_tilt_shift(a.calib))
     cam_pts = roi_points(depth, *intr)
     rows, zs = [], []
     for name, p in cam_pts.items():

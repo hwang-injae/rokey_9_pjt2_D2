@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-10
+- 비전(15시, 황인재 · PM): **E-83 움직이며 작업공간 전체 스캔(시연) · 기울기 밀림 고침** — 앞 · 옆 촬영 9 ~ 11 mm는 카메라를 기울이면 잰 점이 먼 쪽 · 위로 밀리는 것(작업대는 수평, 방향은 맞음). 15자세 시험으로 '중력 중 광축에 수직인 성분 × 21.42 mm' 확인(관절 · 팔 · 보정 모형은 안 맞음) → `tcp_pose.camera_pose_mm` 한 곳에서 카메라 위치를 옮김(보정 json `tilt_shift`), `wrist_block` · `capture_scene`(pose.json `tilt_shift_mm`) · `check_wrist_calib`가 씀. 내려다보는 자세는 0. 15자세 평균 8.1 → 2.1 · 최대 12.0 → 3.3 mm. 결정 기록 §35.
 - 공통 · HMI · 비전(13시, PM — PL 방향 · HMI 세션 초안): **E-82 스캔 중 점군 미리보기** — 손목 비전이 촬영 자세마다 모은 점군을 `/d2/vision/scan_preview`(`scan_preview/1.0`: stamp · run_id · pose_id · index · kind capture|live · cloud_path · points)로 알리고 다리가 `d2/vision/scan_preview` + `d2/vision/scan_preview_cloud`(PLY)로 넘겨 화면 3D에 쌓음(보기 전용). A = 10/11~12(비전 새 번호 민범진 · HMI W116), B(이동 중 1~2 Hz, 따로 노드) = 10/12 저녁 W132 뒤 남으면. IRD 10.5에 사진 · 점군 짝짓기 규칙 문장. 결정 기록 §34.
 - 비전(13시, 황인재 · PM): **W156 손목 보정값 다시 계산 · V-15** — 4각도 × 높이 400 · 496 mm(카메라 광축을 공급 칸 p1~p4 가운데로 옮긴 자세) + 빈 작업대 수평, TF `base_link → rg2_tcp` 기준(민범진 tf_v1 스크립트, 박진용 PC 측정). `T_rg2tcp2camera` 카메라 위치 (+1.85, −0.33, +0.82) mm · 회전 0.65°. **V-15 관측 자세 4점 평균 1.15 mm(4/4 ≤ 2 mm, 바꾸기 전 2/4)**. 앞 · 옆 촬영 자세는 어느 보정값이든 9 ~ 11 mm(posx · TF 차이는 2.4 mm로 같음 → 원인 확인 중). 옛 posx 틀 `T_gripper2camera` 지움 — `capture_scene`의 posx 길 · TF 길 비교는 같은 보정값을 posx 틀로 옮겨 계속 기록. `--fix-tilt` 안내 · 주석의 옛 파일 이름 고침.
 - 공통(11시, PM): **에이전트 규칙 6장 첫 줄 범위 줄임(PL)** — #114로 들어온 '검증 · 시험 · 실행은 묻지 않고 진행(도구 설치 포함)'에서 **도구 · 패키지 설치와 로봇을 움직이는 실행은 먼저 묻기**로(AGENTS = CLAUDE = GEMINI). 읽기 전용 조회 줄은 그대로.
