@@ -318,6 +318,116 @@ def test_save_build_once_per_run_id(store):
     assert bad['success'] is True and bad['ok'] is False
 
 
+BENCH, BACK = '001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000'
+
+
+def as_new(store, parent, design_id):
+    """부모 레시피의 ID 만 design_id 로 바꾼 (blocks, recipe, placements) — check_design 이 주는 꼴(recipe_sha256 · block_id 다시 계산)."""
+    from d2_task.recipe_document import recipe_sha256
+    base = store.get_design(parent)
+    recipe = {**base['recipe'], 'model_id': design_id}
+    steps = [{**st, 'block_id': f"{design_id}_{st['block']}"} for st in base['placements']['steps']]
+    placements = {**base['placements'], 'model_id': design_id, 'recipe_sha256': recipe_sha256(recipe), 'steps': steps}
+    return {**base['blocks'], 'design_id': design_id}, recipe, placements
+
+
+def derived(store, parent=BENCH, made_by='web'):
+    """new_design_id 로 ID 를 받아 파생 설계 하나를 저장한다(AI 생성 · 스캔 저장과 같은 차례)."""
+    template = parent.rsplit('_V', 1)[0]
+    design_id, _ = store.new_design_id(template, parent)
+    blocks, recipe, placements = as_new(store, parent, design_id)
+    return store.save_design(blocks, recipe, placements, parent, made_by, prompt='벤치 높게',
+                             check={'ok': True, 'min_margin_mm': 9.5, 'errors': [], 'recipe': recipe})
+
+
+def test_new_design_id_next_number_in_template(store):
+    """E-84: <Template ID>_V<3자리>, 번호 = 그 Template 의 가장 큰 V + 1(부모와 상관없이 만든 차례). 다른 Template 은 따로 센다."""
+    assert store.new_design_id('001_CHAIR_BENCH', BENCH) == ('001_CHAIR_BENCH_V001', 'V001')
+    assert derived(store)['design_id'] == '001_CHAIR_BENCH_V001'
+    assert derived(store, '001_CHAIR_BENCH_V001')['design_id'] == '001_CHAIR_BENCH_V002'   # V001 을 고침
+    assert store.new_design_id('001_CHAIR_BENCH', BENCH) == ('001_CHAIR_BENCH_V003', 'V003')   # 부모가 V000 이어도 다음 번호
+    assert store.new_design_id('002_CHAIR_BACK') == ('002_CHAIR_BACK_V001', 'V001')
+    with pytest.raises(ValueError):
+        store.new_design_id('002_CHAIR_BACK', BENCH)        # 부모는 같은 Template 만
+    for bad in ('chair', '005_SOFA_LONG', '001_chair_bench'):
+        with pytest.raises(ValueError):
+            store.new_design_id(bad)                        # Template 은 등록된 기본 4개만(E-84 ②)
+    with pytest.raises(KeyError):
+        store.new_design_id('001_CHAIR_BENCH', '001_CHAIR_BENCH_V009')
+
+
+def test_save_design_keeps_record_and_never_overwrites(store):
+    """검사 합격한 설계만 design/2.0(version = V 번호 · family = Template 에서) + prompt · check · created 로. 같은 ID 는 다시 저장하지 않는다."""
+    rec = derived(store)
+    got = store.get_design('001_CHAIR_BENCH_V001')
+    assert got == rec and got['parent_id'] == BENCH and got['made_by'] == 'web'
+    assert got['version'] == 'V001' and got['family'] == 'chair'
+    assert got['check'] == {'ok': True, 'min_margin_mm': 9.5, 'errors': []} and got['prompt'] == '벤치 높게'   # check 는 세 칸만
+    assert [r['design_id'] for r in store.children(BENCH)] == ['001_CHAIR_BENCH_V001']
+    assert store.answer_get_design({'design_id': '001_CHAIR_BENCH_V001'})['placements']['model_id'] == '001_CHAIR_BENCH_V001'
+    with pytest.raises(ValueError):                        # 같은 ID 두 번째(다른 요청이 먼저 저장한 경우)
+        store.save_design(got['blocks'], got['recipe'], got['placements'], BENCH, 'web', check={'ok': True})
+
+
+@pytest.mark.parametrize('broken', ['not_ok', 'cad', 'sha', 'v000', 'old_name', 'family', 'parent_template', 'no_parent'])
+def test_save_design_refuses_what_robot_should_not_get(store, broken):
+    """저장하지 않는 것: 검사 불합격(SR-09) · made_by cad · 레시피 짝(sha) 틀림 · V000(기본 설계 몫) · 옛 이름 꼴 ·
+    family 가 Template 과 다름 · 부모가 다른 Template(마지막 방어선) · 부모 없음."""
+    design_id, parent, made_by, ok = '001_CHAIR_BENCH_V001', BENCH, 'web', True
+    if broken == 'v000':
+        design_id = '001_CHAIR_BENCH_V000'
+    elif broken == 'old_name':
+        design_id = 'chair_v1.1'
+    blocks, recipe, placements = as_new(store, BENCH, design_id)
+    if broken == 'not_ok':
+        ok = False
+    elif broken == 'cad':
+        made_by = 'cad'
+    elif broken == 'sha':
+        placements['recipe_sha256'] = '0' * 64
+    elif broken == 'family':
+        blocks['family'] = 'desk'
+    elif broken == 'parent_template':
+        parent = BACK
+    elif broken == 'no_parent':
+        parent = '001_CHAIR_BENCH_V009'
+    with pytest.raises(ValueError):
+        store.save_design(blocks, recipe, placements, parent, made_by, check={'ok': ok})
+    assert not (store.designs_dir / '001_CHAIR_BENCH_V001.json').exists()
+
+
+def test_list_has_last_build_and_builds_for(store):
+    """목록 요약에 가장 최근 조립 한 줄(E-72 — RAG 목록 요약 · 화면). 오차는 잰 값 중 가장 큰 것(mm), null 은 뺀다."""
+    def build(run_id, result, blocks):
+        return {'schema': 'build/1', 'run_id': run_id, 'design_id': BENCH, 'result': result,
+                'placed': 11 if result == 'DONE' else 4, 'total': 11, 'duration_s': 300.0, 'stop_count': 0, 'blocks': blocks}
+    store.save_build(build('R20261010_100000_aaaa', 'STOPPED', []))
+    store.save_build(build('R20261010_140000_bbbb', 'DONE', [{'block_id': 'X', 'dz_m': -0.0021, 'dx_m': None, 'dy_m': None},
+                                                              {'block_id': 'Y', 'dz_m': 0.0008, 'dx_m': None, 'dy_m': None}]))
+    rows = {r['design_id']: r for r in store.list_designs()}
+    assert rows[BENCH]['last_build'] == {'run_id': 'R20261010_140000_bbbb', 'result': 'DONE', 'placed': 11,
+                                         'total': 11, 'max_err_mm': 2.1}
+    assert rows[BACK]['last_build'] is None
+    assert [b['run_id'] for b in store.builds_for(BENCH)] == ['R20261010_140000_bbbb', 'R20261010_100000_aaaa']
+    assert store.builds_for(BACK) == []
+
+
+def test_template_filter_for_rag_list_and_examples(store):
+    """확인된 Template 의 설계만 GPT 에 보여 준다(E-84 ③ — 다른 Template 설계를 읽고 만든 후보는 저장에서 거절되므로).
+    examples_for = 그 V000 + 그 Template 의 최근 파생 n 개(최신 먼저), 각각 blocks 포함."""
+    derived(store)                                          # 001_CHAIR_BENCH_V001
+    newer = derived(store, '001_CHAIR_BENCH_V001')          # V002 — 더 최근
+    derived(store, BACK)                                    # 002_CHAIR_BACK_V001 — 다른 Template
+    assert [r['design_id'] for r in store.list_designs(template='001_CHAIR_BENCH')] == \
+        [BENCH, '001_CHAIR_BENCH_V001', '001_CHAIR_BENCH_V002']
+    ex = store.examples_for('001_CHAIR_BENCH', n=1)
+    assert [e['design_id'] for e in ex] == [BENCH, newer['design_id']]
+    assert all(e['blocks']['schema'] == 'blocks/2.0' for e in ex)
+    assert [e['design_id'] for e in store.examples_for('003_DESK_STAND')] == ['003_DESK_STAND_V000']
+    with pytest.raises(ValueError):
+        store.examples_for('chair')
+
+
 def test_designs_rest_and_robot_handlers(store):
     """REST: 목록 · 규칙(블록 크기 mm) · 하나 · 없으면 404. 앱이 get_design · save_build 를 저장소에 잇는다.
     손목 그림 · 스캔 사진 · 점군은 들고 있는 바이트 그대로, 없으면 404."""
@@ -327,6 +437,8 @@ def test_designs_rest_and_robot_handlers(store):
     assert client.get('/api/designs/002_CHAIR_BACK_V000').json()['design_id'] == '002_CHAIR_BACK_V000'
     assert client.get('/api/designs/nope').status_code == 404
     assert set(fake.handlers) == {'/d2/hmi/get_design', '/d2/hmi/save_build'}
+    assert client.get('/api/designs/001_CHAIR_BENCH_V000/builds').json() == []
+    assert client.get('/api/designs/nope/builds').status_code == 404
     for url in ('/api/robot/wrist.jpg', '/api/robot/scan.jpg', '/api/robot/scan_cloud.ply'):
         assert client.get(url).status_code == 404
     fake.blobs = {'wrist_image': b'\xff\xd8jpeg', 'scan_image': b'\xff\xd8scan', 'scan_cloud': b'ply\n'}

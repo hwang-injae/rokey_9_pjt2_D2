@@ -59,7 +59,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 설계 생성 | `POST /api/designs/generate {text}` → `{job_id}`, 진행은 `/ws` `{type: gen, job_id, stage, candidates, reference}` | 검사만 `d2/task/check_design/req` × 3 | `/d2/task/check_design` |
 | 후보 고르기 → 저장 | `POST /api/designs/generate/{job_id}/pick {index}` → `design/2.0` | — (검사 결과를 이미 받아 둠) | — |
 | 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/2.0`, 없으면 404) ✅ | — | — |
-| 조립 기록 | `GET /api/designs/{id}/builds` | — | — |
+| 조립 기록 | `GET /api/designs/{id}/builds`(build/1 전부, 최근 것 먼저 · 설계가 없으면 404) ✅(10/10) — 목록 요약에도 `last_build` 한 줄 | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
 | 스캔 [AI로 고치기] | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
 | 사진 · 점군 | `/ws` `{type: scan_image · scan_cloud, seq, stamp, bytes, run_id}` → `GET /api/robot/scan.jpg` · `/api/robot/scan_cloud.ply`(마지막 스캔 것만 메모리에, 없으면 404) ✅(10/10). `run_id` = 직전 `scan_result`의 것 — 화면은 `scan_result.run_id`와 같을 때만 보여 줌. 새 스캔이 오면 앞 것은 지움(점군 없는 스캔에 옛 점군이 안 남게) | `d2/vision/scan_image`(JPEG ≤ 500 KB) · `scan_cloud`(PLY ≤ 2 MB), QoS 1 | 다리가 `scan_result`의 `image_path`(PNG → JPEG로 줄임) · `cloud_path` 파일을 읽어 `scan_result` 바로 뒤에 보냄 ✅ |
@@ -103,12 +103,15 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 ④  화면에 3개 3D + "디자인을 고르세요" — 동시에 check_design × 3(차례로, 각 3초 목표) → 오는 대로 합격 · min_margin / 불합격 회색 + detail
 ⑤  3개 다 불합격 → errors[].detail 피드백으로 ③부터(최대 2번) → 그래도 실패 GEN_FAILED(이유 + 기본 설계 권함)
 ⑥  사람이 1개 고름 → "설계도 만드는 중" → 그 후보의 check_result/2.0(recipe · placements)로 save_design
-    (아직 검사 중이면 기다림) → 고른 1개만 designs · 나머지 2개는 rejected 기록(NFR-17) → "저장됨 · 출발을 누르세요"
+    (아직 검사 중이면 기다림) → 고른 1개만 designs(안 고른 후보는 메모리에서 버림 — E-84 ⑥, rejected 기록 없음) → "저장됨 · 출발을 누르세요"
 ⑦  [설계 선택] → hmi/command select_design → 작업 관리자가 get_design → READY → [출발]
 ```
 
 - 시간: LLM(≤ 30초 — 후보 3개 × 칸 9개라 늘 수 있음, W108에서 잼) + 검사 3번(≈ 10초) → 60초 목표. 후보는 backend 메모리(`job_id`)에만 — 새로고침하면 사라져도 된다(저장 전).
-- `design_id` = `<family>_v<version>`, 블록 이름의 설계 ID는 대문자(E-60). 저장 설계는 바뀌지 않는다(E-55 — 고치면 새 버전). `gen_path` 칸 없음(E-71).
+- `design_id` = `<Template ID>_V<3자리>`(10/10 E-84 · IRD 2장): Template = 기본 설계 4개 이름(`001_CHAIR_BENCH` …), 기본 = `_V000`, AI · 음성 · 스캔 = 같은 Template의 다음 번호(그 Template의 가장 큰 V + 1 — 부모와 상관없이 만든 차례). 부모 · 만든 방법은 `parent_id` · `made_by`에만, `version` = V 번호(`V001`). 저장 설계는 바뀌지 않는다(E-55 — 고치면 다음 번호). `gen_path` 칸 없음(E-71).
+- **ID는 검사 전에 정한다**(10/10, W111): 변환기 ①이 그 ID로 레시피 `model_id` · `block_id`를 만들기 때문. ③ 전에 `store.new_design_id(template, parent_id)`(AI = 사용자가 확인한 Template, 스캔 = 부모의 Template) → 후보 3개를 같은 ID로 `check_design` → 고른 1개만 `save_design`. 저장 때 다른 요청이 먼저 같은 ID를 쓰면 거절 → ID부터 다시 · 검사도 다시.
+- **참고 설계는 그 Template 안에서만**(E-84 ③): GPT 목록 요약 · 도구 `get_design` 허용 목록 = `store.list_designs(template=…)`, 자동 전환 = `store.examples_for(template)`(그 V000 + 최근 파생 3). 다른 Template 설계를 읽고 만든 후보는 저장에서 거절되기 때문.
+- `save_design`이 거절하는 것(저장하지 않음, 마지막 방어선): 검사 불합격(SR-09) · `made_by`가 web · voice · scan 아님 · ID가 E-84 꼴이 아님 · V000(기본 설계 몫) · 모르는 Template · `blocks.family`가 Template과 다름 · 레시피 짝(`model_id` · `recipe_sha256` — 로봇 작업 판단과 같은 `RecipeDocument` 확인) · 부모 없음 · 부모가 다른 Template. 저장 칸 = `design/2.0` + `prompt` · `check`(ok · min_margin_mm · errors) · `created`(FR-D02).
 - 검사 요청 · 응답은 IRD 그대로(`blocks/2.0`만 → `check_result/2.0`). **형식 버전 규칙(IRD 6장):** 앞자리 같으면 받고 모르는 칸 무시, 다르면 거절(이유에 받은 schema). 형식 이름 상수는 `design_store.py` 한 곳. 옛 `cad_structure/1.0` · `cad_recipe/1.0` · `blocks/1` 설계는 거절(변환 안 함, E-69 ⑧).
 
 ### 4-B. 스캔 → [AI로 고치기] (W125 챌린지, 10/9 PL ③)
@@ -145,14 +148,15 @@ web/backend/
 │                     (토픽 이름 · req/res 짝은 d2_bridge/bridge_codec.py 를 같이 씀)
 ├── design_gen.py     DesignGenerator — GPT-4o 호출 한 곳(4-A · 4-C)
 ├── design_store.py   DesignStore — 저장 한 곳(JSON 폴더 → PostgreSQL) + 형식 이름 상수 · 기본 설계 등록(d2_task 변환기 ② import, E-59)
-│                     W111 최소형 ✅(10/9): register_bases · list_designs · get_design · save_build(같은 run_id 한 번) + 로봇 get_design · save_build 답.
-│                     기본 설계는 도면에서 온 것이라 등록 때 check_design 을 부르지 않는다(로봇 PC 없이도 목록이 떠야 함). save_design · children · examples_for 는 W108 · W112
+│                     W111 ✅(10/9 · 10/10): register_bases · list_designs(+ last_build) · children · get_design · builds_for · examples_for ·
+│                     new_design_id · save_design(E-84 이름) · save_build(같은 run_id 한 번) + 로봇 get_design · save_build 답.
+│                     기본 설계는 도면에서 온 것이라 등록 때 check_design 을 부르지 않는다(로봇 PC 없이도 목록이 떠야 함)
 ├── prompts/          design_system.txt(설계 직접 작성 + 역할 목록 + 잡기 규칙 · 스캔 채우기 절) · blocks_schema.json(blocks/2.0 후보 3개)
 ├── voice.py          VoiceListener — 호스트(마이크 → Whisper → 의도 → MQTT d2/hmi/intent)
 ├── mock_robot.py     가짜 로봇 PC(W126 ✅, MQTT 만): 다리 연결 신호 · 처음 상태 · 가짜 조립(블록마다 progress) · 정지 · 스캔(→ SCAN_REVIEW +
 │                     scan_result, 추정 2개) · check_design 늘 합격(벤치). 실행 python3 web/backend/mock_robot.py --step 1.0
 ├── requirements.txt  fastapi · uvicorn[standard] · paho-mqtt · pyyaml (W108 openai · W088 psycopg 더함)
-└── data/             designs/ · builds/ · rejected/ · scan/<run_id>/ (gitignore)
+└── data/             designs/ · builds/ · scan/<run_id>/ (gitignore)
 ```
 
 ## 6. 다리 `d2_bridge`(로봇 PC, W127)
