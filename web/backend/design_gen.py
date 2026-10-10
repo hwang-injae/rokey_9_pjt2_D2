@@ -13,6 +13,7 @@ AI 가 빠뜨리거나 틀린 칸을 코드가 대신 채우지 않는다(E-69) 
 """
 import hashlib
 import json
+import re
 import string
 import time
 from pathlib import Path
@@ -28,6 +29,19 @@ MAX_READS = 2                    # 도구 get_design 최대 횟수(E-72)
 MAX_REGEN = 2                    # 3개 다 불합격일 때 다시 만드는 횟수(SDD 6.6)
 N_CANDIDATES = 3                 # 후보 수(E-67)
 FEEDBACK_MAX = 30                # 피드백 줄 수 상한 — 블록이 많이 틀려도 프롬프트가 지나치게 길어지지 않게
+# 검사 errors[].detail 의 낱말 → 고치는 법(다시 만들 때 AI 가 같은 실수를 되풀이하지 않게 — 10/10 시험: '공중'만 알려 주니 3번 다 같은 실수)
+FIX_HINTS = (
+    ('공중', '아래에 받치는 블록이 없다 — 받침 블록 윗면 위(x · y 가 겹치게)로 옮기거나, 그 아래 받침(다리 · 기둥)을 그쪽으로 넓혀라'),
+    ('여유', '무게중심이 받침 가장자리에 너무 가깝다 — 안쪽으로 옮기거나 받침을 그쪽으로 넓혀라(이어 붙인 다리 벽 등)'),
+    ('겹침', '두 블록이 파고든다 — 하나를 옮겨라(면끼리 닿는 것은 괜찮다)'),
+    ('grasp', '잡기를 괄호 안 \'가능\'한 것으로 바꿔라'),
+    ('잡을 면 없음', '옆이 막혀 손가락이 못 들어간다 — 옆 블록과 띄우거나 놓는 순서(order)를 바꿔라'),
+    ('작업영역 밖', '작업 영역을 넘는다 — 가운데 쪽으로 옮기거나 크기를 줄여라'),
+    ('작업대 밖', '작업대를 넘는다 — 가운데 쪽으로 옮기거나 크기를 줄여라'),
+    ('z<0', 'z 는 0 이상이다'),
+    ('역할 목록', '역할은 [역할 목록]의 이름만 쓴다'),
+    ('part', '같은 role · part 블록은 면으로 이어져야 한다 — 떨어진 덩어리는 part 번호를 나눠라'),
+)
 ORIS = ('x', 'y', 'xe', 'ye', 'zx', 'zy')   # IRD 2장 방향 코드
 PROMPTS = Path(__file__).parent / 'prompts'
 ROLES = Path(__file__).resolve().parents[2] / 'src' / 'd2_task' / 'd2_task' / 'roles.json'   # 변환기 ①과 같은 목록 파일
@@ -68,8 +82,10 @@ class DesignGenerator:
         role_lines = [f'- {k}: {v}' for k, v in roles['roles'].items()]
         role_lines += [f'- (옵션) {k}: {v} — 역할 뒤에 붙임(예 LEG_{k})' for k, v in roles.get('options', {}).items()]
         L, W, T = (round(v * 1000) for v in rules['block_size_m'])
+        self.extent = {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}   # IRD 2장 ori 표 — 피드백 설명용
         self.design_prompt = string.Template((Path(prompts_dir) / 'design_system.txt').read_text(encoding='utf-8')).substitute(
             L=L, W=W, T=T, area_half=round(rules['assembly_area_half_m'] * 1000), margin=rules['margin_mm'],
+            edge=f"{L / 2 - rules['margin_mm']:g}", half_L=f'{L / 2:g}', two_L=2 * L,     # 받침 예시 숫자(다리 끝 안쪽 · 이어 붙이기)
             max_blocks=rules['max_blocks'], finger_t=round(rules['finger_thickness_m'] * 1000, 1),
             finger_w=round(rules['finger_width_m'] * 1000, 1), roles='\n'.join(role_lines))
         self.template_prompt = string.Template((Path(prompts_dir) / 'template_system.txt').read_text(encoding='utf-8'))
@@ -179,7 +195,7 @@ class DesignGenerator:
                 if attempt > MAX_REGEN:
                     break
                 progress('retry', {'attempt': attempt + 1})
-                messages += [{'role': 'assistant', 'content': msg.content}, {'role': 'user', 'content': self._feedback(cands)}]
+                messages += [{'role': 'assistant', 'content': msg.content}, {'role': 'user', 'content': self._feedback(cands, self.extent)}]
                 msg = self._chat(log, MODEL, messages, self._candidates_format(),
                                  **({'tools': [self._tool(allowed)], 'tool_choice': 'none'} if read else {}))
             raise GenError('GEN_FAILED', 'AI 후보가 검사를 통과하지 못했어요 — 기본 설계를 골라 보세요', last)
@@ -258,6 +274,8 @@ class DesignGenerator:
             raise
         except Exception as e:   # noqa: BLE001 — 어떤 실패든 화면에는 '생성 실패' 한 줄로
             log['calls'].append({'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'error': f'{type(e).__name__}: {e}'})
+            if 'insufficient_quota' in str(e) or 'no credits' in str(e):   # 429 중 '크레딧 없음'은 기다려도 안 풀린다 — 화면에 그대로
+                raise GenError('GEN_FAILED', 'OpenAI 크레딧이 없어요 — 키 담당(PL)이 크레딧을 채워야 해요') from e
             raise GenError('GEN_FAILED', f'AI 호출 실패({type(e).__name__}) — 잠시 뒤 다시') from e
         msg = resp.choices[0].message
         usage = getattr(resp, 'usage', None)
@@ -297,17 +315,54 @@ class DesignGenerator:
                 'recipe': res.get('recipe') if ok else None, 'placements': res.get('placements') if ok else None}
 
     @staticmethod
-    def _feedback(cands):
-        """후보마다 검사 errors 를 한 줄씩 — 다음 답에서 고치게(SDD 6.6 ⑤). 너무 길면 앞 FEEDBACK_MAX 줄만."""
+    def _feedback(cands, extent):
+        """후보마다 검사 errors 를 묶고 오류마다 고치는 법(FIX_HINTS) · 그 블록 위치를 붙인다 — 다음 답에서 고치게(SDD 6.6 ⑤).
+
+        위치 설명은 판정이 아니다(합격 · 불합격은 검사 묶음이 정함) — AI 가 어느 층이 비었는지 알게 할 뿐(10/10 시험: 다리를 2층만 쌓고 좌판을 4층 위에).
+        너무 길면 앞 FEEDBACK_MAX 줄만.
+        """
         lines = []
         for i, c in enumerate(cands, 1):
-            for e in c['check']['errors']:
-                where = f"{e['block']}번 블록 — " if e.get('block') is not None else ''
-                lines.append(f"후보 {i}: {where}{e.get('detail') or e.get('reason')}")
+            errs = c['check']['errors']
+            if not errs:
+                continue
+            lines.append(f"후보 {i}({c['idea']}):")
+            blocks = {b.get('order'): b for b in c['blocks']['blocks'] if isinstance(b, dict)}
+            for e in errs:
+                detail = str(e.get('detail') or e.get('reason'))
+                hint = next((h for key, h in FIX_HINTS if key in detail), '')
+                where = DesignGenerator._where(detail, blocks, extent)
+                lines.append(f'  - {detail}{where}' + (f' → 고칠 것: {hint}' if hint else ''))
         if not lines:
             lines = ['후보가 없거나 검사 결과를 받지 못했다']
-        return ('[검사 결과] 후보가 모두 검사에서 떨어졌다. 아래를 고쳐 후보 3개를 처음부터 다시 써라(규칙 · 칸은 그대로).\n'
-                + '\n'.join(lines[:FEEDBACK_MAX]))
+        return ('[검사 결과] 후보가 모두 검사에서 떨어졌다. 후보마다 아래 문제를 고쳐 3개를 다시 써라 — 생각(idea)은 살리되, '
+                '받침이 모자라면 받침(다리 · 기둥)을 넓힌다. 규칙 · 칸은 그대로.\n' + '\n'.join(lines[:FEEDBACK_MAX]))
+
+    @staticmethod
+    def _where(detail, blocks, extent):
+        """오류 글에 나온 블록의 위치 설명. '공중'이면 그 x · y 아래 블록 윗면의 가장 높은 z 도(어느 층이 비었는지). 모르면 ''."""
+        nums = [int(n) for n in re.findall(r'(\d+)번', detail)]
+        if not nums or nums[0] not in blocks:
+            return ''
+        parts = []
+        for n in nums[:2]:
+            b = blocks.get(n)
+            if b and b.get('ori') in extent:
+                parts.append(f"{n}번 ({b.get('x')}, {b.get('y')}, z {b.get('z')}, {b.get('ori')})")
+        text = ' [' + ' · '.join(parts) + ']' if parts else ''
+        if '공중' in detail:
+            a = blocks[nums[0]]
+            try:
+                ax, ay, _ = extent[a['ori']]
+                tops = []
+                for b in blocks.values():
+                    bx, by, bz = extent[b['ori']]
+                    if b is not a and abs(b['x'] - a['x']) < (ax + bx) / 2 and abs(b['y'] - a['y']) < (ay + by) / 2 and b['z'] + bz <= a['z']:
+                        tops.append(b['z'] + bz)
+                text += f" — 이 블록 아랫면 z {a['z']}, 그 아래 블록 윗면은 가장 높아야 z {max(tops) if tops else '없음(바닥까지 비어 있음)'}"
+            except (KeyError, TypeError):
+                pass
+        return text
 
     # ---------- 프롬프트 조각 ----------
     def _request_text(self, text, template, rows):
@@ -352,8 +407,9 @@ class DesignGenerator:
             'type': 'object', 'additionalProperties': False, 'required': ['out_of_scope', 'reason', 'candidates'],
             'properties': {'out_of_scope': {'type': 'boolean'}, 'reason': {'type': 'string'},
                            'candidates': {'type': 'array', 'items': {
-                               'type': 'object', 'additionalProperties': False, 'required': ['idea', 'blocks'],
-                               'properties': {'idea': {'type': 'string'}, 'blocks': {'type': 'array', 'items': block}}}}}})
+                               'type': 'object', 'additionalProperties': False, 'required': ['idea', 'plan', 'blocks'],
+                               'properties': {'idea': {'type': 'string'}, 'plan': {'type': 'string'},     # plan 먼저 — 층별 계산을 쓰고 블록을 쓰게
+                                              'blocks': {'type': 'array', 'items': block}}}}}})
 
     @staticmethod
     def _format(name, schema):

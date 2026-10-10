@@ -235,6 +235,17 @@ button.resume { border-color: var(--ok); color: var(--ok); }
 .gen-confirm-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .gen-confirm select { font: inherit; font-size: 16px; padding: 8px 10px; color: var(--text); background: var(--btn-bg);
   border: 1px solid var(--line); border-radius: 8px; }
+.tpl-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.tpl { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 2px solid var(--line); border-radius: 10px;
+  background: var(--panel); cursor: pointer; min-width: 0; }
+.tpl:hover { border-color: var(--mill-sel); }
+.tpl:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.tpl.selected { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+.tpl.disabled { opacity: 0.5; cursor: not-allowed; }
+.tpl-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.tpl .view3d { height: 130px; }
+.tpl .view3d-empty { position: static; height: 130px; }
+.tpl small { font-size: 12px; overflow-wrap: anywhere; }
 .cands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .cand { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 2px solid var(--line); border-radius: 10px; background: var(--panel-2); min-width: 0; }
 .cand.failed { opacity: 0.5; }
@@ -276,6 +287,7 @@ button.resume { border-color: var(--ok); color: var(--ok); }
 }
 @media (max-width: 900px) {
   .cands { grid-template-columns: 1fr; }
+  .tpl-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 600px) {
   .gen-input { flex-direction: column; }

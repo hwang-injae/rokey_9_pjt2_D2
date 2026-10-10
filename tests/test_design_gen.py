@@ -54,7 +54,8 @@ def tool_call(design_id, cid='c1'):
 
 def answer(cands, out=False, reason=''):
     """AI 의 후보 답(구조화 출력 JSON)."""
-    body = {'out_of_scope': out, 'reason': reason, 'candidates': [{'idea': f'안 {i}', 'blocks': b} for i, b in enumerate(cands)]}
+    body = {'out_of_scope': out, 'reason': reason,
+            'candidates': [{'idea': f'안 {i}', 'plan': 'z0: …', 'blocks': b} for i, b in enumerate(cands)]}
     return SimpleNamespace(content=json.dumps(body, ensure_ascii=False), refusal=None, tool_calls=None)
 
 
@@ -130,7 +131,9 @@ def test_regenerates_with_check_feedback_then_succeeds(store, good, bad):
     assert r['attempts'] == 2 and r['candidates'][0]['check']['ok'] and r['design_id'] == '001_CHAIR_BENCH_V001'
     retry = client.calls[-1]
     assert retry['tool_choice'] == 'none' and retry['messages'][-1]['content'].startswith('[검사 결과]')
-    assert '9번 블록' in retry['messages'][-1]['content']
+    fb = retry['messages'][-1]['content']
+    assert '9번' in fb and '공중' in fb and '고칠 것' in fb and '후보 1(안 0)' in fb     # 후보별로 묶고 고치는 법을 붙임
+    assert '아랫면 z 75.0' in fb and '가장 높아야 z 60.0' in fb                        # 어느 층이 비었는지(다리 꼭대기 60)
 
 
 def test_gives_up_after_two_regenerations(store, bad):
@@ -224,3 +227,12 @@ def test_no_key_is_gen_failed(store, monkeypatch):
     with pytest.raises(GenError) as e:
         gen.generate('벤치', TEMPLATE)
     assert e.value.code == 'GEN_FAILED'
+
+
+def test_no_credit_message(store):
+    """크레딧이 없으면(429 insufficient_quota) 기다리라는 말 대신 크레딧을 채우라고 알린다(10/10 실제로 겪음)."""
+    gen, _ = make(store, [RuntimeError("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")])
+    with pytest.raises(GenError) as e:
+        gen.classify('벤치')
+    assert e.value.code == 'GEN_FAILED' and '크레딧' in e.value.message
+

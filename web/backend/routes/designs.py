@@ -127,11 +127,12 @@ def choose_template(body: TextBody, request: Request):
     if not text:
         raise HTTPException(400, '요청 문장이 비었어요')
     gen = request.app.state.gen
+    templates = [{'id': k, 'label': v} for k, v in gen.templates().items()]   # 실패해도 준다 — AI 가 못 고르면 사람이 직접 고르게
     try:
         choice = gen.classify(text)
     except GenError as e:
-        return {'success': False, 'code': e.code, 'message': e.message}
-    return {'success': True, **choice, 'templates': [{'id': k, 'label': v} for k, v in gen.templates().items()]}
+        return {'success': False, 'code': e.code, 'message': e.message, 'templates': templates}
+    return {'success': True, **choice, 'templates': templates}
 
 
 @router.post('/generate')

@@ -1,10 +1,11 @@
 'use client';
 // AI 설계 만들기 패널(W112 · W163) — 글상자 → AI 가 고른 모양(Template) 확인 · 바꾸기 → 후보 3개 3D + 검사 결과 → 사람이 1개 고름 → 저장
-// (web/README 4-A · IRD 8.3 · E-84 ③). 로봇을 움직이지 않는다 — 저장까지만. 로봇에 보내는 것은 왼쪽 [설계 선택] → [출발](사람, SR-09).
+// (web/README 4-A · IRD 8.3 · E-84 ③). 모양은 기본 설계 4개를 작은 3D 카드로 보여 주고 누르면 고른다(AI 추천 표시).
+// 로봇을 움직이지 않는다 — 저장까지만. 로봇에 보내는 것은 왼쪽 [설계 선택] → [출발](사람, SR-09).
 // 진행: /ws {type: gen} 알림이 오면 job 을 GET 으로 다시 받는다(알림이 몰려와도 빠짐없이). 알림이 끊겨도 만드는 동안 1초마다 다시 받는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
-import type { GenCandidate, GenJob, Rules, TemplateChoice } from '@/lib/types';
+import type { Design, GenCandidate, GenJob, Rules, TemplateChoice } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
 import { roleItems } from './DesignView';
 import Preview3D from './Preview3D';
@@ -65,7 +66,12 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
     const r = await api.chooseTemplate(t);
     setBusy(false);
     if (!r.data) return setError(r.error ?? '웹 서버 답이 없어요');
-    if (!r.data.success) return setError(`${FAIL_KO[r.data.code ?? ''] ?? r.data.code} — ${r.data.message ?? ''}`);
+    if (!r.data.success) {
+      // AI 가 모양을 못 골라도(크레딧 · 네트워크) 사람이 카드에서 직접 고를 수 있게 목록은 보여 준다
+      setError(`${FAIL_KO[r.data.code ?? ''] ?? r.data.code} — ${r.data.message ?? ''}`);
+      if (r.data.templates?.length) setChoice({ ...r.data, template: null });
+      return;
+    }
     setChoice(r.data);
     setTemplate(r.data.template ?? '');
     onLog('gen', r.data.template ? `AI가 고른 모양: ${r.data.template}` : 'AI: 맞는 모양이 없어요');
@@ -127,25 +133,25 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
         <div className="gen-confirm">
           {choice.template ? (
             <p>
-              AI가 고른 모양: <b>{label(choice.template)}</b> <span className="muted">({choice.template})</span> — {choice.reason}
+              AI가 고른 모양: <b>{title(label(choice.template))}</b> — {choice.reason} <span className="muted">(다른 모양을 눌러 바꿀 수 있어요)</span>
             </p>
-          ) : (
+          ) : choice.success ? (
             <p className="bad-text">지금 만들 수 있는 모양이 아니에요 — {choice.reason} 꼭 만들려면 아래에서 모양을 직접 고르세요.</p>
+          ) : (
+            <p>AI가 모양을 고르지 못했어요 — 아래에서 직접 고르세요.</p>
           )}
+          <TemplateCards
+            templates={choice.templates ?? []}
+            aiPick={choice.template ?? null}
+            value={template}
+            onChange={setTemplate}
+            rules={rules}
+            dark={dark}
+            disabled={busy}
+          />
           <div className="gen-confirm-row">
-            <label>
-              모양{' '}
-              <select value={template} onChange={(e) => setTemplate(e.target.value)} disabled={busy}>
-                {!template && <option value="">— 고르세요 —</option>}
-                {choice.templates?.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button className="primary" onClick={start} disabled={busy || !template}>
-              이 모양으로 후보 3개 만들기
+              {template ? `'${title(label(template))}' 모양으로 후보 3개 만들기` : '모양을 고르세요'}
             </button>
           </div>
         </div>
@@ -154,6 +160,67 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
       {job && <JobView job={job} rules={rules} dark={dark} canPick={job.state === 'ready' && !busy} onPick={pick} />}
     </section>
   );
+}
+
+/** Template 설명 '벤치 — 등받이 없는 의자(…) (기본 설계 …)' 에서 앞 이름만 */
+const title = (labelText: string) => labelText.split(' — ')[0];
+
+/** 모양(Template) 고르기 카드 — 기본 설계(V000) 작은 3D · 이름 · 설명. 누르면 고름(E-84 ③ 사용자 확인 — W163) */
+function TemplateCards(props: {
+  templates: { id: string; label: string }[];
+  aiPick: string | null;
+  value: string;
+  onChange: (id: string) => void;
+  rules: Rules | null;
+  dark: boolean;
+  disabled: boolean;
+}) {
+  const { templates, aiPick, value, onChange, rules, dark, disabled } = props;
+  const [designs, setDesigns] = useState<Record<string, Design | null>>({});
+  useEffect(() => {
+    let live = true;
+    for (const t of templates) {
+      api.getDesign(`${t.id}_V000`).then((d) => live && setDesigns((m) => ({ ...m, [t.id]: d })));
+    }
+    return () => {
+      live = false;
+    };
+  }, [templates]);
+  return (
+    <div className="tpl-cards">
+      {templates.map((t) => {
+        const d = designs[t.id];
+        const [name, ...rest] = t.label.split(' — ');
+        return (
+          <div
+            key={t.id}
+            role="button"
+            tabIndex={0}
+            aria-pressed={value === t.id}
+            className={`tpl${value === t.id ? ' selected' : ''}${disabled ? ' disabled' : ''}`}
+            onClick={() => !disabled && onChange(t.id)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && !disabled && onChange(t.id)}
+          >
+            <div className="tpl-head">
+              <b>{name}</b>
+              {aiPick === t.id && <span className="tag ok">AI 추천</span>}
+            </div>
+            {d && rules ? (
+              <TemplatePreview design={d} rules={rules} dark={dark} />
+            ) : (
+              <div className="view3d-empty">{d === null ? '그림을 못 받았어요' : '그림 받는 중…'}</div>
+            )}
+            <small className="muted">{rest.join(' — ')}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TemplatePreview({ design, rules, dark }: { design: Design; rules: Rules; dark: boolean }) {
+  const items = useMemo(() => roleItems(design.blocks.blocks), [design]);
+  return <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={design.design_id} dark={dark} />;
 }
 
 /** 생성 작업 하나 — 진행 한 줄 · 참고한 설계 · 후보 3개 */

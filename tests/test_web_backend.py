@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_bridge', ROOT / 'src' / 'd2_task'):
     sys.path.insert(0, str(p))
 
+from design_gen import GenError  # noqa: E402
 from mqtt_client import MqttClient  # noqa: E402
 
 # app.py 는 불러오는 순간 저장소를 열고 기본 설계를 등록한다 — 시험이 실제 web/backend/data(웹 PC 데이터)를 바꾸지 않게 임시 폴더로
@@ -276,6 +277,9 @@ def test_generate_routes_job_flow(store):
         {'success': True, 'template': '001_CHAIR_BENCH', 'reason': '벤치 모양',
          'templates': [{'id': '001_CHAIR_BENCH', 'label': '벤치'}, {'id': '002_CHAIR_BACK', 'label': '등받이 의자'}]}
     assert client.post('/api/designs/template', json={'text': '  '}).status_code == 400
+    gen.classify = lambda text: (_ for _ in ()).throw(GenError('GEN_FAILED', 'OpenAI 크레딧이 없어요'))
+    fail = client.post('/api/designs/template', json={'text': '벤치'}).json()
+    assert fail['success'] is False and '크레딧' in fail['message'] and len(fail['templates']) == 2     # 사람이 직접 고르게
     job = client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH'}).json()['job_id']
     assert client.post('/api/designs/generate', json={'text': '또', 'template': '001_CHAIR_BENCH'}).status_code == 409   # 하나씩
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 아직 도는 중

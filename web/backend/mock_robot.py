@@ -11,7 +11,8 @@
 - 가짜 조립 중 블록마다 가짜 손목 검출 그림(d2/vision/wrist_image, 640×480 JPEG — 진짜는 find_blocks 때 손목 비전이 그림). PIL 이 없으면 그림만 안 보냄
 - 스캔 끝에 scan_result 바로 뒤 가짜 스캔 사진 · 점군(d2/vision/scan_image JPEG · scan_cloud PLY — 진짜는 다리가 파일을 읽어 보냄, IRD 10.5).
   그림 · 점은 비전 가짜 스캔(d2_vision mock_scan)과 같다. numpy · PIL 이 없으면 사진 · 점군만 안 보냄
-- 설계는 저장소 레시피 파일만 안다(웹 저장소 W111 전). 로봇을 움직이는 코드는 없다.
+- 설계는 진짜 작업 관리자처럼 웹 저장소에 get_design 을 MQTT 로 묻는다(AI · 스캔 설계도 — 레시피 파일에 없음).
+  웹이 service_s 안에 답이 없으면 레시피 폴더 파일로(기본 설계만). 로봇을 움직이는 코드는 없다.
 실행: python3 web/backend/mock_robot.py [--host localhost] [--step 1.0]
 """
 import argparse
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -29,8 +31,8 @@ for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS �
     sys.path.insert(0, str(REPO / 'src' / _pkg))
 
 import yaml  # noqa: E402
-from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, alive_payload, parse_request,  # noqa: E402
-                                    req_topic, res_topic)
+from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, PendingReplies, alive_payload,  # noqa: E402
+                                    parse_request, req_topic, res_topic)
 from d2_task.blocks_to_recipe import BlocksToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from d2_task.recipe_document import RecipeDocument  # noqa: E402
@@ -41,6 +43,7 @@ RECIPES = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
 ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 BENCH = '001_CHAIR_BENCH_V000'           # 가짜 스캔 결과 · nearest_base 에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')
+GET_DESIGN = '/d2/hmi/get_design'   # 로봇이 부름 — 웹 저장소가 답한다(진짜 작업 관리자 → 다리와 같은 토픽)
 CANCEL_OK = ('READY', 'ERROR', 'SCAN_REVIEW')     # 취소를 받는 상태(SDD 5.1, 10/8 E-62)
 RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'WAIT_HMI', 'VERIFY', 'RECOVER', 'ERROR')   # 조립 중(task_manager 와 같음)
 
@@ -97,6 +100,8 @@ class MockRobot:
         self.checker = DesignChecker(cfg)      # 로봇 PC task_node 와 같은 연결(검사 묶음 + 변환기 ① — 손가락 규칙은 검사 묶음 것)
         self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, self.block_mm).convert
         self.step_s = step_s
+        self.service_s = float(cfg['timeout']['service_s'])   # get_design 답을 기다리는 시간(작업 관리자와 같은 값)
+        self.pending = PendingReplies()
         self.lock = threading.Lock()
         self.st = dict(state='IDLE', run_id=None, design_id=None, block_id=None, message_id=None, message='대기')
         self.locked = False
@@ -112,7 +117,22 @@ class MockRobot:
 
     # ---------- 설계 ----------
     def design(self, design_id):
-        """레시피 두 파일 → (doc, blocks/2.0). 없으면 OSError · ValueError."""
+        """설계 → (doc, blocks/2.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
+        body = self.fetch_design(design_id)
+        if body is not None:
+            return RecipeDocument(body['recipe'], body['placements']), body['blocks']
+        return self.local_design(design_id)
+
+    def fetch_design(self, design_id):
+        """d2/hmi/get_design/req → …/res(service_s 안). 답 dict(success true) 또는 None(웹 없음 · 없는 설계 · 시간 초과)."""
+        req_id = uuid.uuid4().hex
+        self.pending.open(req_id)
+        self.c.publish(req_topic(GET_DESIGN), json.dumps({'req_id': req_id, 'design_id': design_id}), qos=1)
+        body = self.pending.wait(req_id, self.service_s)
+        return body if body and body.get('success') is True else None
+
+    def local_design(self, design_id):
+        """레시피 두 파일 → (doc, blocks/2.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
         family = 'chair' if 'CHAIR' in design_id.upper() else 'desk'
         doc = RecipeDocument.load(RECIPES, design_id)
         return doc, RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
@@ -177,7 +197,7 @@ class MockRobot:
         self.set_state('SCAN_INFER', '스캔 결과 계산 중', 'scan_running')
         if self.abort.wait(self.step_s):
             return
-        _, blocks = self.design(BENCH)
+        _, blocks = self.local_design(BENCH)
         items = [{'order': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
                  for i, b in enumerate(blocks['blocks'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
         scan = {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
@@ -265,7 +285,7 @@ class MockRobot:
     # ---------- MQTT ----------
     def _on_connect(self, client, _u, _f, rc):
         """요청 토픽 구독 + 처음 상태를 retained 로."""
-        client.subscribe([(req_topic(n), 1) for n in SERVICES])
+        client.subscribe([(req_topic(n), 1) for n in SERVICES] + [(res_topic(GET_DESIGN), 1)])
         self.set_safety(self.locked)
         self.set_state(self.st['state'], self.st['message'], self.st['message_id'])
         self.pub('d2/gripper/state', {'schema': 'gripper_state/1', 'width_m': None, 'grasped': False}, qos=0)
@@ -278,7 +298,15 @@ class MockRobot:
             b = parse_request(msg.payload)
         except ValueError:
             return
+        if msg.topic == res_topic(GET_DESIGN):            # 웹 저장소의 설계 답 — 기다리는 design() 에 넘긴다
+            self.pending.resolve(b['req_id'], b)
+            return
         name = '/' + msg.topic[:-len('/req')]
+        # 처리는 따로 스레드 — 설계 선택이 get_design 답을 기다리는 동안 이 paho 스레드가 그 답을 받아야 한다
+        threading.Thread(target=self._serve, args=(client, name, b), daemon=True).start()
+
+    def _serve(self, client, name, b):
+        """요청 하나를 처리해 …/res 로 답한다(req_id 그대로)."""
         client.publish(res_topic(name), json.dumps({**self.answer(name, b), 'req_id': b['req_id']}, ensure_ascii=False), qos=1)
 
     def run(self):
