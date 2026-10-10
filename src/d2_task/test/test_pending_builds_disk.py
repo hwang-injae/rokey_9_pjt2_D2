@@ -106,12 +106,14 @@ def test_실패하거나_잘못된_답이면_파일을_안_지운다(tmp_path):
 
 
 def test_빠른_응답에도_삭제_뒤_파일이_다시_만들어지지_않는다(tmp_path):
+    """보관 직후 성공 응답에도 삭제가 유지된다. 느린 CI에서는 최대 2초간 보관 완료를 기다린다."""
     for _ in range(5):
         m, io, log = make(tmp_path)
         a = assemble(m, io)
-        for _ in range(200):                                        # 보관이 끝나자마자 보내고 바로 성공 응답
+        deadline = time.monotonic() + 2.0                          # CI 부하에 따라 쓰기 스레드가 늦게 돌 수 있어 반복 횟수 대신 실제 시간을 제한한다
+        while True:
             sent = m.builds_to_send(0.0, RETRY_S)
-            if sent:
+            if sent or time.monotonic() >= deadline:
                 break
             time.sleep(0.001)
         assert [r for r, _ in sent] == [a]

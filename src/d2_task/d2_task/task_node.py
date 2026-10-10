@@ -9,8 +9,8 @@
         /d2/safety/stop (StopRequest — 시간 초과 · Ctrl+C 때 먼저 정지 요청),
         /d2/vision/scan_capture · scan_infer (JsonQuery — 촬영 점군 수집과 추론),
         /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/1 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
-내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
-        /d2/task/scan_result (JSON scan_result/1 — 구조 검사·저장은 HMI에서 진행)
+내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1.1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
+        /d2/task/scan_result (JSON scan_result/1.2 — 구조 검사·저장은 HMI에서 진행)
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
 설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/2.0) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
@@ -93,7 +93,8 @@ class TaskNode(Node):
         else:
             self.get_logger().warn('[작업 관리자] 조립 기록 파일이 꺼져 있다(log_dir 이 비어 있음) — run_id 와 요약만 만든다')
         self.manager = TaskManager(cfg, self, logger,
-                                   monitor_hmi=bool(self.get_parameter('monitor_hmi').value))
+                                   monitor_hmi=bool(self.get_parameter('monitor_hmi').value),
+                                   open_width_m=0.0)       # 0 = pick_place 가 잡기마다 robot.yaml grasp_open_pick_m 을 쓴다(한 값으로 고정하면 잡기가 섞일 때 PLAN_FAILED, 10/10 W130)
         self.checker = DesignChecker(cfg)
         self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
@@ -267,7 +268,7 @@ class TaskNode(Node):
         return self._scan_query(self.find_cli, dict(run_id=run_id), should_abort, default_reason='ERROR')
 
     def publish_scan_result(self, body):
-        """완성된 scan_result/1(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
+        """완성된 scan_result/1.2(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
         self.scan_pub.publish(String(data=json.dumps(body, ensure_ascii=False, allow_nan=False)))
 
     def _call(self, client, request, should_abort, timeout_s):
@@ -416,7 +417,7 @@ class TaskNode(Node):
         self.state_pub.publish(String(data=json.dumps(msg, ensure_ascii=False, allow_nan=False)))
 
     def publish_progress(self, msg):
-        """/d2/task/progress 로 progress/1 JSON 을 보낸다(안 잰 값은 이미 null)."""
+        """/d2/task/progress 로 progress/1.1 JSON 을 보낸다(안 잰 값은 이미 null)."""
         self.progress_pub.publish(String(data=json.dumps(msg, ensure_ascii=False, allow_nan=False)))
 
 

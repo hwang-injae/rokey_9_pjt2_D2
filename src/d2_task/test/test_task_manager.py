@@ -33,7 +33,7 @@ OK = (True, '')
 SAFE_OK = {'stopped': False, 'locked': False, 'reason': ''}
 SAFE_STOP = {'stopped': True, 'locked': True, 'reason': 'STOP_WEB'}
 # IRD 2장 '화면 알림 message_id' 중 이번에 쓰는 값. 이 밖의 값은 새로 만든 이름이라 나오면 안 된다
-IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost', 'scan_running', 'scan_review'}
+IRD_MESSAGE_IDS = {'ready_to_start', 'supply_empty', 'tilted_block', 'no_match_block', 'offset_over', 'stopped', 'done', 'voice_start_ignored', 'hmi_lost', 'scan_running', 'scan_review'}
 
 
 class FakeIO:
@@ -258,13 +258,24 @@ def test_BUSY는_PICK_PLACE에_머물며_다시_시도한다():
     assert 'ERROR' not in seen(io)
 
 
-@pytest.mark.parametrize('reason', ['TIMEOUT', 'ERROR', 'GRIPPER_NO_RESPONSE'])
+@pytest.mark.parametrize('reason', ['TIMEOUT', 'ERROR', 'GRIPPER_NO_RESPONSE', 'NO_FEEDBACK'])
 def test_IRD_정식_실패_코드는_ERROR로_간다(reason):
     """일반 실패는 ERROR. TIMEOUT 도 정지 서비스를 못 부르면 ERROR 에서 정지 신호를 기다린다."""
     m, io = go(pick_script=[(False, reason)])
     drive(m, 'ERROR')
     assert reason in io.states[-1]['message'] and 'STOPPED' not in seen(io)
     assert_ird_only(io)
+
+
+@pytest.mark.parametrize('reason', ['GRIPPER_NO_RESPONSE', 'NO_FEEDBACK'])
+def test_그리퍼_응답_없음은_사람이_할_일을_글로_알린다(reason):
+    """E-74: 복구 절차 4절대로 블록 받치기 · 연결 복구 · 열기 · 블록 빼기를 안내한다. 그리퍼를 자동으로 열려고 pick_place 를 다시 부르지 않는다."""
+    m, io = go(pick_script=[(False, reason)])
+    drive(m, 'ERROR')
+    text = io.states[-1]['message']
+    assert '[다시 시작]' in text and '전원' in text and '블록' in text and reason in text
+    assert text.index('받친') < text.index('복구') < text.index('열어') < text.index('뺀 뒤')
+    assert len(picks(io)) == 1
 
 
 def test_IRD에_없는_reason도_일반_실패로_ERROR():
@@ -283,7 +294,7 @@ def test_이동_관측_실패도_ERROR(script, reason):
 
 
 # ---------- 정지 · 복구 ----------
-@pytest.mark.parametrize('reason', ['STOPPED', 'CANCELED', 'NO_FEEDBACK'])
+@pytest.mark.parametrize('reason', ['STOPPED', 'CANCELED'])
 def test_정지류_결과는_STOPPED_풀리면_RECOVER_CHECK_이어_간다(reason):
     m, io = go(pick_script=[(False, reason)])
     drive(m, 'STOPPED')

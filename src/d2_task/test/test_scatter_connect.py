@@ -5,9 +5,11 @@
 공급 칸(slots)과 흩뿌림(scatter)으로 갈라지고, 흩뿌림이 observe_supply 이동 → find_blocks 조회 → 후보 고르기 → PICK_PLACE 로 이어지며
 정지 · 새 요청 뒤에 도착한 답은 적용되지 않는 것을 확인한다.
 """
+import ast
 import copy
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -73,6 +75,25 @@ def test_scatter는_블록마다_관측_조회_고르기_집기로_끝까지_간
     assert goal['supply_slot'] == '' and goal['open_width_m'] == 0.0865 and 'pick_pose' in goal and 'place_pose' in goal
 
 
+def test_열림_폭_0은_정상_값이다_모든_집기_요청이_0을_싣는다():
+    """task 노드가 넘기는 값(0 = pick_place 가 잡기마다 robot.yaml grasp_open_pick_m 을 씀). 0 이어도 ERROR 없이 끝까지 가고, 잡기가 달라도 한 값(0)으로 간다."""
+    m, io = make(open_width_m=0.0)
+    widths, original = [], io.pick_place
+    io.pick_place = lambda goal, *a, **k: (widths.append(goal['open_width_m']), original(goal, *a, **k))[1]
+    start(m)
+    drive(m, 'DONE')
+    assert m.last_build['placed'] == len(IDS) and widths == [0.0] * len(IDS)
+
+
+def test_task_노드가_열림_폭_0을_TaskManager에_넘긴다():
+    """노드가 안 넘기면(None) scatter 로 바꾸는 순간 첫 블록에서 '열림 폭 미정' ERROR 가 난다(10/10 W130 점검 B30). ROS 없이 소스에서 확인한다."""
+    tree = ast.parse((Path(__file__).parents[1] / 'd2_task/task_node.py').read_text(encoding='utf-8'))
+    calls_ = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, 'id', '') == 'TaskManager']
+    assert len(calls_) == 1
+    kw = {k.arg: k.value for k in calls_[0].keywords}
+    assert isinstance(kw.get('open_width_m'), ast.Constant) and kw['open_width_m'].value == 0.0
+
+
 def test_목표_블록은_작업_판단이_정하고_어디서_집을지만_방식이_정한다():
     """scatter 도 블록 순서 · 잡기 · 놓을 자세는 slots 와 같다(planner.next_target)."""
     m, io = make()
@@ -104,11 +125,11 @@ def test_계속은_알림을_낸_뒤에야_받는다():
 
 
 @pytest.mark.parametrize('blocks, message_id', [
-    ([blk(overlap='under')], None),                                            # 덮인 것뿐 → 맞는 블록 없음 안내(이름 미정이라 message_id 없음)
+    ([blk(overlap='under')], 'no_match_block'),                                # 덮인 것뿐 → 맞는 블록 없음 알림(E-73)
     ([blk(tilted=True)], 'tilted_block'),                                      # 기울어진 것만 남음 → IRD 알림
     ([blk(tilted=True), blk(x=0.40, overlap='under')], 'tilted_block'),        # 기울어진 것 + 덮인 것뿐(E-68) → 같은 알림
-    ([blk(tilted=True), blk(x=0.40, up='LENGTH')], None),                      # 다른 제외 이유(목표와 다른 자세)가 섞이면 알림 없이 안내만
-    ([blk(tilted=True), blk(x=0.40, overlap='under'), {'x_m': 'abc'}], None),  # 잘못된 값이 섞여도 알림 없이 안내만
+    ([blk(tilted=True), blk(x=0.40, up='LENGTH')], 'no_match_block'),          # 다른 제외 이유(목표와 다른 자세)가 섞이면 맞는 블록 없음 알림
+    ([blk(tilted=True), blk(x=0.40, overlap='under'), {'x_m': 'abc'}], 'no_match_block'),  # 잘못된 값이 섞여도 맞는 블록 없음 알림
 ])
 def test_맞는_블록이_없으면_이유를_알리고_기다린다(blocks, message_id):
     m, io = make()
