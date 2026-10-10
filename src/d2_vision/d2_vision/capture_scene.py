@@ -9,13 +9,14 @@ Enter 를 누를 때마다 손목 카메라의 **컬러 PNG + 컬러에 맞춘 �
 · 카메라 내부 파라미터 · TF × 보정값(rg2_tcp 틀)으로 계산한 T_base2cam(m) · **그때 쓴 보정값(파일 · 수정 시각 · 카메라 위치 mm · 지문)**
 · 제어기 TCP(config/tcp.json 이름 · 값 — 10/10 E-81 뒤 같은 이름 GripperDA_v1 이 값만 바뀜) · 해상도 · 시각.
 브링업이 없으면 TF · 관절값 · T_base2cam 은 빈 값으로 저장된다(경고). `--posx` 로 펜던트 값을 적을 수 있다(기록용).
-(W156 확인용, 다시 계산 뒤 지움) 옛 posx 틀 보정값(T_gripper2camera)이 있으면 posx 길로 낸 카메라 위치와 TF 길의 차이(mm)도 적는다.
+posx 를 받으면 펜던트 posx 길(제어기 모델)로 낸 카메라 위치와 TF 길(MoveIt 모델)의 차이(mm)도 적는다 — 같은 보정값을 posx 틀로 옮겨(POSX_TO_RG2TCP)
+계산하므로 두 로봇 모델의 차이만 남는다(10/10 4각도 · 앞 · 옆 · 관측 자세 모두 약 2.4 mm).
 보정값은 촬영 중간에 바뀔 수 있다(10/7 수평 약 1 cm 재보정). 그래서 뒤에 쓰는 코드(스캔 추론기 · find_blocks)는 json 의 T_base2cam 을
 그대로 믿지 말고 **T_base_tcp_mm × 최신 보정값**으로 다시 계산한다(PL 10/7 → 10/10 TF 기준). json 의 calib 칸은 어느 값으로 계산했는지 되짚는 용도.
 
 입력(인자)
   --out      저장 폴더 (예: ~/d2_data/W114). 없으면 만든다. 저장소에는 넣지 않는다(드라이브 YOLO_흩어진블록/1_원본_W114 로 올림)
-  --scene    시작 장면 번호(1~), --light a|b 조명 표시, --cam-prefix realsense 토픽 접두, --posx X Y Z A B C 펜던트 값(브링업 없을 때)
+  --scene    시작 장면 번호(1~), --light a|b 조명 표시, --cam-prefix realsense 토픽 접두, --posx X Y Z A B C 펜던트 값(기록용 — 서비스로 못 받을 때)
   --pose     시작 자세 태그(observe · front · side, 스캔 촬영용). 비우면 태그 없음(흩뿌린 장면)
 키: Enter = 저장 · s = 다음 장면(번호 1부터) · l = 조명 a/b 바꿈 · p = 자세 태그 돌리기(없음 → observe → front → side) · q = 끝
     observe · front · side 를 그대로 치면 그 태그로 바로 바뀐다(저장은 안 함)
@@ -46,7 +47,7 @@ from sensor_msgs.msg import CameraInfo, Image, JointState
 
 import yaml
 
-from d2_vision.tcp_pose import TcpPose, default_calib_path, load_calib
+from d2_vision.tcp_pose import POSX_TO_RG2TCP, TcpPose, default_calib_path, load_calib
 from dsr_msgs2.srv import GetCurrentPosx
 
 JOINTS = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']   # 두산 팔 관절 (joint_states 에 그리퍼 관절도 섞여 온다)
@@ -101,8 +102,8 @@ class CaptureScene(Node):
         except (OSError, ValueError):
             self.T_tcp2c = None
             self.get_logger().warn('보정값 %s 없음 — pose json 에 T_base2cam 을 못 넣는다' % self.calib_path)
-        old = Path(self.calib_path).with_name('T_gripper2camera.npy')        # W156 확인용(posx 틀) — 다시 계산 뒤 지움
-        self.T_posx2c = load_calib(old) if old.exists() else None
+        # 같은 보정값을 posx 틀로 — posx 길과 TF 길 카메라 위치 차이(로봇 모델 차이) 기록용
+        self.T_posx2c = None if self.T_tcp2c is None else np.linalg.inv(POSX_TO_RG2TCP) @ self.T_tcp2c
         bring = Path(get_package_share_directory('d2_bringup')) / 'config'
         cfg = yaml.safe_load((bring / 'robot.yaml').read_text(encoding='utf-8'))
         self.tcp = TcpPose(self, cfg.get('frame_id', 'base_link'), cfg.get('tcp_link', 'rg2_tcp'))
@@ -195,7 +196,7 @@ class CaptureScene(Node):
         }
         if self.T_tcp2c is not None and T_b2t is not None:
             T = T_b2t @ self.T_tcp2c
-            if self.T_posx2c is not None and posx is not None:   # W156 확인용: posx 길과 TF 길의 카메라 위치 차이(mm)
+            if self.T_posx2c is not None and posx is not None:   # posx 길과 TF 길의 카메라 위치 차이(mm) = 제어기 · MoveIt 모델 차이
                 pose['check_cam_posx_minus_tf_mm'] = ((posx_to_matrix(*posx) @ self.T_posx2c)[:3, 3] - T[:3, 3]).round(2).tolist()
             T[:3, 3] /= 1000.0
             pose['T_base2cam_m'] = T.round(6).tolist()

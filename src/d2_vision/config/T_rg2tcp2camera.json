@@ -2,32 +2,55 @@
   "file": "T_rg2tcp2camera.npy",
   "meaning": "카메라 → rg2_tcp(MoveIt 손끝 = 손가락 가운데) 4x4, mm. p_base = T_base←rg2_tcp(TF, mm) @ T_rg2tcp2camera @ p_cam (10/9 E-70 ③ — 로봇 자세는 펜던트 posx 가 아니라 TF base_link → rg2_tcp)",
   "tcp": "rg2_tcp — 브링업이 config/tcp.json(GripperDA_v1 [0, 2.7, 228], 10/10 E-81)에서 만든다",
-  "origin": "2026-10-10 W156(황인재 · PM): T_gripper2camera.npy(posx 틀 — 10/8 #88 값 + 10/10 #112 y −2.7 mm)를 rg2_tcp 틀로 옮김 — T = Rz(+90°) · T_gripper2camera (R_rg2tcp = R_posx · Rz(−90°), 같은 원점)",
-  "not_verified": "임시 — 펜던트 posx 와 MoveIt FK 사이 1 ~ 3 mm(모델 · 제어기 계산 차이)가 그대로 들어 있다. 10/10 오후 4각도 측정(capture_scene 이 TF · posx · 관절값을 같이 남김)으로 rg2_tcp 틀에서 다시 계산해 이 파일을 바꾼다(W156) → 그때 T_gripper2camera.npy 는 지운다",
-  "from_posx_calib": [
-    [
-      -0.99986,
-      0.01697,
-      -0.00127,
-      35.4515
+  "origin": "2026-10-10 W156(황인재 · PM): 10/8 #88 posx 틀 값(+ #112 y −2.7 mm)을 rg2_tcp 틀로 옮긴 값(#113, 아래 previous_1010) → 같은 날 오후 4각도 측정으로 rg2_tcp 틀에서 다시 계산(correction_1010). 옛 posx 틀 파일 T_gripper2camera.npy 는 이때 지움",
+  "correction_1010": {
+    "date": "2026-10-10 11:28~11:40 측정 · 12:06~12:11 V-15 (W058 · W156 · W154, E-70 ③)",
+    "frame": "카메라 → rg2_tcp (TF base_link → rg2_tcp, tcp.json GripperDA_v1 [0, 2.7, 228])",
+    "what": "카메라 위치(rg2_tcp 틀) [-74.75, 35.45, -184.65] → [-72.90, 35.12, -183.83] mm (차 +1.85, −0.33, +0.82), 회전 0.65°(rg2_tcp 틀 x −0.04 · y −0.24 · z −0.61°)",
+    "how": [
+      "1) 4각도(손목 0 · 90 · 180 · 270°) × 카메라 높이 2개(400 · 496 mm) — 카메라 광축을 공급 칸 p1~p4 가운데 (340.8, 222.2) mm 위로 옮긴 자세(옛 4각도 자세는 400 mm에서 가장자리 칸이 화면 끝에 잘림), 공급 칸 p1~p6 블록, capture_scene 자세마다 3장 — 자세 = pose.json T_base_tcp_mm(TF)",
+      "2) measure_tf → fit_rt_tf: 회전 3축 + 이동 x · y + 날마다 c(칸 1-4, 윗면 크기가 5 mm 넘게 다른 칸은 뺌 — 16칸)",
+      "3) hybrid_tf: 관측 자세 빈 작업대로 수평 맞춤(check_wrist_calib.fix_tilt, 0.41°) → 회전 고정, 이동 x · y 다시",
+      "4) 비교(노트북): '칸마다 c · 손목 축 회전 고정' 모형 값(지금 대비 +1.26, −0.02, +0.82 mm · 0.24°)과 V-15로 견줌 → 이 값(날마다 c)이 V-15에서 더 좋아 채택"
     ],
-    [
-      -0.01697,
-      -0.99985,
-      -0.00216,
-      74.74877
-    ],
-    [
-      -0.00131,
-      -0.00213,
-      1.0,
-      -184.65265
-    ],
-    [
-      0.0,
-      0.0,
-      0.0,
-      1.0
+    "result": {
+      "observe_empty_table": "기울기 0.25° → 0.00°, 카메라 아래 높이 차 +0.82 → 0.00 mm (평면 잔차 1.05 mm)",
+      "supply_slots": "칸끼리 흔들림 x ±2.13 → ±1.18 · y ±0.91 → ±0.81 mm, 남은 치우침(c) (−2.0, −2.0) mm — 칸마다 같은 쪽(p1 x −5 · p3 y −3.4 mm, 손목 각도 · 높이와 무관 = 블록 놓기 · 칸 좌표 · 윗면 재기 몫)",
+      "four_angle_residual_mean_mm": "2.59 (지금 값 2.67) — 칸마다 치우침을 빼면 약 1.3",
+      "v15": "로봇이 놓은 블록(FLAT_SHORT → FLAT_LONG 가운데 맞춤), 관측 자세 4점: 거리 1.15 · 1.18 · 0.44 · 1.84 mm(평균 1.15, 2 mm 이하 4/4) — 지금 값 2.10 · 1.65 · 0.62 · 2.95(평균 1.83, 2/4). 윗면 높이 12.7 ~ 13.5 mm(블록 14.8)"
+    },
+    "remaining": "앞 촬영(observe_front) · 옆 촬영(observe_side)은 어느 보정값이든 블록이 9 ~ 11 mm 멀리 · 3 mm 높게 잡힘(카메라 시선에 수직 방향 약 1.1°). 펜던트 posx 와 TF 의 카메라 위치 차이는 이 자세들에서도 2.4 mm(관측 · 4각도와 같음) → 로봇 모델 차이 아님, 원인 확인 중(스캔 촬영에 영향)",
+    "data": "황인재 노트북 ~/d2_data/W058_1010 (capture · meas_tf.json · T_fit_tf.npy · T_hyb_tf.npy md5 05bc72af…) · ~/d2_data/W058_v15_1010 (V-15 csv · npz) · ~/d2_data/W058_front_1010 (앞 · 옆 · 관측 촬영)",
+    "tool": "저장소 밖 W058_handover_1010/tf_v1 (measure_tf · fit_rt_tf · hybrid_tf · compare_tf · v15_auto_tf — 민범진 10/10) · W156_calc (fit_slotc · eval_v15 — PM)",
+    "bringup": "main 0d767fe (rg2_tcp 정의 · supply_slots #110 값)"
+  },
+  "previous_1010": {
+    "note": "바꾸기 전 값(#113 — 10/8 #88 posx 틀 값 + #112 를 rg2_tcp 틀로 옮긴 것), 카메라 → rg2_tcp 4x4 mm",
+    "matrix": [
+      [
+        0.01697,
+        0.99985,
+        0.00216,
+        -74.74877
+      ],
+      [
+        -0.99986,
+        0.01697,
+        -0.00127,
+        35.4515
+      ],
+      [
+        -0.00131,
+        -0.00213,
+        1.0,
+        -184.65265
+      ],
+      [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
     ]
-  ]
+  }
 }

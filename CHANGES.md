@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-10
+- 비전(13시, 황인재 · PM): **W156 손목 보정값 다시 계산 · V-15** — 4각도 × 높이 400 · 496 mm(카메라 광축을 공급 칸 p1~p4 가운데로 옮긴 자세) + 빈 작업대 수평, TF `base_link → rg2_tcp` 기준(민범진 tf_v1 스크립트, 박진용 PC 측정). `T_rg2tcp2camera` 카메라 위치 (+1.85, −0.33, +0.82) mm · 회전 0.65°. **V-15 관측 자세 4점 평균 1.15 mm(4/4 ≤ 2 mm, 바꾸기 전 2/4)**. 앞 · 옆 촬영 자세는 어느 보정값이든 9 ~ 11 mm(posx · TF 차이는 2.4 mm로 같음 → 원인 확인 중). 옛 posx 틀 `T_gripper2camera` 지움 — `capture_scene`의 posx 길 · TF 길 비교는 같은 보정값을 posx 틀로 옮겨 계속 기록. `--fix-tilt` 안내 · 주석의 옛 파일 이름 고침.
 - 공통(11시, PM): **에이전트 규칙 6장 첫 줄 범위 줄임(PL)** — #114로 들어온 '검증 · 시험 · 실행은 묻지 않고 진행(도구 설치 포함)'에서 **도구 · 패키지 설치와 로봇을 움직이는 실행은 먼저 묻기**로(AGENTS = CLAUDE = GEMINI). 읽기 전용 조회 줄은 그대로.
 - 비전(한석형): **W028 · W119 완료, W130 진행** — 흩뿌림 열림 폭 0으로 잡기별 설정 사용 · `no_match_block` 알림 · `NO_FEEDBACK` → ERROR · `progress/1.1` · `scan_result/1.2`에 `stamp`와 선택 `nearest_base`. 그리퍼 복구 안내를 받치기 → 연결 복구 → 열기 → 블록 빼기 순서로 맞춤. 미전송 요약 시험의 보관 대기를 시간 기준(최대 2초)으로 수정. 누락 기록: 10/8 #100으로 변환기 ① task 연결(W110 · W109) 완료. 로봇 실기 없음.
 - 비전(12시, 황인재 · PM): **W156 손목 자세를 TF로 — 펜던트 posx 대신 MoveIt `base_link → rg2_tcp`(E-70 ③)**: `tcp_pose.py`(TF 읽기 · 보정 파일) + `wrist_block` · `capture_scene`(TF · posx · 관절값을 같이 저장, posx 길과 TF 길 카메라 위치 차이도) · `check_wrist_calib`(`--posx` 뺌). 보정값 `T_rg2tcp2camera.npy`(rg2_tcp 틀 = Rz(+90°) · 옛 값) 새로 — 옛 `T_gripper2camera`는 저장소 밖 도구용으로 다시 계산 때까지. **로봇 PC: `colcon build --packages-select d2_vision`(tf2_ros 의존).**

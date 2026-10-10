@@ -161,10 +161,10 @@ def fit_table_plane(pts_base, table_mm):
 
 
 def fix_tilt(T_g2c, T_b2g, depth_mm, intr, table_mm):
-    """보정값의 회전을 돌려 작업면 평면이 수평이 되게 하고, 카메라 광축 방향으로 밀어 높이 차이를 0 으로 맞춘 새 T_gripper2camera 를 만든다.
+    """보정값의 회전을 돌려 작업면 평면이 수평이 되게 하고, 카메라 광축 방향으로 밀어 높이 차이를 0 으로 맞춘 새 보정값(카메라 → rg2_tcp)을 만든다.
     입력: 지금 보정값(4x4 mm) · T_base←rg2_tcp(TF, mm — 10/10 W156) · 빈 작업대 깊이(mm) · 내부 파라미터 · 작업면 높이(mm).
     돌려줌: (새 4x4, 보정 전 평면, 보정 뒤 평면, 돌린 각도 °, 민 거리 mm). 평면을 못 맞추면 None.
-    왜 회전을 카메라 좌표에서 돌리나: 오차의 원인이 카메라가 그리퍼에 붙은 각도이므로, 어느 posx 에서 재든 같은 보정이 되게 하려고."""
+    왜 회전을 카메라 좌표에서 돌리나: 오차의 원인이 카메라가 그리퍼에 붙은 각도이므로, 어느 로봇 자세에서 재든 같은 보정이 되게 하려고."""
     T_b2c = T_b2g @ T_g2c
     before = fit_table_plane(depth_to_base(depth_mm, *intr, T_b2c), table_mm)
     if before is None:
@@ -494,7 +494,7 @@ def main():
         if after is not None:
             cam_xy = (T_b2g @ T_new)[:2, 3]
             print(f"  보정 뒤 카메라 아래 작업면 높이 차이: {after['a'] * cam_xy[0] + after['b'] * cam_xy[1] + after['c'] - table_mm:+.2f} mm")
-        print("  같은 자세에서 `--calib " + a.fix_tilt + "` 로 다시 확인한 뒤 config/T_gripper2camera.npy 에 복사하고 json 에 적는다")
+        print("  같은 자세에서 `--calib " + a.fix_tilt + "` 로 다시 확인한 뒤 config/T_rg2tcp2camera.npy 에 복사하고 json 에 적는다")
 
 
 if __name__ == "__main__":
