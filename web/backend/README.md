@@ -3,7 +3,7 @@
 > **10/8 E-69로 바뀜:** 템플릿 길(4장 · `templates.py` · `tune_system.txt` · `param_schema.json`) · `base_designs/`(10/3 lv*.json) · `blocks/1` 출력은 **옛것**이다. 지금 기준은 [../README.md](../README.md) 4장 — GPT-4o가 `blocks/2.0`(role · part · stage · grasp 포함)을 직접 쓰고 후보 3개 중 사람이 1개를 고른다. 이 노트의 피드백 문구 · 기록 · 시험 틀(3 · 8 · 9장)은 그대로 쓴다.
 
 
-> 정본은 [SDD 3.1.1 · 6.6](../../docs/03_설계_SDD_v3_101014.md) · [IRD 6 · 7 · 8.3장](../../docs/02_인터페이스_IRD_v3_101014.md) · 결정 E-08 ~ E-15 · E-40 · E-41. 이 노트는 그것을 **코드로 옮길 때의 세부**(파일 · 함수 · 프롬프트 · 스키마 · 시험)만 적는다. 정본과 다르면 정본이 맞다.
+> 정본은 [SDD 3.1.1 · 6.6](../../docs/03_설계_SDD_v3_101021.md) · [IRD 6 · 7 · 8.3장](../../docs/02_인터페이스_IRD_v3_101021.md) · 결정 E-08 ~ E-15 · E-40 · E-41. 이 노트는 그것을 **코드로 옮길 때의 세부**(파일 · 함수 · 프롬프트 · 스키마 · 시험)만 적는다. 정본과 다르면 정본이 맞다.
 > 이 폴더의 다른 부분(REST · WebSocket · MQTT · DB)은 W126 · W111에서 더한다. 여기는 **AI 파트**만.
 
 ## 1. 범위 — 무엇을 만들고 무엇을 안 만드나
@@ -63,8 +63,8 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 
 | 템플릿 | 숫자(기본값) · 범위(FR-G02 제안) | 만드는 법 | 기본값 = 기본 설계 |
 |---|---|---|---|
-| `chair` | `legs` 다리 벽 층수(4) 2~6 · `back` 등받이 층수(5) **0~6, 0이면 벤치** · `seat_w` 좌판 블록 수(3) 2~4 · `count`(1) 1~2 | 다리 벽: x = ±25, `y`, z = k·15 (k < legs) → 좌판: `x`, z = legs·15, y = (i − (seat_w−1)/2)·25 → 등받이: `x`, y = 좌판 맨 뒤 y, z = (legs+1)·15 부터 back층 | back 5 → `002_CHAIR_BACK`(16) · back 0 → `001_CHAIR_BENCH`(11) — CAD placements.csv와 좌표 일치 확인함(10/7) |
-| `desk_std` | `top_len` 상판 블록 수(3) 2~4 · `count` 1~2 | 세운 다리 `zx` 4개 (±30, ±25) → 보 `x` 2개 z = 75, y = ±25 → 상판 `y` z = 90, x = (i − (top_len−1)/2)·25 | top_len 3 → `003_DESK_STAND`(9) — placements.csv와 일치 확인함 |
+| `chair` | `legs` 다리 벽 층수(4) 2~6 · `back` 등받이 층수(5) **0~6, 0이면 벤치** · `seat_w` 좌판 블록 수(3) 2~4 · `count`(1) 1~2 | 다리 벽: x = ±25, `y`, z = k·15 (k < legs) → 좌판: `x`, z = legs·15, y = (i − (seat_w−1)/2)·25 → 등받이: `x`, y = 좌판 맨 뒤 y, z = (legs+1)·15 부터 back층 | back 5 → `002_CHAIR_BACK_V000`(16) · back 0 → `001_CHAIR_BENCH_V000`(11) — CAD placements.csv와 좌표 일치 확인함(10/7) |
+| `desk_std` | `top_len` 상판 블록 수(3) 2~4 · `count` 1~2 | 세운 다리 `zx` 4개 (±30, ±25) → 보 `x` 2개 z = 75, y = ±25 → 상판 `y` z = 90, x = (i − (top_len−1)/2)·25 | top_len 3 → `003_DESK_STAND_V000`(9) — placements.csv와 일치 확인함 |
 | `desk_wall` **(안)** | `legs` 다리 벽 층수(6) 3~8 · `top_len`(3) 2~4 · `shelf` 중간 선반(false) · `count` 1~2 | 벤치와 같은 다리 벽 2개 × legs층 + 상판 top_len개. `shelf = true`면 legs/2 층 위에 선반 3개를 끼우고 그 위로 다시 벽(책장 1단 방식) | **한세교 CAD(W074, 10/7 오후~10/8)가 나오면 벽 간격 · 층수 · 상판을 맞춤.** 그 전에는 벤치 6층 자리값으로 둠 |
 | 공통 | 블록 합계 ≤ 54 · `count` 2면 좌우(x)로 50 mm 띄워 복제(10/3 `COPY_GAP_MM`) | 범위 밖 → `ValueError(이유 글)` → OUT_OF_SCOPE | |
 
@@ -93,9 +93,9 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 
 | 파일 | 출처 | 상태 |
 |---|---|---|
-| `bench.json` | 10/3 `lv1_bench.json` → blocks/1 (= `001_CHAIR_BENCH` placements, 확인함) | 1단계 |
-| `chair.json` | 10/3 `lv2_chair.json` → blocks/1 (= `002_CHAIR_BACK` 16개 — placements 대조는 구현 때) | 1단계 |
-| `desk_std.json` | 10/3 `lv4_table_standing.json` → blocks/1 (= `003_DESK_STAND`, 확인함) | 1단계 |
+| `bench.json` | 10/3 `lv1_bench.json` → blocks/1 (= `001_CHAIR_BENCH_V000` placements, 확인함) | 1단계 |
+| `chair.json` | 10/3 `lv2_chair.json` → blocks/1 (= `002_CHAIR_BACK_V000` 16개 — placements 대조는 구현 때) | 1단계 |
+| `desk_std.json` | 10/3 `lv4_table_standing.json` → blocks/1 (= `003_DESK_STAND_V000`, 확인함) | 1단계 |
 | `desk_wall.json` | **없음** — 한세교 CAD(W074) → 비전 변환기 ②(W117) | 받으면 넣음 |
 
 `design_id`는 W111(DesignStore)에서 정한다 — 1단계 안: `bench` · `chair` · `desk_std` · `desk_wall`(IRD 예시 `"design_id":"bench"` 투). `family`: `chair` · `desk`.

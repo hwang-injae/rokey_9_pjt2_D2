@@ -62,7 +62,7 @@ def test_parse_request_rejects_bad(payload):
 
 def test_parse_request_accepts_bytes_and_text():
     """바이트 · 글자 둘 다 받고 칸을 그대로 둔다."""
-    body = {'req_id': 'a1', 'cmd': 'start', 'design_id': '001_CHAIR_BENCH', 'mode': 'auto'}
+    body = {'req_id': 'a1', 'cmd': 'start', 'design_id': '001_CHAIR_BENCH_V000', 'mode': 'auto'}
     assert bc.parse_request(json.dumps(body).encode()) == body
     assert bc.parse_request(json.dumps(body)) == body
 
@@ -77,7 +77,7 @@ def test_string_fields_defaults_and_rejects_non_text():
 
 def test_query_request_drops_req_id_keeps_rest():
     """check_design 요청: req_id 만 빼고 blocks/2.0 객체 그대로(한글 포함)."""
-    body = {'req_id': '9a', 'schema': 'blocks/2.0', 'design_id': 'chair_v1.1', 'family': 'chair',
+    body = {'req_id': '9a', 'schema': 'blocks/2.0', 'design_id': '001_CHAIR_BENCH_V001', 'family': 'chair',
             'blocks': [{'order': 1, 'role': 'LEG'}], 'note': '의자'}
     assert json.loads(bc.query_request_json(body)) == {k: v for k, v in body.items() if k != 'req_id'}
     assert '의자' in bc.query_request_json(body)

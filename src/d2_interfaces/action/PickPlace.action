@@ -1,6 +1,6 @@
 # 블록 1개 전체 집기·놓기 — task 노드 → 집기·놓기 (/d2/motion/pick_place)
 # 목표 칸은 task 노드 안 TaskPlanner가 정한 값 그대로 (S-18, NextBlock 서비스 없음). 자세는 base_link 기준, m·쿼터니언
-string block_id                   # 전체 블록 이름 (예: 001_CHAIR_BENCH_LEG_001_01 — E-52)
+string block_id                   # 전체 블록 이름 (예: 001_CHAIR_BENCH_V000_LEG_001_01 — E-52)
 string supply_slot                # 공급 칸 번호 "1" ~ "6"(robot.yaml supply_slots 순서). 빈 값 = 흩어진 공급 영역(find_blocks 로 고른 블록, W121)
 geometry_msgs/Pose pick_pose      # 블록 중심 자세(블록 자신의 축), base_link, m — 손가락 끝 높이는 집기·놓기가 grasp_depth_m 로 계산
 geometry_msgs/Pose place_pose

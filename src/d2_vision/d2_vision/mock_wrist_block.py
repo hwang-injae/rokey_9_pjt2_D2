@@ -4,7 +4,7 @@
 카메라·로봇 없이 작업 관리자(task)가 진행 확인 · 스캔 · 흩뿌림 찾기 흐름을 돌릴 수 있게 한다.
 - `/d2/vision/check_progress`(CheckProgress): 요청한 block_id 마다 state 와 높이를 답한다.
   설계는 요청 design_id 칸으로만 고른다(E-52 ④ — 블록 이름에서 잘라 내지 않는다). 비었으면 success=false, reason ERROR(wrist_block 과 같음).
-  block_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_LEG_001_01)을 그대로 맞춘다.
+  block_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)을 그대로 맞춘다.
   레시피 파일은 wrist_block 과 같다: `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 옆 `_placements.csv` 도).
   기본은 전부 present. 파라미터로 absent·occluded 블록을 고를 수 있다.
   top_z_m = 팀 공용 `d2_motion.motion_math.recipe_blocks()` 가 계산한 블록 윗면 높이(base, m — 실측 두께로 쌓은 값). dz_m = 0.
@@ -25,14 +25,14 @@
 실행 (저장소 맨 위에서. 레시피 폴더는 task 노드와 같은 파라미터 recipe_dir):
   ros2 run d2_vision mock_wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes
 돌리는 중에 바꾸기 (다음 요청부터 반영, 전체 블록 이름으로):
-  ros2 param set /mock_wrist_block absent "001_CHAIR_BENCH_LEG_001_04,001_CHAIR_BENCH_LEG_002_04"   # 이 블록은 없음
-  ros2 param set /mock_wrist_block occluded "001_CHAIR_BENCH_SEAT_001_01"                          # 이 블록은 가려짐
+  ros2 param set /mock_wrist_block absent "001_CHAIR_BENCH_V000_LEG_001_04,001_CHAIR_BENCH_V000_LEG_002_04"   # 이 블록은 없음
+  ros2 param set /mock_wrist_block occluded "001_CHAIR_BENCH_V000_SEAT_001_01"                          # 이 블록은 가려짐
   ros2 param set /mock_wrist_block fail true                                                       # success=false, reason ERROR (카메라 고장 흉내)
-  ros2 param set /mock_wrist_block scan_design_id 002_CHAIR_BACK                                   # 스캔이 이 설계를 본 것처럼
+  ros2 param set /mock_wrist_block scan_design_id 002_CHAIR_BACK_V000                                   # 스캔이 이 설계를 본 것처럼
   ros2 param set /mock_wrist_block scan_fail true                                                  # scan_infer ok:false SCAN_FAILED
   ros2 param set /mock_wrist_block find_blocks_json "'[]'"                                         # 공급 빔 → 작업 관리자 WAIT_SUPPLY
 시험 호출 (design_id 칸 + 전체 블록 이름):
-  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH, block_ids: [001_CHAIR_BENCH_LEG_001_01, 001_CHAIR_BENCH_SEAT_001_03]}"
+  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH_V000, block_ids: [001_CHAIR_BENCH_V000_LEG_001_01, 001_CHAIR_BENCH_V000_SEAT_001_03]}"
   ros2 service call /d2/vision/scan_capture d2_interfaces/srv/JsonQuery "{request_json: '{\\"pose_id\\": \\"observe_front\\", \\"run_id\\": \\"R1\\"}'}"
   ros2 service call /d2/vision/scan_infer d2_interfaces/srv/JsonQuery "{request_json: '{\\"run_id\\": \\"R1\\"}'}"
   ros2 service call /d2/vision/find_blocks d2_interfaces/srv/JsonQuery "{request_json: '{\\"run_id\\": \\"R1\\"}'}"
@@ -89,7 +89,7 @@ class MockWristBlock(Node):
         self.declare_parameter('occluded', '')           # 가려짐으로 답할 block_id, 쉼표
         self.declare_parameter('fail', False)            # True 면 success=false (카메라 고장 흉내)
         self.declare_parameter('status_hz', 2.0)         # camera_status 주기 (IRD 2 Hz)
-        self.declare_parameter('scan_design_id', '001_CHAIR_BENCH')   # scan_infer 가 '스캔했다'고 흉내 낼 설계(recipe_dir 의 두 파일)
+        self.declare_parameter('scan_design_id', '001_CHAIR_BENCH_V000')   # scan_infer 가 '스캔했다'고 흉내 낼 설계(recipe_dir 의 두 파일)
         self.declare_parameter('scan_family', 'chair')   # 스캔 설계 family(blocks/1 칸 · 이름 scan_<family>_<번호>)
         self.declare_parameter('scan_inferred', 2)       # inferred: true 로 표시할 블록 수(앞 순서부터 — 가려진 아래층 흉내)
         self.declare_parameter('scan_fail', False)       # True 면 scan_infer 가 ok:false SCAN_FAILED (격자 맞추기 실패 흉내)

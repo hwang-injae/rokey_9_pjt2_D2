@@ -282,7 +282,7 @@ def recipe_files(folder):
 
 
 def recipe_name(path):
-    """레시피 파일 경로 -> 보여 줄 이름 (모델 ID, 예 001_CHAIR_BENCH)."""
+    """레시피 파일 경로 -> 보여 줄 이름 (모델 ID, 예 001_CHAIR_BENCH_V000)."""
     name = os.path.basename(path)
     for suf in RECIPE_SUFFIXES:
         if name.endswith(suf):
@@ -335,7 +335,7 @@ def recipe_blocks(cfg, recipe):
 
     레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · block_id · sequence · stage · grasp_axis · supports — 블록 이름)
     + 구조 recipe/2.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
-    block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_LEG_001_01 — 노드 사이 전체 블록 이름).
+    block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
     옛 blocks[] 형식 · 로봇 쪽 옛 파일 이름 .recipe.json 은 W139 뒤 뺐다(W138).

@@ -23,7 +23,7 @@ from test_build_saving import OK_JSON, RETRY_S, FakeFuture
 from test_generation_flow import generated_design
 from test_task_manager import CFG, SAFE_OK, FakeIO, drive, picks
 
-A_ID, B_ID = 'chair_v1.1', 'desk_v2'     # 블록 수가 다른 두 설계(11개 · 9개) — 기록이 섞이면 개수 · 이름으로 드러난다
+A_ID, B_ID = '001_CHAIR_BENCH_V001', '003_DESK_STAND_V001'     # 블록 수가 다른 두 설계(11개 · 9개) — 기록이 섞이면 개수 · 이름으로 드러난다
 
 
 def store_with_real_converter(blocks):
@@ -44,9 +44,9 @@ def store_with_real_converter(blocks):
 
 @pytest.fixture(scope='module')
 def designs():
-    """실제 변환기를 거친 design/2.0 두 개: chair_v1.1(001_CHAIR_BENCH 기하) · desk_v2(003_DESK_STAND 기하)."""
-    return {A_ID: store_with_real_converter(generated_design('001_CHAIR_BENCH', A_ID)),
-            B_ID: store_with_real_converter(generated_design('003_DESK_STAND', B_ID))}
+    """실제 변환기를 거친 design/2.0 두 개: 001_CHAIR_BENCH_V001(V000 기하) · 003_DESK_STAND_V001(V000 기하)."""
+    return {A_ID: store_with_real_converter(generated_design('001_CHAIR_BENCH_V000', A_ID)),
+            B_ID: store_with_real_converter(generated_design('003_DESK_STAND_V000', B_ID))}
 
 
 class MultiIO(FakeIO):

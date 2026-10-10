@@ -5,7 +5,7 @@
 
   ros2 run d2_motion run_recipe --check                                  # 설치된 레시피 목록에서 번호로 고름, 목표만 보여 줌 (ROS·로봇 없음)
   ros2 run d2_motion run_recipe                                          # 번호로 고름, 시작할 때만 y 확인
-  ros2 run d2_motion run_recipe <001_CHAIR_BENCH_recipe.json> --slots 1,3 --auto    # 파일을 직접 주고 확인 없이 (가상 시험)
+  ros2 run d2_motion run_recipe <001_CHAIR_BENCH_V000_recipe.json> --slots 1,3 --auto    # 파일을 직접 주고 확인 없이 (가상 시험)
   ros2 run d2_motion run_recipe <lv2.json> <lv4.json> --auto             # 두 설계를 세트로 (의자 앞에 책상)
   ros2 run d2_motion run_recipe --grasp-test 1-6 --repeat 3              # 잡기 폭 시험: 칸마다 집어 같은 자리에 다시 놓기 (6가지 잡기)
 시작할 때 한 번만 y 를 묻고 블록 사이에는 기다리지 않는다: 로봇이 놓으러 간 사이에 사람이 같은 공급 칸을 다시 채운다.
