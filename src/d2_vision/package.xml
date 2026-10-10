@@ -11,6 +11,7 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>        <!-- wrist_block: 깊이 영상 · camera_info -->
   <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>          <!-- wrist_block · capture_scene · check_wrist_calib: 손목 자세 TF base_link → rg2_tcp (10/10 W156) -->
   <exec_depend>d2_interfaces</exec_depend>      <!-- CheckProgress -->
   <!-- d2_motion(motion_math.recipe_blocks: 레시피 → base 블록 목록)도 wrist_block · mock_wrist_block 이 쓰지만, 같은 이유(CI rosdep 이
        d2_motion 을 못 찾음 — from-paths 에 없음)로 적지 않는다. 시험(pytest)은 d2_motion 을 import 하지 않는다 -->
