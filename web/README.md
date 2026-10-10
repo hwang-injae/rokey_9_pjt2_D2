@@ -62,7 +62,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 조립 기록 | `GET /api/designs/{id}/builds` | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
 | 스캔 [AI로 고치기] | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
-| 사진 · 점군 | `GET /api/robot/scan/{run_id}/image.jpg` · `/cloud.ply`(backend가 MQTT로 받아 파일로 둠) | `d2/vision/scan_image` · `scan_cloud` | 다리가 파일을 읽어 보냄 |
+| 사진 · 점군 | `/ws` `{type: scan_image · scan_cloud, seq, stamp, bytes, run_id}` → `GET /api/robot/scan.jpg` · `/api/robot/scan_cloud.ply`(마지막 스캔 것만 메모리에, 없으면 404) ✅(10/10). `run_id` = 직전 `scan_result`의 것 — 화면은 `scan_result.run_id`와 같을 때만 보여 줌. 새 스캔이 오면 앞 것은 지움(점군 없는 스캔에 옛 점군이 안 남게) | `d2/vision/scan_image`(JPEG ≤ 500 KB) · `scan_cloud`(PLY ≤ 2 MB), QoS 1 | 다리가 `scan_result`의 `image_path`(PNG → JPEG로 줄임) · `cloud_path` 파일을 읽어 `scan_result` 바로 뒤에 보냄 ✅ |
 | 손목 검출 화면 | `/ws` `{type: wrist_image, seq, stamp}` → `GET /api/robot/wrist.jpg?seq=`(마지막 한 장, 없으면 404) ✅ | `d2/vision/wrist_image`(JPEG 바이트, QoS 0) | `/d2/vision/wrist_image` |
 | (로봇이 부름) 설계 꺼내기 · 결과 저장 | backend가 `DesignStore`로 답함 ✅(10/9) | `d2/hmi/get_design/req` → `/res` · `d2/hmi/save_build/req` → `/res` | `/d2/hmi/get_design` · `save_build` |
 
@@ -167,9 +167,10 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 | 10/9 저녁 | ✅ W047 화면 최소형 — 연결 표시 · 끊김 배너 · 상태 줄(누가 · 왜 멈췄는지) · 설계 입력 · 버튼 7개(상태표대로) · 진행도 % · 그리퍼 · 상태 로그. 설계 목록 · 3D 미리보기 · 진행도 3D 색은 W111 · W112 |
 | 10/9 밤 | ✅ W111 최소형(`DesignStore` — 기본 설계 4개 등록 · 목록 · 꺼내기 · 결과 저장 + 로봇 `get_design` · `save_build` 답) · ✅ 화면 더함: [설계 고르기] 트리 → 3D 보기(three.js) · 진행도 위 가운데 + 3D 색 · 손목 검출 화면 · 다크 모드 · ✅ 다리 `wrist_image` 전달(W127 — 사진 · 점군만 남음) |
 | 10/9 밤 | ✅ Next.js 16.4 + Node 24 LTS(컨테이너 빌드 단계 기준 — 호스트 Node 18 제약 없음) · 설계 고르기를 열 보기로 · 다크 모드 버튼 크게 · 가짜 로봇 다시 시작 = 이어서 · 버튼 기다림 시간을 backend 값으로 · `tests/test_robot_yaml.py` 시간 순서 시험(3 < 4 < 5 · 1 × 2 < 3) |
-| 10/10 낮(로봇) | W149 손목 TCP · W150 손목 노드 실기 · W129 PC 2대 MQTT 확인(한세교) · W151 화면 출발 첫 실기(화면이 없으면 예비 절차 — 명령 출발) · 18시 W158 보고 |
+| 10/10 오전 | ✅ W127 사진 · 점군(`scan_image` · `scan_cloud`) — 다리가 `scan_result` 파일을 읽어 보냄(PNG → JPEG ≤ 500 KB) · backend가 받아 `run_id`와 짝지어 REST로 · 가짜 로봇 `scan_result/1.2` + 사진 · 점군. 로컬 브로커로 ROS → 다리 → backend → REST 끝까지 확인(W149 · W150은 통합 세션) |
+| 10/10 낮(로봇) | W129 PC 2대 MQTT 확인(한세교) · W151 화면 출발 첫 실기(화면이 없으면 예비 절차 — 명령 출발) · 18시 W158 보고 |
 | 10/10 저녁 | W127 나머지(`get_design` · `save_build` · `check_design` · `intent` · `gripper/state` · `progress/1.1` · `scan_result/1.1`) · W111 저장소 · W108 · W112 |
-| 10/11 | W108 · W112 · W122 생성 흐름 통합(한석형) · W045 음성 · W127 사진 · 점군 · 손목 영상 — 그 뒤는 10/10 18시 보고 뒤 PL이 다시 짬 |
+| 10/11 | W108 · W112(스캔 비교 화면에 사진 · 점군 창 — 받기는 10/10에 끝) · W122 생성 흐름 통합(한석형) · W045 음성 — 그 뒤는 10/10 18시 보고 뒤 PL이 다시 짬 |
 | 10/12 ~ 13 오전 | compose(W102 — `robot.yaml` 파일 하나를 읽기 전용으로 연결) · PostgreSQL(W088) |
 
 ## 8. 문서 · 다른 파트에 걸린 것

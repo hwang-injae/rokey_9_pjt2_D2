@@ -131,6 +131,43 @@ def test_robot_called_rejects_non_object_and_reads_failure():
     assert success is False                                     # 참 거짓이 아니면 성공으로 보지 않는다
 
 
+def test_scan_files_reads_paths_cloud_optional():
+    """scan_result 에서 run_id · 사진 · 점군 경로를 읽는다. cloud_path 는 선택 칸 — 없거나 null 이면 ''(IRD 6장 · 10.5)."""
+    full = {'schema': 'scan_result/1.2', 'run_id': 'R1', 'image_path': '/d/R1/color.png', 'cloud_path': '/d/R1/cloud.ply'}
+    assert bc.scan_files(json.dumps(full)) == ('R1', '/d/R1/color.png', '/d/R1/cloud.ply')
+    assert bc.scan_files(json.dumps({**full, 'cloud_path': None})) == ('R1', '/d/R1/color.png', '')
+    assert bc.scan_files(json.dumps({'run_id': 'R2', 'image_path': ''})) == ('R2', '', '')
+
+
+@pytest.mark.parametrize('payload', ['{broken', '[1]', json.dumps({'run_id': 'R', 'image_path': 3})])
+def test_scan_files_rejects_bad(payload):
+    """깨진 JSON · 객체 아님 · 글자가 아닌 경로는 거절한다(사진 · 점군만 안 보냄)."""
+    with pytest.raises(ValueError):
+        bc.scan_files(payload)
+
+
+def test_fit_jpeg_shrinks_in_order_and_gives_up():
+    """(배율, 품질)을 순서대로 해 보고 상한 안 첫 것을 쓴다. 끝까지 크거나 못 만들면 None."""
+    tried = []
+
+    def encode(scale, quality):
+        tried.append((scale, quality))
+        return b'x' * int(1000 * scale * quality / 100)
+
+    assert bc.fit_jpeg(encode, max_bytes=700) == b'x' * 600                 # 1.0 · 60 에서 처음 700 B 안
+    assert tried == [(1.0, 90), (1.0, 75), (1.0, 60)]
+    assert bc.fit_jpeg(encode, max_bytes=100) is None                       # 다 해 봐도 큼
+    assert bc.fit_jpeg(lambda s, q: None, max_bytes=100) is None            # 못 만듦
+
+
+def test_scan_limits_match_ird_and_scanner():
+    """상한 = IRD 10.5(사진 500 KB · 점군 2 MB), 점군 상한은 스캔 추론기 저장 상한과 같다(다리가 버리지 않게)."""
+    assert bc.SCAN_IMAGE_MAX_BYTES == 500_000 and bc.SCAN_CLOUD_MAX_BYTES == 2_000_000
+    scanner = (ROOT / 'src' / 'd2_vision' / 'd2_vision' / 'structure_scanner.py').read_text(encoding='utf-8')
+    assert f'CLOUD_MAX_BYTES = {bc.SCAN_CLOUD_MAX_BYTES:_}' in scanner
+    assert (bc.SCAN_IMAGE_TOPIC, bc.SCAN_CLOUD_TOPIC) == ('d2/vision/scan_image', 'd2/vision/scan_cloud')
+
+
 def test_seen_ids_drops_repeat_and_forgets_oldest():
     """같은 req_id 두 번째는 거른다. 기억 개수를 넘으면 가장 오래된 것을 잊는다."""
     seen = bc.SeenIds(keep=2)

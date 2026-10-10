@@ -11,6 +11,12 @@ from collections import deque
 
 SEEN_KEEP = 256     # 기억하는 req_id 개수. 요청은 사람이 버튼을 누를 때만 와서 몇 시간 치로도 충분하다
 ROS_RESPONSE_KEYS = ('req_id', 'success', 'reason')   # JsonQuery 응답의 ROS 칸 — 나머지 칸은 response_json 객체를 펼친 것
+SCAN_IMAGE_TOPIC = 'd2/vision/scan_image'   # 스캔 사진 JPEG 바이트 — scan_result 의 image_path 파일 내용(IRD 10.1 · 10.5)
+SCAN_CLOUD_TOPIC = 'd2/vision/scan_cloud'   # 스캔 점군 PLY 바이트 — scan_result 의 cloud_path 파일 내용
+SCAN_IMAGE_MAX_BYTES = 500_000      # IRD 10.5 · E-67 사진 상한. 넘으면 아래 순서로 줄여 다시 만든다
+SCAN_CLOUD_MAX_BYTES = 2_000_000    # IRD 10.5 · E-67 점군 상한 = 스캔 추론기 CLOUD_MAX_BYTES. 넘는 파일은 보내지 않는다(점군 창만 안 뜸)
+# (배율, JPEG 품질)을 이 순서로 해 보고 상한 안에 든 첫 것을 쓴다. 손목 D435i 컬러 1280×720 은 원래 크기 90 에서 대개 끝난다
+JPEG_TRIES = ((1.0, 90), (1.0, 75), (1.0, 60), (0.5, 80), (0.5, 60))
 
 
 def mqtt_topic(ros_name):
@@ -114,6 +120,36 @@ def query_from_mqtt_response(body):
     rest = {k: v for k, v in body.items() if k not in ROS_RESPONSE_KEYS}
     reason = body.get('reason')
     return body.get('success') is True, reason if isinstance(reason, str) else '', json.dumps(rest, ensure_ascii=False)
+
+
+def scan_files(payload):
+    """scan_result JSON 글자 → (run_id, image_path, cloud_path). 없거나 null 인 칸은 '' (cloud_path 는 선택 칸 — IRD 6장).
+
+    다리는 이 경로의 파일을 읽어 사진 · 점군으로 보낸다(IRD 10.5 — 로봇 PC 경로라 웹에서는 못 연다).
+    실패: 깨진 JSON · 객체 아님 · 글자가 아닌 칸 → ValueError(사진 · 점군만 안 보내고 scan_result 전달은 그대로).
+    """
+    body = json.loads(payload)
+    if not isinstance(body, dict):
+        raise ValueError('scan_result 가 JSON 객체가 아니다')
+    out = []
+    for key in ('run_id', 'image_path', 'cloud_path'):
+        value = body.get(key) or ''
+        if not isinstance(value, str):
+            raise ValueError(f'scan_result {key} 가 글자가 아니다')
+        out.append(value)
+    return tuple(out)
+
+
+def fit_jpeg(encode, max_bytes=SCAN_IMAGE_MAX_BYTES, tries=JPEG_TRIES):
+    """encode(배율, 품질) → JPEG 바이트를 tries 순서로 불러 max_bytes 안에 든 첫 것을 돌려준다. 끝까지 크거나 못 만들면 None.
+
+    encode 를 밖에서 받는 이유: 이 파일은 cv2 없이 시험한다(CI) — 다리 노드가 cv2 로 만든 함수를 넣는다.
+    """
+    for scale, quality in tries:
+        data = encode(scale, quality)
+        if data and len(data) <= max_bytes:
+            return data
+    return None
 
 
 class SeenIds:

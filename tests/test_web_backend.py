@@ -2,7 +2,7 @@
 
 브로커 없이 가짜 paho 클라이언트로 돈다. 지키는 것: 요청 = …/req + req_id, 답을 req_id 로 짝지음 · 시간 초과 TIMEOUT · 자동 재전송 없음,
 상태는 마지막 값 + 화면 이벤트, 다리 연결 신호 3초 끊김, retained 로 남은 옛 요청에는 답하지 않음, 로봇 PC 가 끊기면 출발 · 스캔을 막음,
-손목 검출 그림(JPEG)은 마지막 한 장 + 번호만 알림, 저장소는 기본 설계 4개를 design/2.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
+손목 검출 그림 · 스캔 사진 · 점군(바이트)은 마지막 하나 + 번호만 알림 · 스캔 사진 · 점군은 직전 scan_result 와 짝, 저장소는 기본 설계 4개를 design/2.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
 """
 import json
 import sys
@@ -135,12 +135,34 @@ def test_wrist_image_kept_as_bytes_and_only_seq_announced(mc):
     """손목 검출 그림은 JSON 이 아닌 JPEG 바이트 — 마지막 한 장을 들고 /ws 에는 번호만 알린다. 구독은 QoS 0(IRD 10.1)."""
     mc._on_connect(mc.client, None, None, 0)
     assert 'd2/vision/wrist_image' in mc.client.subs
-    assert mc.wrist_jpeg() is None
+    assert mc.blob('wrist_image') is None
     mc._on_message(mc.client, None, msg('d2/vision/wrist_image', b'\xff\xd8jpeg-1'))
     mc._on_message(mc.client, None, msg('d2/vision/wrist_image', b'\xff\xd8jpeg-2'))
-    assert mc.wrist_jpeg() == b'\xff\xd8jpeg-2'
+    assert mc.blob('wrist_image') == b'\xff\xd8jpeg-2'
     seqs = [e['data']['seq'] for e in mc.events if e['type'] == 'wrist_image']
     assert seqs == [1, 2] and mc.snapshot()['wrist_image']['seq'] == 2
+    assert 'run_id' not in mc.snapshot()['wrist_image']        # 손목 그림은 스캔과 짝짓지 않는다
+
+
+def test_scan_image_cloud_paired_with_scan_result_and_cleared_on_new_scan(mc):
+    """스캔 사진 · 점군(IRD 10.5)은 QoS 1 로 구독하고, 직전 scan_result 의 run_id 를 붙인다.
+    새 스캔이 오면 앞 스캔 것을 지운다 — 점군이 없는 스캔(cloud_path 선택 칸)에 옛 점군이 남아 보이지 않게."""
+    mc._on_connect(mc.client, None, None, 0)
+    assert {'d2/vision/scan_image', 'd2/vision/scan_cloud'} <= set(mc.client.subs)
+    mc._on_message(mc.client, None, msg('d2/task/scan_result', {'schema': 'scan_result/1.2', 'run_id': 'R1'}))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_image', b'\xff\xd8scan-1'))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_cloud', b'ply\nR1'))
+    snap = mc.snapshot()
+    assert snap['scan_image']['run_id'] == 'R1' and snap['scan_image']['bytes'] == len(b'\xff\xd8scan-1')
+    assert snap['scan_cloud']['run_id'] == 'R1' and mc.blob('scan_cloud') == b'ply\nR1'
+    mc._on_message(mc.client, None, msg('d2/task/scan_result', {'schema': 'scan_result/1.2', 'run_id': 'R1'}))
+    assert mc.blob('scan_image') == b'\xff\xd8scan-1'          # 같은 스캔이 다시 오면(다리 재연결) 그대로
+    mc._on_message(mc.client, None, msg('d2/task/scan_result', {'schema': 'scan_result/1.2', 'run_id': 'R2'}))
+    assert mc.blob('scan_image') is None and mc.blob('scan_cloud') is None
+    assert 'scan_image' not in mc.snapshot() and 'scan_cloud' not in mc.snapshot()
+    mc._on_message(mc.client, None, msg('d2/vision/scan_image', b'\xff\xd8scan-2'))
+    assert mc.snapshot()['scan_image']['run_id'] == 'R2' and mc.snapshot()['scan_image']['seq'] == 2
+    assert mc.blob('scan_cloud') is None                       # R2 는 점군 없음 — 옛 R1 점군을 내주지 않는다
 
 
 def test_robot_request_without_store_is_error(mc):
@@ -161,13 +183,13 @@ class FakeMqtt:
     def __init__(self, bridge=True):
         self.calls, self.bridge, self.on_event = [], bridge, None
         self.host, self.port = 'localhost', 1883
-        self.handlers, self.wrist = {}, None
+        self.handlers, self.blobs = {}, {}
 
     def serve(self, name, fn):
         self.handlers[name] = fn
 
-    def wrist_jpeg(self):
-        return self.wrist
+    def blob(self, kind):
+        return self.blobs.get(kind)
 
     def request(self, name, fields):
         self.calls.append((name, fields))
@@ -297,14 +319,20 @@ def test_save_build_once_per_run_id(store):
 
 
 def test_designs_rest_and_robot_handlers(store):
-    """REST: 목록 · 규칙(블록 크기 mm) · 하나 · 없으면 404. 앱이 get_design · save_build 를 저장소에 잇는다. 손목 그림은 없으면 404."""
+    """REST: 목록 · 규칙(블록 크기 mm) · 하나 · 없으면 404. 앱이 get_design · save_build 를 저장소에 잇는다.
+    손목 그림 · 스캔 사진 · 점군은 들고 있는 바이트 그대로, 없으면 404."""
     client, fake = make_client(store)
     assert [r['design_id'] for r in client.get('/api/designs').json()] == BASES
     assert client.get('/api/designs/rules').json() == {'block_size_mm': [75.0, 25.0, 15.0], 'assembly_area_half_mm': 150.0}
     assert client.get('/api/designs/002_CHAIR_BACK').json()['design_id'] == '002_CHAIR_BACK'
     assert client.get('/api/designs/nope').status_code == 404
     assert set(fake.handlers) == {'/d2/hmi/get_design', '/d2/hmi/save_build'}
-    assert client.get('/api/robot/wrist.jpg').status_code == 404
-    fake.wrist = b'\xff\xd8jpeg'
+    for url in ('/api/robot/wrist.jpg', '/api/robot/scan.jpg', '/api/robot/scan_cloud.ply'):
+        assert client.get(url).status_code == 404
+    fake.blobs = {'wrist_image': b'\xff\xd8jpeg', 'scan_image': b'\xff\xd8scan', 'scan_cloud': b'ply\n'}
     res = client.get('/api/robot/wrist.jpg')
     assert res.content == b'\xff\xd8jpeg' and res.headers['content-type'] == 'image/jpeg'
+    res = client.get('/api/robot/scan.jpg')
+    assert res.content == b'\xff\xd8scan' and res.headers['content-type'] == 'image/jpeg'
+    res = client.get('/api/robot/scan_cloud.ply')
+    assert res.content == b'ply\n' and res.headers['cache-control'] == 'no-store'

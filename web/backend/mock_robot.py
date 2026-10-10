@@ -3,11 +3,13 @@
 
 - d2/bridge/alive 를 1초마다(LWT alive false), 처음 상태를 retained 로(task/state IDLE · safety/state · gripper/state)
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
-  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.1 · cancel
+  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.2 · cancel
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 늘 ok + 벤치 recipe · placements
   safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
   조립 중이 아니었으면 IDLE(설계 다시 고름) — task_manager._recover · 복구 절차 문서 5장
 - 가짜 조립 중 블록마다 가짜 손목 검출 그림(d2/vision/wrist_image, 640×480 JPEG — 진짜는 find_blocks 때 손목 비전이 그림). PIL 이 없으면 그림만 안 보냄
+- 스캔 끝에 scan_result 바로 뒤 가짜 스캔 사진 · 점군(d2/vision/scan_image JPEG · scan_cloud PLY — 진짜는 다리가 파일을 읽어 보냄, IRD 10.5).
+  그림 · 점은 비전 가짜 스캔(d2_vision mock_scan)과 같다. numpy · PIL 이 없으면 사진 · 점군만 안 보냄
 - 설계는 저장소 레시피 파일만 안다(웹 저장소 W111 전). 로봇을 움직이는 코드는 없다.
 실행: python3 web/backend/mock_robot.py [--host localhost] [--step 1.0]
 """
@@ -16,16 +18,18 @@ import io
 import json
 import random
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-for _pkg in ('d2_bridge', 'd2_task'):       # 같은 저장소의 ROS 없는 파일(app.py 와 같은 방식)
+for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS 없는 파일(app.py 와 같은 방식, d2_vision 은 가짜 스캔 그림만)
     sys.path.insert(0, str(REPO / 'src' / _pkg))
 
 import yaml  # noqa: E402
-from d2_bridge.bridge_codec import alive_payload, parse_request, req_topic, res_topic  # noqa: E402
+from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, alive_payload, parse_request,  # noqa: E402
+                                    req_topic, res_topic)
 from d2_task.recipe_document import RecipeDocument  # noqa: E402
 from d2_task.recipe_to_blocks import RecipeToBlocks  # noqa: E402
 from mqtt_client import make_mqtt_client  # noqa: E402
@@ -58,6 +62,24 @@ def fake_wrist_jpeg(seed, text):
     return buf.getvalue()
 
 
+def fake_scan_media(blocks, origin, size_mm):
+    """가짜 스캔 사진(위에서 본 블록, JPEG 바이트) · 점군(블록 윗면, base_link m ASCII PLY 바이트) — 비전 가짜 스캔과 같은 그림 · 점.
+
+    입력: blocks = blocks/1 · origin = robot.yaml assembly_origin · size_mm = 블록 크기. numpy · PIL 이 없으면 (None, None).
+    """
+    try:
+        from d2_vision.mock_scan import blocks_to_points, top_view, write_ply
+        from PIL import Image
+    except ImportError:
+        return None, None
+    buf = io.BytesIO()
+    Image.fromarray(top_view(blocks, size_mm)).save(buf, 'JPEG', quality=85)
+    with tempfile.TemporaryDirectory() as d:          # PLY 형식은 비전 가짜 스캔의 write_ply 한 곳에 둔다
+        path = Path(d) / 'cloud.ply'
+        write_ply(path, blocks_to_points(blocks, origin, size_mm))
+        return buf.getvalue(), path.read_bytes()
+
+
 class MockRobot:
     """로봇 PC 흉내. 상태 하나(state/1)와 잠금 하나(safety_state/1)를 들고, 명령에 따라 바꾸고 MQTT 로 방송한다.
 
@@ -68,6 +90,7 @@ class MockRobot:
         """벤치 레시피를 읽어 두고(검사 응답 · 스캔 결과) MQTT 를 준비한다. step_s = 가짜 조립 · 스캔 한 단계 시간(초)."""
         cfg = yaml.safe_load(ROBOT_YAML.read_text(encoding='utf-8'))
         self.block_mm = [v * 1000 for v in cfg['block_size_m']]
+        self.origin = cfg['assembly_origin']   # 가짜 점군을 base_link 로 옮길 때(진짜 점군과 같은 좌표)
         self.step_s = step_s
         self.lock = threading.Lock()
         self.st = dict(state='IDLE', run_id=None, design_id=None, block_id=None, message_id=None, message='대기')
@@ -140,7 +163,7 @@ class MockRobot:
         self.set_state('DONE', '완성했어요', 'done', block_id=None)
 
     def _scan(self, run_id):
-        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result(벤치 blocks/1, 추정 2개) → SCAN_REVIEW."""
+        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/1.2(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
         for pose in ('observe', 'observe_front', 'observe_side'):
             for state in ('SCAN_MOVE', 'SCAN_CAPTURE'):
                 self.set_state(state, f'스캔 중 — {pose}', 'scan_running')
@@ -152,10 +175,17 @@ class MockRobot:
         _, blocks = self.design(BENCH)
         items = [{'order': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
                  for i, b in enumerate(blocks['blocks'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
-        self.pub('d2/task/scan_result', {'schema': 'scan_result/1.1', 'run_id': run_id, 'inferred_count': 2,
-                                         'blocks': {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair',
-                                                    'blocks': items},
-                                         'image_path': '', 'poses_used': ['observe', 'observe_front', 'observe_side']})
+        scan = {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
+        jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
+        result = {'schema': 'scan_result/1.2', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
+                  'image_path': f'/mock/scan/{run_id}/color.png' if jpeg else '',   # 로봇 PC 경로 흉내 — 웹은 열지 않는다
+                  'poses_used': ['observe', 'observe_front', 'observe_side'], 'nearest_base': BENCH}   # E-79 힌트
+        if ply:
+            result['cloud_path'] = f'/mock/scan/{run_id}/cloud.ply'   # 선택 칸 — 점군이 없으면 뺀다(진짜와 같음)
+        self.pub('d2/task/scan_result', result)
+        for topic, data in ((SCAN_IMAGE_TOPIC, jpeg), (SCAN_CLOUD_TOPIC, ply)):   # scan_result 다음에(다리와 같은 순서)
+            if data:
+                self.c.publish(topic, data, qos=1)
         self.set_state('SCAN_REVIEW', '스캔 결과를 확인하고 [저장] · [다시 스캔] · [취소]', 'scan_review')
 
     def _run(self, target, *args):
