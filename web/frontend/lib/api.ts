@@ -1,6 +1,6 @@
 // REST 한 곳(SDD 3.3 — 화면은 backend 의 REST · /ws 만 쓴다, E-41).
 // 운영: backend 가 이 화면을 같은 주소에서 내려 주므로 BASE 는 빈 글자. 개발(next dev :3000): NEXT_PUBLIC_BACKEND=http://localhost:8000
-import type { Cmd, CmdResult, Design, DesignSummary, Rules } from './types';
+import type { Cmd, CmdResult, Design, DesignSummary, GenJob, Rules, TemplateChoice } from './types';
 
 export const BASE = process.env.NEXT_PUBLIC_BACKEND ?? '';
 // 버튼 답을 기다리는 시간 = backend 의 req_timeout_s(robot.yaml 한 곳 — /ws 가 붙을 때 timing 으로 알려 줌) + 여유.
@@ -60,3 +60,40 @@ export const getDesign = (id: string) => getJson<Design>('/api/designs/' + encod
 export const getRules = () => getJson<Rules>('/api/designs/rules');
 /** 손목 검출 그림 주소 — seq 가 바뀔 때마다 새로 받는다(브라우저가 옛 그림을 다시 쓰지 않게) */
 export const wristUrl = (seq: number) => `${BASE}/api/robot/wrist.jpg?seq=${seq}`;
+
+// ---------- AI 생성(W108 · W112) ----------
+const AI_TIMEOUT_MS = 45000; // Template 고르기는 GPT 를 한 번 부른다(호출당 30초 + 다시 1번) — 버튼 명령보다 길게
+
+/** POST 하고 JSON 을 받는다. 실패면 {error} — FastAPI 의 {detail} 글을 그대로(예: 409 '이미 설계를 만드는 중이에요') */
+async function postJson<T>(path: string, body: unknown, timeoutMs = AI_TIMEOUT_MS): Promise<{ data?: T; error?: string }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) return { error: (json && typeof json.detail === 'string' ? json.detail : null) ?? `웹 서버 응답 ${res.status}` };
+    return { data: json as T };
+  } catch {
+    return { error: '웹 서버에 닿지 않거나 너무 오래 걸려요' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 요청 문장 → AI 가 고른 모양(Template) + 이유 + 고를 수 있는 목록 */
+export const chooseTemplate = (text: string) => postJson<TemplateChoice>('/api/designs/template', { text });
+/** 후보 3개 만들기 시작 → {job_id}(한 번에 하나 — 이미 만드는 중이면 error) */
+export const startGenerate = (text: string, template: string) =>
+  postJson<{ job_id: string }>('/api/designs/generate', { text, template }, 10000);
+/** 생성 작업 하나의 지금 모습. 없으면 null */
+export const getGenJob = (jobId: string) => getJson<GenJob>('/api/designs/generate/' + encodeURIComponent(jobId));
+/** 고른 후보 저장 → {design_id, version, parent_id, index}. 떨어진 후보 · 이미 저장이면 error */
+export const pickCandidate = (jobId: string, index: number, madeBy: 'web' | 'voice' = 'web') =>
+  postJson<{ design_id: string; version: string; parent_id: string | null; index: number }>(
+    `/api/designs/generate/${encodeURIComponent(jobId)}/pick`, { index, made_by: madeBy }, 15000);
+

@@ -91,7 +91,7 @@ class DesignGenerator:
 
         Template = 저장소에 V000 이 등록된 기본 설계. 화면이 이 결과를 사용자에게 한 번 확인받은 뒤 generate 를 부른다.
         """
-        templates = self._templates()
+        templates = self.templates()
         system = self.template_prompt.substitute(templates='\n'.join(f'- {t}: {h}' for t, h in templates.items()))
         fmt = self._format('template_choice', {
             'type': 'object', 'additionalProperties': False, 'required': ['template', 'reason'],
@@ -105,8 +105,8 @@ class DesignGenerator:
             self._save_log(log, messages)
         return {'template': None if data['template'] == 'NONE' else data['template'], 'reason': data['reason']}
 
-    def _templates(self):
-        """{Template ID: 설명} — 저장소에 V000 이 있는 기본 설계만(E-84 ② Template 은 기본 4개로 고정)."""
+    def templates(self):
+        """{Template ID: 설명} — 저장소에 V000 이 있는 기본 설계만(E-84 ② Template 은 기본 4개로 고정). 화면 확인 칸(W163)도 이것을 쓴다."""
         out = {}
         for row in self.store.list_designs():
             if row['made_by'] == 'cad' and row['design_id'].endswith('_V000'):

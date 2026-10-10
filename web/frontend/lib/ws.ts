@@ -2,7 +2,7 @@
 // /ws 받기 한 곳 — 붙으면 backend 가 들고 있는 값이 먼저 오고, 그 뒤 바뀔 때마다 온다. 끊기면 2초마다 다시 붙는다.
 import { useEffect, useRef, useState } from 'react';
 import { BASE, setReqTimeout } from './api';
-import type { GripperState, Intent, Progress, SafetyState, ScanResult, TaskState, WsEvent } from './types';
+import type { GenEvent, GripperState, Intent, Progress, SafetyState, ScanResult, TaskState, WsEvent } from './types';
 
 const RETRY_MS = 2000;
 const LOG_MAX = 100; // 화면 로그 줄 수(오래된 것부터 지움)
@@ -24,10 +24,11 @@ export interface Robot {
   scan: ScanResult | null;
   intent: Intent | null;
   wrist: { seq: number; at: number } | null; // 손목 검출 그림 번호 · 웹 PC 가 받은 시각(ms)
+  gen: GenEvent | null; // 마지막 AI 생성 알림 — 생성 패널이 받으면 job 을 다시 받는다(W112)
   log: LogLine[];
 }
 
-const EMPTY: Robot = { ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null, wrist: null, log: [] };
+const EMPTY: Robot = { ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null, wrist: null, gen: null, log: [] };
 
 function wsUrl(): string {
   const base = BASE || window.location.origin;
@@ -104,6 +105,11 @@ function apply(r: Robot, e: WsEvent): Robot {
       return { ...r, broker: e.data.connected };
     case 'wrist_image': // 그림 자체는 /api/robot/wrist.jpg 로 받는다 — 로그에는 남기지 않음(검출 때마다 와서)
       return { ...r, wrist: { seq: e.data.seq, at: e.data.stamp * 1000 } };
+    case 'gen': {
+      const g = e.data;
+      const text = g.stage === 'done' ? 'AI 후보 준비됨 — 고르세요' : g.stage === 'failed' ? `AI 생성 실패 — ${g.message ?? ''}` : g.stage === 'saved' ? '설계 저장됨' : '';
+      return { ...r, gen: g, log: text ? log(text) : r.log };
+    }
     default:
       return r;
   }

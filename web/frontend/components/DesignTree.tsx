@@ -58,7 +58,7 @@ export default function DesignTree({ picked, onRobot, onPick }: { picked: string
   const item = (d: DesignSummary) => ({
     key: d.design_id,
     label: d.design_id,
-    meta: `v${d.version} · ${MADE_KO[d.made_by] ?? d.made_by} · 블록 ${d.block_count}`,
+    meta: `${d.version} · ${MADE_KO[d.made_by] ?? d.made_by} · 블록 ${d.block_count}`, // version = V000 · V001 …(E-84)
     kids: kids.get(d.design_id)?.length ?? 0,
     design: d,
   });

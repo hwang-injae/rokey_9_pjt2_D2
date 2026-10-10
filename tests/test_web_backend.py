@@ -239,12 +239,18 @@ class FakeGen:
     def classify(self, text):
         return {'template': '001_CHAIR_BENCH', 'reason': '벤치 모양'}
 
+    def templates(self):
+        return {'001_CHAIR_BENCH': '벤치', '002_CHAIR_BACK': '등받이 의자'}
+
     def generate(self, text, template, on_progress=None):
         self.release.wait(2)
         cand = {'idea': '안 0', 'blocks': {'schema': 'blocks/2.0', 'design_id': '001_CHAIR_BENCH_V001', 'blocks': []},
                 'check': {'ok': True, 'reason': '', 'min_margin_mm': 9.0, 'errors': [], 'recipe': {'big': 1}, 'placements': {'big': 1}}}
         bad = {**cand, 'check': {**cand['check'], 'ok': False, 'errors': [{'block': 9, 'reason': 'CHECK_FAILED', 'detail': '받침 없음'}]}}
-        on_progress('candidates', {'attempt': 1, 'design_id': '001_CHAIR_BENCH_V001', 'candidates': [cand, bad]})
+        on_progress('reading', {'design_id': '001_CHAIR_BENCH_V000'})
+        on_progress('candidates', {'attempt': 1, 'design_id': '001_CHAIR_BENCH_V001',
+                                   'candidates': [{k: cand[k] for k in ('idea', 'blocks')}, {k: bad[k] for k in ('idea', 'blocks')}]})
+        on_progress('checked', {'attempt': 1, 'index': 0, 'check': cand['check']})
         return {'text': text, 'template': template, 'design_id': '001_CHAIR_BENCH_V001', 'parent_id': '001_CHAIR_BENCH_V000',
                 'reference': ['001_CHAIR_BENCH_V000'], 'candidates': [cand, bad], 'attempts': 1, 'elapsed_s': 1.0}
 
@@ -267,7 +273,8 @@ def test_generate_routes_job_flow(store):
     gen = FakeGen()
     client, _ = make_client(store, gen=gen)
     assert client.post('/api/designs/template', json={'text': '벤치'}).json() == \
-        {'success': True, 'template': '001_CHAIR_BENCH', 'reason': '벤치 모양'}
+        {'success': True, 'template': '001_CHAIR_BENCH', 'reason': '벤치 모양',
+         'templates': [{'id': '001_CHAIR_BENCH', 'label': '벤치'}, {'id': '002_CHAIR_BACK', 'label': '등받이 의자'}]}
     assert client.post('/api/designs/template', json={'text': '  '}).status_code == 400
     job = client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH'}).json()['job_id']
     assert client.post('/api/designs/generate', json={'text': '또', 'template': '001_CHAIR_BENCH'}).status_code == 409   # 하나씩
@@ -280,6 +287,7 @@ def test_generate_routes_job_flow(store):
         threading.Event().wait(0.02)
     assert view['state'] == 'ready' and view['design_id'] == '001_CHAIR_BENCH_V001' and view['reference'] == ['001_CHAIR_BENCH_V000']
     assert [c['check']['ok'] for c in view['candidates']] == [True, False] and 'recipe' not in view['candidates'][0]['check']
+    assert view['reading'] == ['001_CHAIR_BENCH_V000'] and view['attempt'] == 1
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 1}).status_code == 409                      # 떨어진 후보
     saved = client.post(f'/api/designs/generate/{job}/pick', json={'index': 0, 'made_by': 'voice'}).json()
     assert saved == {'design_id': '001_CHAIR_BENCH_V001', 'version': 'V001', 'parent_id': '001_CHAIR_BENCH_V000', 'index': 0}

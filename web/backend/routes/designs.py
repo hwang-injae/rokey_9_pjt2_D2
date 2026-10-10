@@ -56,12 +56,19 @@ class GenJobs:
         job = self.jobs[job_id]
 
         def progress(stage, info):
+            # job 에도 그때그때 적는다 — 화면은 알림이 올 때마다 GET 으로 job 전체를 다시 받아 알림이 몰려와도 빠짐없이 그린다
             data = dict(info)
+            if stage == 'reading':
+                job.setdefault('reading', []).append(data.get('design_id'))
+            if 'attempt' in data:
+                job['attempt'] = data['attempt']
             if 'candidates' in data:
                 data['candidates'] = [slim(c) for c in data['candidates']]
                 job['candidates'] = data['candidates']
             if 'check' in data:
                 data['check'] = {k: data['check'][k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}
+                if 0 <= data.get('index', -1) < len(job['candidates']):
+                    job['candidates'][data['index']] = {**job['candidates'][data['index']], 'check': data['check']}
             self.publish({'type': 'gen', 'data': {'job_id': job_id, 'stage': stage, **data}})
         try:
             result = self.gen.generate(job['text'], job['template'], on_progress=progress)
@@ -78,7 +85,7 @@ class GenJobs:
         out = {k: job[k] for k in ('job_id', 'state', 'text', 'template', 'candidates')}
         if 'result' in job:
             out.update({k: job['result'][k] for k in ('design_id', 'parent_id', 'reference', 'attempts', 'elapsed_s')})
-        for k in ('code', 'message', 'detail', 'saved'):
+        for k in ('reading', 'attempt', 'code', 'message', 'detail', 'saved'):
             if k in job:
                 out[k] = job[k]
         return out
@@ -114,14 +121,17 @@ class PickBody(BaseModel):
 
 @router.post('/template')
 def choose_template(body: TextBody, request: Request):
-    """요청 문장 → AI 가 고른 Template + 이유(사용자가 화면에서 한 번 확인 — W163). template null = 범위 밖 안내."""
+    """요청 문장 → AI 가 고른 Template + 이유 + 고를 수 있는 Template 목록(사용자가 화면에서 한 번 확인 · 바꿈 — W163).
+    template null = 범위 밖 안내(OUT_OF_SCOPE)."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, '요청 문장이 비었어요')
+    gen = request.app.state.gen
     try:
-        return {'success': True, **request.app.state.gen.classify(text)}
+        choice = gen.classify(text)
     except GenError as e:
         return {'success': False, 'code': e.code, 'message': e.message}
+    return {'success': True, **choice, 'templates': [{'id': k, 'label': v} for k, v in gen.templates().items()]}
 
 
 @router.post('/generate')

@@ -1,9 +1,10 @@
 'use client';
-// 메인 페이지 — 위 띠(제목 · 연결 점 · 진행도 가운데 · 다크 모드) · 끊김 배너 · 왼쪽(로봇 패널 · 손목 카메라) · 오른쪽(설계 3D) · 상태 로그.
-// 생성(W112)과 스캔 비교(W116)는 뒤에 붙는다.
+// 메인 페이지 — 위 띠(제목 · 연결 점 · 진행도 가운데 · 다크 모드) · 끊김 배너 · 왼쪽(로봇 패널 · 손목 카메라) ·
+// 오른쪽(AI 설계 만들기 W112 · 설계 3D) · 상태 로그. 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임). 스캔 비교(W116)는 뒤에 붙는다.
 import { useEffect, useState } from 'react';
 import { ConnectionBanners, ConnectionDots } from '@/components/ConnectionBadge';
 import DesignView from '@/components/DesignView';
+import GeneratePanel from '@/components/GeneratePanel';
 import ProgressTop from '@/components/ProgressTop';
 import RobotPanel from '@/components/RobotPanel';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -47,6 +48,7 @@ export default function Home() {
             <WristCamera robot={robot} />
           </div>
           <div className="col">
+            <GeneratePanel robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
             <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} onPick={setPicked} />
           </div>
         </div>

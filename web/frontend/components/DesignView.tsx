@@ -5,7 +5,7 @@
 // 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = blocks.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
-import type { Design, Rules } from '@/lib/types';
+import type { Block2, Design, Rules } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
 import DesignTree, { MADE_KO } from './DesignTree';
 import Preview3D, { type Item3D } from './Preview3D';
@@ -22,6 +22,10 @@ const ROLE: Record<string, { ko: string; color: string }> = {
 const OTHER = '#a8a29e'; // 목록에 없는 새 역할(AI 가 지은 이름 — roles.json PR 전)
 const PROG = { present: '#22c55e', current: '#facc15', unsure: '#f97316', todo: '#9ca3af' };
 const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 색을 나누지 않음)
+
+/** 블록 → 3D 상자(역할별 색, 스캔 추정 블록은 반투명). 설계 3D · AI 후보 미리보기(GeneratePanel)가 같이 쓴다 */
+export const roleItems = (blocks: Block2[]): Item3D[] =>
+  blocks.map((b) => ({ x: b.x, y: b.y, z: b.z, ori: b.ori, color: ROLE[roleOf(b.role)]?.color ?? OTHER, opacity: b.inferred ? 0.45 : 1 }));
 
 interface Props {
   robot: Robot;
@@ -67,9 +71,9 @@ export default function DesignView({ robot, viewId, rules, dark, onPick }: Props
     const idBySeq = new Map((design.placements?.steps ?? []).map((s) => [s.sequence, s.block_id]));
     const prog = running && robot.progress?.run_id === st?.run_id ? robot.progress : null;
     const stateById = new Map((prog?.blocks ?? []).map((b) => [b.block_id, b.state]));
+    if (!running) return roleItems(design.blocks.blocks);
     return design.blocks.blocks.map((b) => {
       const at = { x: b.x, y: b.y, z: b.z, ori: b.ori };
-      if (!running) return { ...at, color: ROLE[roleOf(b.role)]?.color ?? OTHER, opacity: b.inferred ? 0.45 : 1 };
       const id = idBySeq.get(b.order);
       const s = id ? stateById.get(id) : undefined;
       if (id && id === st?.block_id) return { ...at, color: PROG.current };
@@ -95,7 +99,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick }: Props
         <h2>설계 3D</h2>
         {design && (
           <span className="muted">
-            {design.design_id} · v{design.version} · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.blocks.blocks.length}개
+            {design.design_id} · {design.version} · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.blocks.blocks.length}개
             {loading ? ' (바꾸는 중…)' : ''}
           </span>
         )}
