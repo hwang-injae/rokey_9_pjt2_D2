@@ -2,6 +2,7 @@
 """TaskPlanner 시험 (SDD 9.5 '가짜 진행표 5가지'). 레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH), 설정은 실제 robot.yaml."""
 import copy
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -174,10 +175,12 @@ def test_judge_없는_블록_이름은_거부():
 def test_progress_message는_NaN_없는_JSON():
     p = planner(2)
     p.update_progress({IDS[0]: {'state': 'present', 'top_z_m': 0.0123}})
+    before = time.time()
     msg = p.progress_message(None, 12.5)
     text = json.dumps(msg, allow_nan=False)                        # NaN 이 남아 있으면 ValueError
     got = json.loads(text)
-    assert got['schema'] == 'progress/1' and got['run_id'] is None and got['obs_stamp'] == 12.5
+    assert got['schema'] == 'progress/1.1' and got['run_id'] is None and got['obs_stamp'] == 12.5
+    assert before <= got['stamp'] <= time.time()                   # 보낸 시각(E-75) — 관측한 시각(obs_stamp)과 따로다
     assert len(got['blocks']) == 11 and got['blocks'][0]['by'] == 'robot'
     assert got['blocks'][0]['top_z_m'] == 0.0123 and got['blocks'][0]['dx_m'] is None
 

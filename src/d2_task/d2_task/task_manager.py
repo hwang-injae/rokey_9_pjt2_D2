@@ -47,8 +47,9 @@ LOG = logging.getLogger('d2_task')
 
 # 조립이 진행 중인 상태 — 정지 · 실패 뒤 RECOVER 에서 CHECK 로 이어 간다
 RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'WAIT_HMI', 'VERIFY', 'RECOVER', 'ERROR')
-# 로봇이 서야 하는 결과 — 정지 노드가 세웠다(STOPPED · CANCELED) / 그리퍼 피드백이 없어 세웠다(NO_FEEDBACK, IRD 7장 → STOPPED)
-STOP_REASONS = ('STOPPED', 'CANCELED', 'NO_FEEDBACK')
+# 로봇이 서야 하는 결과 — 정지 노드가 세웠다(STOPPED · CANCELED). 그리퍼 응답 없음(GRIPPER_NO_RESPONSE) · 피드백 없음(NO_FEEDBACK)은
+# 정지 노드가 잠그지 않으니 신호를 기다리지 않고 작업 관리자가 ERROR 로 멈춘다(E-74, 10/9 PL)
+STOP_REASONS = ('STOPPED', 'CANCELED')
 
 
 def wait_until(event, should_abort, poll_s=0.05, timeout_s=None):
@@ -74,7 +75,7 @@ class TaskManager:
     들어오는 것(콜백 스레드): command(HmiCommand) · on_intent(음성) · on_safety(정지 노드) · on_gripper · shutdown.
     나가는 것: io 로 /d2/task/state · /d2/task/progress 방송, move_to · check_progress · pick_place 호출.
     바깥 영향: 로봇은 pick_place · move_to 를 통해서만 움직인다(이 클래스는 팔을 직접 안 건드린다).
-    실패: TIMEOUT 은 먼저 정지 요청 후 정지 상태를 기다린다(IRD 7장). ERROR · GRIPPER_NO_RESPONSE 는 ERROR 로 간다.
+    실패: TIMEOUT 은 먼저 정지 요청 후 정지 상태를 기다린다(IRD 7장). ERROR · GRIPPER_NO_RESPONSE · NO_FEEDBACK 는 ERROR 로 간다(E-74).
     IRD 에 없는 reason 도 같은 공통 분기로 일반 실패 → ERROR 로 간다.
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
@@ -83,7 +84,7 @@ class TaskManager:
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
         monitor_hmi 는 웹 연결 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
         공급 방식은 cfg['supply_mode'](없으면 slots): slots = 공급 칸 6개(기본), scatter = 흩뿌린 공급(관측 → 후보 고르기, E-55). scatter 는 open_width_m(m)을 명시로 받아야
-        집기 요청을 만든다 — 열림 폭이 확정 전이라 노드는 아직 None 을 넘기고, 그러면 scatter 선택은 ERROR 로 끝난다(실제 흩뿌림 실행 보류).
+        집기 요청을 만든다 — task 노드는 0 을 넘기고, 0 은 'pick_place 가 robot.yaml grasp_open_pick_m.<잡기>를 쓴다'는 뜻이다(IRD PickPlace.srv). None(안 넘김)이면 scatter 선택은 ERROR 로 끝난다.
         만들 때 디스크에 보관돼 있던 미전송 요약을 되살려 다시 보낼 수 있게 한다(로봇 작업을 받기 전). 처음 상태는 IDLE."""
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
@@ -465,9 +466,9 @@ class TaskManager:
         elif status == 'NO_MATCH':
             counts = result['counts']
             # 기울어진 블록이 있고 제외 이유가 tilted · under 뿐이면 IRD 알림 tilted_block(E-68 — 덮인 블록이 같이 있어도 사람이 기울어진 것을 바로 놓으면 된다).
-            # under 만이거나 다른 제외 이유가 섞이면 message_id 없이 글자만 — 새 이름(no_match_block)을 둘지는 PL 선택
+            # under 만이거나 다른 제외 이유가 섞이면 no_match_block(E-73) — 이유는 글자(message)로 같이 보낸다
             only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k not in ('tilted', 'under'))
-            self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else None, result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
+            self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else 'no_match_block', result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
         elif status == 'BLOCKED':                  # 장애물 블록 중 형식이 틀린 것이 있다(E-68) — 일부만 보내지 않고 서서 사람을 부른다
@@ -651,7 +652,7 @@ class TaskManager:
             self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', 'scan_running', '스캔 촬영을 마쳤습니다')
 
     def _scan_infer(self):
-        """모은 점군을 추론해 scan_result/1로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
+        """모은 점군을 추론해 scan_result/1.2 로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
 
         구조 합격 검사는 HMI의 check_design 요청 때 한다. 여기서는 JSON 형식·필수 값만 확인하며 잘못된 답은 SCAN_FAILED.
         """
@@ -683,10 +684,13 @@ class TaskManager:
             cloud = body.get('cloud_path', '')                # 화면 점군 창용 PLY 경로(로봇 PC). 선택 칸(10/8 PL, IRD 4.2 · 6장): 없거나 빈 글자 = 점군 없음 → 스캔은 그대로, 결과에서 뺀다
             if not isinstance(cloud, str):                    # 글자가 아닌 값(null · 숫자 · 목록 …)만 잘못된 응답이다 → SCAN_FAILED
                 raise ValueError('cloud_path 가 글자가 아니다')
-            result = dict(schema='scan_result/1', run_id=self.run_id, blocks=copy.deepcopy(blocks),
+            result = dict(schema='scan_result/1.2', stamp=time.time(), run_id=self.run_id, blocks=copy.deepcopy(blocks),
                           inferred_count=count, image_path=body['image_path'], poses_used=list(self._scan_poses))
             if cloud:
                 result['cloud_path'] = cloud                  # 비어 있지 않은 글자는 그대로 넘긴다(작업 관리자는 파일을 열지 않는다)
+            nearest = body.get('nearest_base')                # 선택 칸(E-79): 추론기가 고른 가장 가까운 기본 설계 design_id — HMI 가 GPT 힌트로 쓴다.
+            if isinstance(nearest, str) and nearest:          # 힌트일 뿐이라 없음 · null · 빈 글자 · 글자 아닌 값은 칸을 빼고 스캔은 그대로 간다(cloud_path 와 달리 SCAN_FAILED 로 막지 않는다)
+                result['nearest_base'] = nearest
             json.dumps(result, allow_nan=False)       # NaN · Infinity 를 방송·저장 가능한 결과로 넘기지 않는다
         except (KeyError, TypeError, ValueError) as e:
             return self._to_error(f'SCAN_FAILED: 추론 응답이 잘못됐다({e})')
@@ -773,6 +777,9 @@ class TaskManager:
             self._enter_stopped()
         elif reason == 'BUSY':                 # 기다렸다 다시: 같은 상태에 머무르면 다음 단계가 다시 부른다
             return
+        elif reason in ('GRIPPER_NO_RESPONSE', 'NO_FEEDBACK'):     # 코드만 보이면 사람이 뭘 해야 할지 모른다 — 코드는 괄호로 남겨 기록과 맞춘다(E-74)
+            what = '그리퍼가 응답하지 않아요' if reason == 'GRIPPER_NO_RESPONSE' else '그리퍼 폭을 읽지 못했어요'
+            self._to_error(f'{where}: {what}({reason}) — 쥔 블록이 있으면 받친 채 그리퍼 전원 · 연결을 복구하고, 그리퍼를 열어 블록을 뺀 뒤 [다시 시작]을 누르세요')
         else:
             self._to_error(f'{where} 실패: {reason or "이유 없음"}')
 

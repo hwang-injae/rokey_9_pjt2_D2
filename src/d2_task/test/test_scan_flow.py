@@ -66,7 +66,7 @@ def test_세자세_같은_run_검토대기와_CSV(tmp_path):
     rid = m.run_id
     assert io.captures == [(p, rid) for p in CFG['scan']['poses']]
     assert io.infers == [rid] and io.results[0]['poses_used'] == CFG['scan']['poses']
-    assert io.results[0]['schema'] == 'scan_result/1'
+    assert io.results[0]['schema'] == 'scan_result/1.2' and isinstance(io.results[0]['stamp'], float) and io.results[0]['stamp'] > 1.7e9    # 보낸 시각(epoch s, E-75)
     assert not m.pending_builds and m.last_build is None
     m.finalize()
     text = (tmp_path / f'{rid}.csv').read_text()
@@ -190,6 +190,26 @@ def test_cloud_path가_없거나_빈_글자면_스캔은_계속되고_결과에�
         io.inference['cloud_path'] = value
     review(m)
     assert m.state == 'SCAN_REVIEW' and 'cloud_path' not in io.results[0] and io.results[0]['image_path'] == '/data/image.png'
+    m.finalize()
+
+
+def test_nearest_base는_scan_infer_응답값_그대로_scan_result에_실린다(tmp_path):
+    """E-79: 추론기가 고른 가장 가까운 기본 설계 design_id 를 작업 관리자가 해석하지 않고 그대로 넘긴다(HMI 가 GPT 힌트로 씀)."""
+    m, io = make(tmp_path)
+    io.inference['nearest_base'] = '001_CHAIR_BENCH'
+    review(m)
+    assert io.results[0]['nearest_base'] == '001_CHAIR_BENCH' and m.state == 'SCAN_REVIEW'
+    m.finalize()
+
+
+@pytest.mark.parametrize('present, value', [(False, None), (True, ''), (True, None), (True, 5)])
+def test_nearest_base가_없거나_글자가_아니면_스캔은_계속되고_결과에서_빠진다(tmp_path, present, value):
+    """선택 칸이자 힌트일 뿐이라 없음 · 빈 글자 · null · 글자 아닌 값은 칸을 빼고 SCAN_REVIEW 까지 간다(cloud_path 처럼 SCAN_FAILED 로 막지 않는다)."""
+    m, io = make(tmp_path)
+    if present:
+        io.inference['nearest_base'] = value
+    review(m)
+    assert m.state == 'SCAN_REVIEW' and 'nearest_base' not in io.results[0] and io.results[0]['image_path'] == '/data/image.png'
     m.finalize()
 
 

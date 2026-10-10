@@ -5,6 +5,7 @@ task 노드(TaskManager)가 부른다. ROS 없이 시험할 수 있게 노드와
 좌표 계산은 새로 만들지 않고 집기·놓기가 쓰는 d2_motion.motion_math 를 그대로 쓴다(SDD 3.3: 변환은 한 곳).
 """
 import math
+import time
 
 from d2_motion.motion_math import column, quat_from_axes, recipe_blocks, slot_block_pose, up_axis
 from d2_task.recipe_document import RecipeDocument
@@ -155,9 +156,10 @@ class TaskPlanner:
         return problems
 
     def progress_message(self, run_id, obs_stamp):
-        """진행표를 /d2/task/progress 의 JSON progress/1 (dict) 로 만든다. 안 잰 값(NaN)은 null.
+        """진행표를 /d2/task/progress 의 JSON progress/1.1 (dict) 로 만든다. 안 잰 값(NaN)은 null.
 
         입력: run_id(없으면 None), obs_stamp = 관측한 시각(s). center_m · quat 은 설계 자리(base_link, m).
+        stamp = 보낸 시각(epoch s, 이 함수를 부른 때) — 관측한 시각(obs_stamp)과 다르다. 웹이 얼마나 묵은 진행표인지 알아보는 데 쓴다(E-75).
         by 는 robot 만 쓴다(스캔 실물은 W119).
         """
         blocks = []
@@ -167,7 +169,7 @@ class TaskPlanner:
                            'center_m': list(b['center']), 'quat': list(b['quat']),
                            'top_z_m': _nan_to_none(row['top_z_m']), 'dz_m': _nan_to_none(row['dz_m']),
                            'dx_m': _nan_to_none(row['dx_m']), 'dy_m': _nan_to_none(row['dy_m'])})
-        return {'schema': 'progress/1', 'design_id': self.design_id, 'run_id': run_id,
+        return {'schema': 'progress/1.1', 'stamp': time.time(), 'design_id': self.design_id, 'run_id': run_id,
                 'obs_stamp': obs_stamp, 'blocks': blocks}
 
     def _pick_slot(self, index, avoid_slots=()):

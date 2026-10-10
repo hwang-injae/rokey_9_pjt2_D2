@@ -155,10 +155,10 @@ PRE = dict(phase='PRE_CONTACT', grasped=False)
     (('TIMEOUT', 'PRE_CONTACT', False), 'RECOVER'),                         # 중간에 멈춘 것은 늘 기존 정지 · 복구
     (('STOPPED', 'PRE_CONTACT', False), 'RECOVER'),
     (('CANCELED', 'PRE_CONTACT', False), 'RECOVER'),
-    (('NO_FEEDBACK', 'PRE_CONTACT', False), 'RECOVER'),
     (('LOOKUP_FAILED',), 'REOBSERVE'),                                      # 조회만 실패 — 로봇은 안 움직임
     (('ERROR', 'PRE_CONTACT', False), 'ERROR'),
     (('GRIPPER_NO_RESPONSE', 'PRE_CONTACT', False), 'ERROR'),
+    (('NO_FEEDBACK', 'PRE_CONTACT', False), 'ERROR'),                       # 폭을 못 읽음 — 사람 호출(E-74)
     (('이상한_이유', 'PRE_CONTACT', False), 'ERROR'),
     (('', 'PRE_CONTACT', False), 'ERROR'),
     ((None, 'PRE_CONTACT', False), 'ERROR'),

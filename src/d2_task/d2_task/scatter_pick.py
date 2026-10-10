@@ -6,7 +6,8 @@ TaskManager 의 SELECT 안에서(공개 상태를 늘리지 않고) 쓰려고 �
 ③ 잠금 밖에서 observe_supply 로 가서 find_blocks 를 부르고 prepare() 로 후보를 계산한다(계산만 — 상태를 바꾸지 않는다) →
 ④ **TaskManager 잠금 안에서** commit() 이 요청 번호 · 상태 · 정지 · 종료를 다시 확인하고 같은 구간에서 후보를 적용한다(확인과 적용 사이에 정지가 끼지 못한다) →
 ⑤ 실패하면 on_failure() 가 실행 단계 · 잡힘 상태로 다음 동작(REPLAN_SAME · WAIT · REOBSERVE · RECOVER · ERROR)을 알려 준다.
-설정은 명시적으로 주입한다: supply_mode == 'scatter' 이고 open_width_m 이 정해져야 실행 가능한 요청을 만든다(이름 · 기본값 · 열림 폭은 확정 전).
+설정은 명시적으로 주입한다: supply_mode == 'scatter' 이고 open_width_m 이 정해져야 실행 가능한 요청을 만든다.
+open_width_m 은 task 노드가 0 으로 넘긴다 — PickPlace 에서 0 은 '잡기마다 robot.yaml grasp_open_pick_m 을 쓴다'이므로 목표 블록의 잡기가 바뀌어도 폭이 맞는다.
 """
 import copy
 import threading
@@ -21,8 +22,8 @@ SUPPLY_SCATTER = 'scatter'
 # PLAN_FAILED 는 접근 계획뿐 아니라 집은 뒤 들어 올리기 · 운반 · 놓기에서도 나온다. 쥐었거나 상태가 불명확하면 기존 정지 · 복구 절차(RECOVER)로 넘긴다.
 PRE_CONTACT = 'PRE_CONTACT'                # 손가락이 블록에 닿기 전 단계(접근 계획 · 이동)에서 실패했다고 확인됨
 REPLAN_SAME, WAIT, REOBSERVE, RECOVER, ERROR = 'REPLAN_SAME', 'WAIT', 'REOBSERVE', 'RECOVER', 'ERROR'
-ALWAYS_RECOVER = ('TIMEOUT', 'STOPPED', 'CANCELED', 'NO_FEEDBACK')     # 중간에 멈췄다 — 닿았는지 · 쥐었는지 모른다
-ALWAYS_ERROR = ('ERROR', 'GRIPPER_NO_RESPONSE')                       # 사람 호출
+ALWAYS_RECOVER = ('TIMEOUT', 'STOPPED', 'CANCELED')                   # 중간에 멈췄다 — 닿았는지 · 쥐었는지 모른다
+ALWAYS_ERROR = ('ERROR', 'GRIPPER_NO_RESPONSE', 'NO_FEEDBACK')        # 사람 호출 (그리퍼 응답 · 피드백 없음은 작업 관리자 ERROR, E-74)
 
 
 def failure_action(reason, phase=None, grasped=None, area_unchanged=None):
