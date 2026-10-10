@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from d2_vision.tcp_pose import CALIB_NAME, POSX_TO_RG2TCP, load_calib, transform_to_matrix_mm
+from d2_vision.tcp_pose import CALIB_NAME, POSX_TO_RG2TCP, camera_pose_mm, load_calib, load_tilt_shift, transform_to_matrix_mm
 
 CONFIG = Path(__file__).resolve().parents[1] / 'config'
 
@@ -57,3 +57,32 @@ def test_transform_to_matrix_mm():
     T = transform_to_matrix_mm(t)
     assert np.allclose(T[:3, 3], [426.1, -72.5, 13.8])
     assert np.allclose(T[:3, :3], Rotation.from_euler('z', 30, degrees=True).as_matrix())
+
+
+def test_camera_pose_내려다보면_기울기_밀림_고침_없음():
+    """광축 ∥ 중력(내려다봄)이면 tilt_shift 가 있어도 TF × 보정값 그대로(10/10 E-83 — 수직 4각도 보정은 그대로)."""
+    T_b2t = np.eye(4)
+    T_b2t[:3, :3] = Rotation.from_euler('x', 180, degrees=True).as_matrix()   # 공구 z 가 아래
+    T_b2t[:3, 3] = [400.0, -70.0, 300.0]
+    T_tcp2c = np.eye(4)
+    T_tcp2c[:3, 3] = [-73.0, 35.0, -184.0]
+    assert np.allclose(camera_pose_mm(T_b2t, T_tcp2c, 21.42), T_b2t @ T_tcp2c)
+
+
+def test_camera_pose_30도_기울이면_시선에_수직인_아래로_옮김():
+    """광축이 수직에서 30° 기울면 카메라 위치 += k × (중력 중 광축에 수직인 성분) — k 21.42 mm 면 (−9.28, 0, −5.36) mm."""
+    T_b2t = np.eye(4)
+    T_b2t[:3, :3] = Rotation.from_euler('y', 180 - 30, degrees=True).as_matrix()   # 공구 z = (sin30, 0, −cos30)
+    T_tcp2c = np.eye(4)
+    base = T_b2t @ T_tcp2c
+    got = camera_pose_mm(T_b2t, T_tcp2c, 21.42)
+    assert np.allclose(got[:3, :3], base[:3, :3])
+    assert np.allclose(got[:3, 3] - base[:3, 3], [-21.42 * np.cos(np.radians(30)) * 0.5, 0.0, -21.42 * 0.25], atol=1e-6)
+
+
+def test_load_tilt_shift_json_없으면_0(tmp_path):
+    """보정 json 이 없거나 칸이 없으면 0(옛 판과 같음), 있으면 그 값 — config 의 값은 10/10 15자세 맞춤 21.42 mm."""
+    assert load_tilt_shift(tmp_path / 'none.npy') == 0.0
+    (tmp_path / 'a.json').write_text('{"file": "a.npy"}', encoding='utf-8')
+    assert load_tilt_shift(tmp_path / 'a.npy') == 0.0
+    assert abs(load_tilt_shift(CONFIG / CALIB_NAME) - 21.42) < 1e-9

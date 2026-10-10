@@ -6,7 +6,7 @@ Enter 를 누를 때마다 손목 카메라의 **컬러 PNG + 컬러에 맞춘 �
 이름으로 구분, PL 10/7 허락 — 규칙 §2.3). 태그를 안 켜면 이름은 그대로다. 장면 번호: 01~10 흩뿌린 장면 · 11~13 스캔(벤치 · 의자 Lv2 · 책상 Lv4) · 21~30 V-52 시험.
 스캔 원본은 드라이브 `1_원본_W114/스캔`에 따로 올린다(Roboflow에 섞이지 않게).
 자세 json = **MoveIt TF base_link → rg2_tcp(mm, 10/10 W156 — 손목 자세의 기준, E-70 ③)** · 두산 posx(mm · deg, 기록용) · 팔 관절값(/joint_states, deg)
-· 카메라 내부 파라미터 · TF × 보정값(rg2_tcp 틀)으로 계산한 T_base2cam(m) · **그때 쓴 보정값(파일 · 수정 시각 · 카메라 위치 mm · 지문)**
+· 카메라 내부 파라미터 · TF × 보정값(rg2_tcp 틀) + 기울기 밀림 고침(10/10 E-83, tilt_shift_mm)으로 계산한 T_base2cam(m) · **그때 쓴 보정값(파일 · 수정 시각 · 카메라 위치 mm · 지문)**
 · 제어기 TCP(config/tcp.json 이름 · 값 — 10/10 E-81 뒤 같은 이름 GripperDA_v1 이 값만 바뀜) · 해상도 · 시각.
 브링업이 없으면 TF · 관절값 · T_base2cam 은 빈 값으로 저장된다(경고). `--posx` 로 펜던트 값을 적을 수 있다(기록용).
 posx 를 받으면 펜던트 posx 길(제어기 모델)로 낸 카메라 위치와 TF 길(MoveIt 모델)의 차이(mm)도 적는다 — 같은 보정값을 posx 틀로 옮겨(POSX_TO_RG2TCP)
@@ -47,7 +47,7 @@ from sensor_msgs.msg import CameraInfo, Image, JointState
 
 import yaml
 
-from d2_vision.tcp_pose import POSX_TO_RG2TCP, TcpPose, default_calib_path, load_calib
+from d2_vision.tcp_pose import POSX_TO_RG2TCP, TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 from dsr_msgs2.srv import GetCurrentPosx
 
 JOINTS = ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']   # 두산 팔 관절 (joint_states 에 그리퍼 관절도 섞여 온다)
@@ -102,6 +102,7 @@ class CaptureScene(Node):
         except (OSError, ValueError):
             self.T_tcp2c = None
             self.get_logger().warn('보정값 %s 없음 — pose json 에 T_base2cam 을 못 넣는다' % self.calib_path)
+        self.tilt_shift = load_tilt_shift(self.calib_path)      # 기울기 밀림 고침(mm, 10/10 E-83) — T_base2cam 에 넣음
         # 같은 보정값을 posx 틀로 — posx 길과 TF 길 카메라 위치 차이(로봇 모델 차이) 기록용
         self.T_posx2c = None if self.T_tcp2c is None else np.linalg.inv(POSX_TO_RG2TCP) @ self.T_tcp2c
         bring = Path(get_package_share_directory('d2_bringup')) / 'config'
@@ -195,9 +196,11 @@ class CaptureScene(Node):
             'calib': calib_info(self.calib_path, self.T_tcp2c),    # 이 사진의 T_base2cam 을 어느 보정값으로 계산했나(PL 10/7)
         }
         if self.T_tcp2c is not None and T_b2t is not None:
-            T = T_b2t @ self.T_tcp2c
-            if self.T_posx2c is not None and posx is not None:   # posx 길과 TF 길의 카메라 위치 차이(mm) = 제어기 · MoveIt 모델 차이
-                pose['check_cam_posx_minus_tf_mm'] = ((posx_to_matrix(*posx) @ self.T_posx2c)[:3, 3] - T[:3, 3]).round(2).tolist()
+            T = camera_pose_mm(T_b2t, self.T_tcp2c, self.tilt_shift)
+            pose['tilt_shift_mm'] = self.tilt_shift
+            if self.T_posx2c is not None and posx is not None:   # posx 길과 TF 길의 카메라 위치 차이(mm) = 제어기 · MoveIt 모델 차이(밀림 고침 전 값끼리)
+                T_raw = T_b2t @ self.T_tcp2c
+                pose['check_cam_posx_minus_tf_mm'] = ((posx_to_matrix(*posx) @ self.T_posx2c)[:3, 3] - T_raw[:3, 3]).round(2).tolist()
             T[:3, 3] /= 1000.0
             pose['T_base2cam_m'] = T.round(6).tolist()
         (out / f'{stem}_pose.json').write_text(json.dumps(pose, ensure_ascii=False, indent=1), encoding='utf-8')
