@@ -5,7 +5,8 @@
 - 기본 설계 등록: 레시피 폴더의 <모델ID>_recipe.json + _placements.csv → 변환기 ②(d2_task, E-59) → design/2.0 → designs/<id>.json
 - 읽기: list_designs(트리 · RAG 목록 요약 + 최근 조립 결과, E-72 — Template 으로 거름) · children · get_design(design/2.0) · builds_for ·
         examples_for(RAG 자동 전환)
-- 쓰기: new_design_id(검사 전에 ID 만 정함) → save_design(검사 합격한 고른 후보 1개) · save_build(build/1, 같은 run_id 는 한 번만)
+- 쓰기: new_design_id(검사 전에 ID 만 정함) → save_design(검사 합격한 고른 후보 1개) · save_build(build/1, 같은 run_id 는 한 번만) ·
+        save_gen_log(AI 호출 기록 — NFR-17)
 설계 이름(10/10 E-84 · IRD 2장): 모두 <Template ID>_V<3자리>. Template = 기본 설계 4개 이름(001_CHAIR_BENCH …), 기본 = _V000,
 그 밖(AI · 음성 · 스캔)은 같은 Template 의 다음 번호. 고르기 전 후보 · 저장 전 스캔은 웹 메모리에만(E-84 ⑥ — rejected 기록 없음).
 형식 이름 상수는 이 파일 한 곳(web/README 4장). 저장한 설계는 고치지 않는다 — 기본 설계 4개만 레시피 파일에서 같은 ID로 다시 등록(E-55 ①).
@@ -81,11 +82,12 @@ class DesignStore:
         """폴더를 만들고(있으면 그대로) 방향 코드 표를 준비한다. 기본 설계 등록은 register_bases() 를 따로 부른다."""
         self.designs_dir = Path(data_dir) / 'designs'
         self.builds_dir = Path(data_dir) / 'builds'
+        self.gen_logs_dir = Path(data_dir) / 'gen_logs'
         self.recipe_dir = Path(recipe_dir)
         self.block_mm = list(block_mm)
         self.extent = ori_extents(self.block_mm)
         self._lock = threading.Lock()   # 같은 ID 를 두 요청이 동시에 저장하지 않게(REST 는 여러 스레드에서 불린다)
-        for d in (self.designs_dir, self.builds_dir):
+        for d in (self.designs_dir, self.builds_dir, self.gen_logs_dir):
             d.mkdir(parents=True, exist_ok=True)
 
     # ---------- 기본 설계 ----------
@@ -307,6 +309,15 @@ class DesignStore:
             return False
         self._write(path, build)
         return True
+
+    # ---------- AI 호출 기록(NFR-17) ----------
+    def save_gen_log(self, log):
+        """AI 호출 기록 하나(프롬프트 · 응답 원문 · 시간 · 검사 결과 — NFR-17 같은 요청 반복 때 차이를 설명하려고)를
+        gen_logs/<시각>_<종류>.json 으로 남긴다. 반환: 파일 이름. 키 값은 들어오지 않는다(design_gen 은 키를 기록에 넣지 않음)."""
+        now = time.time()
+        name = f"{time.strftime('%Y%m%d_%H%M%S', time.localtime(now))}_{int(now * 1000) % 1000:03d}_{self._safe(log.get('kind') or 'gen')}.json"
+        self._write(self.gen_logs_dir / name, log)
+        return name
 
     # ---------- 로봇이 부름(MQTT — MqttClient.serve) ----------
     def answer_get_design(self, body):

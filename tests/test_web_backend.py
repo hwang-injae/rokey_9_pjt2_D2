@@ -5,7 +5,9 @@
 손목 검출 그림 · 스캔 사진 · 점군(바이트)은 마지막 하나 + 번호만 알림 · 스캔 사진 · 점군은 직전 scan_result 와 짝, 저장소는 기본 설계 4개를 design/2.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
 """
 import json
+import os
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +19,9 @@ for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_bridge', ROOT / 'src' / '
     sys.path.insert(0, str(p))
 
 from mqtt_client import MqttClient  # noqa: E402
+
+# app.py 는 불러오는 순간 저장소를 열고 기본 설계를 등록한다 — 시험이 실제 web/backend/data(웹 PC 데이터)를 바꾸지 않게 임시 폴더로
+os.environ['DATA_DIR'] = tempfile.mkdtemp(prefix='d2_web_test_')
 
 
 class FakePaho:
@@ -225,11 +230,62 @@ def store(tmp_path):
     return s
 
 
-def make_client(store, bridge=True):
-    """가짜 MQTT · 임시 저장소로 앱을 만든다(lifespan 은 돌리지 않음)."""
+class FakeGen:
+    """DesignGenerator 흉내 — 생성은 release 가 열릴 때까지 기다린다(작업이 '도는 중'인 때를 시험하려고)."""
+
+    def __init__(self):
+        self.release, self.saved = threading.Event(), []
+
+    def classify(self, text):
+        return {'template': '001_CHAIR_BENCH', 'reason': '벤치 모양'}
+
+    def generate(self, text, template, on_progress=None):
+        self.release.wait(2)
+        cand = {'idea': '안 0', 'blocks': {'schema': 'blocks/2.0', 'design_id': '001_CHAIR_BENCH_V001', 'blocks': []},
+                'check': {'ok': True, 'reason': '', 'min_margin_mm': 9.0, 'errors': [], 'recipe': {'big': 1}, 'placements': {'big': 1}}}
+        bad = {**cand, 'check': {**cand['check'], 'ok': False, 'errors': [{'block': 9, 'reason': 'CHECK_FAILED', 'detail': '받침 없음'}]}}
+        on_progress('candidates', {'attempt': 1, 'design_id': '001_CHAIR_BENCH_V001', 'candidates': [cand, bad]})
+        return {'text': text, 'template': template, 'design_id': '001_CHAIR_BENCH_V001', 'parent_id': '001_CHAIR_BENCH_V000',
+                'reference': ['001_CHAIR_BENCH_V000'], 'candidates': [cand, bad], 'attempts': 1, 'elapsed_s': 1.0}
+
+    def save(self, result, index, made_by='web'):
+        if not result['candidates'][index]['check']['ok']:
+            raise ValueError('검사에 떨어진 후보는 고를 수 없다')
+        self.saved.append((index, made_by))
+        return {'design_id': result['design_id'], 'version': 'V001', 'parent_id': result['parent_id']}
+
+
+def make_client(store, bridge=True, gen=None):
+    """가짜 MQTT · 임시 저장소(· 가짜 생성기)로 앱을 만든다(lifespan 은 돌리지 않음)."""
     import app as web_app
     fake = FakeMqtt(bridge)
-    return TestClient(web_app.create_app(mqtt=fake, rules=RULES, store=store)), fake
+    return TestClient(web_app.create_app(mqtt=fake, rules=RULES, store=store, gen=gen or FakeGen())), fake
+
+
+def test_generate_routes_job_flow(store):
+    """Template 고르기 → 생성 시작(job, 한 번에 하나) → 진행 · 결과 조회(레시피는 화면에 안 보냄) → 고르기 저장 → 다시 고르기 거절."""
+    gen = FakeGen()
+    client, _ = make_client(store, gen=gen)
+    assert client.post('/api/designs/template', json={'text': '벤치'}).json() == \
+        {'success': True, 'template': '001_CHAIR_BENCH', 'reason': '벤치 모양'}
+    assert client.post('/api/designs/template', json={'text': '  '}).status_code == 400
+    job = client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH'}).json()['job_id']
+    assert client.post('/api/designs/generate', json={'text': '또', 'template': '001_CHAIR_BENCH'}).status_code == 409   # 하나씩
+    assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 아직 도는 중
+    gen.release.set()
+    for _ in range(100):
+        view = client.get(f'/api/designs/generate/{job}').json()
+        if view['state'] != 'running':
+            break
+        threading.Event().wait(0.02)
+    assert view['state'] == 'ready' and view['design_id'] == '001_CHAIR_BENCH_V001' and view['reference'] == ['001_CHAIR_BENCH_V000']
+    assert [c['check']['ok'] for c in view['candidates']] == [True, False] and 'recipe' not in view['candidates'][0]['check']
+    assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 1}).status_code == 409                      # 떨어진 후보
+    saved = client.post(f'/api/designs/generate/{job}/pick', json={'index': 0, 'made_by': 'voice'}).json()
+    assert saved == {'design_id': '001_CHAIR_BENCH_V001', 'version': 'V001', 'parent_id': '001_CHAIR_BENCH_V000', 'index': 0}
+    assert gen.saved == [(0, 'voice')] and client.get(f'/api/designs/generate/{job}').json()['state'] == 'saved'
+    assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 한 번만
+    assert client.get('/api/designs/generate/nope').status_code == 404
 
 
 def test_command_stop_resume_map_to_ird_names(store):
@@ -433,6 +489,7 @@ def test_designs_rest_and_robot_handlers(store):
     손목 그림 · 스캔 사진 · 점군은 들고 있는 바이트 그대로, 없으면 404."""
     client, fake = make_client(store)
     assert [r['design_id'] for r in client.get('/api/designs').json()] == BASES
+    assert [r['design_id'] for r in client.get('/api/designs?family=').json()] == BASES      # 빈 값 = 거르지 않음
     assert client.get('/api/designs/rules').json() == {'block_size_mm': [75.0, 25.0, 15.0], 'assembly_area_half_mm': 150.0}
     assert client.get('/api/designs/002_CHAIR_BACK_V000').json()['design_id'] == '002_CHAIR_BACK_V000'
     assert client.get('/api/designs/nope').status_code == 404

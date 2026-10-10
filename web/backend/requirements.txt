@@ -3,3 +3,5 @@ fastapi
 uvicorn[standard]     # /ws 에 websockets 가 필요하다
 paho-mqtt
 pyyaml                # robot.yaml 설계 규칙 키 읽기(E-78)
+openai                # 설계 생성 design_gen(W108) — 팀 키는 gpt-4o · whisper-1 만 열려 있다(10/10)
+python-dotenv         # uvicorn --env-file ../.env 로 키를 환경 변수로 넣을 때

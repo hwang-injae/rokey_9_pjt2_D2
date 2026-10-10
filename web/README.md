@@ -56,8 +56,8 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 웹 연결 신호 | backend가 1초마다 냄 | `d2/web/alive` | 다리 → `/d2/hmi/alive` |
 | 음성 문장 · 출발 | `/ws` `{type: intent, …}` | `d2/hmi/intent`(voice.py → 브로커, backend도 구독) | 다리 → `/d2/hmi/intent` |
 | 설계 규칙 숫자 | `GET /api/designs/rules` | — | — (backend가 `robot.yaml`을 읽음, 10/9 ①) |
-| 설계 생성 | `POST /api/designs/generate {text}` → `{job_id}`, 진행은 `/ws` `{type: gen, job_id, stage, candidates, reference}` | 검사만 `d2/task/check_design/req` × 3 | `/d2/task/check_design` |
-| 후보 고르기 → 저장 | `POST /api/designs/generate/{job_id}/pick {index}` → `design/2.0` | — (검사 결과를 이미 받아 둠) | — |
+| Template 고르기 · 설계 생성 | `POST /api/designs/template {text}` → `{template, reason}`(사용자 확인 — W163) → `POST /api/designs/generate {text, template}` → `{job_id}`(한 번에 하나 — 409), 진행은 `/ws` `{type: gen, job_id, stage: reading · candidates · checked · retry · done · failed · saved, …}` · `GET /api/designs/generate/{job_id}` ✅(10/10 W108 — 화면은 W112) | 검사만 `d2/task/check_design/req` × 3 | `/d2/task/check_design` |
+| 후보 고르기 → 저장 | `POST /api/designs/generate/{job_id}/pick {index, made_by}` → `{design_id, version, parent_id, index}`(떨어진 후보 · 이미 저장 409) ✅ | — (검사 결과를 이미 받아 둠) | — |
 | 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/2.0`, 없으면 404) ✅ | — | — |
 | 조립 기록 | `GET /api/designs/{id}/builds`(build/1 전부, 최근 것 먼저 · 설계가 없으면 404) ✅(10/10) — 목록 요약에도 `last_build` 한 줄 | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
