@@ -163,7 +163,7 @@ class StructureScanner:
         """자세 하나의 깊이 영상을 base_link 점군으로 바꿔 카메라 위치와 함께 모아 둔다.
 
         입력: pose_id = 자세 이름(기록용) · depth_mm_u16 = (H, W) 깊이 mm(0 = 없음) · intrinsics = {'fx','fy','ppx','ppy'} 또는
-              (fx, fy, ppx, ppy) px · T_base2cam_m = 4×4 카메라 → base_link(m, posx × 손목 보정 — SDD §6.9 '주의').
+              (fx, fy, ppx, ppy) px · T_base2cam_m = 4×4 카메라 → base_link(m, TF base_link → rg2_tcp × 손목 보정 T_rg2tcp2camera — 10/10 W156).
         출력: 모은 점 수(int). 물체 모서리의 허공 점(깊이 3×3 안 차 > 8 mm)과 0.1~1.0 m 밖은 버린다.
         (base 변환을 따로 하는 이유: 카메라 위치가 빈 곳 칠하기에 필요해서 카메라 좌표 점 → T 로 직접 옮긴다.)
         실패: 깊이 · 자세 모양이 틀리면 ValueError.

@@ -1,7 +1,7 @@
 # 아키텍처 질문 답변 — JsonQuery · 서비스 vs 액션 · MQTT 인터페이스
 
-> 2026-10-07 · 황인재(HMI) 질문 정리(10/9 링크만 지금 판으로 — 내용은 10/7 기준, 바뀐 것은 IRD가 맞다). 이름 · 칸의 정본은 [IRD](02_인터페이스_IRD_v3_101010.md)다(이 문서와 다르면 IRD가 맞다).
-> 근거: IRD 1장 원칙 2 · 4장 · 10장, [결정 기록 10/4](decisions/결정기록_시나리오_역할_인터페이스_1004_v1_100821.md), [SDD](03_설계_SDD_v3_101010.md), `src/d2_interfaces/srv/JsonQuery.srv`, 그림 [시스템 아키텍처 v6](images/시스템아키텍처_v6_100902.png)(drawio 정본: [드라이브](https://drive.google.com/file/d/1CvG9c2oQh0LLbekSjJwvdxX5RHRqAyMf/view?usp=drive_link)), 비교 저장소 https://github.com/rokey-c2/cobot3-ws-c2 (10/4 커밋 `4f3aa66`).
+> 2026-10-07 · 황인재(HMI) 질문 정리(10/9 링크만 지금 판으로 — 내용은 10/7 기준, 바뀐 것은 IRD가 맞다). 이름 · 칸의 정본은 [IRD](02_인터페이스_IRD_v3_101012.md)다(이 문서와 다르면 IRD가 맞다).
+> 근거: IRD 1장 원칙 2 · 4장 · 10장, [결정 기록 10/4](decisions/결정기록_시나리오_역할_인터페이스_1004_v1_100821.md), [SDD](03_설계_SDD_v3_101012.md), `src/d2_interfaces/srv/JsonQuery.srv`, 그림 [시스템 아키텍처 v6](images/시스템아키텍처_v6_100902.png)(drawio 정본: [드라이브](https://drive.google.com/file/d/1CvG9c2oQh0LLbekSjJwvdxX5RHRqAyMf/view?usp=drive_link)), 비교 저장소 https://github.com/rokey-c2/cobot3-ws-c2 (10/4 커밋 `4f3aa66`).
 
 ## 1. JsonQuery는 왜 있나
 

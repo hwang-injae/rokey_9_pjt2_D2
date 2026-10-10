@@ -37,13 +37,15 @@ def test_축_약속_x_rg2_는_마이너스_y_posx():
     assert np.allclose(POSX_TO_RG2TCP[:3, :3] @ rz_m90, np.eye(3))
 
 
-def test_config_의_rg2tcp_보정값은_posx_보정값을_옮긴_것():
-    """다시 계산(W156) 전까지: T_rg2tcp2camera = POSX_TO_RG2TCP @ T_gripper2camera (둘 다 config 에 있을 때)."""
-    new = CONFIG / CALIB_NAME
-    old = CONFIG / 'T_gripper2camera.npy'
-    assert new.exists()
-    if old.exists():
-        assert np.allclose(load_calib(new), POSX_TO_RG2TCP @ load_calib(old), atol=1e-9)
+def test_config_보정값은_rg2tcp_틀_하나뿐이고_강체_변환():
+    """10/10 W156 다시 계산 뒤: config 에 T_rg2tcp2camera 하나(옛 posx 틀 T_gripper2camera 는 지움) · 회전은 직교 · det 1 ·
+    카메라는 rg2_tcp 위 약 184 mm · 옆 약 80 mm(손목 옆에 붙은 자리) — 틀을 잘못 넣으면(posx 틀 그대로) x · y 가 뒤바뀐다."""
+    T = load_calib(CONFIG / CALIB_NAME)
+    assert not (CONFIG / 'T_gripper2camera.npy').exists()
+    R = T[:3, :3]
+    assert np.allclose(R.T @ R, np.eye(3), atol=1e-6) and abs(np.linalg.det(R) - 1.0) < 1e-6
+    assert np.allclose(T[3], [0, 0, 0, 1])
+    assert -190 < T[2, 3] < -175 and -80 < T[0, 3] < -65 and 30 < T[1, 3] < 40
 
 
 def test_transform_to_matrix_mm():

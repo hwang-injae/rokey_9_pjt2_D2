@@ -2,7 +2,7 @@
 """손목 카메라 자세 = MoveIt TF base_link → rg2_tcp × 손목 보정값(rg2_tcp 틀) — wrist_block · capture_scene · check_wrist_calib 가 같이 쓴다.
 
 10/9 E-70 ③(PL): 손목 보정 · 촬영 · 인식 때 로봇 자세를 펜던트 posx 가 아니라 MoveIt TF(frame_id → tcp_link, robot.yaml)로 읽는다.
-보정값도 같은 틀이다 — config/T_rg2tcp2camera.npy(카메라 → rg2_tcp 4x4, mm). 옛 T_gripper2camera.npy 는 posx(GripperDA_v1) 틀이다.
+보정값도 같은 틀이다 — config/T_rg2tcp2camera.npy(카메라 → rg2_tcp 4x4, mm, 10/10 4각도로 다시 계산). 옛 T_gripper2camera.npy(posx 틀)는 지웠다.
 두 틀은 10/10 E-81 뒤로 같은 점(손가락 가운데)이고 방향만 손목 Z 로 −90° 다르다(R_rg2tcp = R_posx · Rz(−90°), motion_math 머리말)
 → T_rg2tcp←cam = Rz(+90°) · T_posx←cam(POSX_TO_RG2TCP).
 """
@@ -12,7 +12,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 CALIB_NAME = 'T_rg2tcp2camera.npy'
-# rg2_tcp 틀에서 본 posx 틀(같은 원점, z 축으로 +90°) — 옛 posx 틀 보정값을 rg2_tcp 틀로 옮길 때 왼쪽에 곱한다
+# rg2_tcp 틀에서 본 posx 틀(같은 원점, z 축으로 +90°) — posx 틀 보정값을 rg2_tcp 틀로 옮길 때 왼쪽에 곱한다(거꾸로는 역행렬)
 POSX_TO_RG2TCP = np.array([[0.0, -1.0, 0.0, 0.0],
                            [1.0, 0.0, 0.0, 0.0],
                            [0.0, 0.0, 1.0, 0.0],
