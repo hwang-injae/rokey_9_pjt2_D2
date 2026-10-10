@@ -920,7 +920,7 @@ def read_ply_header(path):
 
 
 def family_of(design_id):
-    """기본 설계 이름 → 가구 family(IRD 2장 `chair` · `desk`). 이름에 CHAIR · DESK 가 없으면 'unknown'(예 001_CHAIR_BENCH → chair)."""
+    """기본 설계 이름 → 가구 family(IRD 2장 `chair` · `desk`). 이름에 CHAIR · DESK 가 없으면 'unknown'(예 001_CHAIR_BENCH_V000 → chair)."""
     name = str(design_id).upper()
     return 'chair' if 'CHAIR' in name else ('desk' if 'DESK' in name else 'unknown')
 

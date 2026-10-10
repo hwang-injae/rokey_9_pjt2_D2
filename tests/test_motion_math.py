@@ -149,7 +149,7 @@ def test_pick_place_tcp_rejects_different_up_axis(robot_cfg):
         mm.pick_place_tcp(robot_cfg, center, rot, _place_center(robot_cfg, IDENTITY), IDENTITY, 'EDGE_LONG', slot=3)
 
 
-def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH'):
+def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
     반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/2.0', 'model_id': model_id,
@@ -174,7 +174,7 @@ def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
     """레시피 2블록: sequence 순서, block_id = '<model_id>_<블록 이름>', 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH),
     위 블록 중심 z = 원점 z + 실측 두께 x 1.5. 설계값(15 mm 층)이 아니라 실측 두께로 쌓아 올린다 — 10/6 실기 교훈(10층에서 +1.8 mm)."""
     blocks = mm.recipe_blocks(robot_cfg, _joined())
-    assert [b['block_id'] for b in blocks] == ['001_CHAIR_BENCH_SEAT_001_01', '001_CHAIR_BENCH_SEAT_001_02']
+    assert [b['block_id'] for b in blocks] == ['001_CHAIR_BENCH_V000_SEAT_001_01', '001_CHAIR_BENCH_V000_SEAT_001_02']
     assert all(b['grasp'] == 'FLAT_SHORT' for b in blocks)
     o, t = robot_cfg['assembly_origin'], robot_cfg['block_actual_m'][2]
     assert close(blocks[0]['center'][2], o['z_m'] + t * 0.5)
@@ -224,16 +224,16 @@ def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
     supports 는 목록, block_id 는 CSV 값. CSV 가 없으면 FileNotFoundError. recipe_files 는 _recipe.json 만(CSV · 옛 .recipe.json 은 안 넣음)."""
     recipe, structure = _recipe()
     rp = _write_files(tmp_path, recipe, structure)
-    (tmp_path / '003_DESK_STAND.recipe.json').write_text('{}')
+    (tmp_path / '003_DESK_STAND_V000.recipe.json').write_text('{}')
     files = mm.recipe_files(str(tmp_path))
-    assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH']
+    assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH_V000']
     loaded = mm.load_recipe(rp)
     assert loaded['schema'] == 'placements/2.0' and loaded['structure'] == structure
     assert loaded['steps'][1]['supports'] == ['SEAT_001_01'] and loaded['steps'][0]['supports'] == []
     assert all(isinstance(st['sequence'], int) and isinstance(st['stage'], int) for st in loaded['steps'])
-    assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH'
+    assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH_V000'
     assert mm.recipe_blocks(robot_cfg, loaded) == mm.recipe_blocks(robot_cfg, _joined())
-    (tmp_path / '001_CHAIR_BENCH_placements.csv').unlink()
+    (tmp_path / '001_CHAIR_BENCH_V000_placements.csv').unlink()
     with pytest.raises(FileNotFoundError):
         mm.load_recipe(rp)
 
@@ -252,7 +252,7 @@ def test_load_recipe_rejects(tmp_path, case):
         mm.load_recipe(rp)
 
 
-@pytest.mark.parametrize('model_id', ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL'])
+@pytest.mark.parametrize('model_id', ['001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000', '003_DESK_STAND_V000', '004_DESK_PEDESTAL_V000'])
 def test_real_recipes_read_and_hash_matches_builder(robot_cfg, model_id):
     """저장소 기본 설계 4종: load_recipe 로 읽히고, recipe_sha256 이 레시피 도구(d2_task RecipeBuilder)와 같은 값 — 같은 식을 두 곳에 둬서 확인한다."""
     sys.path.insert(0, str(ROOT / 'src' / 'd2_task'))

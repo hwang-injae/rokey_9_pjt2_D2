@@ -79,11 +79,11 @@ class DesignStore:
         return done
 
     def register_base(self, design_id):
-        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/2.0(v1.0 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
+        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/2.0(V000 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         design = doc.design(design_id)
-        design.update(schema=SCHEMA_DESIGN, family=family, version='1.0', parent_id=None, made_by='cad',
+        design.update(schema=SCHEMA_DESIGN, family=family, version='V000', parent_id=None, made_by='cad',
                       blocks=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
         self._write(self._design_path(design_id), design)
         return design

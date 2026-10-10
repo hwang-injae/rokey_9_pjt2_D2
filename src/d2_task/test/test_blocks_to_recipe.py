@@ -19,7 +19,7 @@ SRC = Path(__file__).resolve().parents[2]
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
 RECIPES = SRC / 'recipe_manager' / 'recipes'          # 레시피 도구가 CAD 에서 만든 기본 설계 4종(한세교 — 정답)
-FAMILY = {'001_CHAIR_BENCH': 'chair', '002_CHAIR_BACK': 'chair', '003_DESK_STAND': 'desk', '004_DESK_PEDESTAL': 'desk'}
+FAMILY = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DESK_STAND_V000': 'desk', '004_DESK_PEDESTAL_V000': 'desk'}
 
 
 def make_converter():
@@ -44,7 +44,7 @@ def rejected_details(request):
 @pytest.fixture
 def bench():
     """벤치(001) blocks/2.0 — 고치며 시험할 복사본."""
-    return copy.deepcopy(load_base('001_CHAIR_BENCH')[1])
+    return copy.deepcopy(load_base('001_CHAIR_BENCH_V000')[1])
 
 
 # V-45 왕복: 기본 설계 4종 레시피 → blocks/2.0 → 변환기 ① 이 저장된 레시피와 같다(CAD 대응 칸 source_cad · cad.handle 만 빠짐),
@@ -70,12 +70,12 @@ def test_bench_block_names_from_positions(bench):
     assert sorted(names) == [f'LEG_001_0{k}' for k in range(1, 5)] + [f'LEG_002_0{k}' for k in range(1, 5)] + [f'SEAT_001_0{k}' for k in range(1, 4)]
 
 
-# 생성 설계 ID(소문자 · 점)는 레시피 model_id 그대로, block_id 는 대문자 — task RecipeDocument 와 같은 규칙(IRD 2장)
+# 생성 설계 ID(<Template ID>_V<3자리>, E-84)는 레시피 model_id 그대로, block_id 는 대문자 — task RecipeDocument 와 같은 규칙(IRD 2장)
 def test_generated_design_id_block_id_upper(bench):
-    bench['design_id'] = 'chair_v1.1'
+    bench['design_id'] = '001_CHAIR_BENCH_V001'
     out = make_converter().convert(bench)
-    assert out['recipe']['model_id'] == 'chair_v1.1'
-    assert out['placements']['steps'][0]['block_id'].startswith('CHAIR_V1.1_')
+    assert out['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
+    assert out['placements']['steps'][0]['block_id'].startswith('001_CHAIR_BENCH_V001_LEG_')
     RecipeDocument(out['recipe'], out['placements'])
 
 

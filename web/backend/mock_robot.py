@@ -36,7 +36,7 @@ from mqtt_client import make_mqtt_client  # noqa: E402
 
 RECIPES = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
 ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
-BENCH = '001_CHAIR_BENCH'           # check_design 응답 · 스캔 결과에 쓰는 설계(IRD 11장 '벤치 레시피')
+BENCH = '001_CHAIR_BENCH_V000'           # check_design 응답 · 스캔 결과에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')
 CANCEL_OK = ('READY', 'ERROR', 'SCAN_REVIEW')     # 취소를 받는 상태(SDD 5.1, 10/8 E-62)
 RUN_STATES = ('CHECK', 'SELECT', 'PICK_PLACE', 'WAIT_SUPPLY', 'WAIT_HMI', 'VERIFY', 'RECOVER', 'ERROR')   # 조립 중(task_manager 와 같음)

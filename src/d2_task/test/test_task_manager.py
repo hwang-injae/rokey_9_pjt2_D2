@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH, recipe/2.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/2.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -20,10 +20,10 @@ from d2_task.task_manager import TaskManager, wait_until
 SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
-_DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH')
+_DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
 RECIPE = _DOC.recipe              # 구조(recipe/2.0)
 PLACEMENTS = _DOC.placements      # 조립 방법(placements/2.0)
-IDS = [f'001_CHAIR_BENCH_{s["block"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
+IDS = [f'001_CHAIR_BENCH_V000_{s["block"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
 def reseal(recipe, placements):

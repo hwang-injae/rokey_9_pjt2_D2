@@ -20,7 +20,7 @@ RECIPE_DIR = Path(__file__).resolve().parents[1] / 'recipes'
 USAGE_EXAMPLES = """
 실행 인자가 없습니다. 저장소 루트의 터미널에서 아래와 같이 실행하세요.
 
-   python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench.dxf
+   python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench_v000.dxf
 
 순서 · 단계 · 잡기는 DXF INSERT 속성(SEQ · STAGE · GRASP), 블록 이름은 INSERT 블록 이름(예 LEG_001_01)에서 읽는다.
 바꾸려면 CAD를 고친 뒤 다시 build 한다(계획 파일은 없다 — E-52).
@@ -46,7 +46,7 @@ class RecipeManager:
     def build_recipe(self, cad_path):
         """DXF → 검증 → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)
 
-        모델 ID = CAD 파일 이름을 대문자로(작명 규칙: CAD 파일 이름 = 모델 ID 소문자, 예 001_chair_bench.dxf → 001_CHAIR_BENCH).
+        모델 ID = CAD 파일 이름을 대문자로(작명 규칙: CAD 파일 이름 = 모델 ID 소문자, 예 001_chair_bench_v000.dxf → 001_CHAIR_BENCH_V000).
 
         입력:
             cad_path: DXF 파일 경로

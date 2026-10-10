@@ -48,7 +48,7 @@ git clone https://github.com/hwang-injae/rokey_9_pjt2_D2.git
 cd rokey_9_pjt2_D2
 ```
 
-- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_100821.md)에 있다.
+- 브랜치·커밋·PR 규칙은 [팀 협업 규칙](../06_팀협업규칙_v1_101021.md)에 있다.
 - source 순서는 늘 같다: `/opt/ros/jazzy` → 두산 워크스페이스 → 이 저장소. 빌드 명령은 [src/README](../../src/README.md) '빌드 · 시험'.
 
 ## 3. 버전 확인
@@ -137,7 +137,7 @@ export ROS_DOMAIN_ID=60          # 팀 60번대. 로봇 PC는 60
 
 ## 6-1. MQTT (PC 사이 — 웹 PC 브로커 ↔ 로봇 PC 다리)
 
-PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_101014.md#10-pc-사이-통신--mqtt-다리-e-27e-30)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
+PC 사이 통신은 **MQTT**다(10/6 E-27, 규칙은 [IRD 10장](../02_인터페이스_IRD_v3_101021.md#10-pc-사이-통신--mqtt-다리-e-27e-30)). 웹 PC의 컨테이너 `mosquitto`(포트 1883)가 브로커이고, 로봇 PC의 ROS 노드 `bridge`(`d2_bridge`, paho-mqtt)가 ROS ↔ MQTT를 바꾼다. 웹 백엔드 · 음성도 paho-mqtt로 브로커에 붙는다.
 
 ```bash
 # 두 PC 모두 — 확인용 클라이언트
@@ -205,7 +205,7 @@ docker compose logs -f web    # 키 읽힘(값은 안 찍음) · 브로커 연�
 
 - OpenAI 키는 **PC마다 `.env` 파일에만** 둔다. 코드는 환경 변수로 읽는다.
 - `.env`는 `.gitignore`에 들어 있다. 커밋 전에 `git status`로 `.env`가 없는지 본다. PR 검사도 키 모양 글자와 `.env`를 막는다.
-- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_100821.md)).
+- 키를 코드·설정·커밋 메시지·이슈·노션·채팅에 붙이지 않는다. 실수로 올렸으면 바로 PL에게 알리고 그 키를 폐기한다([팀 협업 규칙](../06_팀협업규칙_v1_101021.md)).
 
 ## 9. 작업 전 확인
 

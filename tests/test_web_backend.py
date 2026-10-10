@@ -75,7 +75,7 @@ def test_request_pairs_by_req_id(mc):
             threading.Timer(0.02, mc._on_message, args=(mc.client, None, msg(
                 'd2/hmi/command/res', {'req_id': body['req_id'], 'success': False, 'reason': ''}))).start()
     mc.client.on_publish_hook = robot_answers
-    out = mc.request('/d2/hmi/command', {'cmd': 'start', 'design_id': '001_CHAIR_BENCH', 'mode': 'auto'})
+    out = mc.request('/d2/hmi/command', {'cmd': 'start', 'design_id': '001_CHAIR_BENCH_V000', 'mode': 'auto'})
     assert out == {'success': False, 'reason': ''}                 # 빈 reason 거절도 그대로(#83) — 고치지 않는다
     topic, body, retain = mc.client.sent[0]
     assert topic == 'd2/hmi/command/req' and body['cmd'] == 'start' and body['req_id'] and retain is False
@@ -118,12 +118,12 @@ def test_bridge_alive_and_lost_after(mc):
 def test_robot_request_answered_by_handler_once(mc):
     """로봇이 부른 get_design 은 등록한 함수가 답한다(req_id 그대로). 같은 req_id 두 번째 · retained 옛 요청에는 안 답한다."""
     mc.serve('/d2/hmi/get_design', lambda b: {'success': True, 'reason': '', 'schema': 'design/2.0', 'design_id': b['design_id']})
-    req = {'req_id': 'g1', 'design_id': '001_CHAIR_BENCH'}
+    req = {'req_id': 'g1', 'design_id': '001_CHAIR_BENCH_V000'}
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', req))
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', req))
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', {'req_id': 'g2', 'design_id': 'X'}, retain=True))
     assert mc.client.sent == [('d2/hmi/get_design/res', {'success': True, 'reason': '', 'schema': 'design/2.0',
-                                                         'design_id': '001_CHAIR_BENCH', 'req_id': 'g1'}, False)]
+                                                         'design_id': '001_CHAIR_BENCH_V000', 'req_id': 'g1'}, False)]
 
 
 def test_snapshot_tells_screen_the_request_timeout(mc):
@@ -213,7 +213,7 @@ RULES = {'block_size_m': [0.075, 0.025, 0.015], 'margin_mm': 7, 'max_blocks': 54
 
 
 RECIPES = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
-BASES = ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL']
+BASES = ['001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000', '003_DESK_STAND_V000', '004_DESK_PEDESTAL_V000']
 
 
 @pytest.fixture
@@ -235,10 +235,10 @@ def make_client(store, bridge=True):
 def test_command_stop_resume_map_to_ird_names(store):
     """버튼 → IRD ROS 이름 · 칸: 명령은 /d2/hmi/command, 정지는 source web + 빈 reason(→ STOP_WEB), 다시 시작은 빈 칸."""
     client, fake = make_client(store)
-    assert client.post('/api/robot/command', json={'cmd': 'select_design', 'design_id': '001_CHAIR_BENCH'}).json()['success']
+    assert client.post('/api/robot/command', json={'cmd': 'select_design', 'design_id': '001_CHAIR_BENCH_V000'}).json()['success']
     client.post('/api/robot/stop')
     client.post('/api/robot/resume')
-    assert fake.calls == [('/d2/hmi/command', {'cmd': 'select_design', 'design_id': '001_CHAIR_BENCH', 'mode': 'auto'}),
+    assert fake.calls == [('/d2/hmi/command', {'cmd': 'select_design', 'design_id': '001_CHAIR_BENCH_V000', 'mode': 'auto'}),
                           ('/d2/safety/stop', {'source': 'web', 'reason': ''}),
                           ('/d2/safety/resume', {})]
 
@@ -269,8 +269,8 @@ def test_ws_sends_snapshot_first(store):
 def test_store_registers_four_bases_as_design_2(store):
     """기본 설계 4개 = 레시피 두 파일 → 변환기 ② → design/2.0(v1.0 · made_by cad · 부모 없음 · recipe · placements · blocks/2.0)."""
     assert store.registered == BASES
-    d = store.get_design('001_CHAIR_BENCH')
-    assert d['schema'] == 'design/2.0' and d['family'] == 'chair' and d['version'] == '1.0'
+    d = store.get_design('001_CHAIR_BENCH_V000')
+    assert d['schema'] == 'design/2.0' and d['family'] == 'chair' and d['version'] == 'V000'
     assert d['made_by'] == 'cad' and d['parent_id'] is None
     assert d['recipe']['schema'] == 'recipe/2.0' and d['placements']['schema'] == 'placements/2.0'
     assert d['blocks']['schema'] == 'blocks/2.0' and len(d['blocks']['blocks']) == 11
@@ -300,15 +300,15 @@ def test_store_rejects_old_schema_and_unsafe_ids(store):
 
 def test_get_design_answer_for_robot(store):
     """로봇의 get_design: 있으면 success true + design/2.0 칸을 펼침, 없으면 success false · ERROR(IRD 10.1)."""
-    ok = store.answer_get_design({'req_id': 'r1', 'design_id': '003_DESK_STAND'})
-    assert ok['success'] is True and ok['reason'] == '' and ok['schema'] == 'design/2.0' and ok['design_id'] == '003_DESK_STAND'
+    ok = store.answer_get_design({'req_id': 'r1', 'design_id': '003_DESK_STAND_V000'})
+    assert ok['success'] is True and ok['reason'] == '' and ok['schema'] == 'design/2.0' and ok['design_id'] == '003_DESK_STAND_V000'
     bad = store.answer_get_design({'req_id': 'r2', 'design_id': 'nope'})
     assert bad['success'] is False and bad['reason'] == 'ERROR'
 
 
 def test_save_build_once_per_run_id(store):
     """같은 run_id 가 또 오면(작업 관리자는 확인될 때까지 다시 보냄) 한 번만 저장하고 ok true. 형식이 다르면 ok false."""
-    build = {'schema': 'build/1', 'run_id': 'R20261010_143512_a3f9', 'design_id': '001_CHAIR_BENCH', 'result': 'DONE',
+    build = {'schema': 'build/1', 'run_id': 'R20261010_143512_a3f9', 'design_id': '001_CHAIR_BENCH_V000', 'result': 'DONE',
              'placed': 11, 'total': 11, 'duration_s': 300.0, 'stop_count': 0, 'blocks': []}
     assert store.answer_save_build({**build, 'req_id': 'a'}) == {'success': True, 'reason': '', 'ok': True}
     (store.builds_dir / 'R20261010_143512_a3f9.json').write_text('{"keep": true}', encoding='utf-8')
@@ -324,7 +324,7 @@ def test_designs_rest_and_robot_handlers(store):
     client, fake = make_client(store)
     assert [r['design_id'] for r in client.get('/api/designs').json()] == BASES
     assert client.get('/api/designs/rules').json() == {'block_size_mm': [75.0, 25.0, 15.0], 'assembly_area_half_mm': 150.0}
-    assert client.get('/api/designs/002_CHAIR_BACK').json()['design_id'] == '002_CHAIR_BACK'
+    assert client.get('/api/designs/002_CHAIR_BACK_V000').json()['design_id'] == '002_CHAIR_BACK_V000'
     assert client.get('/api/designs/nope').status_code == 404
     assert set(fake.handlers) == {'/d2/hmi/get_design', '/d2/hmi/save_build'}
     for url in ('/api/robot/wrist.jpg', '/api/robot/scan.jpg', '/api/robot/scan_cloud.ply'):

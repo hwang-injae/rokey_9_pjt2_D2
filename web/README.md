@@ -1,6 +1,6 @@
 # web — HMI 설계 노트 (10/8 · 10/9 황인재, PL 결정)
 
-> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101014.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101014.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
+> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101021.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101021.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
 
 구조(E-32 · E-41): 브라우저 `frontend`(Next.js 정적 `out/`, three.js) ↔ REST + WebSocket `/ws` ↔ `backend`(FastAPI :8000, paho-mqtt) ↔ MQTT 브로커 ↔ 로봇 PC `d2_bridge`. 브라우저는 브로커 · DB · OpenAI · ROS를 모른다. DB는 10/12까지 JSON 파일 폴더, 그 뒤 PostgreSQL(W088).
 
@@ -96,7 +96,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 ①  글상자 [생성]  또는  음성 request_design → 글상자에 문장 → 사람이 [생성]          화면 "디자인 만드는 중"
 ②  RAG(E-72): store.list_designs 요약(design_id · family · version · parent_id · made_by · 블록 수 · 외곽 · 최근 builds 한 줄)을 주고
     GPT-4o에 도구 get_design(design_id) 하나(function calling, 최대 2번) → 읽은 설계 = 예시 · 새 설계의 parent_id(둘이면 처음 것)
-    → 화면 "AI가 참고한 설계: 002_CHAIR_BACK v1.2 — 조립 성공, 오차 2.1 mm". 도구를 안 부르거나 실패하면 examples_for(family)
+    → 화면 "AI가 참고한 설계: 002_CHAIR_BACK_V000 v1.2 — 조립 성공, 오차 2.1 mm". 도구를 안 부르거나 실패하면 examples_for(family)
 ③  GPT-4o 1번 호출 → 후보 3개(blocks/2.0 — 블록마다 order · x · y · z · ori + role · part · stage · grasp, 구조화 출력 candidates[3])
     프롬프트: 역할 · 옵션 목록(src/d2_task/d2_task/roles.json) · 잡기 규칙(SDD 6.6) · 설계 규칙 숫자(robot.yaml — 10/9 ①) · RAG 예시
     칸이 빠지거나 틀리면 check_design이 CHECK_FAILED — 코드가 대신 채우지 않음(E-69 ②). OUT_OF_SCOPE → 안내, 끝
