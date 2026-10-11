@@ -5,7 +5,7 @@
 보정값도 같은 틀이다 — config/T_rg2tcp2camera.npy(카메라 → rg2_tcp 4x4, mm, 10/10 4각도로 다시 계산). 옛 T_gripper2camera.npy(posx 틀)는 지웠다.
 두 틀은 10/10 E-81 뒤로 같은 점(손가락 가운데)이고 방향만 손목 Z 로 −90° 다르다(R_rg2tcp = R_posx · Rz(−90°), motion_math 머리말)
 → T_rg2tcp←cam = Rz(+90°) · T_posx←cam(POSX_TO_RG2TCP).
-카메라 자세는 camera_pose_mm 한 곳에서 낸다 — TF × 보정값 + 기울기 밀림 고침(10/10 E-83, 보정 json 의 tilt_shift).
+카메라 자세는 camera_pose_mm 한 곳에서 낸다 — TF × 보정값 + 기울기 밀림 고침(10/10 E-83, 보정 json 의 tilt_shift — 10/11 E-85 로 0).
 """
 import json
 from pathlib import Path
@@ -55,7 +55,9 @@ def camera_pose_mm(T_b2t, T_tcp2c, tilt_shift_mm=0.0):
     """카메라 자세(base_link 기준 4x4 mm) = TF(base ← rg2_tcp) × 보정값(rg2_tcp ← 카메라) + 기울기 밀림 고침.
 
     10/10 E-83: 카메라를 기울이면 잰 점이 카메라에서 먼 쪽 · 위로 밀린다(방향은 맞음 — 작업대 평면은 수평으로 나옴, 30°에서 약 10 mm).
-    15자세 실측으로 '중력 중 광축에 수직인 성분 × tilt_shift_mm' 만큼 카메라 위치를 옮기면 맞는다(남는 오차 평균 2 mm — 보정 json tilt_shift).
+    15자세 실측으로 '중력 중 광축에 수직인 성분 × tilt_shift_mm' 만큼 카메라 위치를 옮기면 맞았다(남는 오차 평균 2 mm — 보정 json tilt_shift).
+    10/11 E-85: 원인은 작업대 높이 기준(robot.yaml table_z_m −0.018 이 실제보다 18 mm 낮음)에 고정된 보정값의 광축 위치였다 →
+    table_z_m · 보정값을 고쳐 tilt_shift 는 0(이 함수는 TF × 보정값 그대로). 값이 0 이 아니면 옛 경험식을 그대로 적용한다.
     내려다보는 자세(광축 ∥ 중력)는 성분이 0 이라 고침도 0 — 손목 보정(수직 4각도)은 그대로다.
     입력: T_b2t · T_tcp2c 4x4(mm), tilt_shift_mm(load_tilt_shift). 출력: 새 4x4(입력은 안 바꿈).
     """
