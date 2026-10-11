@@ -203,7 +203,7 @@ def test_preview_accumulates_per_capture(tmp_path):
         assert fmt == 'binary_little_endian' and count == msg['points']
         prev.append(msg['points'])
         json.dumps(msg)                                                    # 발행할 수 있는 JSON
-    assert prev[0] < prev[1] < prev[2], prev                               # 자세가 늘면 모은 점이 늘어난다(쌓임)
+    assert prev[0] < prev[1] < prev[2], prev                               # 자세가 늘면 모은 점이 늘어난다(누적)
     assert sc.cloud_voxel_m is None                                        # 원래 스캐너는 그대로(save_cloud 는 복사본에서만)
 
 

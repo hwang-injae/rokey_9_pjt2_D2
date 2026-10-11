@@ -264,7 +264,7 @@ class MockScan:
 
         입력: run_id · pose_id = 이번 촬영 · index = 이번 run 의 scan_capture 순번(1부터) · n_poses = 지금까지 찍은 서로 다른 자세 수 ·
               recipe_dir · design_id = 흉내 낼 설계(scan_design_id) · stamp = 보낸 시각(s, 비우면 지금).
-        점군 = 그 설계 블록(조립 순서) 앞에서부터 ⌈전체 × min(n_poses, 3) / 3⌉ 개의 윗면 — 자세가 늘면 점이 늘어 화면에 쌓이는 흉내.
+        점군 = 그 설계 블록(조립 순서) 앞에서부터 ⌈전체 × min(n_poses, 3) / 3⌉ 개의 윗면 — 자세가 늘면 점이 늘어나는(누적) 흉내 — 화면은 최신 index 파일로 바꿔 그린다.
         바깥 영향: 폴더 · 파일 하나 쓰기. 실패: 레시피를 못 찾거나 못 읽으면 ValueError, 파일을 못 쓰면 OSError — 노드가 경고만 남긴다."""
         pair = load_recipe_files(recipe_dir, design_id)
         if pair is None:

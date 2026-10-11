@@ -965,7 +965,8 @@ def save_preview(snap, out_dir, run_id, pose_id, index, stamp=None):
     입력: snap = StructureScanner.snapshot()(scan_capture 때 잠금 안에서 뜬 복사본) · out_dir = <scan_dir>/<run_id> ·
           run_id · pose_id = 이번 촬영 · index = 이번 run 에서 scan_capture 몇 번째(1부터) · stamp = 보낸 시각(s, 비우면 지금).
     출력: scan_preview/1.0 {"schema","stamp","run_id","pose_id","index","kind":"capture","cloud_path","points"}(IRD 6장) —
-          PLY 는 cloud.ply 와 같은 save_cloud(base_link m, 복셀 3 mm · ≤ 2 MB), points = PLY 점 수. 화면은 받은 순서대로 쌓는다(보기 전용).
+          PLY 는 cloud.ply 와 같은 save_cloud(base_link m, 복셀 3 mm · ≤ 2 MB), points = PLY 점 수. 화면은 index 가 가장 큰(최신) 파일로 바꿔 그린다 —
+          누적이라 쌓으면 앞 자세 점이 겹친다(보기 전용).
     바깥 영향: 폴더 만들기 · 파일 하나 쓰기(snap.cloud_voxel_m 도 바뀌지만 복사본이라 원래 스캐너는 그대로).
     실패: 폴더 · 파일을 못 쓰면 OSError — 부르는 쪽이 경고만 남긴다(scan_capture 답 · scan_infer 와 무관)."""
     out = Path(out_dir)

@@ -11,7 +11,8 @@
       pose_id 가 다시 오면 덮어쓴다. 그때의 컬러 한 장도 둔다(scan_infer 의 사진).
       점군 미리보기(10/10 E-82): 답은 바로 하고, 그 뒤 따로 스레드가 지금까지 모은 점군을 `<scan_dir>/<run_id>/preview_<index>.ply`
       (save_cloud — 복셀 3 mm · ≤ 2 MB)로 저장해 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 JSON, 기본 QoS)로 알린다.
-      index = 이번 run 의 scan_capture 순번(1부터). 보기 전용(화면이 쌓음) — 작업 관리자는 안 받는다. 저장 · 발행 실패는 경고 로그만.
+      index = 이번 run 의 scan_capture 순번(1부터). 파일마다 그 자세까지 모은 점 전부(누적)라 화면은 index 가 가장 큰(최신) 파일로
+      바꿔 그린다(쌓으면 앞 자세 점이 겹침). 보기 전용 — 작업 관리자는 안 받는다. 저장 · 발행 실패는 경고 로그만.
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
       → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
