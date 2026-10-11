@@ -250,12 +250,30 @@ class MoveItExecutor:
             out.append(o)
         return out
 
-    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None, scale=None):
+    def obstacle_boxes(self, obstacles, pad_m):
+        """흩뿌린 공급의 주변 블록마다 블록 상자를 사방 pad_m 부풀려 만든다 (계획 요청에만 싣는다, E-53 ② B안).
+
+        obstacles = PickPlace.obstacles (geometry_msgs/Pose 목록 — 집을 블록만 뺀 식별 블록의 중심 자세, 블록 자신의 축, base_link m).
+        자세의 x·y·z 축이 블록의 길이·폭·두께라(slot_block_pose 와 같은 규약) 크기는 block_actual_m 그대로 쓴다.
+        흩어진 블록은 카메라 오차만큼 어긋나 있어 장면에 넣지 않고 공중 이동 계획 때만 피한다(E-53 A안을 안 쓰는 이유).
+        """
+        size = [v + 2 * pad_m for v in self.cfg['block_actual_m']]
+        out = []
+        for k, pose in enumerate(obstacles):
+            o = CollisionObject(id=f'pad_obstacle_{k}', operation=CollisionObject.ADD)
+            o.header.frame_id = self.frame
+            o.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=size)]
+            o.primitive_poses = [pose]
+            out.append(o)
+        return out
+
+    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None, scale=None, obstacles=None):
         """지금 자세 -> 관절 목표 goal 을 OMPL 로 계획만 한다. 반환: (시간까지 매겨진 JointTrajectory, 결과 이름).
 
         속도·가속은 scale(없으면 robot.yaml speed_scale)을 MoveIt 에 넘겨 MoveIt 이 매긴다 (joint_limits.yaml x 비율).
-        pad_m > 0 이면 놓인 블록과 공급 칸 블록(skip_slot 칸 빼고)을 그만큼 부풀린 상자를 이 계획에만 더해
-        여유 있는 길을 찾게 한다.
+        pad_m > 0 이면 놓인 블록과 공급 쪽 블록을 그만큼 부풀린 상자를 이 계획에만 더해 여유 있는 길을 찾게 한다.
+        공급 쪽 블록 = obstacles 가 None 이면 공급 칸 가정 상자(skip_slot 칸 빼고), 목록이면 흩뿌림이라 그 블록들
+        (빈 목록 = 주변 블록 없음 — 칸 가정 상자로 돌아가지 않는다, IRD 4.3).
         """
         req = MotionPlanRequest()
         req.group_name = GROUP
@@ -270,7 +288,10 @@ class MoveItExecutor:
             for j, v in zip(JOINTS, goal)])]
         if keep_down:
             req.path_constraints = self.down_constraint()
-        extra = self.padded_blocks(pad_m) + self.supply_boxes(pad_m, skip_slot) if pad_m > 0 else ()
+        extra = ()
+        if pad_m > 0:
+            supply = self.supply_boxes(pad_m, skip_slot) if obstacles is None else self.obstacle_boxes(obstacles, pad_m)
+            extra = self.padded_blocks(pad_m) + supply
         return self._send_plan(req, plan_time, extra)
 
     @staticmethod
