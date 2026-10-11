@@ -1,11 +1,11 @@
 {
-  "schema": "recipe/2.0",
+  "schema": "recipe/3.0",
   "model_id": "001_CHAIR_BENCH_V000",
   "source_cad": {
     "filename": "001_chair_bench_v000.dxf",
     "sha256": "67b97fa4df305ac22cd5f605af28040115f1ad3f53997fcfa3967860a467c8a1"
   },
-  "parts": [
+  "stocks": [
     {
       "part_id": "PART_001",
       "size_mm": [

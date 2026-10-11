@@ -1,4 +1,4 @@
-"""recipe_manager(CAD → 레시피 recipe/2.0 + 조립 방법 placements/2.0, 10/8 E-69) — 기본 설계 4종을 DXF에서 다시 만들면
+"""recipe_manager(CAD → 레시피 recipe/3.0 + 조립 방법 placements/2.0, 10/8 E-69) — 기본 설계 4종을 DXF에서 다시 만들면
 저장된 _recipe.json · _placements.csv 와 같고, 짝 해시 · 이름 규칙 · 번호 순서 · 겹침 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · 빠진 CAD 속성을 거부한다."""
 import copy
 import csv
@@ -21,7 +21,7 @@ DESIGNS = [('001_CHAIR_BENCH_V000', '001_chair_bench_v000'), ('002_CHAIR_BACK_V0
 
 def make_boxes(recipe):
     """저장된 레시피(중심 · 회전 · 치수)로 블록 꼭짓점 8개씩을 만든다 — DXF 없이 RecipeBuilder 를 시험한다."""
-    sizes = {p['part_id']: p['size_mm'] for p in recipe['parts']}
+    sizes = {p['part_id']: p['size_mm'] for p in recipe['stocks']}
     boxes = []
     for b in recipe['blocks']:
         R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['part_id']]]
@@ -72,14 +72,14 @@ def test_folders_hold_only_cad_and_results():
     assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('recipe.json', 'placements.csv'))
 
 
-# 저장된 두 파일의 짝: 레시피 schema recipe/2.0, CSV 칸 = PLACEMENT_COLUMNS, 모든 줄 recipe_sha256 = 레시피 객체 해시 · schema placements/2.0
+# 저장된 두 파일의 짝: 레시피 schema recipe/3.0, CSV 칸 = PLACEMENT_COLUMNS, 모든 줄 recipe_sha256 = 레시피 객체 해시 · schema placements/2.0
 @pytest.mark.parametrize('model_id, cad', DESIGNS)
 def test_saved_placements_match_recipe(model_id, cad):
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
     with open(RM / 'recipes' / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
         reader = csv.DictReader(f)
         rows = list(reader)
-    assert recipe['schema'] == 'recipe/2.0' and recipe['model_id'] == model_id
+    assert recipe['schema'] == 'recipe/3.0' and recipe['model_id'] == model_id
     assert tuple(reader.fieldnames) == PLACEMENT_COLUMNS
     assert {(r['recipe_sha256'], r['schema']) for r in rows} == {(RecipeBuilder().calculate_recipe_sha256(recipe), 'placements/2.0')}
     assert sorted(r['block'] for r in rows) == sorted(b['block'] for b in recipe['blocks'])
@@ -99,7 +99,7 @@ def test_recipe_sha256_is_fixed_canonical_json(bench):
     assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
 
 
-BENCH_RECIPE_SHA256 = '9489c62c1816e8ed99b870744498656073f6c78007cb48c65653d0a58ed33e8a'   # 벤치 레시피(recipe/2.0) 해시 — 계산 방법이 바뀌면 깨진다
+BENCH_RECIPE_SHA256 = '807c3a937cb378d253c2762ef1b4e7c723a00f08c6d9dddff9cf7ef96d20da6f'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
 
 
 # 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)

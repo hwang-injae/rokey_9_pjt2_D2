@@ -229,7 +229,7 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
 
 
-@pytest.mark.parametrize('schema', ['other/1', 'blocks/1', 'blocks/2', 'blocks/3.0', None, 5])
+@pytest.mark.parametrize('schema', ['other/1', 'blocks/1', 'blocks/1.5', 'blocks/3.0', None, 5])
 def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
     req = base_design('001_CHAIR_BENCH_V000')
     req['schema'] = schema

@@ -29,7 +29,7 @@ class TaskPlanner:
     def __init__(self, cfg, recipe, placements):
         """레시피 블록을 sequence 순서로 펼치고, 블록마다 받침 block_id 를 붙인다. 진행표는 모두 unknown 으로 시작한다.
 
-        recipe 는 구조 dict(recipe/2.0, mm), placements 는 조립 방법 dict(placements/2.0). 바깥 영향 없음.
+        recipe 는 구조 dict(recipe/3.0, mm), placements 는 조립 방법 dict(placements/2.0). 바깥 영향 없음.
         블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_blocks 한 곳에서 한다.
         """
         self.cfg = cfg

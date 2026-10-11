@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/2.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/3.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -21,7 +21,7 @@ SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
-RECIPE = _DOC.recipe              # 구조(recipe/2.0)
+RECIPE = _DOC.recipe              # 구조(recipe/3.0)
 PLACEMENTS = _DOC.placements      # 조립 방법(placements/2.0)
 IDS = [f'001_CHAIR_BENCH_V000_{s["block"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
@@ -443,7 +443,7 @@ def test_설계를_못_읽으면_거절():
     assert m.command('select_design', 'nope') == (False, '')
     assert m.command('select_design', '') == (False, '')
     io.recipe = copy.deepcopy(RECIPE)
-    io.recipe['parts'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 구조
+    io.recipe['stocks'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 구조
     io.placements = reseal(io.recipe, PLACEMENTS)               # 짝 해시는 맞춰 두고 크기 때문에 거절되는지 본다
     assert m.command('select_design', 'bench') == (False, '')
     assert m.state == 'IDLE'

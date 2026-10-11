@@ -1,11 +1,11 @@
 {
-  "schema": "recipe/2.0",
+  "schema": "recipe/3.0",
   "model_id": "002_CHAIR_BACK_V000",
   "source_cad": {
     "filename": "002_chair_back_v000.dxf",
     "sha256": "524d75e3961eef017f3b16b73c8745350adec6e5f942ee2c0f0d68c715b288cb"
   },
-  "parts": [
+  "stocks": [
     {
       "part_id": "PART_001",
       "size_mm": [

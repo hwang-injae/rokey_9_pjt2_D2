@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② — 레시피 두 파일(recipe/2.0 구조 + placements/2.0 조립 방법)을 블록 JSON(blocks/2.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
+"""변환기 ② — 레시피 두 파일(recipe/3.0 구조 + placements/2.0 조립 방법)을 블록 JSON(blocks/2.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
 
 기본 설계(벤치 · 의자 · 책상)를 DB와 AI 생성의 예시로 넘길 때, 그리고 검사 묶음이 같은 형식으로 시험할 때 쓴다.
 검사 묶음 · HMI 가 부른다. 레시피를 읽기만 하고 파일 · 로봇 · 메시지에는 손대지 않는다.
@@ -25,7 +25,7 @@ def ori_extents(block_mm):
 class RecipeToBlocks:
     """레시피 하나를 blocks/2.0 하나로 바꾸는 변환기.
 
-    입력: recipe(recipe/2.0 구조) + placements(placements/2.0 조립 방법) dict(단위 mm). 출력: blocks/2.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
+    입력: recipe(recipe/3.0 구조) + placements(placements/2.0 조립 방법) dict(단위 mm). 출력: blocks/2.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
     위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
@@ -56,7 +56,7 @@ class RecipeToBlocks:
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':
             raise ValueError('model.frame.units 가 mm 가 아니다')
-        parts = {p['part_id']: p['size_mm'] for p in model.get('parts', [])}
+        parts = {p['part_id']: p['size_mm'] for p in model.get('stocks', [])}
         instances = {i['instance_id']: i for i in model.get('instances', [])}
 
         blocks, seen = [], set()

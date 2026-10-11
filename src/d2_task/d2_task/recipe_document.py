@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""E-69 레시피 읽기: 구조 `<모델ID>_recipe.json`(recipe/2.0) + 조립 방법 `<모델ID>_placements.csv`(placements/2.0)를 읽는다.
+"""E-69 레시피 읽기: 구조 `<모델ID>_recipe.json`(recipe/3.0) + 조립 방법 `<모델ID>_placements.csv`(placements/2.0)를 읽는다.
 
 ROS 없이 변환기와 작업 판단이 공유한다. 웹 backend 도 import 한다(E-59) → rclpy · ROS 메시지 import 금지.
 읽는 쪽은 칸 이름이 아니라 `schema` 로 내용을 확인한다: 이름이 다르거나 앞자리가 다르면 거절하고(변환하지 않음) 이유에 받은 schema 를 적는다(IRD 2장).
@@ -13,20 +13,31 @@ import math
 import re
 from pathlib import Path
 
-RECIPE_SCHEMA = 'recipe/2.0'
+RECIPE_SCHEMA = 'recipe/3.0'          # 10/11 E-84: parts → stocks(칸 이름이 바뀌어 앞자리 +1)
 PLACEMENTS_SCHEMA = 'placements/2.0'
 GRASPS = ('FLAT_LONG', 'FLAT_SHORT', 'EDGE_LONG', 'EDGE_SHORT', 'STAND_LONG', 'STAND_SHORT')
 
 
+def same_major(got, expected):
+    """형식 이름이 앞자리까지 같은지 본다(IRD 6장 형식 버전 규칙 — 뒷자리 +1 은 선택 칸을 더한 호환 변경이라 받는다).
+    예: recipe/3.1 ↔ recipe/3.0 → True, recipe/2.0 ↔ recipe/3.0 → False. 웹 design_store.same_major 와 같은 식(점 없는 'state/1'도 앞자리로 본다)."""
+    if not isinstance(got, str) or '/' not in got:
+        return False
+    name, ver = got.split('/', 1)
+    exp_name, exp_ver = expected.split('/', 1)
+    return name == exp_name and ver.split('.')[0] == exp_ver.split('.')[0]
+
+
 def check_schema(obj, expected, label):
-    """obj 가 객체이고 schema 가 expected 와 같은지 본다. 아니면 받은 schema 를 적어 ValueError(옛 cad_* · assembly.recipe 도 여기서 거절)."""
+    """obj 가 객체이고 schema 가 expected 와 앞자리까지 같은지 본다(same_major). 아니면 받은 schema 를 적어 ValueError
+    (옛 recipe/2.0 · cad_* · assembly.recipe 도 여기서 거절)."""
     got = obj.get('schema') if isinstance(obj, dict) else None
-    if got != expected:
-        raise ValueError(f'{label} 의 schema 가 {expected} 가 아니다(받은 schema: {got!r}) — 옛 형식은 변환하지 않고 거절한다')
+    if not same_major(got, expected):
+        raise ValueError(f'{label} 의 schema 가 {expected} 와 앞자리가 다르다(받은 schema: {got!r}) — 옛 형식은 변환하지 않고 거절한다')
 
 
 def recipe_sha256(recipe):
-    """구조(recipe/2.0) 객체의 짝 확인 해시: 키 정렬 · 공백 없는 JSON(UTF-8)의 sha256 16진수 64자(한세교 정함 — 파일 바이트가 아니라 객체 기준)."""
+    """구조(recipe/3.0) 객체의 짝 확인 해시: 키 정렬 · 공백 없는 JSON(UTF-8)의 sha256 16진수 64자(한세교 정함 — 파일 바이트가 아니라 객체 기준)."""
     text = json.dumps(recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
@@ -38,7 +49,7 @@ class RecipeDocument:
     """
 
     def __init__(self, recipe, placements):
-        """recipe(recipe/2.0)와 placements(placements/2.0)는 mm 단위 dict. geometry 는 기존 motion_math 가 읽는 표현(깊은 복사)이다."""
+        """recipe(recipe/3.0)와 placements(placements/2.0)는 mm 단위 dict. geometry 는 기존 motion_math 가 읽는 표현(깊은 복사)이다."""
         check_schema(recipe, RECIPE_SCHEMA, 'recipe')
         check_schema(placements, PLACEMENTS_SCHEMA, 'placements')
         self.recipe, self.placements = copy.deepcopy(recipe), copy.deepcopy(placements)
@@ -116,15 +127,15 @@ class RecipeDocument:
 
     def _join(self):
         """블록 이름으로 두 문서를 잇고 model/steps 를 만든다. 위치 계산은 하지 않아 기존 motion_math 를 그대로 쓴다."""
-        s, r = self.recipe, self.placements             # s = 구조(recipe/2.0), r = 조립 방법(placements/2.0)
+        s, r = self.recipe, self.placements             # s = 구조(recipe/3.0), r = 조립 방법(placements/2.0)
         model_id = s.get('model_id')
         if not isinstance(model_id, str) or not model_id or r.get('model_id') != model_id:
             raise ValueError('recipe 와 placements 의 model_id 가 다르거나 없다')
         if r.get('recipe_sha256') != recipe_sha256(s):
             raise ValueError('placements 의 recipe_sha256 이 recipe(구조)와 맞지 않는다 — 다른 구조에 대해 쓴 조립 방법이다')
-        parts, blocks, steps = s.get('parts'), s.get('blocks'), r.get('steps')
+        parts, blocks, steps = s.get('stocks'), s.get('blocks'), r.get('steps')
         if not all(isinstance(items, list) and items for items in (parts, blocks, steps)):
-            raise ValueError('parts · blocks · steps 는 비어 있지 않은 목록이어야 한다')
+            raise ValueError('stocks · blocks · steps 는 비어 있지 않은 목록이어야 한다')
         sizes = {}
         for p in parts:
             if not isinstance(p, dict) or not isinstance(p.get('part_id'), str) or p['part_id'] in sizes:
@@ -180,4 +191,4 @@ class RecipeDocument:
             if any(sequences[k] >= st['sequence'] for k in st['supports']):
                 raise ValueError('받침은 해당 블록보다 먼저 놓아야 한다')
         return {'schema': 'cad_recipe/1.0', 'model': {'model_id': model_id, 'frame': {'units': 'mm'},
-                'parts': copy.deepcopy(parts), 'instances': list(instances.values())}, 'steps': rows}
+                'stocks': copy.deepcopy(parts), 'instances': list(instances.values())}, 'steps': rows}

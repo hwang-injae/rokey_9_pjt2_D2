@@ -1,11 +1,11 @@
 {
-  "schema": "recipe/2.0",
+  "schema": "recipe/3.0",
   "model_id": "004_DESK_PEDESTAL_V000",
   "source_cad": {
     "filename": "004_desk_pedestal_v000.dxf",
     "sha256": "5137dad7721fbb9df60297e7a9784db78add81ee99b41da981703ad302e67a3f"
   },
-  "parts": [
+  "stocks": [
     {
       "part_id": "PART_001",
       "size_mm": [

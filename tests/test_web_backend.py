@@ -340,7 +340,7 @@ def test_store_registers_four_bases_as_design_2(store):
     d = store.get_design('001_CHAIR_BENCH_V000')
     assert d['schema'] == 'design/2.0' and d['family'] == 'chair' and d['version'] == 'V000'
     assert d['made_by'] == 'cad' and d['parent_id'] is None
-    assert d['recipe']['schema'] == 'recipe/2.0' and d['placements']['schema'] == 'placements/2.0'
+    assert d['recipe']['schema'] == 'recipe/3.0' and d['placements']['schema'] == 'placements/2.0'
     assert d['blocks']['schema'] == 'blocks/2.0' and len(d['blocks']['blocks']) == 11
     # 3D 진행도 색을 잇는 길: placements 의 sequence = blocks 의 order
     assert sorted(s['sequence'] for s in d['placements']['steps']) == sorted(b['order'] for b in d['blocks']['blocks'])

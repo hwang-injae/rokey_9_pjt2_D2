@@ -152,8 +152,8 @@ def test_pick_place_tcp_rejects_different_up_axis(robot_cfg):
 def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
     반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
-    structure = {'schema': 'recipe/2.0', 'model_id': model_id,
-                 'parts': [{'part_id': 'PART_001', 'size_mm': list(size_mm)}],
+    structure = {'schema': 'recipe/3.0', 'model_id': model_id,
+                 'stocks': [{'part_id': 'PART_001', 'size_mm': list(size_mm)}],
                  'blocks': [{'block': 'SEAT_001_01', 'part_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
                             {'block': 'SEAT_001_02', 'part_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
     recipe = {'schema': 'placements/2.0', 'model_id': model_id,
@@ -220,7 +220,7 @@ def _write_files(folder, recipe, structure, sha=None, schema='placements/2.0'):
 
 
 def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
-    """load_recipe: 구조 _recipe.json(recipe/2.0) + 옆 _placements.csv 를 지금 모양(steps + 'structure')으로 붙인다 — sequence · stage 는 정수,
+    """load_recipe: 구조 _recipe.json(recipe/3.0) + 옆 _placements.csv 를 지금 모양(steps + 'structure')으로 붙인다 — sequence · stage 는 정수,
     supports 는 목록, block_id 는 CSV 값. CSV 가 없으면 FileNotFoundError. recipe_files 는 _recipe.json 만(CSV · 옛 .recipe.json 은 안 넣음)."""
     recipe, structure = _recipe()
     rp = _write_files(tmp_path, recipe, structure)

@@ -185,7 +185,7 @@ def test_new_full_names_match_and_foreign_ids_unknown():
 
 
 # ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/2.0) → recipe_blocks 에 넣을 레시피 ----------------
-RECIPE = {'schema': 'recipe/2.0', 'model_id': '001_CHAIR_BENCH_V000', 'parts': [], 'blocks': []}
+RECIPE = {'schema': 'recipe/3.0', 'model_id': '001_CHAIR_BENCH_V000', 'stocks': [], 'blocks': []}
 PLACEMENTS = {'schema': 'placements/2.0', 'model_id': '001_CHAIR_BENCH_V000', 'recipe_sha256': recipe_sha256(RECIPE), 'steps': []}
 
 
@@ -204,7 +204,7 @@ def test_recipe_sha256_matches_team_value():
     folder = ROOT / 'src/d2_task/test/fixtures'
     recipe = json.loads((folder / '001_CHAIR_BENCH_V000_recipe.json').read_text(encoding='utf-8'))
     csv_sha = (folder / '001_CHAIR_BENCH_V000_placements.csv').read_text(encoding='utf-8').splitlines()[1].split(',')[-2]
-    assert recipe_sha256(recipe) == csv_sha == '9489c62c1816e8ed99b870744498656073f6c78007cb48c65653d0a58ed33e8a'
+    assert recipe_sha256(recipe) == csv_sha == '807c3a937cb378d253c2762ef1b4e7c723a00f08c6d9dddff9cf7ef96d20da6f'
 
 
 def test_recipe_from_design_attaches_structure():
@@ -227,7 +227,7 @@ OLD_RECIPE = {'schema': 'cad_recipe/1.0', 'model_id': '001_CHAIR_BENCH_V000', 's
     design(OLD_STRUCT, OLD_RECIPE),                                              # 봉투만 새것 — 안은 옛 cad_* (칸 이름이 아니라 schema 로 본다)
     design(design_id='002_CHAIR_BACK_V000'),                                          # 요청한 설계와 다른 답
     design(recipe=None), design(placements=None), design(recipe=[]),             # 칸 없음 · 객체 아님
-    design(dict(RECIPE, schema='recipe/3.0')),                                   # 앞자리가 다름(형식 버전 규칙)
+    design(dict(RECIPE, schema='recipe/2.0')),                                   # 앞자리가 다름(형식 버전 규칙 — 옛 parts 판)
     design(placements=dict(PLACEMENTS, model_id='002_CHAIR_BACK_V000')),             # model_id 다름
     design(placements=dict(PLACEMENTS, recipe_sha256='0' * 64)),                 # 다른 구조에 대해 쓴 조립 방법
     design(dict(RECIPE, blocks=[{'block': 'LEG_001_01'}])),                      # 구조가 바뀌었는데 조립 방법은 그대로

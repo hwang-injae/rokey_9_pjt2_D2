@@ -11,7 +11,7 @@ import re
 
 from d2_task.recipe_to_blocks import ori_extents
 from d2_task.blocks_to_recipe import DesignRejected
-from d2_task.recipe_document import GRASPS, RecipeDocument
+from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
 
 SCHEMA_REQUEST = 'blocks/2.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/2.0'
@@ -95,7 +95,7 @@ class DesignChecker:
         """
         try:
             request = json.loads(request_json, parse_constant=self._reject_constant, parse_float=self._finite_float)
-            if not isinstance(request, dict) or request.get('schema') != SCHEMA_REQUEST:
+            if not isinstance(request, dict) or not same_major(request.get('schema'), SCHEMA_REQUEST):
                 got = request.get('schema') if isinstance(request, dict) else None
                 raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
             result = self.check(request)

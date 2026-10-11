@@ -35,11 +35,12 @@ import threading
 import time
 
 from d2_task.block_picker import BlockPicker
+from d2_task.recipe_document import same_major
 from d2_task.run_logger import RunLogger
 from d2_task.scatter_pick import ScatterFlow, StepTracker
 from d2_task.task_planner import TaskPlanner
 
-RECIPE_SCHEMA = 'recipe/2.0'
+RECIPE_SCHEMA = 'recipe/3.0'
 PLACEMENTS_SCHEMA = 'placements/2.0'
 DESIGN_SCHEMA = 'design/2.0'
 
@@ -661,7 +662,7 @@ class TaskManager:
             return self._failed('STOPPED' if self.halted() else why, '스캔 추론')
         try:
             blocks = body['blocks']
-            if body.get('ok') is not True or not isinstance(blocks, dict) or blocks.get('schema') != 'blocks/1':
+            if body.get('ok') is not True or not isinstance(blocks, dict) or not same_major(blocks.get('schema'), 'blocks/1'):
                 raise ValueError('blocks/1 객체가 아니다')
             if any(not isinstance(blocks.get(k), str) or not blocks[k] for k in ('design_id', 'family')):
                 raise ValueError('design_id · family 가 없다')
@@ -859,18 +860,18 @@ class TaskManager:
     def _planner_from(self, design, design_id):
         """조회 답(design/2.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
 
-        검증: 객체 · schema design/2.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/2.0 · placements/2.0 객체
+        검증: 객체 · schema design/2.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/3.0 · placements/2.0 객체
         (두 문서는 block 이름과 recipe_sha256 으로 연결한다). 칸 이름이 아니라 schema 로 내용을 확인하고, 옛 형식(design/1 · cad_*)은 받은 schema 를
         적어 거절한다(변환하지 않음). 레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
         """
         got = design.get('schema') if isinstance(design, dict) else None
-        if got != DESIGN_SCHEMA:
+        if not same_major(got, DESIGN_SCHEMA):
             return None, f'설계 조회 답이 {DESIGN_SCHEMA} 가 아니다(받은 schema: {got!r}) — 옛 형식은 거절한다'
         if design.get('design_id') != design_id:
             return None, f'조회 답의 design_id({design.get("design_id")!r})가 요청({design_id!r})과 다르다'
         for key, schema in (('recipe', RECIPE_SCHEMA), ('placements', PLACEMENTS_SCHEMA)):
             got = design.get(key, {}).get('schema') if isinstance(design.get(key), dict) else None
-            if got != schema:
+            if not same_major(got, schema):
                 return None, f'조회 답의 {key} 가 {schema} 객체가 아니다(받은 schema: {got!r})'
         try:
             planner = TaskPlanner(self.cfg, design['recipe'], design['placements'])

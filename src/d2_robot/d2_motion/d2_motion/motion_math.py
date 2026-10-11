@@ -269,8 +269,18 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 # ---------------- 설계도(레시피) ----------------
 RECIPE_SUFFIXES = ('_recipe.json',)    # 레시피 = 구조 파일 <모델ID>_recipe.json (E-69 — 옛 이름 .recipe.json 은 W139 뒤 뺌)
 PLACEMENTS_SUFFIX = '_placements.csv'  # 조립 방법 원본 — 구조 파일과 같은 폴더 · 같은 모델 ID (E-69)
-RECIPE_SCHEMA = 'recipe/2.0'
+RECIPE_SCHEMA = 'recipe/3.0'          # 10/11 E-84: parts → stocks
 PLACEMENTS_SCHEMA = 'placements/2.0'
+
+
+def same_major(got, expected):
+    """형식 이름이 앞자리까지 같은지(IRD 6장 형식 버전 규칙 — 뒷자리는 호환 변경). d2_task.recipe_document.same_major 와 같은 식이다 —
+    d2_task 가 d2_motion 을 쓰므로 여기서 불러 쓸 수 없어 한 줄을 둔다."""
+    if not isinstance(got, str) or '/' not in got:
+        return False
+    name, ver = got.split('/', 1)
+    exp_name, exp_ver = expected.split('/', 1)
+    return name == exp_name and ver.split('.')[0] == exp_ver.split('.')[0]
 
 
 def recipe_files(folder):
@@ -299,24 +309,24 @@ def recipe_sha256(recipe):
 
 
 def load_recipe(path):
-    """레시피 파일 <모델ID>_recipe.json(구조, recipe/2.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/2.0)를 읽어
+    """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/2.0)를 읽어
     {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_blocks 가 둘을 블록 이름으로 잇는다(E-69).
     steps 는 CSV 의 조립 방법 칸(block · block_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
-    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/2.0 · placements/2.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
+    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/2.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
     recipe_sha256 이 구조와 다르면 ValueError — 구조가 바뀌었는데 옛 조립 방법으로 쌓으면 받침 · 잡기가 어긋난다."""
     with open(path) as f:
         recipe = json.load(f)
-    if recipe.get('schema') != RECIPE_SCHEMA:
-        raise ValueError(f'{os.path.basename(path)}: 형식 {recipe.get("schema")!r} 는 읽지 않는다 ({RECIPE_SCHEMA} 만)')
+    if not same_major(recipe.get('schema'), RECIPE_SCHEMA):
+        raise ValueError(f'{os.path.basename(path)}: 형식 {recipe.get("schema")!r} 는 읽지 않는다 ({RECIPE_SCHEMA} 앞자리만)')
     want = recipe_sha256(recipe)
     pp = os.path.join(os.path.dirname(path), recipe['model_id'] + PLACEMENTS_SUFFIX)
     with open(pp, newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
     steps = []
     for r in rows:
-        if r.get('schema') != PLACEMENTS_SCHEMA:
-            raise ValueError(f'{os.path.basename(pp)}: 형식 {r.get("schema")!r} 는 읽지 않는다 ({PLACEMENTS_SCHEMA} 만)')
+        if not same_major(r.get('schema'), PLACEMENTS_SCHEMA):
+            raise ValueError(f'{os.path.basename(pp)}: 형식 {r.get("schema")!r} 는 읽지 않는다 ({PLACEMENTS_SCHEMA} 앞자리만)')
         if r.get('recipe_sha256') != want:
             raise ValueError(f'{os.path.basename(pp)} 의 recipe_sha256 이 {os.path.basename(path)} 와 다르다 (구조가 바뀜 — 레시피 도구로 다시 만든다)')
         steps.append({'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
@@ -334,7 +344,7 @@ def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
     레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · block_id · sequence · stage · grasp_axis · supports — 블록 이름)
-    + 구조 recipe/2.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
+    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · blocks[](block · part_id · center_mm · R)).
     block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
@@ -371,7 +381,7 @@ def recipe_blocks(cfg, recipe):
     out = []
     if 'model' in recipe:                           # 옛 한 파일 꼴 — task RecipeDocument.geometry · task 시험 예시(W141 전)
         model = recipe['model']
-        sizes = {p['part_id']: p['size_mm'] for p in model['parts']}
+        sizes = {p['part_id']: p['size_mm'] for p in model['stocks']}
         inst = {i['instance_id']: i for i in model['instances']}
         bid = {st['instance_id']: st.get('block_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
@@ -380,7 +390,7 @@ def recipe_blocks(cfg, recipe):
                              st['grasp_axis'], [bid[k] for k in st.get('support_instance_ids') or [] if k in bid]))
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
-    sizes = {p['part_id']: p['size_mm'] for p in struct['parts']}
+    sizes = {p['part_id']: p['size_mm'] for p in struct['stocks']}
     geo = {b['block']: b for b in struct['blocks']}
     full = {st['block']: st.get('block_id') or f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):

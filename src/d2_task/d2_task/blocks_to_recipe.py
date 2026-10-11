@@ -1,4 +1,4 @@
-"""변환기 ① — AI가 쓴 설계도(blocks/2.0)를 레시피(recipe/2.0) + 조립 방법(placements/2.0)으로 바꾼다 (W110, E-69).
+"""변환기 ① — AI가 쓴 설계도(blocks/2.0)를 레시피(recipe/3.0) + 조립 방법(placements/2.0)으로 바꾼다 (W110, E-69).
 
 검사 묶음(DesignChecker)이 설계를 통과시킨 뒤 부른다. ROS · 파일 쓰기 · 로봇 · 메시지 영향 없음(계산만).
 """
@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from d2_task.recipe_builder import RecipeBuilder
+from d2_task.recipe_document import same_major
 
 SCHEMA_REQUEST = 'blocks/2.0'
 REQUIRED_KEYS = ('order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp')
@@ -33,7 +34,7 @@ class DesignRejected(ValueError):
 
 
 class BlocksToRecipe:
-    """blocks/2.0 → {'recipe': recipe/2.0, 'placements': placements/2.0}.
+    """blocks/2.0 → {'recipe': recipe/3.0, 'placements': placements/2.0}.
 
     AI가 고른 값(역할 · 옵션 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로 옮기고 대신 채우지 않는다(E-69 ②).
     코드가 정하는 것은 블록 번호 · 중심 · 회전 R · 받침 · 닫힘 축 · recipe_sha256 뿐이다(RecipeBuilder — CAD 도구와 같은 규칙).
@@ -76,11 +77,11 @@ class BlocksToRecipe:
 
         입력:
             request: blocks/2.0 dict — design_id, blocks[{order, x, y, z(아랫면), ori, role, part, stage, grasp}] (mm, 설계 좌표계)
-        출력: {'recipe': recipe/2.0(model_id = design_id, source_cad = None), 'placements': placements/2.0}
+        출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/2.0}
         실패: AI가 쓴 값이 틀리면 DesignRejected(errors — block = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
         """
         # 형식: 검사 묶음이 먼저 보지만, 따로 불려도 빈 칸을 대신 채우지 않게 다시 확인한다
-        if not isinstance(request, dict) or request.get('schema') != SCHEMA_REQUEST or not request.get('design_id'):
+        if not isinstance(request, dict) or not same_major(request.get('schema'), SCHEMA_REQUEST) or not request.get('design_id'):
             raise DesignRejected([{'block': None, 'detail': f'schema {SCHEMA_REQUEST} · design_id 가 있는 객체가 아니다'}])
         items = request.get('blocks')
         if not isinstance(items, list) or not items or not all(isinstance(b, dict) for b in items):

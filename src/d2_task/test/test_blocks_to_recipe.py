@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""변환기 ① 시험 (W110, E-69) — blocks/2.0 → recipe/2.0 + placements/2.0.
+"""변환기 ① 시험 (W110, E-69) — blocks/2.0 → recipe/3.0 + placements/2.0.
 
 기본 설계 4종 왕복(V-45: 레시피 → 변환기 ② → blocks/2.0 → 변환기 ① → 같은 레시피), 블록 번호 매기기,
 AI 실수 세 가지(역할 목록 · 부품 면 맞닿음 · 고른 잡기) 거부, AI 값을 대신 채우지 않음을 본다. ROS · 로봇 없이 돈다."""
@@ -178,4 +178,4 @@ def test_attached_to_design_checker(model_id):
     ok, reason, text = checker.handle_json(json.dumps(load_base(model_id)[1]))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
-    assert result['recipe']['schema'] == 'recipe/2.0' and result['placements']['schema'] == 'placements/2.0'
+    assert result['recipe']['schema'] == 'recipe/3.0' and result['placements']['schema'] == 'placements/2.0'

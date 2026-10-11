@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② 시험 (W117, E-69) — 기본 설계 4종(001 벤치 · 002 의자 · 003 책상 세운 다리 · 004 가운데 기둥)의 레시피 두 파일(recipe/2.0 구조 + placements/2.0 조립 방법)을
+"""변환기 ② 시험 (W117, E-69) — 기본 설계 4종(001 벤치 · 002 의자 · 003 책상 세운 다리 · 004 가운데 기둥)의 레시피 두 파일(recipe/3.0 구조 + placements/2.0 조립 방법)을
 blocks/2.0 으로 바꿔 본다. 위치 · 방향 계산은 E-52 때와 같고, role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 나온다."""
 import copy
 import json
@@ -114,7 +114,7 @@ def bad(mutate, reseal=True):
         RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, pl)
 
 
-@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/3.0', None])
+@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/2.0', None])
 def test_옛_형식과_다른_앞자리는_schema를_보고_거절(schema):
     """E-69: 칸 이름이 아니라 schema 로 확인한다. 옛 cad_* · assembly.recipe 는 변환하지 않고 거절, 받은 schema 가 이유에 적힌다."""
     r, pl = load('001_CHAIR_BENCH_V000')
@@ -170,7 +170,7 @@ def test_45도_회전은_방향_복원_불가():
 
 
 def test_크기가_75_25_15가_아니면_방향_복원_불가():
-    bad(lambda r, pl: r['parts'][0].update(size_mm=[80.0, 25.0, 15.0]))
+    bad(lambda r, pl: r['stocks'][0].update(size_mm=[80.0, 25.0, 15.0]))
 
 
 def test_거울_반사_회전은_거부():
@@ -205,4 +205,4 @@ def test_블록_크기_두_곳은_허용_오차_없이_같다():
     assert [v * 1000.0 for v in cfg['block_size_m']] == BLOCK_MM
     for model_id in IDS:
         recipe, _ = load(model_id)
-        assert all(p['size_mm'] == BLOCK_MM for p in recipe['parts']), model_id
+        assert all(p['size_mm'] == BLOCK_MM for p in recipe['stocks']), model_id

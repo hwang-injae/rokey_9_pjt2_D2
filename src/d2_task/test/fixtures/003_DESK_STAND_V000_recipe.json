@@ -1,11 +1,11 @@
 {
-  "schema": "recipe/2.0",
+  "schema": "recipe/3.0",
   "model_id": "003_DESK_STAND_V000",
   "source_cad": {
     "filename": "003_desk_stand_v000.dxf",
     "sha256": "35c8958f2b31c87cf54dbeebcd9ebf2ed3654e27fcf4d07d1ba8300f5cb41a49"
   },
-  "parts": [
+  "stocks": [
     {
       "part_id": "PART_001",
       "size_mm": [
