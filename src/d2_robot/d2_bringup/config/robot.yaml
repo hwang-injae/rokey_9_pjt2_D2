@@ -9,14 +9,17 @@ supply_mode: slots
 
 frame_id: base_link
 tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
-table_z_m: -0.018              # 작업면 높이. 지금은 1곳 값 — 3~4곳 평균으로 다시 (W015)
+table_z_m: 0.000               # 작업면 높이(base_link z). 10/11 E-85: 로봇 바닥 금속판이 책상과 같은 높이 + 종이(1 mm 미만) · 플랜지 자 측정 약 −1 mm.
+                               # 옛 −0.018 은 손끝 닿기 높이에서 29 mm 를 뺀 값(10/6) — 실제 손끝은 rg2_tcp 아래 약 11 mm 라 18 mm 낮았다.
+                               # W152(10/11 한세교): 다 닫은 손끝 닿기 4곳 TF z 평균 11.04 mm(차 0.70) = finger_height.touch_tcp_z_m 그대로
+                               # 집기 · 놓기 높이는 손끝 닿기 보정점(finger_height) 기준 차이라 이 값과 assembly_origin.z_m 을 같이 바꾸면 그대로다(손목 보정 높이도 이 값에 고정)
 table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
   x_m: [-0.2675, 0.9325]
   y_m: [-0.325, 0.325]
   base_clear_m: 0.15
 
 # 조립 원점: 설계도 (0, 0, 0) 이 로봇 좌표로 어디인지. 여기 하나만 쓴다 (10/6 직접 교시로 다시 찍음)
-assembly_origin: {x_m: 0.4261, y_m: -0.0725, z_m: -0.018, yaw_deg: 0.3}
+assembly_origin: {x_m: 0.4261, y_m: -0.0725, z_m: 0.000, yaw_deg: 0.3}   # z 는 table_z_m 과 같이(10/11 E-85, 옛 −0.018)
 assembly_area_half_m: 0.15     # 조립 작업공간 = 조립 원점 ± 이 값 (x·y). 여러 설계를 세트로 놓을 때 이 안에 둔다
 
 block_size_m: [0.075, 0.025, 0.015]   # 젠가 블록 설계 치수 LENGTH, WIDTH, THICKNESS = 최대 기준값 (레시피와 같아야 함)

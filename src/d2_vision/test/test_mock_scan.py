@@ -67,6 +67,28 @@ def test_capture_answers_points_and_remembers_poses(tmp_path):
     assert m.runs['R1'] == ['observe_front', 'observe_side']
 
 
+def test_preview_same_fields_and_grows_with_poses(tmp_path):
+    """E-82 가짜 미리보기: wrist_block 과 같은 칸(scan_preview/1.0), 찍은 서로 다른 자세 수만큼 점이 늘고(1/3 · 2/3 · 전부) 파일이 생긴다.
+    같은 자세를 다시 찍으면(서로 다른 자세 수 그대로) 점 수도 그대로. 레시피를 못 찾으면 ValueError(노드는 경고만)."""
+    ms = scanner(tmp_path)
+    full = len(blocks_to_points(structure_to_blocks(*load('001_CHAIR_BENCH_V000'), 'scan_x', 'unknown', 0), ORIGIN, BLOCK_MM))   # 벤치 전부
+    seen, pts = [], []
+    for i, pose in enumerate(['observe', 'observe_front', 'observe_side', 'observe_side'], start=1):
+        assert ms.capture(json.dumps({'pose_id': pose, 'run_id': 'R1'}))[0]
+        seen.append(pose)
+        msg = ms.preview('R1', pose, i, len(set(seen)), RECIPES, '001_CHAIR_BENCH_V000', stamp=5.0)
+        assert set(msg) == {'schema', 'stamp', 'run_id', 'pose_id', 'index', 'kind', 'cloud_path', 'points'}
+        assert (msg['schema'], msg['kind'], msg['run_id'], msg['pose_id'], msg['index']) == ('scan_preview/1.0', 'capture', 'R1', pose, i)
+        path = Path(msg['cloud_path'])
+        assert path == tmp_path / 'R1' / f'preview_{i}.ply'
+        assert f'element vertex {msg["points"]}' in path.read_text(encoding='ascii')
+        pts.append(msg['points'])
+    assert 0 < pts[0] < pts[1] < pts[2] == pts[3] == full, (pts, full)    # 다시 찍은 자세는 점을 늘리지 않는다
+    assert len(ms.runs['R1']) == 4                                         # 촬영 순번(index)은 다시 찍음도 센다
+    with pytest.raises(ValueError):
+        ms.preview('R1', 'observe', 5, 1, RECIPES, 'NO_SUCH_DESIGN')
+
+
 def test_capture_forgets_oldest_runs(tmp_path):
     m = scanner(tmp_path)
     for i in range(MAX_RUNS + 5):

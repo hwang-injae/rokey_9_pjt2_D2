@@ -1,4 +1,5 @@
 """tcp_pose(10/10 W156) — posx 틀 보정값을 rg2_tcp 틀로 옮기는 행렬과 TF → 4x4 변환. ROS 없이 돈다."""
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,13 +40,14 @@ def test_축_약속_x_rg2_는_마이너스_y_posx():
 
 def test_config_보정값은_rg2tcp_틀_하나뿐이고_강체_변환():
     """10/10 W156 다시 계산 뒤: config 에 T_rg2tcp2camera 하나(옛 posx 틀 T_gripper2camera 는 지움) · 회전은 직교 · det 1 ·
-    카메라는 rg2_tcp 위 약 184 mm · 옆 약 80 mm(손목 옆에 붙은 자리) — 틀을 잘못 넣으면(posx 틀 그대로) x · y 가 뒤바뀐다."""
+    카메라는 rg2_tcp 위 약 202 mm · 옆 약 80 mm(손목 옆에 붙은 자리) — 틀을 잘못 넣으면(posx 틀 그대로) x · y 가 뒤바뀐다.
+    10/11 E-85: 광축 위치를 실측 작업대 높이(0.000)에 다시 고정해 184 → 202 mm(옛 −0.018 기준은 18 mm 장면 쪽이었다)."""
     T = load_calib(CONFIG / CALIB_NAME)
     assert not (CONFIG / 'T_gripper2camera.npy').exists()
     R = T[:3, :3]
     assert np.allclose(R.T @ R, np.eye(3), atol=1e-6) and abs(np.linalg.det(R) - 1.0) < 1e-6
     assert np.allclose(T[3], [0, 0, 0, 1])
-    assert -190 < T[2, 3] < -175 and -80 < T[0, 3] < -65 and 30 < T[1, 3] < 40
+    assert -210 < T[2, 3] < -195 and -80 < T[0, 3] < -65 and 30 < T[1, 3] < 40
 
 
 def test_transform_to_matrix_mm():
@@ -81,8 +83,11 @@ def test_camera_pose_30도_기울이면_시선에_수직인_아래로_옮김():
 
 
 def test_load_tilt_shift_json_없으면_0(tmp_path):
-    """보정 json 이 없거나 칸이 없으면 0(옛 판과 같음), 있으면 그 값 — config 의 값은 10/10 15자세 맞춤 21.42 mm."""
+    """보정 json 이 없거나 칸이 없으면 0(옛 판과 같음), 있으면 그 값. config 의 값은 10/11 E-85 로 0(원인을 고쳐 경험식 끔 — 10/10 값 21.42 는 기록만)."""
     assert load_tilt_shift(tmp_path / 'none.npy') == 0.0
     (tmp_path / 'a.json').write_text('{"file": "a.npy"}', encoding='utf-8')
     assert load_tilt_shift(tmp_path / 'a.npy') == 0.0
-    assert abs(load_tilt_shift(CONFIG / CALIB_NAME) - 21.42) < 1e-9
+    (tmp_path / 'b.json').write_text('{"tilt_shift": {"mm_per_g": 21.42}}', encoding='utf-8')
+    assert abs(load_tilt_shift(tmp_path / 'b.npy') - 21.42) < 1e-9
+    assert load_tilt_shift(CONFIG / CALIB_NAME) == 0.0
+    assert json.loads((CONFIG / 'T_rg2tcp2camera.json').read_text(encoding='utf-8'))['tilt_shift']['mm_per_g_1010'] == 21.42
