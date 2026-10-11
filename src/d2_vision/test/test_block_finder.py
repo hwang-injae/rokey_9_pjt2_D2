@@ -34,6 +34,7 @@ T_B2C = np.array([[0.999833, 0.018095, -0.002353, 0.389811],
                   [0.0, 0.0, 0.0, 1.0]])
 H, W = 480, 640
 POS_TOL_MM, YAW_TOL_DEG = 3.0, 3.0
+TILT_TOP_TOL_MM = 3.0     # 기울어진 블록 윗면 가장 높은 점: 평면의 98 % 높이 · 가장자리 EDGE_PX 깎기만큼 정답(모서리)보다 조금 낮다
 
 
 # ---------------- 합성 장면 ----------------
@@ -213,6 +214,11 @@ def test_tilted_on_other_block():
     top_cx = bx - (T / 2) * math.sin(th)              # 윗면 가운데의 x (기울어진 만큼 안쪽)
     assert abs(b['x_m'] * 1000 - top_cx) <= POS_TOL_MM and abs(b['y_m'] * 1000 - b_y) <= POS_TOL_MM
     assert abs(wrap_deg(b['yaw_deg'])) <= YAW_TOL_DEG
+    # tilted 의 top_z_m = 윗면 가장 높은 점(E-68 장애물 상자, 10/11) — 윗면 가운데보다 (L/2)·sin θ(≈ 10 mm) 높다
+    top_c = bz + (T / 2) * math.cos(th)              # 윗면 가운데 높이(작업면 위 mm)
+    top_hi = top_c + (L / 2) * math.sin(th)          # 윗면 높은 끝(A 위로 올라간 쪽)
+    got = (b['top_z_m'] - TABLE) * 1000
+    assert abs(got - top_hi) <= TILT_TOP_TOL_MM and got > top_c + 5.0, (got, top_c, top_hi)
     a = by[0]
     assert a['overlap'] == 'under' and not a['tilted'] and a['up'] == 'THICKNESS', (a, info['detail'])
 

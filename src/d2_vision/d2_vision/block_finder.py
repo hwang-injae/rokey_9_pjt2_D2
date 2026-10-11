@@ -9,7 +9,8 @@
 
 출력은 IRD `/d2/vision/find_blocks` 응답의 blocks 원소 그대로(dict, JSON 직렬화 가능, NaN 없음), 윗면 높이 순:
   {"x_m","y_m","top_z_m","yaw_deg","up","clear":{축:bool},"gap_mm":{축:mm},"overlap","tilted","confidence"}
-  - x_m · y_m · top_z_m: base_link (m), 윗면 가운데. 기울어진 블록은 윗면 평면의 가운데 높이.
+  - x_m · y_m · top_z_m: base_link (m), 윗면 가운데. 기울어진 블록(tilted)의 top_z_m 만 윗면에서 가장 높은 점(평면 98 % 높이) —
+    작업 관리자가 이 값을 윗면으로 장애물 상자를 만들어서(E-68 '가장 높은 점까지 닿는 상자', 10/11 박진용). x_m · y_m 은 그대로 가운데.
   - up: 작업면 위 높이를 먼저(15 · 25 · 75 + 포개짐 층, ±5 mm) 보고 그 후보 안에서만 윗면 모양으로 가린다. 어긋나면 confidence 절반(10/8 PL).
     다른 블록 위에 얹힌 블록은 '내 높이 − 아래 블록 높이'를 내 두께로 다시 본다. 영상 테두리 · 영역 경계에 잘린 윤곽은 under · confidence ≤ 0.2.
   - yaw_deg: 윗면의 긴 변이 base x 와 평행하면 0, 반시계 +, −90 ≤ yaw < 90 (motion_math.wrap_half 와 같은 경계).
@@ -234,7 +235,7 @@ def _measure(mask, P, slope, table_z, depth_m, intr, cfg, score):
     base_conf = score * min(1.0, top.sum() / max(sel.sum(), 1))
     return {
         'mask': mask, 'top': top, 'coef': coef, 'center': center, 'u': u, 'v': v,
-        'z_c': z_c, 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
+        'z_c': z_c, 'z_hi': float(z_hi), 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
         'long_mm': long_mm, 'short_mm': short_mm, 'vis_area': vis_area, 'cost': cost, 'mismatch': mismatch,
         'base_conf': base_conf, 'under': False, 'top_of': False, 'on': [],
     }
@@ -443,7 +444,7 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         out.append((blk['index'], {
             'x_m': round(float(blk['center'][0]), 4),
             'y_m': round(float(blk['center'][1]), 4),
-            'top_z_m': round(blk['z_c'], 4),
+            'top_z_m': round(blk['z_hi'] if blk['tilted'] else blk['z_c'], 4),   # tilted = 가장 높은 점(E-68 장애물 상자), 나머지 = 윗면 가운데
             'yaw_deg': round(yaw, 1) if round(yaw, 1) < 90.0 else -90.0,
             'up': blk['up'],
             'clear': {k: bool(g >= cfg['min_gap_mm']) for k, g in gaps.items()},
