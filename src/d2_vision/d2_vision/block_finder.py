@@ -40,7 +40,7 @@ SUPPLY_AREA_M = ((0.183, 0.586), (0.142, 0.337))
 
 Z_MIN_M, Z_MAX_M = 0.1, 1.0   # 깊이 유효 범위 — block_checker.depth_to_base_points 기본값과 같게(픽셀 ↔ 점 순서를 맞추려고)
 TILT_MM = 5.0             # 양 끝 높이 차 이상이면 tilted (IRD · E-43)
-TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (실측 장면 −19.5 mm vs yaml −18 mm)
+TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (10/8 실측 장면이 yaml 값과 1.5 mm 다름)
 TOP_MIN_MM = 4.0          # 작업면 위 이보다 낮은 점은 윗면 후보에서 뺀다(깊이 잡음 ±2~3 mm)
 MAX_SLOPE = 0.6           # 이웃 픽셀 사이 높이 기울기(dz/dxy)가 이보다 크면 옆면 · 가장자리 튐 — 윗면에서 뺀다(31°보다 가파름)
 EDGE_PX = 3               # 평면 맞춤 때 마스크 가장자리를 이만큼 깎는다 — 경계 깊이 튐(SDD §6.11 ② "가장자리 몇 픽셀은 버림")

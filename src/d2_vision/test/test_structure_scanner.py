@@ -36,6 +36,9 @@ CAMS = {'observe': ((0, -1, 496), (0, 0, -1)),
         'observe_side': ((1, -262, 451), (0.0, 0.574, -0.819))}
 REAL_DIR = Path(os.environ.get('D2_W114_SCAN_DIR', Path.home() / 'Downloads' / '데이터셋' / 'W114_scan'))
 REAL_STEMS = {'observe': 's11_001_a_observe', 'observe_front': 's11_002_a_front', 'observe_side': 's11_003_a_side'}
+# s11 은 10/7 촬영 — 자세 json T_base2cam 이 그때 손목 보정값(작업대 −0.018 m 에 맞춰 고정)이라 작업대가 약 −18 mm 로 나온다.
+# 10/11 E-85(#123)로 조립 원점 z 가 0.000 이 되어도 그 자료는 그 기준으로 돌린다 — 아니면 작업대 맞춤(원점 z ±10 mm)이 빗나가 층이 어긋난다.
+CFG_OLD = {**CFG, 'assembly_origin': {**CFG['assembly_origin'], 'z_m': -0.018}}
 
 
 def truth(design_id):
@@ -202,7 +205,7 @@ def test_real_s11_bench_report():
     tb = truth('001_CHAIR_BENCH_V000')
     rows = [[p] for p in REAL_STEMS] + [list(REAL_STEMS)]
     for poses in rows:
-        sc = StructureScanner(CFG, design_id='scan_s11')
+        sc = StructureScanner(CFG_OLD, design_id='scan_s11')
         for p in poses:
             depth = cv2.imread(str(REAL_DIR / f'{REAL_STEMS[p]}_depth.png'), cv2.IMREAD_UNCHANGED)
             js = json.loads((REAL_DIR / f'{REAL_STEMS[p]}_pose.json').read_text(encoding='utf-8'))
