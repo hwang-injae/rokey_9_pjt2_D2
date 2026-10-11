@@ -11,6 +11,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config',                                      # 손목 hand-eye 보정값 + 근거 — rg2_tcp 틀(10/10 W156) · posx 틀(다시 계산 뒤 지움)
          ['config/T_rg2tcp2camera.npy', 'config/T_rg2tcp2camera.json']),
+        ('share/' + package_name + '/models',                                      # 흩어진 블록 찾기 YOLO seg 모델(10/11 E-86 — 바꿀 때만 새 판 이름으로, 한 파일 50 MB 이하)
+         ['models/block_seg_26s_e150_261008.pt']),                                # 10/8 W086 선정 26s_e150_cp0_lr0.001(드라이브 3_모델 block_seg_261008_160장.pt와 같은 파일)
     ],
     install_requires=['setuptools'],
     zip_safe=True,
