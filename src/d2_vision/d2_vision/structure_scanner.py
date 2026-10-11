@@ -23,6 +23,7 @@ d2_task 를 import 하지 않는다(CI 는 d2_vision 만 빌드 · 시험).
 import copy
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -895,30 +896,47 @@ class StructureScanner:
             p = np.concatenate([c['points_m'] for c in self.captures])
         else:
             p = np.zeros((0, 3))
-        o = self.origin_mm / 1000.0
-        r = self.half_mm / 1000.0 + 0.05
-        m = (np.abs(p[:, 0] - o[0]) < r) & (np.abs(p[:, 1] - o[1]) < r) & (p[:, 2] > o[2] - 0.01) & (p[:, 2] < o[2] + 0.30)
-        p = p[m]
-        voxel = CLOUD_VOXEL_M
-        while True:
-            if len(p):
-                key = np.floor(p / voxel).astype(np.int64)
-                _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-                inv = inv.ravel()
-                pts = np.stack([np.bincount(inv, weights=p[:, k]) / cnt for k in range(3)], axis=1).astype('<f4')
-            else:
-                pts = np.zeros((0, 3), '<f4')
-            header = ('ply\nformat binary_little_endian 1.0\ncomment d2 StructureScanner base_link m voxel {:.4f}\n'
-                      'element vertex {}\nproperty float x\nproperty float y\nproperty float z\nend_header\n'
-                      ).format(voxel, len(pts)).encode('ascii')
-            if len(header) + pts.nbytes <= CLOUD_MAX_BYTES or len(pts) == 0:
-                break
-            voxel *= 1.25
-        with open(path, 'wb') as f:
-            f.write(header)
-            f.write(pts.tobytes())
-        self.cloud_voxel_m = voxel
-        return int(len(pts))
+        n, self.cloud_voxel_m = write_voxel_ply(path, crop_area_m(p, self.origin_mm, self.half_mm), CLOUD_VOXEL_M, CLOUD_MAX_BYTES,
+                                                'd2 StructureScanner')
+        return n
+
+
+def crop_area_m(p, origin_mm, half_mm):
+    """base_link 점(m) 중 조립 영역(원점 ± half + 5 cm, 높이 −1 ~ +30 cm) 안만 — 케이블 · 로봇 몸통 · 영역 밖 블록을 덜어 낸다.
+    save_cloud(cloud.ply · preview) 와 실시간 미리보기(live_cloud)가 같이 쓴다. 입력 origin_mm · half_mm 는 mm. 출력: 걸러진 (N, 3) m."""
+    o = np.asarray(origin_mm, dtype=np.float64) / 1000.0
+    r = half_mm / 1000.0 + 0.05
+    m = (np.abs(p[:, 0] - o[0]) < r) & (np.abs(p[:, 1] - o[1]) < r) & (p[:, 2] > o[2] - 0.01) & (p[:, 2] < o[2] + 0.30)
+    return p[m]
+
+
+def write_voxel_ply(path, p, voxel, max_bytes, comment, atomic=False):
+    """점(m)을 복셀 voxel(m) 평균으로 줄여 base_link binary PLY 로 쓴다 — max_bytes 를 넘으면 복셀을 1.25 배씩 키운다.
+
+    save_cloud(복셀 3 mm · ≤ 2 MB) · 실시간 미리보기(복셀 5 mm · ≤ 500 KB)가 같이 쓴다. atomic = 임시 파일(<path>.tmp)에 쓴 뒤 이름 바꾸기 —
+    읽는 쪽(다리)이 쓰는 중인 파일을 보지 않게. 출력: (점 수, 쓴 복셀 m). 바깥 영향: 파일 쓰기. 실패: 쓸 수 없으면 OSError."""
+    while True:
+        if len(p):
+            key = np.floor(p / voxel).astype(np.int64)
+            _, inv, cnt = np.unique(key, axis=0, return_inverse=True, return_counts=True)
+            inv = inv.ravel()
+            pts = np.stack([np.bincount(inv, weights=p[:, k]) / cnt for k in range(3)], axis=1).astype('<f4')
+        else:
+            pts = np.zeros((0, 3), '<f4')
+        header = ('ply\nformat binary_little_endian 1.0\ncomment {} base_link m voxel {:.4f}\n'
+                  'element vertex {}\nproperty float x\nproperty float y\nproperty float z\nend_header\n'
+                  ).format(comment, voxel, len(pts)).encode('ascii')
+        if len(header) + pts.nbytes <= max_bytes or len(pts) == 0:
+            break
+        voxel *= 1.25
+    target = Path(path)
+    tmp = target.with_name(target.name + '.tmp') if atomic else target
+    with open(tmp, 'wb') as f:
+        f.write(header)
+        f.write(pts.tobytes())
+    if atomic:
+        os.replace(tmp, target)
+    return int(len(pts)), voxel
 
 
 def read_ply_header(path):
