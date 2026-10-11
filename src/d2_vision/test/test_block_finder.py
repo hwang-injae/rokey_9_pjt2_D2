@@ -22,6 +22,10 @@ ROBOT_YAML = Path(__file__).resolve().parents[2] / 'd2_robot' / 'd2_bringup' / '
 CFG = finder_cfg(yaml.safe_load(ROBOT_YAML.read_text(encoding='utf-8')))
 SIZE = CFG['size_m']
 TABLE = CFG['table_z_m']
+# 10/7 촬영(W114 · W114-v2)의 자세 json T_base2cam 은 그때 손목 보정값(작업대 −0.018 m 에 맞춰 고정)으로 계산돼 작업대가 약 −18 mm 로 나온다.
+# 10/11 E-85(#123)로 table_z_m 이 0.000 이 되어도 그 자료는 그 기준으로 돌린다 — 아니면 작업대를 못 찾아(±6 mm 밖) s04_002 블록 8개 → 1개.
+OLD_CAPTURE_TABLE_Z_M = -0.018
+CFG_OLD = {**CFG, 'table_z_m': OLD_CAPTURE_TABLE_Z_M}
 # W114-v2 s06_001_a_pose.json (observe_supply 자세, 10/7) — 카메라는 작업대 위 약 496 mm, 화면 긴 쪽 = base x
 INTR = (603.2089233398438, 602.9675903320312, 319.44287109375, 246.93531799316406)
 T_B2C = np.array([[0.999833, 0.018095, -0.002353, 0.389811],
@@ -320,7 +324,7 @@ def test_real_scene_preview(name):
     T = np.array(pose['T_base2cam_m'])
     color = cv2.imread(f'{stem}_color.png')
     depth = cv2.imread(f'{stem}_depth.png', cv2.IMREAD_UNCHANGED).astype(float) / 1000.0
-    finder = BlockFinder(CFG)
+    finder = BlockFinder(CFG_OLD)
     blocks = finder.find(color, depth, intr, T)
     check_schema(blocks)
     info = finder.last_info
@@ -353,7 +357,7 @@ def test_real_separated_blocks_have_clear_axis():
     ii = pose['intrinsics_px']
     color = cv2.imread(f'{stem}_color.png')
     depth = cv2.imread(f'{stem}_depth.png', cv2.IMREAD_UNCHANGED).astype(float) / 1000.0
-    blocks = BlockFinder(CFG).find(color, depth, (ii['fx'], ii['fy'], ii['ppx'], ii['ppy']), np.array(pose['T_base2cam_m']))
+    blocks = BlockFinder(CFG_OLD).find(color, depth, (ii['fx'], ii['fy'], ii['ppx'], ii['ppy']), np.array(pose['T_base2cam_m']))
     free = [b for b in blocks if b['overlap'] == 'none' and not b['tilted']]
     assert len(free) == 7, blocks
     assert sum(any(b['clear'].values()) for b in free) >= 6, [b['gap_mm'] for b in free]
