@@ -20,7 +20,10 @@
 d2_task 를 import 하지 않는다(CI 는 d2_vision 만 빌드 · 시험).
 단위: 이 파일 안 계산은 mm(설계 좌표계, 블록 JSON 과 같음). 입력 자세 · 출력 PLY 는 m(base_link).
 """
+import copy
 import math
+import time
+from pathlib import Path
 
 import numpy as np
 from scipy import ndimage
@@ -56,6 +59,7 @@ INFERRED_MAX = 0.5        # ⑧ 추정 블록이 전체의 절반을 넘으면 �
 MIN_POSES = 2             # ⑧ 촬영 자세가 이보다 적으면 결과는 돌려주되 ok False(실측 s11: 자세 하나로는 일치율 0~0.2)
 CLOUD_VOXEL_M = 0.003     # IRD E-67: base_link 다운샘플 복셀 3 mm
 CLOUD_MAX_BYTES = 2_000_000
+PREVIEW_SCHEMA = 'scan_preview/1.0'   # 스캔 중 점군 미리보기 알림(E-82, IRD 4.1 · 6장)
 
 
 def ori_extents(block_mm):
@@ -186,6 +190,19 @@ class StructureScanner:
         R, t = T[:3, :3], T[:3, 3]
         self.captures.append({'pose_id': pose_id, 'points_m': pts_c @ R.T + t, 'cam_m': t.copy()})
         return int(len(pts_c))
+
+    def capture_pose(self, pose_id, depth_mm_u16, intrinsics, T_base2cam_m):
+        """scan_capture 한 번: 같은 pose_id 를 이미 찍었으면 그 촬영을 빼고 새로 넣는다(같은 자세 다시 찍음 = 덮어쓰기). 입출력 · 실패는 add_capture 와 같다.
+        captures 는 새 목록으로 바꿔 끼운다 — 그 전에 snapshot() 으로 떠 둔 목록은 그대로 남는다(미리보기 스레드가 안전하게 읽게)."""
+        self.captures = [c for c in self.captures if c['pose_id'] != pose_id]
+        return self.add_capture(pose_id, depth_mm_u16, intrinsics, T_base2cam_m)
+
+    def snapshot(self):
+        """지금까지 모은 촬영의 얕은 복사본(같은 설정 · 촬영 목록만 따로). 점 배열은 add_capture 뒤 바뀌지 않아 함께 쓴다.
+        save_preview 가 쓴다 — 노드는 촬영 잠금 안에서 떠서 다른 스레드로 넘긴다. 바깥 영향 없음."""
+        snap = copy.copy(self)
+        snap.captures = list(self.captures)
+        return snap
 
     # ------------------------------------------------------------------ 좌표 · 평면
     def _to_design(self, p_m):
@@ -940,6 +957,23 @@ def json_ready(obj):
     if isinstance(obj, np.floating):
         return float(obj)
     return obj
+
+
+def save_preview(snap, out_dir, run_id, pose_id, index, stamp=None):
+    """스캔 중 점군 미리보기(10/10 E-82): 지금까지 모은 점군을 <out_dir>/preview_<index>.ply 로 저장하고 알림 dict 를 돌려준다.
+
+    입력: snap = StructureScanner.snapshot()(scan_capture 때 잠금 안에서 뜬 복사본) · out_dir = <scan_dir>/<run_id> ·
+          run_id · pose_id = 이번 촬영 · index = 이번 run 에서 scan_capture 몇 번째(1부터) · stamp = 보낸 시각(s, 비우면 지금).
+    출력: scan_preview/1.0 {"schema","stamp","run_id","pose_id","index","kind":"capture","cloud_path","points"}(IRD 6장) —
+          PLY 는 cloud.ply 와 같은 save_cloud(base_link m, 복셀 3 mm · ≤ 2 MB), points = PLY 점 수. 화면은 받은 순서대로 쌓는다(보기 전용).
+    바깥 영향: 폴더 만들기 · 파일 하나 쓰기(snap.cloud_voxel_m 도 바뀌지만 복사본이라 원래 스캐너는 그대로).
+    실패: 폴더 · 파일을 못 쓰면 OSError — 부르는 쪽이 경고만 남긴다(scan_capture 답 · scan_infer 와 무관)."""
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f'preview_{int(index)}.ply'
+    n = snap.save_cloud(str(path))
+    return {'schema': PREVIEW_SCHEMA, 'stamp': round(time.time() if stamp is None else float(stamp), 3), 'run_id': str(run_id),
+            'pose_id': str(pose_id), 'index': int(index), 'kind': 'capture', 'cloud_path': str(path), 'points': int(n)}
 
 
 def scan_response(result, image_path, cloud_path):

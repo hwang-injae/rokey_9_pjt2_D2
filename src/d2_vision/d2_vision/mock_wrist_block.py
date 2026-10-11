@@ -13,6 +13,8 @@
   '위 블록에 가려진 present' 를 구분하지 않고 present 는 모두 윗면 값(가짜는 아직 안 놓은 블록도 present 라 가려짐을 따지면 거의 다 NaN 이 된다).
 - `/d2/vision/camera_status`(camera_status/1, 2 Hz): 카메라가 살아 있다는 신호. 정지 노드 연결은 챌린지 공통.
 - `/d2/vision/scan_capture`(JsonQuery): {"pose_id","run_id"} → {"ok":true,"points"}. run_id 별로 촬영한 자세를 기억한다.
+  답한 뒤 따로 스레드가 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 — wrist_block 과 같은 칸, 10/10 E-82)를 낸다:
+  <임시 폴더>/d2_scan/<run_id>/preview_<index>.ply = scan_design_id 블록을 찍은 자세 수만큼(MockScan.preview). 실패는 경고 로그만.
 - `/d2/vision/scan_infer`(JsonQuery): {"run_id"} → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}.
   blocks = 파라미터 scan_design_id 레시피 두 파일(recipe_dir)을 '스캔했다'고 흉내(설계 이름 scan_<scan_family>_<번호>,
   앞 순서 scan_inferred 개는 inferred: true). image_path · cloud_path 는 실제 파일(<임시 폴더>/d2_scan/<run_id>/color.png · cloud.ply,
@@ -42,6 +44,7 @@
   그 블록은 state unknown, 높이 NaN 으로 답한다(노드는 안 죽는다). 스캔 · 찾기 실패는 위 각 서비스 설명.
 """
 import json
+import threading
 from pathlib import Path
 
 import rclpy
@@ -110,6 +113,7 @@ class MockWristBlock(Node):
         self.pub_status = self.create_publisher(String, '/d2/vision/camera_status', QOS_STATUS)
         self.create_timer(1.0 / self.get_parameter('status_hz').value, self.publish_status)
         self.get_logger().info('mock_wrist_block 시작: /d2/vision/check_progress · scan_capture · scan_infer · find_blocks 대기')
+        self.pub_preview = self.create_publisher(String, '/d2/vision/scan_preview', 10)   # IRD E-82 QoS 기본(VOLATILE) — wrist_block 과 같음
 
     def now(self):
         """노드 시계의 지금 시각(초, float). JSON stamp 칸에 쓴다."""
@@ -165,11 +169,28 @@ class MockWristBlock(Node):
         return res
 
     def on_scan_capture(self, req, res):
-        """scan_capture 콜백. 입력 request_json {"pose_id","run_id"}. 출력 {"ok","points"}(가짜 점 수). 바깥 영향: 로그."""
+        """scan_capture 콜백. 입력 request_json {"pose_id","run_id"}. 출력 {"ok","points"}(가짜 점 수).
+        바깥 영향: 로그 · 성공하면 미리보기 스레드 하나(_send_preview — 답은 기다리지 않는다)."""
         out = self.scan.capture(req.request_json)
         if out[0]:
             self.get_logger().info('scan_capture %s' % req.request_json)
+            body = json.loads(req.request_json)                  # capture 가 이미 검사한 요청
+            poses = list(self.scan.runs.get(body['run_id'], []))  # 이번 run 의 촬영 순서(같은 자세 다시 찍음 포함)
+            args = (body['run_id'], body['pose_id'], len(poses), len(set(poses)),
+                    self.get_parameter('recipe_dir').value, self.get_parameter('scan_design_id').value)
+            threading.Thread(target=self._send_preview, args=args, daemon=True).start()
         return self._answer('scan_capture', res, out)
+
+    def _send_preview(self, rid, pose_id, index, n_poses, recipe_dir, design_id):
+        """(미리보기 스레드) MockScan.preview → /d2/vision/scan_preview 발행. 입력은 콜백에서 떠 둔 값(index = 촬영 순번 1부터 · n_poses = 서로 다른 자세 수).
+        바깥 영향: 파일 쓰기 · 토픽 한 번 · 로그. 실패: 경고 로그만(scan_capture 답과 무관)."""
+        try:
+            msg = self.scan.preview(rid, pose_id, index, n_poses, recipe_dir, design_id)
+            self.pub_preview.publish(String(data=json.dumps(msg, ensure_ascii=False)))
+        except Exception as e:                # 보기 전용 — 실패해도 스캔은 그대로
+            self.get_logger().warn('scan_preview %s #%d (%s) 를 못 냄: %r' % (rid, index, pose_id, e))
+            return
+        self.get_logger().info('scan_preview %s #%d (%s): 점 %d → %s' % (rid, index, pose_id, msg['points'], msg['cloud_path']))
 
     def on_scan_infer(self, req, res):
         """scan_infer 콜백. 입력 request_json {"run_id"}. 출력 blocks/1 · inferred_count · image_path · cloud_path.

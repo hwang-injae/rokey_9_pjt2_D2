@@ -9,6 +9,9 @@
   `/d2/vision/scan_capture`(JsonQuery) {"pose_id","run_id"} → 요청 뒤 깊이 scan_frames 장 평균(구멍 0 은 빼고) + 지금 TF 자세 × 보정
       → StructureScanner.add_capture(structure_scanner.py) → {"ok":true,"points":n}. run_id 마다 따로 모으고, 같은 run_id 에 같은
       pose_id 가 다시 오면 덮어쓴다. 그때의 컬러 한 장도 둔다(scan_infer 의 사진).
+      점군 미리보기(10/10 E-82): 답은 바로 하고, 그 뒤 따로 스레드가 지금까지 모은 점군을 `<scan_dir>/<run_id>/preview_<index>.ply`
+      (save_cloud — 복셀 3 mm · ≤ 2 MB)로 저장해 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 JSON, 기본 QoS)로 알린다.
+      index = 이번 run 의 scan_capture 순번(1부터). 보기 전용(화면이 쌓음) — 작업 관리자는 안 받는다. 저장 · 발행 실패는 경고 로그만.
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
       → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
@@ -51,8 +54,8 @@
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
   table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m 를 읽는다.
 
-바깥 영향: 서비스 답 · camera_status · wrist_image 발행 · get_design 조회(remote, 설계마다 · 판마다 한 번) · scan_infer 의 파일 쓰기
-  (scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
+바깥 영향: 서비스 답 · camera_status · wrist_image · scan_preview 발행 · get_design 조회(remote, 설계마다 · 판마다 한 번) ·
+  scan_capture 미리보기 PLY · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 시작 확인(블록 전부)이면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 실패 때: 새 프레임이 시간 안에 안 오거나 TF 자세(브링업 robot_state_publisher)를 못 받으면 success=false, reason=TIMEOUT.
@@ -110,7 +113,7 @@ from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_dep
 from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
-from d2_vision.structure_scanner import StructureScanner, family_of, scan_response
+from d2_vision.structure_scanner import StructureScanner, family_of, save_preview, scan_response
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 
 NAN = float('nan')
@@ -190,6 +193,7 @@ class WristBlock(Node):
         self.create_service(JsonQuery, '/d2/vision/find_blocks', self.on_find_blocks, callback_group=group)
         self.pub_status = self.create_publisher(String, '/d2/vision/camera_status', QOS_STATUS)
         self.pub_image = self.create_publisher(CompressedImage, '/d2/vision/wrist_image', 10)   # IRD E-67 QoS 기본(VOLATILE)
+        self.pub_preview = self.create_publisher(String, '/d2/vision/scan_preview', 10)         # IRD E-82 QoS 기본(VOLATILE) — 보기 전용
         self.create_timer(1.0 / self.get_parameter('status_hz').value, self.publish_status, callback_group=group)
         self.get_logger().info('wrist_block 시작: check_progress · scan_capture · scan_infer · find_blocks 대기 (카메라 %s, 스캔 폴더 %s)'
                                % (prefix, self.scan_dir))
@@ -522,7 +526,8 @@ class WristBlock(Node):
         """scan_capture 콜백: {"pose_id","run_id"} → 깊이 scan_frames 장 평균 → StructureScanner.add_capture → {"ok":true,"points"}.
 
         run_id 마다 StructureScanner 하나(최근 MAX_SCAN_RUNS 개만), 같은 pose_id 가 다시 오면 그 자세 촬영을 바꾼다. 컬러 한 장도 둔다.
-        실패는 맨 위 '스캔 · 찾기 실패 때'. 바깥 영향: 로그."""
+        답한 뒤 따로 스레드가 점군 미리보기를 낸다(_send_preview — 촬영 잠금 안에서 뜬 복사본 · 순번으로, 답 시간 3초 제한에 안 걸리게).
+        실패는 맨 위 '스캔 · 찾기 실패 때'. 바깥 영향: 로그 · 미리보기 스레드 하나."""
         t0 = time.monotonic()
         try:
             body = parse_request(req.request_json, ('pose_id', 'run_id'))
@@ -537,21 +542,38 @@ class WristBlock(Node):
             with self.scan_lock:
                 run = self.scans.get(rid)
                 if run is None:
-                    run = self.scans[rid] = {'scanner': StructureScanner(self.cfg), 'color': None}
+                    run = self.scans[rid] = {'scanner': StructureScanner(self.cfg), 'color': None, 'n_capture': 0}
                 self.scans.move_to_end(rid)
                 while len(self.scans) > MAX_SCAN_RUNS:
                     old, _ = self.scans.popitem(last=False)
                     self.get_logger().warn('scan_infer 가 안 온 run_id %s 의 촬영을 버린다(최근 %d판만 기억)' % (old, MAX_SCAN_RUNS))
                 sc = run['scanner']
-                sc.captures = [c for c in sc.captures if c['pose_id'] != pose_id]   # 같은 자세 다시 찍음 → 덮어쓰기
-                n = sc.add_capture(pose_id, depth_mm, self.intr, T)
+                n = sc.capture_pose(pose_id, depth_mm, self.intr, T)            # 같은 자세 다시 찍음 → 덮어쓰기
+                run['n_capture'] += 1
+                index, snap = run['n_capture'], sc.snapshot()                    # 미리보기용 — 잠금 밖 스레드가 이 복사본만 읽는다
                 if color is not None:
                     run['color'] = color
                 poses = [c['pose_id'] for c in sc.captures]
         except ValueError as e:
             return self._answer(res, 'scan_capture', self._fail(True, 'SCAN_FAILED', '점군을 못 만듦: %s' % e), t0)
         self.get_logger().info('scan_capture %s %s: 점 %d (모은 자세 %s, 카메라 z %.0f mm)' % (rid, pose_id, n, poses, T[2, 3] * 1000))
+        threading.Thread(target=self._send_preview, args=(snap, rid, pose_id, index), daemon=True).start()
         return self._answer(res, 'scan_capture', (True, '', {'ok': True, 'points': int(n)}), t0)
+
+    def _send_preview(self, snap, rid, pose_id, index):
+        """(미리보기 스레드) 지금까지 모은 점군 → <scan_dir>/<run_id>/preview_<index>.ply → /d2/vision/scan_preview 발행(E-82, IRD 6장 scan_preview/1.0).
+        입력: snap = 촬영 잠금 안에서 뜬 StructureScanner 복사본 · index = 이번 run 의 scan_capture 순번(1부터).
+        바깥 영향: 파일 쓰기 · 토픽 한 번 · 로그. 실패(폴더 · 파일 · 발행): 경고 로그만 — scan_capture 답은 이미 나갔고 scan_infer 와도 무관."""
+        t0 = time.monotonic()
+        try:
+            msg = save_preview(snap, self.scan_dir / rid, rid, pose_id, index)
+            self.pub_preview.publish(String(data=json.dumps(msg, ensure_ascii=False)))
+        except Exception as e:                # 보기 전용 — 무엇이 실패해도 스캔은 그대로 간다
+            self.get_logger().warn('scan_preview %s #%d (%s) 를 못 냄: %r — 화면 미리보기만 빠진다' % (rid, index, pose_id, e))
+            return
+        size = Path(msg['cloud_path']).stat().st_size if Path(msg['cloud_path']).exists() else 0
+        self.get_logger().info('scan_preview %s #%d (%s): 점 %d · %.0f KB · %.0f ms' % (
+            rid, index, pose_id, msg['points'], size / 1024, (time.monotonic() - t0) * 1000))
 
     def _next_scan_number(self):
         """스캔 설계 번호 = scan_dir 에 이미 저장된 blocks.json 수 + 1 (scan_<family>_<번호>, IRD 2장 — 노드를 다시 켜도 안 겹치게)."""
