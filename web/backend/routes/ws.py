@@ -2,6 +2,7 @@
 """/ws — 로봇 상태 · 연결 · 음성 의도를 화면에 밀어 주는 WebSocket (E-41, web/README 2 · 5장, W126).
 
 메시지는 모두 {"type", "data"} 한 겹: state · progress · scan_result · safety · gripper · bridge_alive · broker · intent · wrist_image ·
+scan_image · scan_cloud(번호 · 크기 · run_id — 내용은 /api/robot/scan.jpg · scan_cloud.ply) ·
 timing(붙을 때 한 번 — 요청 시간 제한) (+ 생성 gen, W112).
 화면이 붙으면 들고 있는 마지막 값을 먼저 다 보내고(MQTT retained 자리), 그 뒤 바뀔 때마다 보낸다.
 """

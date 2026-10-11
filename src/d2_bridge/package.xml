@@ -14,6 +14,7 @@
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-paho-mqtt</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>     <!-- 스캔 사진 PNG → JPEG(IRD 10.5). 없어도 다리는 켜지고 사진만 안 보냄 -->
   <exec_depend>d2_interfaces</exec_depend>
   <exec_depend>d2_bringup</exec_depend>
   <exec_depend>d2_task</exec_depend>

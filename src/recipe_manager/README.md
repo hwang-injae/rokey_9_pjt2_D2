@@ -28,15 +28,15 @@ cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
 
 | 가구 | 모델 ID (= `design_id`, 파일 이름) | CAD 파일 이름 | 블록 | 층 | 크기 (mm) | 파지 방법 | 블록 이름 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| 의자 | `001_CHAIR_BENCH` (옛 LV1) | `001_chair_bench` | 11 | 5 | 75 × 75 × 75 | FLAT_SHORT 9, FLAT_LONG 2 | `LEG_001_01~04` · `LEG_002_01~04` · `SEAT_001_01~03` | 1차 (10/6 실기 11/11) |
-| 의자 | `002_CHAIR_BACK` (옛 LV2) | `002_chair_back` | 16 | 10 | 75 × 75 × 150 | FLAT_SHORT 14, FLAT_LONG 2 | 벤치 + `BACK_001_01~05` | 10/6 실기 16/16 |
-| 책상 | `003_DESK_STAND` (옛 LV4) | `003_desk_stand` | 9 | 3 | 75 × 75 × 105 | STAND_SHORT 4, FLAT_SHORT 3, FLAT_LONG 2 | `LEG_001~004_01` · `BEAM_001~002_01` · `TOP_001_01~03` | 10/6 실기 9/9 — **세운 블록 공급 칸 필요** |
-| 책상 | `004_DESK_PEDESTAL` (가운데 기둥, 工자) | `004_desk_pedestal` | 11 | 7 | 75 × 75 × 105 | FLAT_SHORT 7, FLAT_LONG 4 | `BASE_001_01~03` · `COLUMN_001_01~05` · `TOP_001_01~03` | 받은 DXF(`A안_가운데기둥_책상_11블록.dxf`)를 001~003과 같은 꼴로 정리(10/7 — 원점 십자선 · 번호 글자 층 뺌, SEQ · STAGE · GRASP 속성, 핸들 그대로). STEP은 이 DXF에서 Open CASCADE 7.9로 변환. 검사 묶음 통과(최소 여유 12.5 mm), 실기 전 |
+| 의자 | `001_CHAIR_BENCH_V000` (옛 LV1) | `001_chair_bench_v000` | 11 | 5 | 75 × 75 × 75 | FLAT_SHORT 9, FLAT_LONG 2 | `LEG_001_01~04` · `LEG_002_01~04` · `SEAT_001_01~03` | 1차 (10/6 실기 11/11) |
+| 의자 | `002_CHAIR_BACK_V000` (옛 LV2) | `002_chair_back_v000` | 16 | 10 | 75 × 75 × 150 | FLAT_SHORT 14, FLAT_LONG 2 | 벤치 + `BACK_001_01~05` | 10/6 실기 16/16 |
+| 책상 | `003_DESK_STAND_V000` (옛 LV4) | `003_desk_stand_v000` | 9 | 3 | 75 × 75 × 105 | STAND_SHORT 4, FLAT_SHORT 3, FLAT_LONG 2 | `LEG_001~004_01` · `BEAM_001~002_01` · `TOP_001_01~03` | 10/6 실기 9/9 — **세운 블록 공급 칸 필요** |
+| 책상 | `004_DESK_PEDESTAL_V000` (가운데 기둥, 工자) | `004_desk_pedestal_v000` | 11 | 7 | 75 × 75 × 105 | FLAT_SHORT 7, FLAT_LONG 4 | `BASE_001_01~03` · `COLUMN_001_01~05` · `TOP_001_01~03` | 받은 DXF(`A안_가운데기둥_책상_11블록.dxf`)를 001~003과 같은 꼴로 정리(10/7 — 원점 십자선 · 번호 글자 층 뺌, SEQ · STAGE · GRASP 속성, 핸들 그대로). STEP은 이 DXF에서 Open CASCADE 7.9로 변환. 검사 묶음 통과(최소 여유 12.5 mm), 실기 전 |
 
 - 크기는 레시피 CAD 치수(명목 블록 75 × 25 × 15 mm)로 계산한 바깥 크기다. 실측 블록은 74.5 × 24.8 × 14.75 mm다. 조립 작업 영역은 30 × 30 × 30 cm다.
-- 세운 블록(STAND_*)은 같은 자세로 놓인 공급 칸에서 집어야 한다(재파지 없음). `003_DESK_STAND`를 쓰기 전에 세운 블록 칸을 교시하고 집기·놓기를 실기 확인한다.
+- 세운 블록(STAND_*)은 같은 자세로 놓인 공급 칸에서 집어야 한다(재파지 없음). `003_DESK_STAND_V000`를 쓰기 전에 세운 블록 칸을 교시하고 집기·놓기를 실기 확인한다.
 - 모델 ID = `<번호 3자리>_<가구>_<모양>`(의자 먼저, 책상 다음, 새로 만들면 다음 번호). CAD 파일 이름 = 모델 ID 소문자, 기본 설계 `design_id` = 모델 ID 그대로(대문자 — W121 · E-60), 레시피 파일 = `<모델ID>_recipe.json` · `_placements.csv`(이름 안 구분은 `_`, 점은 확장자 앞 하나만).
-- **블록 이름**(E-52 · E-69) = `<역할>[_<옵션>]_<부품 3자리>_<블록 2자리>`(역할 · 옵션은 영문 대문자 한 단어씩, 옵션 0~1개 — `build`가 검사) — 역할 `LEG` · `SEAT` · `BACK` · `BEAM` · `TOP` · `BASE` · `COLUMN`. 부품 번호는 같은 역할 부품을 앞(−y)→뒤, 왼(−x)→오른 순, 블록 번호는 부품 안에서 아래층부터 · 앞→뒤 · 왼→오른(`build`가 위치와 대조해 틀리면 거부). 노드 사이 `block_id` = `<모델ID>_<블록 이름>`(예 `001_CHAIR_BENCH_LEG_001_01`) — 레시피 파일 안에는 블록 이름만 쓴다. 놓는 순서는 이름이 아니라 `sequence`.
+- **블록 이름**(E-52 · E-69) = `<역할>[_<옵션>]_<부품 3자리>_<블록 2자리>`(역할 · 옵션은 영문 대문자 한 단어씩, 옵션 0~1개 — `build`가 검사) — 역할 `LEG` · `SEAT` · `BACK` · `BEAM` · `TOP` · `BASE` · `COLUMN`. 부품 번호는 같은 역할 부품을 앞(−y)→뒤, 왼(−x)→오른 순, 블록 번호는 부품 안에서 아래층부터 · 앞→뒤 · 왼→오른(`build`가 위치와 대조해 틀리면 거부). 노드 사이 `block_id` = `<모델ID>_<블록 이름>`(예 `001_CHAIR_BENCH_V000_LEG_001_01`) — 레시피 파일 안에는 블록 이름만 쓴다. 놓는 순서는 이름이 아니라 `sequence`.
 - **잡기는 짧은 쪽 우선**(10/7 한세교 — 긴 쪽 잡기에서 놓기 오차가 더 컸다): 놓는 순간 두 손가락이 들어가면 `*_SHORT`, 막히면 `*_LONG`(손가락 판단은 task 검사 묶음 `grasp_options`). CAD 4종의 GRASP 속성도 이 규칙으로 맞춰 12개 블록이 긴 쪽 → 짧은 쪽으로 바뀌었다(001 `SEAT_001_01`, 002 `SEAT_001_01` · `BACK_001_01~05`, 003 `BEAM_001_01` · `BEAM_002_01` · `TOP_001_01`, 004 `BASE_001_01` · `TOP_001_01`) — 10/6 실기는 긴 쪽이었으므로 **W118에서 실기 재확인**.
 - 10/7 W139: CAD 4종 안 블록 이름을 `<모델ID>_B<순서>` → 역할 이름으로 바꿈(DXF INSERT · 블록 정의 · XDATA, STEP 제품 이름 — 핸들 · 좌표 · 속성 그대로). 블록 중심 · 회전 · 순서 · 받침 높이는 4종 모두 바꾸기 전과 같다(잡기만 위 12개가 바뀜).
 - 책장(LV3)·아치(LV5)·세운 의자(LV6)는 쓰지 않아 뺐다. 원본은 한세교 작업 폴더에 있다.
@@ -45,7 +45,7 @@ cads/<id>.dxf (블록 이름 · SEQ · STAGE · GRASP 속성 = 원본)
 
 ```bash
 pip install -r src/recipe_manager/requirements.txt
-python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench.dxf
+python3 src/recipe_manager/recipe_manager/main.py build src/recipe_manager/cads/001_chair_bench_v000.dxf
 ```
 
 모델 ID는 CAD 파일 이름을 대문자로 바꿔 정한다. 순서 · 단계 · 잡기를 바꾸려면 **CAD 속성(SEQ · STAGE · GRASP)을 고치고** 다시 `build` 한다. 같은 이름의 출력 파일이 있으면 덮어쓰기 / 다른 이름으로 저장 / 취소를 묻는다(입력을 받을 수 없는 환경에서는 기존 파일을 지키려고 취소).

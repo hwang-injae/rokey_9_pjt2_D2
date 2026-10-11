@@ -10,7 +10,7 @@ pick_place 노드·scene_manager 노드·run_recipe 도구가 같이 쓴다. ROS
   - TCP(rg2_tcp, 손가락 끝 중심): 접근 축 +Z 가 아래(base -Z), 닫힘 축 Y 가 블록의 잡는 축과 평행.
   - rg2_tcp 와 두산 posx(활성 TCP GripperDA_v1 = 손가락 가운데 — 10/10 값 편집 [0, 2.7, 228], config/tcp.json) 틀: 같은 점이고 방향은 손목 Z 로 -90° 다르다
     R_rg2tcp = R_posx · Rz(-90°) → x_rg2 = -y_posx, y_rg2 = +x_posx, z 같음. 그래서 닫힘 축 = posx 의 x 축.
-    (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정(T_gripper2camera)은 posx 기준이다.
+    (10/7 W134 observe_supply 자세에서 MoveIt FK 와 실측 posx 비교, 잔차 0.3°.) 카메라 보정은 rg2_tcp 틀이다(config/T_rg2tcp2camera — 10/10 W156, 옛 posx 틀 T_gripper2camera 는 지움).
   - 잡기 이름 6가지(IRD 2장) = <바닥 상태>_<LONG|SHORT>. 그리퍼 폭은 '손가락 사이에 끼우는 블록 축'만으로 정해진다.
 """
 import csv
@@ -282,7 +282,7 @@ def recipe_files(folder):
 
 
 def recipe_name(path):
-    """레시피 파일 경로 -> 보여 줄 이름 (모델 ID, 예 001_CHAIR_BENCH)."""
+    """레시피 파일 경로 -> 보여 줄 이름 (모델 ID, 예 001_CHAIR_BENCH_V000)."""
     name = os.path.basename(path)
     for suf in RECIPE_SUFFIXES:
         if name.endswith(suf):
@@ -335,7 +335,7 @@ def recipe_blocks(cfg, recipe):
 
     레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · block_id · sequence · stage · grasp_axis · supports — 블록 이름)
     + 구조 recipe/2.0 (load_recipe 가 'structure' 칸에 붙임: parts · blocks[](block · part_id · center_mm · R)).
-    block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_LEG_001_01 — 노드 사이 전체 블록 이름).
+    block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
     옛 blocks[] 형식 · 로봇 쪽 옛 파일 이름 .recipe.json 은 W139 뒤 뺐다(W138).

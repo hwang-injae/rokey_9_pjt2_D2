@@ -15,8 +15,8 @@ RM = ROOT / 'src' / 'recipe_manager'
 sys.path.insert(0, str(ROOT / 'src' / 'd2_task'))
 from d2_task.recipe_builder import PLACEMENT_COLUMNS, RecipeBuilder  # noqa: E402
 
-DESIGNS = [('001_CHAIR_BENCH', '001_chair_bench'), ('002_CHAIR_BACK', '002_chair_back'), ('003_DESK_STAND', '003_desk_stand'),
-           ('004_DESK_PEDESTAL', '004_desk_pedestal')]
+DESIGNS = [('001_CHAIR_BENCH_V000', '001_chair_bench_v000'), ('002_CHAIR_BACK_V000', '002_chair_back_v000'), ('003_DESK_STAND_V000', '003_desk_stand_v000'),
+           ('004_DESK_PEDESTAL_V000', '004_desk_pedestal_v000')]
 
 
 def make_boxes(recipe):
@@ -49,7 +49,7 @@ def load_saved(model_id):
 @pytest.fixture
 def bench():
     """벤치(001) 저장 레시피 → (builder, 레시피, 조립 steps, hints)."""
-    return (RecipeBuilder(), *load_saved('001_CHAIR_BENCH'))
+    return (RecipeBuilder(), *load_saved('001_CHAIR_BENCH_V000'))
 
 
 # 기본 설계 4종: DXF → 두 파일이 저장된 recipes/ 파일과 글자까지 같다 (블록 이름 · 순서 · 잡기는 DXF 에서만 온다 — 계획 파일 없음)
@@ -99,7 +99,7 @@ def test_recipe_sha256_is_fixed_canonical_json(bench):
     assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
 
 
-BENCH_RECIPE_SHA256 = 'd3f0f71dd838de67ca30e13a1185412899a45e37091b4ba5aee12dc20fa9f1e8'   # 벤치 레시피(recipe/2.0) 해시 — 계산 방법이 바뀌면 깨진다
+BENCH_RECIPE_SHA256 = '9489c62c1816e8ed99b870744498656073f6c78007cb48c65653d0a58ed33e8a'   # 벤치 레시피(recipe/2.0) 해시 — 계산 방법이 바뀌면 깨진다
 
 
 # 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)
@@ -111,7 +111,7 @@ def test_boxes_round_trip_to_same_recipe(bench):
     placements = builder.make_placements(rebuilt, hints)
     assert placements['schema'] == 'placements/2.0' and placements['recipe_sha256'] == builder.calculate_recipe_sha256(recipe)
     assert placements['steps'] == steps
-    assert placements['steps'][0]['block_id'] == '001_CHAIR_BENCH_' + placements['steps'][0]['block']
+    assert placements['steps'][0]['block_id'] == '001_CHAIR_BENCH_V000_' + placements['steps'][0]['block']
     assert placements['steps'][-1]['supports'] == ['LEG_001_04', 'LEG_002_04']
     assert {s['grasp']: s['grasp_axis'] for s in placements['steps']} == {'FLAT_SHORT': 'WIDTH', 'FLAT_LONG': 'LENGTH'}
 

@@ -24,7 +24,7 @@ from d2_task.task_planner import TaskPlanner
 from test_task_manager import CFG, SAFE_OK, FakeIO, drive
 
 FIXTURES = Path(__file__).parent / 'fixtures'
-MODEL = '001_CHAIR_BENCH'
+MODEL = '001_CHAIR_BENCH_V000'
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: r['blocks'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
     (lambda r, p: r['blocks'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
     (lambda r, p: p['steps'][0].update(block='NOPE'), True),
-    (lambda r, p: p['steps'][0].update(block_id='001_CHAIR_BENCH_LEG_009_09'), True),
+    (lambda r, p: p['steps'][0].update(block_id='001_CHAIR_BENCH_V000_LEG_009_09'), True),
     (lambda r, p: p['steps'][1].update(sequence=1), True),
     (lambda r, p: p['steps'][0].update(stage=True), True),
     (lambda r, p: p['steps'][0].update(grasp='NOPE'), True),
@@ -308,12 +308,12 @@ def test_BACK_BEAM도_명시적_설계ID를_보낸다(node):
         sent.append(request)
         raise InterruptedError
 
-    node.manager = SimpleNamespace(design_id='002_CHAIR_BACK', run_id='R1')
+    node.manager = SimpleNamespace(design_id='002_CHAIR_BACK_V000', run_id='R1')
     node.check_cli, node.service_s, node._call = None, 3, capture
-    blocks = ['002_CHAIR_BACK_BACK_001_01', '002_CHAIR_BACK_BEAM_001_01']
+    blocks = ['002_CHAIR_BACK_V000_BACK_001_01', '002_CHAIR_BACK_V000_BEAM_001_01']
     with pytest.raises(InterruptedError):
         node.check_progress(blocks, lambda: False)
-    assert sent[0].design_id == '002_CHAIR_BACK' and sent[0].block_ids == blocks
+    assert sent[0].design_id == '002_CHAIR_BACK_V000' and sent[0].block_ids == blocks
 
 
 @pytest.mark.parametrize('name', ['recipe_document', 'recipe_to_blocks'])
@@ -346,11 +346,11 @@ def test_CSV_schema_칸이_줄마다_다르면_거절(tmp_path):
         RecipeDocument.load(tmp_path, MODEL)
 
 
-@pytest.mark.parametrize('model_id', ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL'])
+@pytest.mark.parametrize('model_id', ['001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000', '003_DESK_STAND_V000', '004_DESK_PEDESTAL_V000'])
 def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     """생성 쪽(RecipeBuilder.calculate_recipe_sha256, 한세교)과 읽는 쪽(recipe_sha256)이 같은 값을 내야 모든 파일이 해시 때문에 거절되지 않는다."""
     from d2_task.recipe_builder import RecipeBuilder
     doc = RecipeDocument.load(FIXTURES, model_id)
     assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
-    if model_id == '001_CHAIR_BENCH':
-        assert doc.placements['recipe_sha256'].startswith('d3f0f71d') and doc.placements['recipe_sha256'].endswith('f1e8')     # 한세교 시험에 고정된 벤치 값
+    if model_id == '001_CHAIR_BENCH_V000':
+        assert doc.placements['recipe_sha256'].startswith('9489c62c') and doc.placements['recipe_sha256'].endswith('3e8a')     # 한세교 시험에 고정된 벤치 값

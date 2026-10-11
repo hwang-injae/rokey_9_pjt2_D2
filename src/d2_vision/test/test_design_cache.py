@@ -350,8 +350,8 @@ def base_tops(model_id):
 
 
 @pytest.mark.parametrize('model_id, family, design_id, made_by', [
-    ('001_CHAIR_BENCH', 'chair', 'ai_chair_v1_1', 'ai'),
-    ('004_DESK_PEDESTAL', 'desk', 'scan_desk_0001', 'scan'),
+    ('001_CHAIR_BENCH_V000', 'chair', 'ai_chair_v1_1', 'ai'),
+    ('004_DESK_PEDESTAL_V000', 'desk', 'scan_desk_0001', 'scan'),
 ])
 def test_mock이_get_design의_AI_스캔_설계로_블록_이름과_윗면_높이를_낸다(tmp_path, model_id, family, design_id, made_by):
     """recipe_dir 에는 이 설계가 없다 — 오직 get_design(design/2.0) 으로만 알 수 있다. 블록 이름은 설계 이름 대문자 + 역할 · 부품 · 번호,

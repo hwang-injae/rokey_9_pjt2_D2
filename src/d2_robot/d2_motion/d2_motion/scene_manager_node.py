@@ -55,7 +55,7 @@ class SceneManagerNode(Node):
             self.blocks = {b['block_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
             self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
         else:
-            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_LEG_001_01) 한 사전에 넣어도 겹치지 않는다.
+            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_V000_LEG_001_01) 한 사전에 넣어도 겹치지 않는다.
             # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
             for path in recipe_files(os.path.join(share, 'recipes')):
                 self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})

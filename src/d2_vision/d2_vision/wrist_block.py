@@ -21,7 +21,7 @@
 
 설계 · 블록 이름 (E-52, 10/7)
   요청 design_id 칸으로 설계를 고른다(블록 이름에서 잘라 내지 않는다). block_ids 는 전체 블록 이름
-  `<design_id>_<역할>_<부품 3자리>_<블록 2자리>`(예 001_CHAIR_BENCH_LEG_001_01)를 그대로 받아 레시피가 만든 이름과 맞춘다.
+  `<design_id>_<역할>_<부품 3자리>_<블록 2자리>`(예 001_CHAIR_BENCH_V000_LEG_001_01)를 그대로 받아 레시피가 만든 이름과 맞춘다.
   design_id 칸이 비면 설계를 고를 수 없어 실패로 답한다(success=false, reason=ERROR — 아래 '실패 때').
   한 요청은 한 설계다 — 그 설계 레시피에 없는 블록은 그 블록만 unknown.
 
@@ -78,7 +78,7 @@ NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_
   웹 없이 파일로(task 도 -p design_source:=local -p recipe_dir:=… 로 띄운다):
     ros2 run d2_vision wrist_block --ros-args -p design_source:=local -p recipe_dir:=src/recipe_manager/recipes
 시험 호출 (design_id 칸 + 전체 블록 이름):
-  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH, block_ids: [001_CHAIR_BENCH_LEG_001_01, 001_CHAIR_BENCH_SEAT_001_03]}"
+  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH_V000, block_ids: [001_CHAIR_BENCH_V000_LEG_001_01, 001_CHAIR_BENCH_V000_SEAT_001_03]}"
 스캔(촬영 자세마다 scan_capture → 마지막에 scan_infer) · 흩뿌림 찾기 · 검출 그림 보기:
   ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes -p yolo_model:=<모델 .pt 경로>
   ros2 service call /d2/vision/scan_capture d2_interfaces/srv/JsonQuery "{request_json: '{\\"pose_id\\": \\"observe_front\\", \\"run_id\\": \\"R1\\"}'}"
@@ -115,7 +115,7 @@ from d2_vision.design_cache import RunDesignCache
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
 from d2_vision.structure_scanner import StructureScanner, family_of, scan_response
-from d2_vision.tcp_pose import TcpPose, default_calib_path, load_calib
+from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 
 NAN = float('nan')
 QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
@@ -210,9 +210,10 @@ class WristBlock(Node):
     def _load_calib(self):
         """hand-eye 4x4(mm, 카메라 → rg2_tcp). calib_path 가 비면 d2_vision share/config. 못 읽으면 None(모든 답 unknown)."""
         p = self.get_parameter('calib_path').value or str(default_calib_path())
+        self.tilt_shift = load_tilt_shift(p)          # 기울기 밀림 고침(mm, 보정 json — 10/10 E-83), 없으면 0
         try:
             T = load_calib(p)
-            self.get_logger().info('보정값 %s (카메라 위치 mm %s)' % (p, T[:3, 3].round(1).tolist()))
+            self.get_logger().info('보정값 %s (카메라 위치 mm %s · 기울기 밀림 %.1f mm)' % (p, T[:3, 3].round(1).tolist(), self.tilt_shift))
             return T
         except (OSError, ValueError) as e:
             self.get_logger().error('보정값을 못 읽음 %s: %s — 모든 블록을 unknown 으로 답한다' % (p, e))
@@ -445,7 +446,7 @@ class WristBlock(Node):
         with warnings.catch_warnings():                                    # 10장 모두 구멍인 화소는 numpy 가 'All-NaN slice' 를 알리지만 결과(NaN → 점에서 빠짐)는 의도한 것
             warnings.simplefilter('ignore', RuntimeWarning)
             depth_m = np.nanmedian(np.stack(frames), axis=0) / 1000.0    # 구멍(NaN)은 빼고 중앙값. 전부 구멍이면 NaN → 점에서 빠짐
-        T_b2c = T_b2t @ self.T_tcp2c
+        T_b2c = camera_pose_mm(T_b2t, self.T_tcp2c, self.tilt_shift)
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         pts = depth_to_base_points(depth_m, self.intr, T_b2c, stride=2)
         results = checker.check(pts, ids)
@@ -508,7 +509,7 @@ class WristBlock(Node):
             color = None                                                  # 요청 앞의 컬러(로봇이 움직이던 때일 수 있다)는 쓰지 않는다
         if need_color and color is None:
             return None, self._fail(False, 'TIMEOUT', '요청 뒤 새 컬러 프레임이 없다(카메라 끊김?)')
-        T_b2c = T_b2t @ self.T_tcp2c
+        T_b2c = camera_pose_mm(T_b2t, self.T_tcp2c, self.tilt_shift)
         T_b2c[:3, 3] /= 1000.0                                            # 노드 안은 m
         img, frame_id = (color[1], color[2]) if color is not None else (None, '')
         return (mean_depth_mm(frames), img, frame_id, T_b2c), None

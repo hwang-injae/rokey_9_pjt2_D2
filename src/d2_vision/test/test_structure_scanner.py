@@ -3,7 +3,7 @@
 1. 합성: 기본 설계 4개의 정답 blocks/1(변환기 ② RecipeToBlocks 로 레시피에서)을 실측 크기(74.45 × 24.8 × 14.8 mm) 상자로 놓고
    촬영 자세 3곳(W134 실측 카메라 위치와 같은 곳)에서 깊이 영상을 광선으로 그린다(깊이 잡음 ± 0.5 mm, 1 mm 단위 PNG 와 같음).
    기본 · 구조물 전체가 몇 mm 밀림 · 작업면 높이 1 mm 틀림 세 경우 모두 일치율 ≥ 0.9.
-2. 실측(W114 s11 — 사람이 쌓은 001_CHAIR_BENCH, 자세 3곳): 파일이 있을 때만, 통과 기준 없이 숫자만 출력(`pytest -s`).
+2. 실측(W114 s11 — 사람이 쌓은 001_CHAIR_BENCH_V000, 자세 3곳): 파일이 있을 때만, 통과 기준 없이 숫자만 출력(`pytest -s`).
    폴더는 환경 변수 D2_W114_SCAN_DIR 또는 ~/Downloads/데이터셋/W114_scan.
 3. save_cloud: PLY 머리말 · 크기 ≤ 2 MB · 큰 점군이면 복셀을 키움.
 d2_task 는 정답을 만들 때만 쓴다(소스 폴더를 import 경로에 넣음 — CI 는 PYTHONPATH=src/d2_vision 로 돈다).
@@ -27,7 +27,7 @@ from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents as task_ori_ext
 
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 RECIPES = SRC / 'recipe_manager/recipes'
-DESIGNS = ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL']
+DESIGNS = ['001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000', '003_DESK_STAND_V000', '004_DESK_PEDESTAL_V000']
 ACTUAL_MM = [v * 1000 for v in CFG['block_actual_m']]
 INTR = {'fx': 603.2, 'fy': 603.0, 'ppx': 319.4, 'ppy': 246.9}          # W114 촬영 D435i 컬러 기준 내부값(자세 json 과 같은 크기)
 # 촬영 자세 3곳의 카메라 위치(설계 좌표 mm, 조립 원점 기준) · 보는 방향 — s11 자세 json 의 T_base2cam 에서 읽은 값을 반올림
@@ -126,7 +126,7 @@ def test_synthetic_match_rate(design_id, case):
 
 def test_top_view_only_infers_hidden_blocks():
     """위에서 한 장만 찍으면 다리가 안 보인다 → 받침 규칙으로 아래를 채우고 inferred 로 표시한다(SDD ⑥)."""
-    tb = truth('001_CHAIR_BENCH')
+    tb = truth('001_CHAIR_BENCH_V000')
     r = scan(tb['blocks'], poses=('observe',)).infer()
     blocks = r['blocks']['blocks']
     assert any(b['inferred'] for b in blocks)
@@ -137,14 +137,14 @@ def test_top_view_only_infers_hidden_blocks():
 
 def test_nearest_base_family():
     """bases 를 주면 블록 수 · 외곽이 가장 가까운 기본 설계의 family 를 쓴다."""
-    tb = truth('003_DESK_STAND')
+    tb = truth('003_DESK_STAND_V000')
     bases = []
     for d, fam in zip(DESIGNS, ['chair', 'chair', 'desk', 'desk']):
         b = truth(d)
         b['family'] = fam
         bases.append(b)
     r = scan(tb['blocks']).infer(bases=bases)
-    assert r['nearest_base'] == '003_DESK_STAND' and r['blocks']['family'] == 'desk'
+    assert r['nearest_base'] == '003_DESK_STAND_V000' and r['blocks']['family'] == 'desk'
 
 
 def test_no_capture_fails():
@@ -154,7 +154,7 @@ def test_no_capture_fails():
 
 def test_match_rate_rules():
     """E-45: 같은 격자 자리 + 같은 방향, 일치율 = 맞은 수 ÷ max(정답, 추론), 바닥 외곽 가운데끼리 맞춰 비교."""
-    tb = truth('001_CHAIR_BENCH')['blocks']
+    tb = truth('001_CHAIR_BENCH_V000')['blocks']
     assert match_rate(tb, tb)[0] == 1.0
     moved = [dict(b, x=b['x'] + 40, y=b['y'] - 30) for b in tb]              # 통째로 옮겨도 같다
     assert match_rate(moved, tb)[0] == 1.0
@@ -170,7 +170,7 @@ def test_match_rate_rules():
 
 def test_save_cloud_ply(tmp_path):
     """IRD E-67 cloud_path: base_link · 복셀 3 mm · binary PLY ≤ 2 MB."""
-    sc = scan(truth('002_CHAIR_BACK')['blocks'])
+    sc = scan(truth('002_CHAIR_BACK_V000')['blocks'])
     path = tmp_path / 'cloud.ply'
     n = sc.save_cloud(str(path))
     fmt, count, head = read_ply_header(path)
@@ -199,7 +199,7 @@ def test_save_cloud_grows_voxel_when_too_big(tmp_path):
 def test_real_s11_bench_report():
     """실측 s11(사람이 쌓은 벤치) — 자세 하나씩 · 셋 합침 일치율을 출력만 한다(통과 기준 없음, V-48 은 실기 날 다시)."""
     cv2 = pytest.importorskip('cv2')
-    tb = truth('001_CHAIR_BENCH')
+    tb = truth('001_CHAIR_BENCH_V000')
     rows = [[p] for p in REAL_STEMS] + [list(REAL_STEMS)]
     for poses in rows:
         sc = StructureScanner(CFG, design_id='scan_s11')

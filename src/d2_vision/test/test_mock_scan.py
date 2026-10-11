@@ -22,7 +22,7 @@ CFG = yaml.safe_load((ROOT / 'src/d2_robot/d2_bringup/config/robot.yaml').read_t
 ORIGIN = CFG['assembly_origin']
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
 MIN_GAP = CFG['find']['min_gap_mm']
-DESIGNS = [('001_CHAIR_BENCH', 11), ('002_CHAIR_BACK', 16), ('003_DESK_STAND', 9), ('004_DESK_PEDESTAL', 11)]
+DESIGNS = [('001_CHAIR_BENCH_V000', 11), ('002_CHAIR_BACK_V000', 16), ('003_DESK_STAND_V000', 9), ('004_DESK_PEDESTAL_V000', 11)]
 
 
 def scanner(tmp_path):
@@ -110,9 +110,9 @@ def test_infer_numbering_and_inferred_clamp(tmp_path):
     """scan 설계 이름은 성공할 때마다 번호 +1, inferred 수는 0 ~ 블록 수로 자른다."""
     m = scanner(tmp_path)
     m.capture(json.dumps({'pose_id': 'p', 'run_id': 'R1'}))
-    load('001_CHAIR_BENCH')
-    _, _, a = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', 99)
-    _, _, b = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', -3)
+    load('001_CHAIR_BENCH_V000')
+    _, _, a = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH_V000', 'chair', 99)
+    _, _, b = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH_V000', 'chair', -3)
     assert a['inferred_count'] == 11 and b['inferred_count'] == 0
     assert (a['blocks']['design_id'], b['blocks']['design_id']) == ('scan_chair_01', 'scan_chair_02')
 
@@ -120,20 +120,20 @@ def test_infer_numbering_and_inferred_clamp(tmp_path):
 def test_infer_result_failures(tmp_path):
     """촬영 안 한 run_id · 레시피 없음 · scan_fail → success=true + ok:false SCAN_FAILED(task 는 SCAN_FAILED 로 다룬다)."""
     m = scanner(tmp_path)
-    assert m.infer('{"run_id": "R9"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', 0)[2]['reason'] == 'SCAN_FAILED'
+    assert m.infer('{"run_id": "R9"}', str(RECIPES), '001_CHAIR_BENCH_V000', 'chair', 0)[2]['reason'] == 'SCAN_FAILED'
     m.capture('{"pose_id": "p", "run_id": "R1"}')
-    for args in ((str(RECIPES), 'NO_SUCH', 'chair', 0), ('', '001_CHAIR_BENCH', 'chair', 0),
-                 (str(RECIPES), '../001_CHAIR_BENCH', 'chair', 0)):
+    for args in ((str(RECIPES), 'NO_SUCH', 'chair', 0), ('', '001_CHAIR_BENCH_V000', 'chair', 0),
+                 (str(RECIPES), '../001_CHAIR_BENCH_V000', 'chair', 0)):
         ok, reason, body = m.infer('{"run_id": "R1"}', *args)
         assert ok and reason == '' and body == {'ok': False, 'reason': 'SCAN_FAILED', 'detail': body['detail']}
-    ok, _, body = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH', 'chair', 0, fail=True)
+    ok, _, body = m.infer('{"run_id": "R1"}', str(RECIPES), '001_CHAIR_BENCH_V000', 'chair', 0, fail=True)
     assert ok and body['ok'] is False and body['reason'] == 'SCAN_FAILED'
     assert not list(tmp_path.iterdir())                                           # 실패 때는 파일을 쓰지 않는다
 
 
 def test_bench_blocks_match_ird_example():
     """벤치 첫 블록 = IRD 6장 blocks/1 예시({"order":1,"x":-25,"y":0,"z":0,"ori":"y"}) — 설계 좌표 mm, z = 아랫면."""
-    s, r = load('001_CHAIR_BENCH')
+    s, r = load('001_CHAIR_BENCH_V000')
     first = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)['blocks'][0]
     assert (first['order'], first['x'], first['y'], first['z'], first['ori'], first['inferred']) == (1, -25.0, 0.0, 0.0, 'y', False)
 

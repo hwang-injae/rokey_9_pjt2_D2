@@ -46,7 +46,7 @@ def test_변환기2의_출력이_check_design을_거쳐_레시피_파일과_같�
 
 
 def test_AI가_역할을_틀리면_CHECK_FAILED로_돌리고_서비스는_성공이다():
-    _, blocks = blocks_of('001_CHAIR_BENCH')
+    _, blocks = blocks_of('001_CHAIR_BENCH_V000')
     blocks['blocks'][0]['role'] = 'NOPE'
     ok, reason, text = attached().handle_json(json.dumps(blocks))
     result = json.loads(text)
@@ -56,7 +56,7 @@ def test_AI가_역할을_틀리면_CHECK_FAILED로_돌리고_서비스는_성공
 
 
 def test_변환기가_찾은_실수가_여러_개면_한_번에_모두_errors에_담는다():
-    _, blocks = blocks_of('001_CHAIR_BENCH')
+    _, blocks = blocks_of('001_CHAIR_BENCH_V000')
     blocks['blocks'][0]['role'] = 'NOPE'
     blocks['blocks'][1]['role'] = 'NADA'
     result = json.loads(attached().handle_json(json.dumps(blocks))[2])
@@ -64,7 +64,7 @@ def test_변환기가_찾은_실수가_여러_개면_한_번에_모두_errors에
 
 
 def test_변환기의_그_밖의_예외는_ERROR로_남는다():
-    _, blocks = blocks_of('001_CHAIR_BENCH')
+    _, blocks = blocks_of('001_CHAIR_BENCH_V000')
     checker = DesignChecker(CFG, blocks_to_recipe=lambda b: 1 / 0)
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (False, 'ERROR') and json.loads(text)['errors'][0]['reason'] == 'ERROR'

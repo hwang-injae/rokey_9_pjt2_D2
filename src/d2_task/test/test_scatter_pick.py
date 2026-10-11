@@ -12,7 +12,7 @@ from d2_task.block_picker import BlockPicker
 from d2_task.scatter_pick import ScatterFlow, StepTracker, block_pose, contact_phase, failure_action, grasped_now
 from test_block_picker import CFG, MIN_GAP, blk
 
-TARGET = {'block_id': '001_CHAIR_BENCH_LEG_001_04', 'grasp': 'FLAT_LONG',
+TARGET = {'block_id': '001_CHAIR_BENCH_V000_LEG_001_04', 'grasp': 'FLAT_LONG',
           'place_pose': ((0.43, -0.07, -0.0035), (0.0, 0.0, 0.0, 1.0))}
 
 

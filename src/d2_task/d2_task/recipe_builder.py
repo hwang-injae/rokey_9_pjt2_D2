@@ -51,7 +51,7 @@ class RecipeBuilder:
         입력:
             boxes: [{'block': 'LEG_001_01', 'handle': '3E', 'vertices': [(x, y, z), ...] (mm)}] — CadReader.read_dxf 출력.
                    CAD가 없는 설계(변환기 ①)는 handle = None
-            model_id: 모델 ID (예 001_CHAIR_BENCH)
+            model_id: 모델 ID (예 001_CHAIR_BENCH_V000)
             source_filename, source_sha256: 원본 CAD 파일 이름과 해시. CAD가 없으면 None
         출력: 레시피 dict (schema recipe/2.0 — source_cad · parts · blocks[block · part_id · center_mm · R · cad.handle]).
               CAD가 없으면 source_cad = None, 블록에 cad 칸 없음
@@ -226,7 +226,7 @@ class RecipeBuilder:
                             and (np.minimum(hi[:2], other_hi[:2]) - np.maximum(lo[:2], other_lo[:2]) > TOL).all()]
                 if not supports:
                     raise ValueError(f'{block["block"]}: nothing placed beneath it yet; it would float at this point in the sequence')
-            # block_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 chair_v1.1 → CHAIR_V1.1_LEG_001_01, task RecipeDocument 와 같음)
+            # block_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 001_CHAIR_BENCH_V001 → 001_CHAIR_BENCH_V001_LEG_001_01, task RecipeDocument 와 같음)
             steps.append({'block': block['block'], 'block_id': f'{recipe["model_id"].upper()}_{block["block"]}',
                           'sequence': sequence, 'stage': stage, 'grasp': grasp,
                           'grasp_axis': next(name for name, k in AXES.items() if k == closing_axis),

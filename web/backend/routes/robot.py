@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""/api/robot — 화면 버튼(설계 선택 · 출발 · [계속] · 스캔 · 취소 · 정지 · 다시 시작) · 지금 상태 · 손목 검출 그림 (IRD 10.1, web/README 2장, W126).
+"""/api/robot — 화면 버튼(설계 선택 · 출발 · [계속] · 스캔 · 취소 · 정지 · 다시 시작) · 지금 상태 · 손목 검출 그림 · 스캔 사진 · 점군 (IRD 10.1 · 10.5, web/README 2장, W126 · W127).
 
 버튼 하나 = MQTT 요청 하나(MqttClient.request). 응답은 다리가 넘긴 ROS 응답 칸 그대로(success · reason 또는 message) — 판단은 로봇 쪽이 한다.
 자동 재전송 없음: 시간 초과 · BUSY · 빈 reason 거절 모두 그대로 돌려주고 사람이 다시 누른다. 버튼이 '보내는 중'에 머물지 않게 늘 답한다.
@@ -47,10 +47,27 @@ def state(request: Request):
     return request.app.state.mqtt.snapshot()
 
 
+def _blob(request, kind, media_type, what):
+    """MqttClient 가 들고 있는 마지막 바이트를 그대로 돌려준다. 없으면 404. 브라우저가 옛 것을 쓰지 않게 캐시 끔."""
+    data = request.app.state.mqtt.blob(kind)
+    if data is None:
+        raise HTTPException(404, f'{what}이 아직 없다')
+    return Response(data, media_type=media_type, headers={'Cache-Control': 'no-store'})
+
+
 @router.get('/wrist.jpg')
 def wrist(request: Request):
-    """마지막 손목 검출 그림(JPEG — 손목 비전이 그려 보낸 그대로, E-67). 아직 없으면 404. 브라우저가 옛 그림을 쓰지 않게 캐시 끔."""
-    jpeg = request.app.state.mqtt.wrist_jpeg()
-    if jpeg is None:
-        raise HTTPException(404, '손목 검출 그림이 아직 없다')
-    return Response(jpeg, media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+    """마지막 손목 검출 그림(JPEG — 손목 비전이 그려 보낸 그대로, E-67)."""
+    return _blob(request, 'wrist_image', 'image/jpeg', '손목 검출 그림')
+
+
+@router.get('/scan.jpg')
+def scan_image(request: Request):
+    """마지막 스캔 사진(JPEG ≤ 500 KB — 다리가 image_path 파일을 읽어 보낸 것, IRD 10.5). 새 scan_result 가 오면 지워진다."""
+    return _blob(request, 'scan_image', 'image/jpeg', '스캔 사진')
+
+
+@router.get('/scan_cloud.ply')
+def scan_cloud(request: Request):
+    """마지막 스캔 점군(PLY, base_link m — 화면 점군 창 three.js PLYLoader 가 읽음, IRD 10.5). cloud_path 가 없던 스캔이면 404."""
+    return _blob(request, 'scan_cloud', 'application/octet-stream', '스캔 점군')

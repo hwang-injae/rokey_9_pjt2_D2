@@ -196,9 +196,9 @@ def test_cloud_path가_없거나_빈_글자면_스캔은_계속되고_결과에�
 def test_nearest_base는_scan_infer_응답값_그대로_scan_result에_실린다(tmp_path):
     """E-79: 추론기가 고른 가장 가까운 기본 설계 design_id 를 작업 관리자가 해석하지 않고 그대로 넘긴다(HMI 가 GPT 힌트로 씀)."""
     m, io = make(tmp_path)
-    io.inference['nearest_base'] = '001_CHAIR_BENCH'
+    io.inference['nearest_base'] = '001_CHAIR_BENCH_V000'
     review(m)
-    assert io.results[0]['nearest_base'] == '001_CHAIR_BENCH' and m.state == 'SCAN_REVIEW'
+    assert io.results[0]['nearest_base'] == '001_CHAIR_BENCH_V000' and m.state == 'SCAN_REVIEW'
     m.finalize()
 
 

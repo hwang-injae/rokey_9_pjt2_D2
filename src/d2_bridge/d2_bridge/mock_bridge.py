@@ -86,7 +86,7 @@ class MockBridge(Node):
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         out = doc.design(design_id)
-        out.update(family=family, version='1.0', parent_id=None, made_by='cad',
+        out.update(family=family, version='V000', parent_id=None, made_by='cad',
                    blocks=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
         return out
 

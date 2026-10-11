@@ -2,7 +2,8 @@
 """WebApp — 웹 backend 시작점 (SDD 3.1.1, W126). FastAPI :8000 한 프로세스, ROS 없음(E-32 · E-41).
 
 하는 일: 앱 만들기 · routes 등록 · frontend/out 정적 서빙 · robot.yaml 규칙 읽기(한 곳, 읽기 전용 — 10/9 PL E-78) · MqttClient 시작 ·
-       DesignStore 열기(기본 설계 등록) + 로봇이 부르는 get_design · save_build 를 저장소에 잇기.
+       DesignStore 열기(기본 설계 등록) + 로봇이 부르는 get_design · save_build 를 저장소에 잇기 ·
+       DesignGenerator(AI 생성 — 검사는 MQTT check_design 으로 로봇 PC task 에) + 생성 작업(GenJobs).
 실행(웹 PC 호스트, compose 전): cd web/backend && MQTT_HOST=localhost uvicorn app:app --host 0.0.0.0 --port 8000
 설정: 환경 변수 MQTT_HOST · MQTT_PORT(.env), ROBOT_YAML(컨테이너에서 robot.yaml 을 읽기 전용으로 연결한 경로, 비우면 저장소 파일),
       DATA_DIR(설계 · 기록 폴더, 비우면 web/backend/data — gitignore) · RECIPE_DIR(기본 설계 레시피 폴더, 비우면 저장소 d2_bringup/recipes),
@@ -14,6 +15,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 import yaml
@@ -27,7 +29,8 @@ for _pkg in ('d2_bridge', 'd2_task'):          # 웹 PC 에 ROS 는 없고, 이 
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from design_store import DesignStore   # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
+from design_gen import DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
+from design_store import DesignStore   # noqa: E402
 from mqtt_client import MqttClient     # noqa: E402 — 위에서 d2_bridge 경로를 넣은 뒤
 from routes import designs, robot, ws  # noqa: E402
 
@@ -66,8 +69,8 @@ def open_store(rules):
     return store
 
 
-def create_app(mqtt=None, rules=None, store=None):
-    """FastAPI 앱을 만든다. mqtt · rules · store 는 시험 때 가짜를 넣고, 비우면 환경 변수 · robot.yaml 로 만든다."""
+def create_app(mqtt=None, rules=None, store=None, gen=None):
+    """FastAPI 앱을 만든다. mqtt · rules · store · gen 은 시험 때 가짜를 넣고, 비우면 환경 변수 · robot.yaml 로 만든다."""
     rules = rules or load_rules()
     mqtt = mqtt or MqttClient(os.environ.get('MQTT_HOST', 'localhost'), os.environ.get('MQTT_PORT', '1883'),
                               rules['req_timeout_s'], rules['alive_s'], rules['lost_after_s'])
@@ -76,6 +79,7 @@ def create_app(mqtt=None, rules=None, store=None):
     mqtt.serve('/d2/hmi/save_build', store.answer_save_build)
     hub = ws.WsHub()
     mqtt.on_event = hub.publish
+    gen = gen or DesignGenerator(store, partial(mqtt.request, '/d2/task/check_design'), rules)   # 키는 처음 생성 때 읽음(없어도 웹은 켜짐)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -90,6 +94,7 @@ def create_app(mqtt=None, rules=None, store=None):
 
     app = FastAPI(title='D2 web backend', lifespan=lifespan)
     app.state.mqtt, app.state.hub, app.state.rules, app.state.store = mqtt, hub, rules, store
+    app.state.gen, app.state.jobs = gen, designs.GenJobs(gen, hub.publish)
     origins = [o for o in os.environ.get('CORS_ORIGINS', '').split(',') if o]
     if origins:   # 화면 개발(next dev :3000)에서만 — 운영은 backend 가 화면을 같은 주소에서 내려 주므로 필요 없다
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])

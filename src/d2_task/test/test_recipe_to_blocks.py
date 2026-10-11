@@ -14,8 +14,8 @@ from d2_task.recipe_document import RecipeDocument, recipe_sha256
 
 RECIPES = Path(__file__).parent / 'fixtures'             # 레시피 두 파일 4종(시험용 사본 — 한세교 실제 파일과 같은지는 test_recipe_document 가 본다)
 BLOCK_MM = [75.0, 25.0, 15.0]   # robot.yaml block_size_m × 1000 (아래 시험이 같은지 확인한다)
-IDS = {'001_CHAIR_BENCH': ('bench', 'chair', 11), '002_CHAIR_BACK': ('chair_back', 'chair', 16),
-       '003_DESK_STAND': ('desk_stand', 'desk', 9), '004_DESK_PEDESTAL': ('desk_pedestal', 'desk', 11)}
+IDS = {'001_CHAIR_BENCH_V000': ('bench', 'chair', 11), '002_CHAIR_BACK_V000': ('chair_back', 'chair', 16),
+       '003_DESK_STAND_V000': ('desk_stand', 'desk', 9), '004_DESK_PEDESTAL_V000': ('desk_pedestal', 'desk', 11)}
 
 
 def load(model_id):
@@ -50,7 +50,7 @@ def test_role_part_stage_grasp가_블록_이름과_조립_방법에서_나온다
 
 
 def test_벤치_역할과_부품_묶음():
-    b = {x['order']: x for x in convert('001_CHAIR_BENCH')['blocks']}
+    b = {x['order']: x for x in convert('001_CHAIR_BENCH_V000')['blocks']}
     assert (b[1]['role'], b[1]['part'], b[1]['stage'], b[1]['grasp']) == ('LEG', 1, 1, 'FLAT_SHORT')
     assert (b[2]['role'], b[2]['part']) == ('LEG', 2)               # 오른쪽 다리는 다른 부품 묶음
     assert (b[3]['role'], b[3]['part'], b[3]['stage']) == ('LEG', 1, 2)
@@ -58,7 +58,7 @@ def test_벤치_역할과_부품_묶음():
 
 
 def test_벤치_실제_레시피와_같다():
-    b = {x['order']: x for x in convert('001_CHAIR_BENCH')['blocks']}
+    b = {x['order']: x for x in convert('001_CHAIR_BENCH_V000')['blocks']}
     assert (b[1]['x'], b[1]['y'], b[1]['z'], b[1]['ori']) == (-25, 0, 0, 'y')
     assert (b[2]['x'], b[2]['y'], b[2]['z'], b[2]['ori']) == (25, 0, 0, 'y')
     assert (b[9]['x'], b[9]['y'], b[9]['z'], b[9]['ori']) == (0, -25, 60, 'x')
@@ -66,34 +66,34 @@ def test_벤치_실제_레시피와_같다():
 
 
 def test_책상_세운_다리는_zx_이고_아랫면_높이():
-    b = {x['order']: x for x in convert('003_DESK_STAND')['blocks']}
+    b = {x['order']: x for x in convert('003_DESK_STAND_V000')['blocks']}
     assert (b[1]['x'], b[1]['y'], b[1]['z'], b[1]['ori']) == (-30, -25, 0, 'zx')   # 중심 37.5 − 길이 75/2
     assert (b[5]['z'], b[5]['ori']) == (75, 'x')
     assert (b[7]['x'], b[7]['z'], b[7]['ori']) == (-25, 90, 'y')
 
 
 def test_의자_등받이_위층():
-    b = {x['order']: x for x in convert('002_CHAIR_BACK')['blocks']}
+    b = {x['order']: x for x in convert('002_CHAIR_BACK_V000')['blocks']}
     assert b[16]['z'] == 135 and b[16]['ori'] == 'x'
 
 
 def test_steps_순서가_섞여도_sequence_순():
-    r, pl = load('001_CHAIR_BENCH')
+    r, pl = load('001_CHAIR_BENCH_V000')
     pl['steps'].reverse()
     out = RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, pl)
     assert [b['order'] for b in out['blocks']] == list(range(1, 12))
-    assert out == convert('001_CHAIR_BENCH')
+    assert out == convert('001_CHAIR_BENCH_V000')
 
 
 def test_원본_레시피를_바꾸지_않는다():
-    r, pl = load('001_CHAIR_BENCH')
+    r, pl = load('001_CHAIR_BENCH_V000')
     before = copy.deepcopy((r, pl))
     RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(r, pl)
     assert (r, pl) == before
 
 
 def test_출력은_JSON으로_직렬화된다():
-    json.dumps(convert('003_DESK_STAND'))
+    json.dumps(convert('003_DESK_STAND_V000'))
 
 
 def test_design_id_family_는_명시_입력():
@@ -106,7 +106,7 @@ def bad(mutate, reseal=True):
     """recipe(구조) · placements(조립 방법) 복사본을 mutate(recipe, placements) 로 망가뜨리면 변환이 ValueError 여야 한다.
 
     reseal=True 면 구조를 고친 뒤 짝 해시를 다시 맞춰, 해시 불일치가 아니라 고친 내용 때문에 거절되는지 본다."""
-    r, pl = load('001_CHAIR_BENCH')
+    r, pl = load('001_CHAIR_BENCH_V000')
     mutate(r, pl)
     if reseal:
         pl['recipe_sha256'] = recipe_sha256(r)
@@ -117,7 +117,7 @@ def bad(mutate, reseal=True):
 @pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/3.0', None])
 def test_옛_형식과_다른_앞자리는_schema를_보고_거절(schema):
     """E-69: 칸 이름이 아니라 schema 로 확인한다. 옛 cad_* · assembly.recipe 는 변환하지 않고 거절, 받은 schema 가 이유에 적힌다."""
-    r, pl = load('001_CHAIR_BENCH')
+    r, pl = load('001_CHAIR_BENCH_V000')
     with pytest.raises(ValueError, match='schema'):
         RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(dict(r, schema=schema), pl)
     with pytest.raises(ValueError, match='schema'):
@@ -125,7 +125,7 @@ def test_옛_형식과_다른_앞자리는_schema를_보고_거절(schema):
 
 
 def test_옛_두_파일을_서로_바꿔_넣으면_거절():
-    r, pl = load('001_CHAIR_BENCH')
+    r, pl = load('001_CHAIR_BENCH_V000')
     with pytest.raises(ValueError, match='schema'):
         RecipeToBlocks('bench', 'chair', BLOCK_MM).convert(pl, r)
 
@@ -161,7 +161,7 @@ def test_steps_없음():
 
 
 def test_block_id가_모델ID와_블록_이름으로_만든_값과_다르면_거절():
-    bad(lambda r, pl: pl['steps'][0].update(block_id='001_CHAIR_BENCH_LEG_009_09'))
+    bad(lambda r, pl: pl['steps'][0].update(block_id='001_CHAIR_BENCH_V000_LEG_009_09'))
 
 
 def test_45도_회전은_방향_복원_불가():
@@ -183,14 +183,14 @@ def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
         old = 'LEG_001_01'
         new = 'LEG_ARM_WHEEL_001_01'
         r['blocks'][0]['block'] = new
-        pl['steps'][0].update(block=new, block_id=f'001_CHAIR_BENCH_{new}')
+        pl['steps'][0].update(block=new, block_id=f'001_CHAIR_BENCH_V000_{new}')
         for st in pl['steps']:
             st['supports'] = [new if k == old else k for k in st['supports']]
     bad(rename)
 
 
 def test_좌표는_레시피_원본_값_그대로():
-    r, pl = load('003_DESK_STAND')
+    r, pl = load('003_DESK_STAND_V000')
     out = RecipeToBlocks('desk_stand', 'desk', BLOCK_MM).convert(r, pl)
     center = {b['block']: b['center_mm'] for b in r['blocks']}
     for step, b in zip(sorted(pl['steps'], key=lambda s: s['sequence']), out['blocks']):

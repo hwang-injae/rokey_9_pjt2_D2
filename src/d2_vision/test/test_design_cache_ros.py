@@ -56,7 +56,7 @@ def ros():
     mp.setenv('ROS_AUTOMATIC_DISCOVERY_RANGE', 'LOCALHOST')
     mp.setenv('ROS_DOMAIN_ID', DOMAIN_ID)
     rclpy.init()
-    doc = generated_design('001_CHAIR_BENCH', 'chair', 'ai_chair_ros', 'ai')
+    doc = generated_design('001_CHAIR_BENCH_V000', 'chair', 'ai_chair_ros', 'ai')
     hmi, client = FakeHmi(doc), Node('d2_cache_test_client')
     side = MultiThreadedExecutor(num_threads=8)
     side.add_node(hmi)

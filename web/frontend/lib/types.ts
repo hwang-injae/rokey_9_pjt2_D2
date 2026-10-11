@@ -24,9 +24,10 @@ export interface SafetyState {
   reason: string;
 }
 
-/** progress/1.1 — 진행표. 판정은 없다(dx · dy 는 측정값, 지금은 NaN) */
+/** progress/1.1 — 진행표(1.1 = 보낸 시각 stamp 더함, E-75). 판정은 없다(dx · dy 는 측정값, 지금은 NaN). 형식은 앞자리만 본다 */
 export interface Progress {
   schema: string;
+  stamp?: number;
   design_id: string | null;
   run_id: string | null;
   blocks: { block_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
@@ -39,9 +40,11 @@ export interface GripperState {
   grasped: boolean;
 }
 
-/** scan_result/1.1 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 는 선택 칸) */
+/** scan_result/1.2 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
+ *  nearest_base(1.2, E-79 선택 칸). poses_used 개수는 정해져 있지 않다(W166 — 3개를 가정하지 않는다) */
 export interface ScanResult {
   schema: string;
+  stamp?: number;
   run_id: string;
   blocks: { schema: string; design_id: string; family: string; blocks: { order: number; x: number; y: number; z: number; ori: string; inferred: boolean }[] };
   inferred_count: number;
@@ -71,7 +74,8 @@ export type WsEvent =
   | { type: 'bridge_alive'; data: { alive: boolean } }
   | { type: 'broker'; data: { connected: boolean } }
   | { type: 'wrist_image'; data: { seq: number; stamp: number } }
-  | { type: 'timing'; data: { req_timeout_s: number } };
+  | { type: 'timing'; data: { req_timeout_s: number } }
+  | { type: 'gen'; data: GenEvent };
 
 /** 버튼 응답 — 다리가 넘긴 ROS 응답 칸 그대로(명령은 success · reason, 정지 · 다시 시작은 success · message) */
 export interface CmdResult {
@@ -122,3 +126,57 @@ export interface Rules {
   block_size_mm: [number, number, number];
   assembly_area_half_mm: number;
 }
+
+/** AI 생성 — 후보 하나의 검사 결과(check_result/2.0 중 화면이 쓰는 칸, 레시피는 backend 에만) */
+export interface GenCheck {
+  ok: boolean;
+  reason: string;
+  min_margin_mm: number | null;
+  errors: { block: number | null; reason: string; detail: string }[];
+}
+
+/** AI 후보 하나 — 블록(3D) · 한 줄 생각 · 검사 결과(검사 전이면 없음) */
+export interface GenCandidate {
+  idea: string;
+  blocks: { schema: string; design_id: string; family: string; blocks: Block2[] };
+  check?: GenCheck;
+}
+
+/** GET /api/designs/generate/{job_id} — 생성 작업 하나(후보는 backend 메모리에만, E-84 ⑥) */
+export interface GenJob {
+  job_id: string;
+  state: 'running' | 'ready' | 'failed' | 'saved';
+  text: string;
+  template: string;
+  candidates: GenCandidate[];
+  reading?: string[]; // AI 가 도구로 읽은 참고 설계(E-72)
+  attempt?: number; // 몇 번째 만들기(다 떨어지면 다시 — 최대 3)
+  design_id?: string;
+  parent_id?: string;
+  reference?: string[];
+  attempts?: number;
+  elapsed_s?: number;
+  code?: string; // 실패 코드(OUT_OF_SCOPE · GEN_FAILED · ERROR · TIMEOUT)
+  message?: string;
+  saved?: { design_id: string; version: string; parent_id: string | null; index: number };
+}
+
+/** /ws {type: gen} — 생성 진행 알림. 화면은 이것을 받으면 job 을 GET 으로 다시 받는다(알림이 몰려와도 빠짐없이) */
+export interface GenEvent {
+  job_id: string;
+  stage: 'reading' | 'candidates' | 'checked' | 'retry' | 'done' | 'failed' | 'saved';
+  state?: GenJob['state'];
+  design_id?: string;
+  message?: string;
+}
+
+/** POST /api/designs/template — AI 가 고른 모양(Template) + 이유 + 고를 수 있는 목록(E-84 ③, W163) */
+export interface TemplateChoice {
+  success: boolean;
+  template?: string | null; // null = 의자 · 책상 밖이거나 맞는 모양 없음
+  reason?: string;
+  templates?: { id: string; label: string }[];
+  code?: string;
+  message?: string;
+}
+

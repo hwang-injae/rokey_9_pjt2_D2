@@ -150,7 +150,7 @@ def test_유한한_숫자가_아니면_못_잰_값(bad):
 def test_build_1_요약_칸과_단위():
     clock = Clock()
     log = logger(None, clock)
-    run_id = log.start_run('chair_v1.1', 18)
+    run_id = log.start_run('001_CHAIR_BENCH_V001', 18)
     log.record_placed('B1')
     log.record_placed('B2')
     log.record_measure('B1', 0.0001, -0.0002, 0.0003)
@@ -158,7 +158,7 @@ def test_build_1_요약_칸과_단위():
     log.count_stop()
     clock.now += 742.5
     build = log.finish('STOPPED')
-    assert build == {'schema': 'build/1', 'run_id': run_id, 'design_id': 'chair_v1.1', 'result': 'STOPPED',
+    assert build == {'schema': 'build/1', 'run_id': run_id, 'design_id': '001_CHAIR_BENCH_V001', 'result': 'STOPPED',
                      'placed': 2, 'total': 18, 'duration_s': 742.5, 'stop_count': 2,
                      'blocks': [{'block_id': 'B1', 'dz_m': 0.0003, 'dx_m': 0.0001, 'dy_m': -0.0002},
                                 {'block_id': 'B2', 'dz_m': None, 'dx_m': None, 'dy_m': None}]}

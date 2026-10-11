@@ -23,9 +23,10 @@ from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
-from d2_bridge.bridge_codec import (PendingReplies, SeenIds, alive_payload, mqtt_topic, parse_request,
+from d2_bridge.bridge_codec import (SCAN_CLOUD_MAX_BYTES, SCAN_CLOUD_TOPIC, SCAN_IMAGE_MAX_BYTES, SCAN_IMAGE_TOPIC,
+                                    PendingReplies, SeenIds, alive_payload, fit_jpeg, mqtt_topic, parse_request,
                                     query_from_mqtt_response, query_mqtt_request, query_request_json, query_response,
-                                    req_topic, res_topic, string_fields, typed_response)
+                                    req_topic, res_topic, scan_files, string_fields, typed_response)
 
 # 상태 토픽을 내는 쪽(task · 정지 노드)과 같아야 받는다. VOLATILE 로 내는 토픽을 이것으로 구독하면 아무것도 못 받는다(IRD 4.1)
 LATCHED_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -46,6 +47,7 @@ WEB_CALLS = {
     '/d2/task/check_design': (JsonQuery, None, None),
 }
 ROBOT_CALLS = ('/d2/hmi/get_design', '/d2/hmi/save_build')   # 로봇 노드가 부르고 웹 backend(design_store)가 답한다
+SCAN_RESULT_TOPIC = mqtt_topic('/d2/task/scan_result')   # 이것이 오면 사진 · 점군 파일도 읽어 보낸다(IRD 10.5)
 INTENT = '/d2/hmi/intent'
 WRIST_IMAGE = '/d2/vision/wrist_image'   # 손목 검출 그림(CompressedImage JPEG) — 바이트 그대로 d2/vision/wrist_image 로(IRD 10.1 · 10.5)
 HMI_ALIVE = '/d2/hmi/alive'
@@ -63,6 +65,14 @@ def load_robot_yaml():
         return yaml.safe_load(f)
 
 
+def encode_jpeg(cv2, img, scale, quality):
+    """cv2 그림(BGR)을 scale 배로 줄여 JPEG 바이트로 만든다(fit_jpeg 가 부름). 못 만들면 None."""
+    if scale != 1.0:
+        img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return buf.tobytes() if ok else None
+
+
 def make_mqtt_client(client_id):
     """paho 클라이언트를 만든다. 우분투 24.04 apt 의 1.6 과 pip 의 2.x 둘 다 같은 콜백 꼴(VERSION1)로 쓴다."""
     try:
@@ -74,7 +84,8 @@ def make_mqtt_client(client_id):
 class MqttBridge(Node):
     """ROS ↔ MQTT 변환 하나(IRD 10.1 표).
 
-    로봇 → 웹: 상태 토픽 5개 → MQTT retained, 손목 검출 그림 → JPEG 바이트(QoS 0), 연결 신호 d2/bridge/alive(alive_s 마다, LWT alive false).
+    로봇 → 웹: 상태 토픽 5개 → MQTT retained, 손목 검출 그림 → JPEG 바이트(QoS 0), 연결 신호 d2/bridge/alive(alive_s 마다, LWT alive false),
+               scan_result 가 오면 그 image_path · cloud_path 파일 → d2/vision/scan_image(JPEG ≤ 500 KB) · scan_cloud(PLY ≤ 2 MB).
     웹 → 로봇: d2/hmi/intent → /d2/hmi/intent, d2/web/alive → /d2/hmi/alive, …/req → 서비스 호출 → …/res(req_id 그대로).
     로봇이 부름: /d2/hmi/get_design · save_build 를 제공하고, MQTT …/req 로 웹에 묻고 …/res 를 req_timeout_s 동안 기다린다.
     실패: 브로커가 없으면 혼자 다시 붙는다. 서비스가 안 떠 있거나 요청이 틀리면 success false 로 답한다(자동 재시도 없음).
@@ -91,6 +102,7 @@ class MqttBridge(Node):
         self.req_timeout_s = float(cfg['req_timeout_s'])
         self.seen, self.pending = SeenIds(), PendingReplies()
         self.last_state = {}         # MQTT 토픽 → (payload, qos). 다시 붙으면 다시 보낸다 — 브로커가 재시작해 retained 를 잃어도 화면이 상태를 받게
+        self.last_media = []         # 마지막 스캔의 [(토픽, 바이트)] — 사진 · 점군은 retained 가 아니라서(IRD 10.1) 다시 붙을 때 직접 다시 보낸다
         self._lock = threading.Lock()
         cb = ReentrantCallbackGroup()   # get_design · save_build 응답을 기다리는 동안 상태 전달 · 연결 신호가 막히지 않게
 
@@ -142,10 +154,13 @@ class MqttBridge(Node):
         client.subscribe([(t, self.qos) for t in topics])
         with self._lock:
             states = list(self.last_state.items())
+            media = list(self.last_media)
         for topic, (payload, qos) in states:
             client.publish(topic, payload, qos=qos, retain=True)
+        for topic, data in media:        # scan_result(위) 다음에 — 웹은 사진 · 점군을 앞서 받은 scan_result 의 것으로 본다
+            client.publish(topic, data, qos=self.qos)
         self._send_alive()
-        self.get_logger().info(f'[다리] 브로커 연결됨 — 구독 {len(topics)}개, 상태 {len(states)}개 다시 보냄')
+        self.get_logger().info(f'[다리] 브로커 연결됨 — 구독 {len(topics)}개, 상태 {len(states)}개 · 스캔 파일 {len(media)}개 다시 보냄')
 
     def _on_disconnect(self, _client, _userdata, rc):
         """(paho 스레드) 끊김을 알린다. 뜻하지 않은 끊김이면 paho 가 혼자 다시 붙는다."""
@@ -168,6 +183,66 @@ class MqttBridge(Node):
         with self._lock:
             self.last_state[topic] = (msg.data, mqtt_qos)
         self._publish(topic, msg.data, mqtt_qos, retain=True)
+        if topic == SCAN_RESULT_TOPIC:
+            self._send_scan_media(msg.data)
+
+    def _send_scan_media(self, payload):
+        """scan_result 의 사진 · 점군 파일을 읽어 d2/vision/scan_image · scan_cloud 로 보낸다(QoS 1 · retained 아님, IRD 10.1 · 10.5).
+
+        scan_result 를 보낸 바로 뒤에 같은 연결로 보낸다 — 웹은 받은 사진 · 점군을 직전 scan_result 의 것으로 짝짓는다.
+        못 읽은 것(경로 없음 · 파일 없음 · 상한 넘음)은 빼고 보낸다 — 화면은 그 칸만 비운다. 스캔 판단은 하지 않는다.
+        """
+        try:
+            run_id, image_path, cloud_path = scan_files(payload)
+        except ValueError as e:
+            self.get_logger().warn(f'[다리] scan_result 를 못 읽어 사진 · 점군을 안 보냄: {e}')
+            return
+        media = []
+        image = self._read_scan_image(image_path) if image_path else None
+        if image:
+            media.append((SCAN_IMAGE_TOPIC, image))
+        cloud = self._read_scan_cloud(cloud_path) if cloud_path else None
+        if cloud:
+            media.append((SCAN_CLOUD_TOPIC, cloud))
+        with self._lock:
+            self.last_media = media
+        for topic, data in media:
+            self._publish(topic, data, self.qos)
+        self.get_logger().info(f'[다리] 스캔 {run_id}: 사진 {len(image or b"")} B · 점군 {len(cloud or b"")} B 보냄')
+
+    def _read_scan_image(self, path):
+        """스캔 사진 파일 → JPEG 바이트(≤ SCAN_IMAGE_MAX_BYTES). 이미 상한 안 JPEG 면 그대로, 아니면(손목 비전은 PNG) cv2 로 다시 만든다.
+
+        실패(파일 없음 · cv2 없음 · 줄여도 상한 넘음)는 경고만 하고 None.
+        """
+        try:
+            if path.lower().endswith(('.jpg', '.jpeg')) and os.path.getsize(path) <= SCAN_IMAGE_MAX_BYTES:
+                with open(path, 'rb') as f:
+                    return f.read()
+            import cv2   # 여기서만 — cv2 가 없어도 다리(출발 · 정지 전달)는 켜져야 한다
+            img = cv2.imread(path, cv2.IMREAD_COLOR)
+        except (OSError, ImportError) as e:
+            self.get_logger().warn(f'[다리] 스캔 사진 {path} 못 읽음: {e}')
+            return None
+        if img is None:
+            self.get_logger().warn(f'[다리] 스캔 사진 {path} 을 그림으로 못 읽음')
+            return None
+        jpeg = fit_jpeg(partial(encode_jpeg, cv2, img))
+        if jpeg is None:
+            self.get_logger().warn(f'[다리] 스캔 사진 {path} 을 {SCAN_IMAGE_MAX_BYTES} B 안으로 못 줄임 — 안 보냄')
+        return jpeg
+
+    def _read_scan_cloud(self, path):
+        """스캔 점군 PLY 파일 바이트를 그대로(스캔 추론기가 이미 3 mm 복셀 · 2 MB 안으로 저장 — IRD 10.5). 상한을 넘거나 못 읽으면 None."""
+        try:
+            if os.path.getsize(path) > SCAN_CLOUD_MAX_BYTES:
+                self.get_logger().warn(f'[다리] 스캔 점군 {path} 이 {SCAN_CLOUD_MAX_BYTES} B 를 넘음 — 안 보냄(점군 창만 안 뜸)')
+                return None
+            with open(path, 'rb') as f:
+                return f.read()
+        except OSError as e:
+            self.get_logger().warn(f'[다리] 스캔 점군 {path} 못 읽음: {e}')
+            return None
 
     def _on_wrist_image(self, msg):
         """손목 검출 그림 JPEG 바이트를 그대로 옮긴다. QoS 0 · retained 아님 — 하나 잃어도 다음 검출 때 새로 오고, 옛 그림을 남기지 않게(IRD 10.1)."""

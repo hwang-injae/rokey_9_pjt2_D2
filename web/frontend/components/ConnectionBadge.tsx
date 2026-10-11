@@ -6,7 +6,7 @@ import type { Robot } from '@/lib/ws';
 function Dot({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span className={`dot ${ok ? 'ok' : 'bad'}`} title={ok ? '연결됨' : '끊김'}>
-      ● {label}
+      <i /> {label}
     </span>
   );
 }
@@ -14,8 +14,8 @@ function Dot({ ok, label }: { ok: boolean; label: string }) {
 export function ConnectionDots({ robot }: { robot: Robot }) {
   return (
     <div className="badges">
-      <Dot ok={robot.ws} label="화면 ↔ 웹 서버" />
-      <Dot ok={robot.ws && robot.broker} label="웹 서버 ↔ 브로커" />
+      <Dot ok={robot.ws} label="웹 서버" />
+      <Dot ok={robot.ws && robot.broker} label="브로커" />
       <Dot ok={robot.ws && robot.bridge} label="로봇 PC" />
     </div>
   );

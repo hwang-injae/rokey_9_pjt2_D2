@@ -2,7 +2,7 @@
 # 결과 배열은 모두 같은 길이, 같은 번호끼리 한 블록
 string design_id                  # 블록들이 속한 설계(E-52, 10/7) — 블록 이름에서 잘라 내지 않는다. 빈 값이면 실패(ERROR)
 string run_id                     # 조립 한 판의 ID(E-60, 10/8) — 손목 블록 인식은 run_id가 바뀌면 설계를 다시 읽는다(같은 판 안에서는 읽은 설계를 쓴다, E-55 ①). 빈 값이면 판 구분 없음
-string[] block_ids                # 전체 블록 이름 <design_id 대문자>_<역할>_<부품 3자리>_<블록 2자리> (예 001_CHAIR_BENCH_LEG_001_01)
+string[] block_ids                # 전체 블록 이름 <design_id 대문자>_<역할>_<부품 3자리>_<블록 2자리> (예 001_CHAIR_BENCH_V000_LEG_001_01)
 ---
 string[] block_ids
 string[] states                   # present | absent | occluded | unknown (10/4 확정)

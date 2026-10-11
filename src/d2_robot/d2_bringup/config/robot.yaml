@@ -29,13 +29,16 @@ block_tolerance_m: 0.0005      # 실제 블록은 설계 치수보다 이 안에
 # 10/10 TCP를 손가락 가운데로(펜던트 GripperDA_v1 값을 [0, 2.7, 228]로 편집, tcp.json — E-81) 바꾸며 6칸 모두 y +2.7 mm(박진용 10/8 계산): 옛 TCP 로 맞춘 좌표라, 칸마다 노드가 실제로 고르는
 # 집기 자세(닫힘 각도 ±180° — p1 · p2 는 004 로그, p3~p6 은 같은 IK)에서 손가락 가운데 비킴(rg2_tcp x −2.7)이 base +y 2.7 mm 이므로
 # 같은 손가락 위치로 집게 옮겼다. x · 높이는 그대로. 실기 확인 = PL ④ 3동작.
+# 10/10 15시(PL 결정 — 펜던트로 찍은 좌표를 TF 기준으로): 손목 카메라(10/10 보정, V-15 관측 4/4 ≤ 2 mm)로 공급 관측 자세에서 블록을 3번 따로 놓아 잰
+# 윗면 중심 평균으로 p1 ~ p4 · p6 을 바꿈(차 p1 (−2.2, −3.0) · p2 (−2.9, +1.6) · p3 (−1.7, −3.5) · p4 (−2.8, +0.5) · p6 (+1.7, −0.6) mm). p5 는 그대로.
+# 그리퍼는 닫는 방향만 가운데로 맞춰 주므로 블록 긴 쪽 방향 어긋남은 그대로 놓는 오차가 된다 — 확인 = W150 · W151 실기에서 칸마다 한 번 집기.
 supply_slots:
-  - {x_m: 0.2822, y_m: 0.1823, yaw_deg: -0.3, block_up: THICKNESS, grasp: FLAT_LONG}   # p1 FLAT_LONG (10/7 잡기 폭 시험 실기로 확정: y -2 mm — 전 0.1816)
-  - {x_m: 0.2772, y_m: 0.2639, yaw_deg: -89.8, block_up: THICKNESS, grasp: FLAT_SHORT}   # p2 FLAT_SHORT (10/7 잡기 폭 시험 실기로 확정: x -1 mm — 전 0.2782)
-  - {x_m: 0.4006, y_m: 0.1810, yaw_deg: 0.0, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_LONG}   # p3 EDGE_LONG (깊이 = p4, 10/6 실기: 계산식은 윗부분만 물림) — 10/7 잡기 폭 시험 그대로 OK
-  - {x_m: 0.4031, y_m: 0.2615, yaw_deg: -89.9, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_SHORT}   # p4 EDGE_SHORT — 10/7 잡기 폭 시험 그대로 OK
-  - {x_m: 0.5450, y_m: 0.1725, yaw_deg: 0.3, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344, grasp: STAND_LONG}   # p5 STAND_LONG — 10/7 잡기 폭 시험 그대로 OK
-  - {x_m: 0.5445, y_m: 0.2647, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT — 10/7 잡기 폭 시험 그대로 OK
+  - {x_m: 0.2800, y_m: 0.1793, yaw_deg: -0.3, block_up: THICKNESS, grasp: FLAT_LONG}   # p1 FLAT_LONG — 10/10 손목 카메라 놓기 3번 평균(흔들림 x ±1.1 · y ±0.1, 전 0.2822 · 0.1823)
+  - {x_m: 0.2743, y_m: 0.2655, yaw_deg: -89.8, block_up: THICKNESS, grasp: FLAT_SHORT}   # p2 FLAT_SHORT — 10/10 손목 카메라 놓기 3번 평균(±0.2 · ±0.2, 전 0.2772 · 0.2639)
+  - {x_m: 0.3989, y_m: 0.1775, yaw_deg: 0.0, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_LONG}   # p3 EDGE_LONG (깊이 = p4, 10/6 실기: 계산식은 윗부분만 물림) — 10/10 손목 카메라 놓기 3번 평균(±0.3 · ±0.3, 전 0.4006 · 0.1810)
+  - {x_m: 0.4003, y_m: 0.2620, yaw_deg: -89.9, block_up: WIDTH, tcp_z_m: 0.0177, grip_display_width_m: 0.0244, grasp: EDGE_SHORT}   # p4 EDGE_SHORT — 10/10 손목 카메라 놓기 3번 평균(±0.1 · ±0.5, 전 0.4031 · 0.2615)
+  - {x_m: 0.5450, y_m: 0.1725, yaw_deg: 0.3, block_up: LENGTH, tcp_z_m: 0.0596, grip_display_width_m: 0.0344, grasp: STAND_LONG}   # p5 STAND_LONG — 10/7 잡기 폭 시험 그대로 OK. 10/10 카메라 값은 안 씀(세운 블록 윗면이 16.7 × 16.0 mm로 잡혀 기대 24.8 × 14.8과 달라 믿기 어려움 — 놓기 3번 x −4.4 ~ −0.3)
+  - {x_m: 0.5462, y_m: 0.2641, yaw_deg: -89.7, block_up: LENGTH, tcp_z_m: 0.0646, grip_display_width_m: 0.0244, grasp: STAND_SHORT}   # p6 STAND_SHORT — 10/10 손목 카메라 놓기 3번 평균(±0.8 · ±0.4, 전 0.5445 · 0.2647)
 
 observe_pose: {joints_deg: [-18.25, 1.73, 72.73, 0.02, 105.52, 71.44]}   # 관측 자세 (W018, 10/6 실기 확인·민범진 OK): TCP (350.5, -109.0, 294.8) mm 아래 방향, 작업대까지 약 497 mm. 조립 영역(초록 사각형)이 화면 가운데에 다 보임
 observe_supply_pose: {joints_deg: [19.2, 14.19, 58.27, 0.02, 107.53, 18.89]}   # 공급 관측 자세 (W134, 10/7 실기 확인 — 카메라 → 작업대 495.9 mm, 흩뿌릴 영역 x 183~586 · y 142~337 mm 다 보임): observe 와 같은 높이, 카메라 90° 돌림(화면 긴 쪽 = x). TCP (424.5, 154.4, 294.8) mm → 카메라 중심이 흩뿌릴 영역 가운데 (388, 230) mm 위 약 497 mm
