@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 import yaml
 
-from d2_vision.block_finder import BlockFinder, blocks_from_masks, finder_cfg, masks_from_edges, wrap_deg
+from d2_vision.block_finder import BlockFinder, _in_area, blocks_from_masks, finder_cfg, masks_from_edges, wrap_deg
 
 ROBOT_YAML = Path(__file__).resolve().parents[2] / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 CFG = finder_cfg(yaml.safe_load(ROBOT_YAML.read_text(encoding='utf-8')))
@@ -147,6 +147,41 @@ def check_schema(blocks):
 
 
 # ---------------- 합성 — 정답 마스크로 뒷단 ----------------
+# 10/11 박진용 교시 테이프 안쪽 직사각형(robot.yaml supply_area_m) — 손 계산 점이 yaml 값이 바뀌어도 이 숫자와 맞게 여기 적는다
+TAPE = ((0.1737, 0.5923), (0.1221, 0.3123))
+
+
+def test_area_rect_hand_points():
+    """흩뿌릴 영역 = supply_area_m 직사각형(x 173.7 ~ 592.3 · y 122.1 ~ 312.3 mm). 네 변 0.5 mm 안 · 밖, 가운데, 깊이 없는 점.
+    옛 고정 네모(x 183 ~ 586 · y 142 ~ 337)와 다른 띠도 본다 — 로봇 쪽 y 130 은 이제 안, y 330 은 이제 밖."""
+    pts = {(174.2, 215.0): True, (173.2, 215.0): False,       # 왼 변
+           (591.8, 215.0): True, (592.8, 215.0): False,       # 오른 변
+           (383.0, 122.6): True, (383.0, 121.6): False,       # 아래(로봇 쪽) 변
+           (383.0, 311.8): True, (383.0, 312.8): False,       # 위 변
+           (383.0, 215.0): True,                              # 가운데
+           (380.0, 130.0): True, (380.0, 330.0): False,       # 옛 고정 네모와 다른 띠
+           (float('nan'), 215.0): False, (383.0, float('nan')): False}   # 깊이 없는 픽셀은 밖
+    P = np.array([[[x / 1000, y / 1000, 0.0] for (x, y) in pts]])
+    got = _in_area(P, {'area_m': TAPE})[0]
+    assert list(got) == list(pts.values()), dict(zip(pts, got))
+
+
+def test_finder_cfg_reads_supply_area():
+    """finder_cfg 는 robot.yaml supply_area_m {x_m, y_m} 를 그대로 쓴다 — 키가 없으면 KeyError, 형식이 틀리면 ValueError(노드 시작 때 드러남)."""
+    robot = yaml.safe_load(ROBOT_YAML.read_text(encoding='utf-8'))
+    area = robot['supply_area_m']
+    assert CFG['area_m'] == (tuple(map(float, area['x_m'])), tuple(map(float, area['y_m'])))
+    with pytest.raises(KeyError):
+        finder_cfg({k: v for k, v in robot.items() if k != 'supply_area_m'})
+    for bad in ([[0.17, 0.12], [0.59, 0.11], [0.59, 0.31], [0.17, 0.31]],     # 옛 꼭짓점 목록 꼴(#126 첫 커밋)
+                {'x_m': [0.17, 0.59]},                                       # y_m 없음
+                {'x_m': [0.17, 0.59, 0.6], 'y_m': [0.12, 0.31]},             # 세 수
+                {'x_m': [0.59, 0.17], 'y_m': [0.12, 0.31]},                  # 최소 > 최대
+                {'x_m': [0.17, 0.59], 'y_m': ['a', 0.31]}):                  # 수가 아님
+        with pytest.raises(ValueError):
+            finder_cfg({**robot, 'supply_area_m': bad})
+
+
 def test_flat_single_yaw12():
     out, _, _ = run_truth([block(420, 210, 12)])
     check_schema(out)
@@ -226,17 +261,31 @@ def test_tilted_on_other_block():
 def test_stacked_cross():
     """포개짐: A 위에 B 가 90° 엇갈려 얹힘 → B up THICKNESS · top · 윗면 = 두께 2개, A under(보이는 큰 조각만 마스크 — E-66)."""
     T = SIZE[2] * 1000
-    boxes = [block(330, 290, 0), block(345, 290, 90, base_mm=T)]
+    # y 250: 세로(90°) B 가 y 212.5 ~ 287.5 로 테이프(supply_area_m, 위 변 y 312.3) 안 — 10/11 전 y 290 은 327.5 까지 뻗어 테이프를 넘었다
+    boxes = [block(330, 250, 0), block(345, 250, 90, base_mm=T)]
     _, idx = render(boxes)
     masks = [largest_piece(idx == 0), idx == 1]
     out, info, by = run_truth(boxes, masks)
     check_schema(out)
     b = by[1]
-    check_pose(b, 345, 290, 90, 'THICKNESS')
+    check_pose(b, 345, 250, 90, 'THICKNESS')
     assert b['overlap'] == 'top' and not b['tilted']
     assert abs(b['top_z_m'] - (TABLE + 2 * SIZE[2])) < 0.002
     assert out[0] is b                                # 윗면 높이 순 — 위 블록이 먼저
     assert by[0]['overlap'] == 'under', (by[0], info['detail'])
+
+
+def test_clipped_at_tape_edge():
+    """테이프(supply_area_m) 위 변(y 312.3 mm)을 걸친 눕힌 블록(y 297.5 ~ 322.5) → 영역 밖으로 이어지니 under(집지 않음, 10/11).
+    같은 블록을 테이프 안(y 280)으로 옮기면 none. 영역을 끄면(area_m None) 걸친 블록도 none — 영상 테두리 탓이 아님을 본다."""
+    depth, idx = render([block(383, 310, 0)])
+    on_edge = blocks_from_masks([idx == 0], depth, INTR, T_B2C, CFG)
+    no_area = blocks_from_masks([idx == 0], depth, INTR, T_B2C, {**CFG, 'area_m': None})
+    depth2, idx2 = render([block(383, 280, 0)])
+    inside = blocks_from_masks([idx2 == 0], depth2, INTR, T_B2C, CFG)
+    assert on_edge[0]['overlap'] == 'under' and on_edge[0]['confidence'] <= 0.2, on_edge
+    assert no_area[0]['overlap'] == 'none', no_area
+    assert inside[0]['overlap'] == 'none', inside
 
 
 def test_clipped_at_image_border():

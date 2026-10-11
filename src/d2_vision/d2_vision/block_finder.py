@@ -36,9 +36,6 @@ UPS = ('THICKNESS', 'WIDTH', 'LENGTH')
 TOP_AXES = {'THICKNESS': ('LENGTH', 'WIDTH'), 'WIDTH': ('LENGTH', 'THICKNESS'), 'LENGTH': ('WIDTH', 'THICKNESS')}
 DIM = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}       # size_m 안 순서 (robot.yaml block_actual_m = [길이, 폭, 두께])
 
-# 흩뿌릴 영역 (m) — robot.yaml observe_supply_pose 주석의 값(x 183~586 · y 142~337 mm, W134 10/7). 아직 yaml 키가 없어 여기 둔다.
-SUPPLY_AREA_M = ((0.183, 0.586), (0.142, 0.337))
-
 Z_MIN_M, Z_MAX_M = 0.1, 1.0   # 깊이 유효 범위 — block_checker.depth_to_base_points 기본값과 같게(픽셀 ↔ 점 순서를 맞추려고)
 TILT_MM = 5.0             # 양 끝 높이 차 이상이면 tilted (IRD · E-43)
 TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (10/8 실측 장면이 yaml 값과 1.5 mm 다름)
@@ -82,9 +79,10 @@ FINGER_Z_MARGIN_MM = 5.0  # 손가락 끝 높이(윗면 − grasp_depth)보다 �
 def finder_cfg(robot):
     """robot.yaml 을 읽은 dict → BlockFinder 설정 dict. 파일 읽기는 부르는 쪽(노드 · 시험)이 한다.
 
-    입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m).
+    입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m ·
+    supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} — 흩뿌린 공급 영역(빨간 테이프) 안쪽 직사각형 m, 10/11 박진용 교시 · 민범진 확인).
     출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m}.
-    실패: 키가 없으면 KeyError (설정 오류 — 노드가 시작할 때 드러나게).
+    실패: 키가 없으면 KeyError, supply_area_m 의 x_m · y_m 이 두 수가 아니거나 최소 ≥ 최대면 ValueError (설정 오류 — 노드가 시작할 때 드러나게).
     """
     size = robot.get('block_actual_m') or robot['block_size_m']    # 실측 치수가 있으면 그것(쌓는 높이 · 장면 상자와 같은 값)
     return {
@@ -93,8 +91,25 @@ def finder_cfg(robot):
         'min_gap_mm': float(robot['find']['min_gap_mm']),
         'grasp_depth_m': float(robot['grasp_depth_m']),
         'finger_width_m': float(robot['finger']['width_m']),
-        'area_m': SUPPLY_AREA_M,
+        'area_m': _area_rect(robot['supply_area_m']),
     }
+
+
+def _area_rect(area):
+    """robot.yaml supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} (m) → ((x0, x1), (y0, y1)).
+    dict 가 아니거나(옛 꼭짓점 목록 꼴 — #126 첫 커밋) x_m · y_m 이 없거나 두 수가 아니거나 최소 ≥ 최대면 ValueError."""
+    if not isinstance(area, dict) or not {'x_m', 'y_m'} <= area.keys():
+        raise ValueError(f'supply_area_m 은 {{x_m: [최소, 최대], y_m: [최소, 최대]}} 이어야 한다: {area!r}')
+    out = []
+    for k in ('x_m', 'y_m'):
+        try:
+            lo, hi = (float(v) for v in area[k])
+        except (TypeError, ValueError):                 # 두 수가 아님(개수 · 글자)
+            lo = hi = None
+        if lo is None or not lo < hi:
+            raise ValueError(f'supply_area_m.{k} 는 [최소, 최대] 이고 최소 < 최대여야 한다: {area[k]!r}')
+        out.append((lo, hi))
+    return tuple(out)
 
 
 def wrap_deg(a):
