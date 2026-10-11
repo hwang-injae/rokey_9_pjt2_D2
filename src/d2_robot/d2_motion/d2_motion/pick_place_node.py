@@ -26,6 +26,9 @@ from d2_safety.safe_stop import SafeStop, init_ros
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
 LINE_SCALE = 0.5                       # 수직 직선 이동은 블록 가까이라 자유 이동의 절반 속도 (Pilz 직선 속도 한계 x 비율)
 GRIPPER_TIMEOUT_S = 10.0
+# 그리퍼 기본 상태 = 활짝(10/11 박진용): 관측 · 촬영 때 좁은 손가락이 손목 카메라 화면에 찍힌다(W134 · B34).
+# RG2 최대 열림 — 그리퍼 노드가 최대 명령으로 잘라 보낸다. 집는 폭은 지금처럼 집을 블록 바로 위에서 맞춘다
+OPEN_FULL_M = 0.110
 # move_to 가 받는 자세 이름 (IRD 4.2 MoveTo). 값은 robot.yaml <이름>_pose — 공급 관측 · 스캔 앞 · 옆은 W134 교시
 MOVE_TARGETS = ('observe', 'home', 'observe_supply', 'observe_front', 'observe_side')
 # run_recipe --grasp-test 의 block_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
@@ -41,6 +44,20 @@ def load_config(name):
     """d2_bringup 의 config/<name> (robot.yaml · tcp.json · tool.json) 을 읽는다. 없으면 예외 (설정 없이 로봇을 움직이지 않는다)."""
     with open(os.path.join(get_package_share_directory('d2_bringup'), 'config', name)) as f:
         return yaml.safe_load(f) if name.endswith('.yaml') else json.load(f)
+
+
+def grip_failure(r):
+    """그리퍼 명령 결과 -> 실패 이유 (성공이면 None).
+
+    답이 없으면(서비스 없음 · 시간 안에 답 없음) GRIPPER_NO_RESPONSE, 그리퍼 노드가 실패로 답하면 그 이유
+    (GRIPPER_NO_RESPONSE · NO_FEEDBACK)를 그대로 넘긴다 — GRASP_FAILED 로 바꾸면 작업 관리자가 고장 난 그리퍼로
+    다시 집으러 간다. 두 코드는 작업 관리자가 재시도 없이 ERROR 로 받아 사람을 부른다(E-74, IRD 7장).
+    """
+    if r is None:
+        return 'GRIPPER_NO_RESPONSE'
+    if not r.success:
+        return r.reason or 'GRIPPER_NO_RESPONSE'
+    return None
 
 
 class PickPlaceNode(Node):
@@ -103,10 +120,11 @@ class PickPlaceNode(Node):
         return None
 
     # ---------- 동작 단위 ----------
-    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None):
+    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None, obstacles=None):
         """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유).
 
         skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸). scale = 속도 비율(없으면 robot.yaml speed_scale).
+        obstacles = 흩뿌림의 주변 블록 자세 목록(PickPlace.obstacles) — 주면 공급 칸 가정 상자 대신 이것을 피한다(E-53 ②).
         """
         # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
         if keep_down and not self.exe.valid(self.exe.current(), self.exe.down_constraint())[0]:
@@ -117,7 +135,8 @@ class PickPlaceNode(Node):
         jt = None
         for pad in (clear, clear / 2):
             for planner in PLANNERS:
-                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot, scale=scale)
+                jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot, scale=scale,
+                                        obstacles=obstacles)
                 if jt is not None:
                     break
                 self.get_logger().warn(f'길 찾기 실패 ({planner}, 여유 {pad * 1000:.0f} mm): {err}')
@@ -154,7 +173,7 @@ class PickPlaceNode(Node):
         return out
 
     def grip(self, width_m):
-        """그리퍼 노드에 폭 width_m 로 움직이라고 하고 다 움직일 때까지 기다린다. 반환: 결과 (응답 없으면 None)."""
+        """그리퍼 노드에 폭 width_m 로 움직이라고 하고 다 움직일 때까지 기다린다. 반환: 결과 (응답 없으면 None — grip_failure 로 이유를 낸다)."""
         if not self.grip_cli.wait_for_service(timeout_sec=2.0):
             return None
         req = GripperCommand.Request(width_m=float(width_m), force_n=float(self.cfg['gripper']['force_n']))
@@ -213,9 +232,11 @@ class PickPlaceNode(Node):
         return out
 
     def _execute(self, gh):
-        """PickPlace 목표 1개: 집기 위 -> 열기 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승.
+        """PickPlace 목표 1개: 집기 위 -> 집는 폭 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승 -> 활짝.
 
         집기 전 여는 폭은 open_width_m(0 이면 robot.yaml grasp_open_pick_m, 블록 폭 이하면 움직이기 전에 PLAN_FAILED).
+        흩뿌림(supply_slot 빈 값)은 공중 이동 때 obstacles 블록을 transit_clearance_m 부풀려 피한다(E-53 ②).
+        그리퍼가 답이 없거나 폭을 못 읽으면 GRIPPER_NO_RESPONSE · NO_FEEDBACK 을 그대로 낸다(E-74 — 헛잡음 GRASP_FAILED 와 구분).
         잡은 뒤 장면에 쥔 블록을 못 붙이면(장면 관리 없음 · 장면 적용 실패) 그 자리에 다시 내려놓고 올라와 ERROR.
         쥔 상자 · 놓은 자리는 이 노드가 계산해 보내므로 레시피 파일에 없는 설계도 붙는다(E-76).
 
@@ -261,6 +282,8 @@ class PickPlaceNode(Node):
                 return finish(False, 'PLAN_FAILED')
             pk, pl = p['pick'], p['place']
             slot = int(g.supply_slot) if g.supply_slot.isdigit() else None
+            # 흩뿌림(supply_slot 빈 값)은 공급 칸 가정 상자 대신 주변 블록을 피한다(E-53 ② — 공중 이동 계획 때만, 수직 직선은 틈 기준 E-49)
+            around = None if slot is not None else list(g.obstacles)
             halted = lambda: self._halted(gh)       # noqa: E731
             width = float('nan')
 
@@ -270,20 +293,21 @@ class PickPlaceNode(Node):
                 self.get_logger().info(f'{g.block_id}: {name}')
 
             step('approach')
-            ok, why = self.go_free(pk['qa'], halted, skip_slot=slot)
+            ok, why = self.go_free(pk['qa'], halted, skip_slot=slot, obstacles=around)
             if not ok:
                 return finish(False, why)
-            # 집는 폭으로 여는 것은 집을 블록 바로 위에서 한다: 이동 중 벌린 손가락이 다른 것에 걸리지 않게 (10/6 실기)
-            r = self.grip(open_pick)
-            if r is None or not r.success:
-                return finish(False, 'GRASP_FAILED')
+            # 집는 폭은 집을 블록 바로 위에서 맞춘다: 블록마다 폭이 달라 미리 맞출 수 없다
+            why = grip_failure(self.grip(open_pick))
+            if why:
+                return finish(False, why)
             ok, why = self.go_line(pk['low'], pk['quat'], halted)
             if not ok:
                 return finish(False, why)
             step('grasp')
             r = self.grip(self.cfg['grasp_close_m'][g.grasp])
-            if r is None or not r.success:
-                return finish(False, 'GRASP_FAILED')
+            why = grip_failure(r)
+            if why:
+                return finish(False, why)
             width = r.width_m
             expect, tol = self.cfg['grasp_width_m'][g.grasp], self.cfg['gripper']['check_tolerance_m']
             # 폭을 모르면(가상 그리퍼) 그리퍼 노드의 잡힘만 믿는다. 알면 이 잡기의 블록 폭과 맞는지도 본다
@@ -302,22 +326,26 @@ class PickPlaceNode(Node):
             if not ok:
                 return finish(False, why, width)
             step('move')
-            ok, why = self.go_free(pl['qa'], halted, skip_slot=slot)
+            ok, why = self.go_free(pl['qa'], halted, skip_slot=slot, obstacles=around)
             if not ok:
                 return finish(False, why, width)
             step('place')
             ok, why = self.go_line(pl['low'], pl['quat'], halted)
             if not ok:
                 return finish(False, why, width)
-            r = self.grip(self.cfg['grasp_open_place_m'][g.grasp])
-            if r is None or not r.success:
-                return finish(False, 'GRASP_FAILED', width)
+            why = grip_failure(self.grip(self.cfg['grasp_open_place_m'][g.grasp]))
+            if why:
+                return finish(False, why, width)
             if not self.scene_attach(g.block_id, False, placed=p['placed']) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
                 # 떼기 실패는 장면에 블록이 남아 다음 계획이 더 조심스러워질 뿐이라 멈추지 않는다
                 self.get_logger().warn(f'{g.block_id}: 장면에서 쥔 블록을 못 뗐다')
             step('retreat')
             ok, why = self.go_line(pl['high'], pl['quat'], halted)
-            return finish(ok, why, width)
+            if not ok:
+                return finish(False, why, width)
+            # 놓은 블록 위로 올라온 뒤 기본 상태(활짝)로 — 놓는 자리 옆 블록을 덜 치게 놓을 때는 좁게 연다
+            why = grip_failure(self.grip(OPEN_FULL_M))
+            return finish(not why, why or '', width)
         except Exception as e:            # 예상 못 한 오류: 궤적이 아직 돌고 있을 수 있으니 먼저 세운다
             self.get_logger().error(f'{g.block_id}: 오류 {e!r}')
             self.stopper.stop('ERROR')
@@ -351,6 +379,8 @@ class PickPlaceNode(Node):
     def _on_move_to(self, req, res):
         """정해진 자세(observe · home · observe_supply · observe_front · observe_side)로 간다. 다 간 뒤 답한다.
 
+        도착한 뒤 블록을 쥐고 있지 않으면 그리퍼를 활짝 연다(기본 상태). 그리퍼가 답이 없으면 GRIPPER_NO_RESPONSE.
+
         자세 값은 robot.yaml <target>_pose. 이름이 목록 밖이거나 값이 없으면(교시 전) PLAN_FAILED.
         speed_ratio(0 = 평소, 0 < 값 ≤ 1 = 느리게, 다시 시작 뒤 첫 이동 0.5)를 speed_scale 에 곱한다. 범위 밖이면 PLAN_FAILED.
         """
@@ -371,6 +401,10 @@ class PickPlaceNode(Node):
             return res
         try:
             ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False, scale=scale)
+            # 도착한 뒤 기본 상태(활짝)로 — 관측 · 촬영 사진에 손가락이 안 찍히게. 블록을 쥐고 있으면 떨어뜨리므로 열지 않는다
+            if ok and not self.holding:
+                why = grip_failure(self.grip(OPEN_FULL_M)) or ''
+                ok = not why
             res.success, res.reason = ok, why
             return res
         except Exception as e:            # 예상 못 한 오류: 먼저 세운다

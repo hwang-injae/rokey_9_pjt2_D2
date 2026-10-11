@@ -9,6 +9,8 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
   결과가 같은지는 시험(test_mock_scan.py)이 d2_task 가 있을 때 비교한다.
 - image_path · cloud_path 는 실제 파일을 쓴다(다리가 읽어 보낼 수 있게): `<임시 폴더>/d2_scan/<run_id>/color.png` · `cloud.ply`.
   PNG 는 표준 라이브러리(zlib)로, PLY 는 글자(ASCII)로 쓴다 — cv2 · open3d 없이(CI 에 없음, 가짜라 가볍게).
+- 스캔 중 점군 미리보기(10/10 E-82): preview() 가 `<임시 폴더>/d2_scan/<run_id>/preview_<index>.ply` 와 scan_preview/1.0 dict 를 만든다
+  (wrist_block 과 같은 칸). 가짜 점군 = scan_design_id 설계 블록 윗면을 찍은 자세 수만큼 늘려 보인다(1곳 1/3 · 2곳 2/3 · 3곳 이상 전부).
 단위: blocks/1 은 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
 바깥 영향: infer 가 임시 폴더에 파일 두 개를 쓴다. 그 밖에는 계산만.
 실패: 잘못된 요청 → (False, 코드, {"ok":false,"reason","detail"}) — 서비스 success=false 로 답한다.
@@ -21,6 +23,7 @@ import math
 import re
 import struct
 import tempfile
+import time
 import zlib
 from collections import OrderedDict
 from pathlib import Path
@@ -31,6 +34,7 @@ from d2_vision.block_checker import PLACEMENTS_SCHEMA, RECIPE_SCHEMA, recipe_pat
 
 MOCK_POINTS = 180000            # scan_capture 가 답하는 '모은 점 수'(가짜 — IRD 예시와 비슷한 크기)
 MAX_RUNS = 20                   # 기억하는 run_id 수(오래된 것부터 지운다 — 노드를 오래 띄워도 메모리가 늘지 않게)
+PREVIEW_FULL_POSES = 3          # 가짜 미리보기: 이만큼 자세를 찍으면 설계 블록을 다 보인다(그 전엔 비율만큼 — 점 수가 늘어나는 흉내)
 CLOUD_STEP_MM = 5.0             # PLY 점 간격 — 블록 윗면만 5 mm 격자(벤치 11개 ≈ 800점, IRD 복셀 3 mm · 2 MB 보다 훨씬 작다)
 IMG_W, IMG_H = 320, 240         # 가짜 사진 크기(px). 1 px = 1 mm 위에서 본 모습
 RUN_ID_RE = re.compile(r'^[A-Za-z0-9_-][A-Za-z0-9_.-]*$')   # run_id 는 폴더 이름이 된다 — '/' · 앞 '.' 을 막는다
@@ -254,6 +258,26 @@ class MockScan:
         count = sum(1 for b in blocks['blocks'] if b['inferred'])
         return True, '', {'ok': True, 'blocks': blocks, 'inferred_count': count,
                           'image_path': str(image), 'cloud_path': str(cloud)}
+
+    def preview(self, run_id, pose_id, index, n_poses, recipe_dir, design_id, stamp=None):
+        """스캔 중 점군 미리보기(E-82): 가짜 점군을 out_root/<run_id>/preview_<index>.ply 로 쓰고 scan_preview/1.0 dict 를 돌려준다(wrist_block 과 같은 칸).
+
+        입력: run_id · pose_id = 이번 촬영 · index = 이번 run 의 scan_capture 순번(1부터) · n_poses = 지금까지 찍은 서로 다른 자세 수 ·
+              recipe_dir · design_id = 흉내 낼 설계(scan_design_id) · stamp = 보낸 시각(s, 비우면 지금).
+        점군 = 그 설계 블록(조립 순서) 앞에서부터 ⌈전체 × min(n_poses, 3) / 3⌉ 개의 윗면 — 자세가 늘면 점이 늘어나는(누적) 흉내 — 화면은 최신 index 파일로 바꿔 그린다.
+        바깥 영향: 폴더 · 파일 하나 쓰기. 실패: 레시피를 못 찾거나 못 읽으면 ValueError, 파일을 못 쓰면 OSError — 노드가 경고만 남긴다."""
+        pair = load_recipe_files(recipe_dir, design_id)
+        if pair is None:
+            raise ValueError(f'레시피 {design_id} 두 파일을 못 찾음(recipe_dir={recipe_dir!r})')
+        blocks = structure_to_blocks(*pair, 'scan_preview', 'unknown', 0)
+        keep = math.ceil(len(blocks['blocks']) * min(int(n_poses), PREVIEW_FULL_POSES) / PREVIEW_FULL_POSES)
+        pts = blocks_to_points(dict(blocks, blocks=blocks['blocks'][:keep]), self.origin, self.block_mm)
+        out = self.out_root / run_id
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f'preview_{int(index)}.ply'
+        write_ply(path, pts)
+        return {'schema': 'scan_preview/1.0', 'stamp': round(time.time() if stamp is None else float(stamp), 3), 'run_id': str(run_id),
+                'pose_id': str(pose_id), 'index': int(index), 'kind': 'capture', 'cloud_path': str(path), 'points': int(len(pts))}
 
     def find(self, text, blocks_json=''):
         """find_blocks: {"run_id"} → {"ok":true,"blocks":[…]}(IRD 4.2 칸, base_link m, 윗면 높이 높은 순).

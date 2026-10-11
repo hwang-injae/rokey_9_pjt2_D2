@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 from d2_vision.mock_scan import load_recipe_files
-from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extents, read_ply_header
+from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extents, read_ply_header, save_capture, save_preview
 
 SRC = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC / 'd2_task'))
@@ -183,6 +183,97 @@ def test_save_cloud_ply(tmp_path):
     pts = np.frombuffer(path.read_bytes()[head:], '<f4').reshape(-1, 3)
     o = CFG['assembly_origin']
     assert abs(np.median(pts[:, 0]) - o['x_m']) < 0.2 and np.max(pts[:, 2]) < o['z_m'] + 0.3   # base_link m
+
+
+PREVIEW_KEYS = {'schema', 'stamp', 'run_id', 'pose_id', 'index', 'kind', 'cloud_path', 'points'}   # IRD 6장 scan_preview/1.0
+
+
+def test_preview_accumulates_per_capture(tmp_path):
+    """E-82 점군 미리보기: 자세 3곳을 찍을 때마다 preview_1 ~ 3.ply 가 생기고 '지금까지 모은' 점이 늘어난다. JSON 칸 · PLY 형식 · 크기."""
+    sc, prev = StructureScanner(CFG, design_id='scan_test'), []
+    for i, p in enumerate(CAMS, start=1):
+        depth, T = render(truth('001_CHAIR_BENCH_V000')['blocks'], p, seed=i)
+        sc.capture_pose(p, depth, INTR, T)
+        msg = save_preview(sc.snapshot(), tmp_path / 'R1', 'R1', p, i, stamp=100.0 + i)
+        assert set(msg) == PREVIEW_KEYS and msg['schema'] == 'scan_preview/1.0' and msg['kind'] == 'capture'
+        assert (msg['run_id'], msg['pose_id'], msg['index'], msg['stamp']) == ('R1', p, i, 100.0 + i)
+        path = Path(msg['cloud_path'])
+        assert path == tmp_path / 'R1' / f'preview_{i}.ply' and path.stat().st_size <= 2_000_000
+        fmt, count, _ = read_ply_header(path)
+        assert fmt == 'binary_little_endian' and count == msg['points']
+        prev.append(msg['points'])
+        json.dumps(msg)                                                    # 발행할 수 있는 JSON
+    assert prev[0] < prev[1] < prev[2], prev                               # 자세가 늘면 모은 점이 늘어난다(누적)
+    assert sc.cloud_voxel_m is None                                        # 원래 스캐너는 그대로(save_cloud 는 복사본에서만)
+
+
+def test_recapture_same_pose_replaces_and_snapshot_keeps_old(tmp_path):
+    """같은 자세를 다시 찍으면 그 자세 점이 새 것으로 바뀐다(capture_pose). 그 전에 뜬 snapshot 은 옛 점 그대로 — 미리보기 스레드가 안전하게 읽는다."""
+    blocks = truth('001_CHAIR_BENCH_V000')['blocks']
+    sc = StructureScanner(CFG)
+    depth, T = render(blocks, 'observe', seed=1)
+    sc.capture_pose('observe', depth, INTR, T)
+    old = sc.snapshot()
+    depth2, T2 = render(blocks, 'observe', offset=(40.0, 27.0), seed=2)  # 구조물을 옮겨 다시 찍음
+    sc.capture_pose('observe', depth2, INTR, T2)
+    assert [c['pose_id'] for c in sc.captures] == ['observe']             # 덮어쓰기 — 둘이 되지 않음
+    assert len(old.captures) == 1 and old.captures[0] is not sc.captures[0]
+    a = save_preview(old, tmp_path, 'R1', 'observe', 1)
+    b = save_preview(sc.snapshot(), tmp_path, 'R1', 'observe', 2)
+    pa, pb = (np.frombuffer(Path(m['cloud_path']).read_bytes()[read_ply_header(m['cloud_path'])[2]:], '<f4').reshape(-1, 3) for m in (a, b))
+    top = CFG['assembly_origin']['z_m'] + 0.008                             # 작업대 점은 빼고 블록 점만(작업대가 점 대부분이라 가운데값이 안 움직인다)
+    shift = np.median(pb[pb[:, 2] > top, 0]) - np.median(pa[pa[:, 2] > top, 0])
+    assert abs(shift - 0.023) < 0.004, shift                                # 옮긴 23 mm 만큼 블록 점이 움직였다(x 축 — 원점 yaw 0.3°)
+
+
+def test_preview_save_failure_raises_and_leaves_scan(tmp_path):
+    """미리보기 파일을 못 쓰면 OSError(노드는 경고만) — 원래 스캐너의 촬영은 그대로라 scan_infer 에 영향 없다."""
+    sc = scan(truth('001_CHAIR_BENCH_V000')['blocks'])
+    blocker = tmp_path / 'R1'
+    blocker.write_text('폴더 자리에 파일')                                  # 폴더를 못 만들게
+    before = [c['points_m'] for c in sc.captures]
+    with pytest.raises(OSError):
+        save_preview(sc.snapshot(), blocker, 'R1', 'observe', 1)
+    assert len(sc.captures) == len(before) and all(c['points_m'] is x for c, x in zip(sc.captures, before))   # 촬영 그대로
+    assert sc.infer()['ok']
+
+
+def test_save_capture_files_reload_same_points(tmp_path):
+    """자세 자료(10/11): <pose_id>_color.png · _depth.png · _pose.json 이 생기고, 실측 시험 방식(add_capture(depth png, intrinsics_px, T_base2cam_m))
+    으로 다시 읽으면 처음과 같은 점 수 · 같은 점이 나온다. pose.json 칸은 capture_scene 과 같은 이름."""
+    cv2 = pytest.importorskip('cv2')
+    depth, T = render(truth('001_CHAIR_BENCH_V000')['blocks'], 'observe_front', seed=3)
+    color = np.full((480, 640, 3), 120, np.uint8)
+    intr = (INTR['fx'], INTR['fy'], INTR['ppx'], INTR['ppy'])            # 노드의 self.intr 꼴(튜플)
+    files = save_capture(tmp_path / 'R1', 'observe_front', depth.astype(np.float32), color, intr, T,
+                         {'run_id': 'R1', 'index': 2, 'tcp': {'name': 'GripperDA_v1'}})
+    assert sorted(f.name for f in files) == ['observe_front_color.png', 'observe_front_depth.png', 'observe_front_pose.json']
+    js = json.loads((tmp_path / 'R1' / 'observe_front_pose.json').read_text(encoding='utf-8'))
+    assert {'intrinsics_px', 'depth_unit', 'color_size', 'T_base2cam_m', 'tcp', 'run_id', 'pose_id', 'index', 'stamp'} <= set(js)
+    assert (js['depth_unit'], js['run_id'], js['pose_id'], js['index'], js['color_size']) == ('mm', 'R1', 'observe_front', 2, [640, 480])
+    a, b = StructureScanner(CFG), StructureScanner(CFG)
+    n0 = a.add_capture('observe_front', depth, INTR, T)
+    back = cv2.imread(str(tmp_path / 'R1' / 'observe_front_depth.png'), cv2.IMREAD_UNCHANGED)
+    assert back.dtype == np.uint16 and np.array_equal(back, depth)
+    n1 = b.add_capture('observe_front', back, js['intrinsics_px'], np.array(js['T_base2cam_m']))   # test_real_s11 과 같은 읽기
+    assert n1 == n0 and np.allclose(a.captures[0]['points_m'], b.captures[0]['points_m'], atol=2e-6)
+
+
+def test_save_capture_no_color_overwrite_and_failure(tmp_path):
+    """컬러가 없으면 사진만 건너뜀 · 같은 자세 다시 찍으면 덮어씀 · 폴더를 못 만들면 OSError(노드는 경고만 — 답과 무관)."""
+    cv2 = pytest.importorskip('cv2')
+    d1 = np.full((48, 64), 400.0)
+    d2 = np.full((48, 64), 450.4)
+    T = np.eye(4)
+    names = [f.name for f in save_capture(tmp_path, 'observe', d1, None, INTR, T)]
+    assert names == ['observe_depth.png', 'observe_pose.json']
+    assert json.loads((tmp_path / 'observe_pose.json').read_text(encoding='utf-8'))['color_size'] is None
+    save_capture(tmp_path, 'observe', d2, None, INTR, T)                 # 같은 자세 다시
+    assert int(cv2.imread(str(tmp_path / 'observe_depth.png'), cv2.IMREAD_UNCHANGED)[0, 0]) == 450   # 새 깊이(반올림)
+    blocker = tmp_path / 'R9'
+    blocker.write_text('폴더 자리에 파일')
+    with pytest.raises(OSError):
+        save_capture(blocker, 'observe', d1, None, INTR, T)
 
 
 def test_save_cloud_grows_voxel_when_too_big(tmp_path):
