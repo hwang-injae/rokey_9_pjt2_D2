@@ -10,7 +10,8 @@ supply_mode: slots
 frame_id: base_link
 tcp_link: rg2_tcp                # 두산 posx 틀과 위치 같고 방향은 손목 Z 로 -90°: R_rg2tcp = R_posx · Rz(-90°) (x_rg2 = -y_posx, y_rg2 = x_posx, 10/7 W134 실측)
 table_z_m: 0.000               # 작업면 높이(base_link z). 10/11 E-85: 로봇 바닥 금속판이 책상과 같은 높이 + 종이(1 mm 미만) · 플랜지 자 측정 약 −1 mm.
-                               # 옛 −0.018 은 10/6 손끝을 대고 그때 모델의 손끝 위치로 읽은 값 — 실제 손끝은 rg2_tcp 아래 약 11 mm(29 mm 아님)라 18 mm 낮았다.
+                               # 옛 −0.018 은 손끝 닿기 높이에서 29 mm 를 뺀 값(10/6) — 실제 손끝은 rg2_tcp 아래 약 11 mm 라 18 mm 낮았다.
+                               # W152(10/11 한세교): 다 닫은 손끝 닿기 4곳 TF z 평균 11.04 mm(차 0.70) = finger_height.touch_tcp_z_m 그대로
                                # 집기 · 놓기 높이는 손끝 닿기 보정점(finger_height) 기준 차이라 이 값과 assembly_origin.z_m 을 같이 바꾸면 그대로다(손목 보정 높이도 이 값에 고정)
 table:                         # MoveIt 장면의 작업대 상자 (1200 x 650 mm). 로봇 바닥 둘레 base_clear_m 만 비운다
   x_m: [-0.2675, 0.9325]
