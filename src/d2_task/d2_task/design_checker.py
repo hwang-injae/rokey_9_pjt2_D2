@@ -16,7 +16,7 @@ from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
 SCHEMA_REQUEST = 'blocks/2.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/2.0'
 ROLE_RE = re.compile(r'[A-Z]+(?:_[A-Z]+)?')     # 역할 한 단어 + 옵션 0~1개 한 단어(영문 대문자, 작명 규칙 v3)
-PENETRATION_MM = 0.1     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 (SDD 6.7 검사 2)
+PENETRATION_MM = 0.000001     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 — 레시피 도구 · 변환기(TOL 1e-6)와 같은 기준(E-84, 10/11 PL). 0 이 아닌 이유: 부동소수 계산 오차로 정상 면접촉이 거절되지 않게 (SDD 6.7 검사 2)
 FLAT, EDGE, STAND = 'FLAT', 'EDGE', 'STAND'
 # 방향 코드 → 위를 향한 면에 따른 잡기 종류 (IRD 2장: 눕힘 = FLAT, 옆세움 = EDGE, 세움 = STAND)
 STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy': STAND}

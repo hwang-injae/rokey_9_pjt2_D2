@@ -81,6 +81,12 @@ def test_면이_닿기만_하면_파고듦_아님():
     assert not any('겹침' in e['detail'] for e in check(design((0, 0, 0, 'x'), (0, 25, 0, 'x')))['errors'])
 
 
+def test_겹침_기준은_백만분의_1_mm():
+    """0.01 mm 파고듦은 이제 걸리고(옛 기준 0.1 이면 통과), 계산 오차 수준(1e-9 mm)의 면접촉은 통과한다 (E-84)."""
+    assert any('겹침' in e['detail'] for e in check(design((0, 0, 0, 'x'), (0, 24.99, 0, 'x')))['errors'])
+    assert not any('겹침' in e['detail'] for e in check(design((0, 0, 0, 'x'), (0, 25 - 1e-9, 0, 'x')))['errors'])
+
+
 def test_공중에_뜬_블록():
     res = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')))
     assert reasons(res) == [(2, 'CHECK_FAILED')] and '공중' in res['errors'][0]['detail'] and res['min_margin_mm'] is None
