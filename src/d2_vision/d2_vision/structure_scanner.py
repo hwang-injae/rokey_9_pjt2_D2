@@ -21,6 +21,7 @@ d2_task 를 import 하지 않는다(CI 는 d2_vision 만 빌드 · 시험).
 단위: 이 파일 안 계산은 mm(설계 좌표계, 블록 JSON 과 같음). 입력 자세 · 출력 PLY 는 m(base_link).
 """
 import copy
+import json
 import math
 import time
 from pathlib import Path
@@ -975,6 +976,45 @@ def save_preview(snap, out_dir, run_id, pose_id, index, stamp=None):
     n = snap.save_cloud(str(path))
     return {'schema': PREVIEW_SCHEMA, 'stamp': round(time.time() if stamp is None else float(stamp), 3), 'run_id': str(run_id),
             'pose_id': str(pose_id), 'index': int(index), 'kind': 'capture', 'cloud_path': str(path), 'points': int(n)}
+
+
+def save_capture(out_dir, pose_id, depth_mm, color, intrinsics, T_base2cam_m, meta=None):
+    """scan_capture 한 자세를 자료로 남긴다(10/11 — W116 · W166 스캔이 저절로 구조물 사진 자료가 되게): capture_scene 과 같은 꼴
+    <out_dir>/<pose_id>_color.png · _depth.png · _pose.json. 같은 자세를 다시 찍으면 덮어쓴다.
+
+    입력: out_dir = <scan_dir>/<run_id> · depth_mm = (H, W) 깊이 mm(scan_frames 장 평균, 0 = 없음 — uint16 으로 반올림해 저장) ·
+          color = BGR 또는 None(요청 뒤 컬러가 없으면 사진은 건너뜀) · intrinsics = (fx, fy, ppx, ppy) 또는 {'fx','fy','ppx','ppy'} px ·
+          T_base2cam_m = 4×4(m) · meta = pose.json 에 더할 칸(run_id · index · tcp 등).
+    pose.json 칸은 capture_scene 과 같은 이름(intrinsics_px · depth_unit 'mm' · color_size · T_base2cam_m(m) · tcp …)이라
+    실측 시험(test_structure_scanner — add_capture(depth, intrinsics_px, T_base2cam_m))이 그대로 읽는다.
+    출력: 쓴 파일 경로 목록. 바깥 영향: 폴더 만들기 · 파일 쓰기. 실패: cv2 가 없으면 ImportError, 폴더 · 파일을 못 쓰면 OSError — 노드는 경고만."""
+    import cv2                                        # 노드(로봇 PC)에서만 부른다 — CI(cv2 없음)에서도 이 파일을 import 할 수 있게 여기서
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    if isinstance(intrinsics, dict):
+        intr = {k: float(intrinsics[k]) for k in ('fx', 'fy', 'ppx', 'ppy')}
+    else:
+        intr = dict(zip(('fx', 'fy', 'ppx', 'ppy'), (float(v) for v in intrinsics)))
+    depth = np.asarray(depth_mm, dtype=np.float64)
+    intr['width'], intr['height'] = int(depth.shape[1]), int(depth.shape[0])
+    written = []
+    path = out / f'{pose_id}_depth.png'
+    if not cv2.imwrite(str(path), np.clip(np.round(np.nan_to_num(depth)), 0, 65535).astype(np.uint16)):
+        raise OSError(f'깊이 PNG 를 못 씀: {path}')
+    written.append(path)
+    if color is not None:
+        path = out / f'{pose_id}_color.png'
+        if not cv2.imwrite(str(path), color):
+            raise OSError(f'컬러 PNG 를 못 씀: {path}')
+        written.append(path)
+    pose = {'pose_id': str(pose_id), 'stamp': round(time.time(), 3), 'intrinsics_px': intr, 'depth_unit': 'mm',
+            'color_size': None if color is None else [int(color.shape[1]), int(color.shape[0])],
+            'T_base2cam_m': np.round(np.asarray(T_base2cam_m, dtype=np.float64), 6).tolist(), 'source': 'wrist_block scan_capture'}
+    pose.update(meta or {})
+    path = out / f'{pose_id}_pose.json'
+    path.write_text(json.dumps(pose, ensure_ascii=False, indent=1), encoding='utf-8')
+    written.append(path)
+    return written
 
 
 def scan_response(result, image_path, cloud_path):

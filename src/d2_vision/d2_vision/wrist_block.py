@@ -13,6 +13,9 @@
       (save_cloud — 복셀 3 mm · ≤ 2 MB)로 저장해 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 JSON, 기본 QoS)로 알린다.
       index = 이번 run 의 scan_capture 순번(1부터). 파일마다 그 자세까지 모은 점 전부(누적)라 화면은 index 가 가장 큰(최신) 파일로
       바꿔 그린다(쌓으면 앞 자세 점이 겹침). 보기 전용 — 작업 관리자는 안 받는다. 저장 · 발행 실패는 경고 로그만.
+      자세 자료(10/11): 같은 스레드가 이어서 `<scan_dir>/<run_id>/<pose_id>_color.png · _depth.png(평균 깊이 mm, uint16) · _pose.json`
+      (capture_scene 과 같은 칸 — intrinsics_px · depth_unit · T_base2cam_m(m) · tcp + run_id · index)을 남긴다. 같은 자세 다시 찍으면 덮어씀.
+      컬러는 요청 뒤 들어온 것이 있을 때만(답 시간이 늘지 않게 기다리지 않음). 실패는 경고 로그만. 스캔이 저절로 구조물 사진 자료가 되게.
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
       → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
@@ -49,14 +52,15 @@
   tcp_pose_mm  시험용 rg2_tcp 자세 7개(x · y · z mm + 쿼터니언 x · y · z · w, **실수로**). 모두 0 이면 TF(robot.yaml frame_id → tcp_link)로 읽는다
   n_frames     check_progress 가 중앙값 낼 깊이 프레임 수(10 — V-17 경험: 정지 상태 10장이면 ±0.5 mm)
   scan_frames  scan_capture · find_blocks 가 평균 낼 깊이 프레임 수(10 — 30 fps 면 0.33초, task 의 3초 제한 안. 45장까지 1.5초 안)
-  scan_dir     스캔 결과 폴더(비우면 ~/d2_data/scan) — <run_id>/color.png · cloud.ply · blocks.json
+  scan_dir     스캔 결과 폴더(비우면 ~/d2_data/scan) — <run_id>/color.png · cloud.ply · blocks.json · preview_<n>.ply ·
+               <pose_id>_color.png · _depth.png · _pose.json(자세 자료)
   yolo_model   YOLO seg 모델 파일(.pt) 경로. 비우거나 못 읽으면 예비 마스크(엣지 + 깊이)로 간다(켤 때 로그 한 번)
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
   table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m 를 읽는다.
 
 바깥 영향: 서비스 답 · camera_status · wrist_image · scan_preview 발행 · get_design 조회(remote, 설계마다 · 판마다 한 번) ·
-  scan_capture 미리보기 PLY · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
+  scan_capture 미리보기 PLY · 자세 자료(사진 · 깊이 · 자세) · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 시작 확인(블록 전부)이면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 실패 때: 새 프레임이 시간 안에 안 오거나 TF 자세(브링업 robot_state_publisher)를 못 받으면 success=false, reason=TIMEOUT.
@@ -114,7 +118,7 @@ from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_dep
 from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
-from d2_vision.structure_scanner import StructureScanner, family_of, save_preview, scan_response
+from d2_vision.structure_scanner import StructureScanner, family_of, save_capture, save_preview, scan_response
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 
 NAN = float('nan')
@@ -163,6 +167,7 @@ class WristBlock(Node):
         self.scan_frames = int(self.get_parameter('scan_frames').value)
         self.keep_frames = max(self.n_frames, self.scan_frames)
         self.scan_dir = Path(self.get_parameter('scan_dir').value or Path.home() / 'd2_data' / 'scan')
+        self.tcp_info = self._load_tcp_info()     # 자세 자료 pose.json 의 tcp 칸(capture_scene 과 같음) — 켤 때 한 번
         self.scans = OrderedDict()            # run_id → {'scanner': StructureScanner, 'color': BGR 또는 None} — 추론 전 판만
         self.scan_lock = threading.Lock()
         self.find_lock = threading.Lock()     # BlockFinder 가 마지막 마스크를 들고 있어 한 번에 하나씩
@@ -200,6 +205,14 @@ class WristBlock(Node):
                                % (prefix, self.scan_dir))
 
     # ---------- 설정 읽기 ----------
+    def _load_tcp_info(self):
+        """d2_bringup config/tcp.json → {'name','pos','verified_at'}(자세 자료 pose.json 의 tcp 칸, capture_scene 과 같음). 못 읽으면 None(경고 없음 — 기록용)."""
+        try:
+            t = json.loads((Path(get_package_share_directory('d2_bringup')) / 'config' / 'tcp.json').read_text(encoding='utf-8'))
+            return {'name': t.get('name'), 'pos': t.get('pos'), 'verified_at': t.get('verified_at')}
+        except Exception:
+            return None
+
     def _load_robot_yaml(self):
         """d2_bringup config/robot.yaml → dict. 없으면 예외(설정 없이 돌지 않는다)."""
         p = Path(get_package_share_directory('d2_bringup')) / 'config' / 'robot.yaml'
@@ -558,8 +571,26 @@ class WristBlock(Node):
         except ValueError as e:
             return self._answer(res, 'scan_capture', self._fail(True, 'SCAN_FAILED', '점군을 못 만듦: %s' % e), t0)
         self.get_logger().info('scan_capture %s %s: 점 %d (모은 자세 %s, 카메라 z %.0f mm)' % (rid, pose_id, n, poses, T[2, 3] * 1000))
-        threading.Thread(target=self._send_preview, args=(snap, rid, pose_id, index), daemon=True).start()
+        threading.Thread(target=self._after_capture, args=(snap, rid, pose_id, index, depth_mm, color, T), daemon=True).start()
         return self._answer(res, 'scan_capture', (True, '', {'ok': True, 'points': int(n)}), t0)
+
+    def _after_capture(self, snap, rid, pose_id, index, depth_mm, color, T):
+        """(scan_capture 답 뒤 스레드) 점군 미리보기(_send_preview) → 자세 자료(_save_capture_files) 차례로. 둘은 따로 — 하나가 실패해도 다른 하나는 한다."""
+        self._send_preview(snap, rid, pose_id, index)
+        self._save_capture_files(rid, pose_id, index, depth_mm, color, T)
+
+    def _save_capture_files(self, rid, pose_id, index, depth_mm, color, T):
+        """(답 뒤 스레드) 이 자세의 사진 · 평균 깊이 · 자세를 <scan_dir>/<run_id>/<pose_id>_* 로 남긴다(structure_scanner.save_capture — capture_scene 과 같은 칸).
+        입력: depth_mm = scan_frames 장 평균(mm) · color = 요청 뒤 컬러 또는 None · T = T_base2cam(m). 바깥 영향: 파일 3개(컬러가 없으면 2개) · 로그.
+        실패(폴더 · 파일 · cv2): 경고 로그만 — 답 · 미리보기 · scan_infer 와 무관."""
+        try:
+            files = save_capture(self.scan_dir / rid, pose_id, depth_mm, color, self.intr, T,
+                                 {'run_id': rid, 'index': int(index), 'tcp': self.tcp_info})
+        except Exception as e:                # 자료 모으기 — 무엇이 실패해도 스캔은 그대로 간다
+            self.get_logger().warn('scan_capture %s #%d (%s) 자세 자료를 못 남김: %r' % (rid, index, pose_id, e))
+            return
+        self.get_logger().info('scan_capture %s #%d (%s) 자세 자료: %s%s' % (
+            rid, index, pose_id, ' · '.join(f.name for f in files), '' if color is not None else ' (요청 뒤 컬러 없음 — 사진 건너뜀)'))
 
     def _send_preview(self, snap, rid, pose_id, index):
         """(미리보기 스레드) 지금까지 모은 점군 → <scan_dir>/<run_id>/preview_<index>.ply → /d2/vision/scan_preview 발행(E-82, IRD 6장 scan_preview/1.0).
