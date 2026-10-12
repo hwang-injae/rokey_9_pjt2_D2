@@ -179,6 +179,7 @@ class DesignChecker:
     def _parse(self, request, errors):
         """형식을 확인해 order 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
         def bad(detail, kind, part=None, reason='CHECK_FAILED'):
+            """형식 오류 한 줄을 바깥 errors 에 쌓는다. 입력: detail = 이유 글자, kind = position · label · scope, part = 부품 order(없으면 None), reason = 실패 코드. 반환 없음. 바깥 영향은 errors 목록뿐이며 실패하지 않는다."""
             errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}', 'kind': kind})
 
         items = request.get('parts') if isinstance(request, dict) else None

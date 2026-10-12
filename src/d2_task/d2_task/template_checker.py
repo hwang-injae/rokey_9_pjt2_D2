@@ -122,6 +122,7 @@ class TemplateChecker:
         # 아는 칸(REVISION_KEYS)은 아래에서 그대로 엄격하게 확인한다. 선택 칸을 새 검사로 해석하지 않는다.
 
         def other(value, where):
+            """revision 안에서 가리킨 다른 역할 이름을 확인한다. 입력: value = 역할 이름, where = 칸 이름(오류 문구용). 반환: value. 바깥 영향 없음. 실패: 이 Template 의 다른 역할이 아니면 RequestInvalid."""
             if not isinstance(value, str) or value not in names or value == role:
                 raise RequestInvalid(f'{role} revision.{where} {value!r} 가 이 Template 의 다른 역할이 아니다')
             return value
@@ -269,6 +270,7 @@ class _Group:
     """
 
     def __init__(self, full, number):
+        """빈 묶음을 만든다. 입력: full = 전체 역할 글자(예 LEG_WHEEL), number = group 번호(정수). 바깥 영향 없음. 부품은 add 로 더하며, 만들 때는 실패하지 않는다."""
         self.full, self.number, self.boxes = full, number, []
         self.role = full.split('_')[0]
         self.key = (full, number)
@@ -288,6 +290,11 @@ class _Measure:
     """check() 한 번의 계산 상태 — 묶음 만들기, 실패 모으기(중복 없이), 검사 순서. 밖에서 쓰지 않는다."""
 
     def __init__(self, checker, rules, parts):
+        """부품을 (전체 역할, 번호) 묶음으로 모아 묶음 상자(mm)를 잰다.
+
+        입력: checker = TemplateChecker(방향별 길이 표), rules = read_base 결과, parts = 형식이 맞는 parts/3.0 의 parts 목록(mm).
+        바깥 영향 없음. 실패: parts 에 형식이 틀린 항목이 있으면 KeyError 등 프로그램 예외(검사 묶음이 형식을 먼저 확인한다).
+        """
         self.checker, self.rules = checker, rules
         self.errors, self.seen = [], set()
         self.broken = set()           # 모양 실패가 이미 알려진 묶음 (역할, 번호) — 거기에 기대는 값은 다시 알리지 않는다
