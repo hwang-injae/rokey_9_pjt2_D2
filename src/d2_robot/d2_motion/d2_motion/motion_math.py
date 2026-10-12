@@ -226,6 +226,28 @@ def move_speed_scale(cfg, speed_ratio):
     return cfg['speed_scale'] * speed_ratio
 
 
+def scan_structure_box(cfg, target, current_deg, tol_deg=1.0):
+    """스캔 이동 때 사람이 쌓은 구조물 자리에 둘 상자 (계획 요청에만 싣는다 — 실제 장면은 안 바뀐다, W186).
+
+    사람이 쌓은 구조물은 장면에 없어서 MoveIt 이 모르고, 대각선 촬영 자세는 구조물 가까이 지난다(10/12 실기 — 로봇 쪽
+    대각선은 상자와 여유 20 mm). 그래서 scan.poses 의 두 번째 자세부터 그 자세로 갈 때와, 그 자세에서 떠날 때만 상자를 둔다.
+    첫 자세(observe)로 갈 때는 두지 않는다 — 조립 중에도 observe 로 가며, 그때 손이 이 상자 안(놓은 블록 옆)에 있을 수 있다.
+    입력: target = move_to 자세 이름 · current_deg = 지금 관절값(도, 6개) · tol_deg = '그 자세에 있음'으로 볼 관절 차이(도).
+    반환: (중심 (x, y, z) m, 크기 (x, y, z) m) — 조립 원점 위, 바닥 = 작업면(table_z_m), 크기 = robot.yaml scan.structure_box_m.
+          둘 필요가 없거나 scan.structure_box_m 이 없으면 None.
+    """
+    scan = cfg.get('scan') or {}
+    size = scan.get('structure_box_m')
+    later = [p for p in (scan.get('poses') or [])[1:] if f'{p}_pose' in cfg]
+    if not size or not later:
+        return None
+    here = any(max(abs(a - b) for a, b in zip(cfg[f'{p}_pose']['joints_deg'], current_deg)) <= tol_deg for p in later)
+    if target not in later and not here:
+        return None
+    o = cfg['assembly_origin']
+    return (o['x_m'], o['y_m'], cfg['table_z_m'] + size[2] / 2), tuple(size)
+
+
 def pick_open_width(cfg, grasp, open_width_m):
     """집기 전에 여는 실제 폭 (m) (IRD 4.2 PickPlace open_width_m · W121 C-10).
 
@@ -255,6 +277,12 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
     # 공급 칸은 잡기가 하나로 고정이다: 다른 잡기로 집으면 손목을 돌려 찍은 방향과 달라진다 (10/6 실기)
     if slot_cfg is not None and slot_cfg.get('grasp') not in (None, grasp):
         raise ValueError(f'공급 칸 {slot} 은 {slot_cfg["grasp"]} 칸인데 잡기는 {grasp}')
+    # 카메라로 잰 윗면이 낮게 나오면 블록 바닥이 작업대 아래로 계산되고, 그 자리에 붙인 쥔 블록 상자가 작업대와 겹쳐
+    # 들어 올리기부터 막힌다(10/11 실기: 윗면 −4.2 mm → 바닥 1 mm 아래 → lift CheckStartStateCollision held-table).
+    # 블록은 작업대를 뚫을 수 없으므로 바닥을 작업대 높이로 올린다 — 잡는 높이는 그만큼(수 mm 이내)만 바뀐다
+    floor = cfg['table_z_m'] + half_height(pick_rot, cfg['block_actual_m'])
+    if pick_center[2] < floor:
+        pick_center = (pick_center[0], pick_center[1], floor)
     pick_xyz, pick_q, _ = tcp_target(cfg, pick_center, pick_rot, grasp, slot_cfg)
     # 놓는 높이는 조립 원점에서 교시한 높이(tcp_z_m, record_cell 의 m)가 있으면 그것 기준, 없으면 손가락 끝 보정식 (원본과 같음)
     place_xyz, place_q, held = tcp_target(cfg, place_center, place_rot, grasp, cfg['assembly_origin'])

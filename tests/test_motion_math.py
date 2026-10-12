@@ -134,6 +134,19 @@ def test_pick_place_tcp_slot1(robot_cfg):
     assert len(held['size_m']) == 3 and len(held['offset_m']) == 3
 
 
+def test_pick_place_tcp_keeps_block_bottom_on_table(robot_cfg):
+    """흩뿌림(칸 없음)에서 잰 중심이 낮아 블록 바닥이 작업대 아래로 계산되면 바닥을 작업대에 맞춘다 — 그렇게 안 하면 쥔 블록 상자가
+    작업대와 겹쳐 들어 올리기가 막힌다(10/11 실기). 작업대 위에 제대로 있는 블록은 그대로."""
+    rot = mm.rpy_matrix(0.0, 0.0, 0.3)
+    floor = robot_cfg['table_z_m'] + mm.half_height(rot, robot_cfg['block_actual_m'])
+    place = _place_center(robot_cfg, rot)
+    low = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor - 0.001), rot, place, rot, 'FLAT_SHORT')
+    ok = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor), rot, place, rot, 'FLAT_SHORT')
+    assert close(low[0], ok[0])
+    above = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor + 0.015), rot, place, rot, 'FLAT_SHORT')   # 다른 블록 위 — 그대로
+    assert abs((above[0][2] - ok[0][2]) - 0.015) < 1e-9
+
+
 def test_pick_place_tcp_rejects_other_grasp_in_slot(robot_cfg):
     """공급 칸의 잡기는 하나로 고정 — 칸 1(FLAT_LONG)에 FLAT_SHORT 를 주면 ValueError (10/6 실기)."""
     center, rot = mm.slot_block_pose(robot_cfg, 1)
@@ -286,3 +299,34 @@ def test_pick_open_width(robot_cfg, grasp):
     assert mm.pick_open_width(robot_cfg, grasp, width) is None
     assert mm.pick_open_width(robot_cfg, grasp, width - 0.005) is None
     assert mm.pick_open_width(robot_cfg, grasp, float('nan')) is None
+
+
+def test_scan_poses_have_joint_values(robot_cfg):
+    """scan.poses 의 자세마다 robot.yaml <이름>_pose 관절 6개가 있다 — move_to 가 robot.yaml 로 받으므로(W186) 빠지면 스캔이 PLAN_FAILED."""
+    for name in robot_cfg['scan']['poses']:
+        assert len(robot_cfg[f'{name}_pose']['joints_deg']) == 6, name
+
+
+def test_scan_structure_box(robot_cfg):
+    """구조물 상자는 scan.poses 두 번째 자세부터 갈 때 · 그 자세에서 떠날 때만, 첫 자세(observe)로 그냥 갈 때 · 조립 중에는 없다(W186)."""
+    poses = robot_cfg['scan']['poses']
+    home = robot_cfg['home_pose']['joints_deg']
+    first, later = poses[0], poses[1:]
+    for name in later:
+        box = mm.scan_structure_box(robot_cfg, name, home)
+        assert box is not None, name
+    center, size = mm.scan_structure_box(robot_cfg, later[0], home)
+    o = robot_cfg['assembly_origin']
+    assert size == tuple(robot_cfg['scan']['structure_box_m'])
+    assert close(center[0], o['x_m']) and close(center[1], o['y_m'])
+    assert close(center[2] - size[2] / 2, robot_cfg['table_z_m'])      # 바닥 = 작업면
+    assert mm.scan_structure_box(robot_cfg, first, home) is None       # 홈 · 조립 중 observe 로
+    assert mm.scan_structure_box(robot_cfg, 'observe_supply', home) is None
+    last = robot_cfg[f'{later[-1]}_pose']['joints_deg']
+    assert mm.scan_structure_box(robot_cfg, first, last) is not None    # 마지막 촬영 자세에서 떠날 때(다시 스캔)
+    near = [v + 0.5 for v in last]
+    assert mm.scan_structure_box(robot_cfg, 'home', near) is not None
+    far = [v + 5.0 for v in last]
+    assert mm.scan_structure_box(robot_cfg, 'home', far) is None
+    cfg = dict(robot_cfg, scan={'poses': poses})                         # 상자 크기가 없으면 안 둔다
+    assert mm.scan_structure_box(cfg, later[0], home) is None

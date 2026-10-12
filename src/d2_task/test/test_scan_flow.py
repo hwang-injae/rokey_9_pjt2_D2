@@ -60,7 +60,7 @@ def review(m):
 
 
 def test_세자세_같은_run_검토대기와_CSV(tmp_path):
-    """지정된 세 자세를 한 run으로 촬영하고 CSV만 닫는다. 조립 DB 요약을 만들지 않는다."""
+    """robot.yaml scan.poses 자세(10/12 W186 부터 5개)를 한 run으로 촬영하고 CSV만 닫는다. 조립 DB 요약을 만들지 않는다."""
     m, io = make(tmp_path)
     review(m)
     rid = m.run_id
@@ -70,7 +70,7 @@ def test_세자세_같은_run_검토대기와_CSV(tmp_path):
     assert not m.pending_builds and m.last_build is None
     m.finalize()
     text = (tmp_path / f'{rid}.csv').read_text()
-    assert text.count('scan_capture') == 3 and 'end' in text and 'DONE' in text
+    assert text.count('scan_capture') == len(CFG['scan']['poses']) and 'end' in text and 'DONE' in text
 
 
 def test_검토_저장선택_출발_재스캔_취소():

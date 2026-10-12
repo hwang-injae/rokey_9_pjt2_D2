@@ -9,7 +9,8 @@
 
 출력은 IRD `/d2/vision/find_blocks` 응답의 blocks 원소 그대로(dict, JSON 직렬화 가능, NaN 없음), 윗면 높이 순:
   {"x_m","y_m","top_z_m","yaw_deg","up","clear":{축:bool},"gap_mm":{축:mm},"overlap","tilted","confidence"}
-  - x_m · y_m · top_z_m: base_link (m), 윗면 가운데. 기울어진 블록은 윗면 평면의 가운데 높이.
+  - x_m · y_m · top_z_m: base_link (m), 윗면 가운데. 기울어진 블록(tilted)의 top_z_m 만 윗면에서 가장 높은 점(평면 98 % 높이) —
+    작업 관리자가 이 값을 윗면으로 장애물 상자를 만들어서(E-68 '가장 높은 점까지 닿는 상자', 10/11 박진용). x_m · y_m 은 그대로 가운데.
   - up: 작업면 위 높이를 먼저(15 · 25 · 75 + 포개짐 층, ±5 mm) 보고 그 후보 안에서만 윗면 모양으로 가린다. 어긋나면 confidence 절반(10/8 PL).
     다른 블록 위에 얹힌 블록은 '내 높이 − 아래 블록 높이'를 내 두께로 다시 본다. 영상 테두리 · 영역 경계에 잘린 윤곽은 under · confidence ≤ 0.2.
   - yaw_deg: 윗면의 긴 변이 base x 와 평행하면 0, 반시계 +, −90 ≤ yaw < 90 (motion_math.wrap_half 와 같은 경계).
@@ -35,12 +36,9 @@ UPS = ('THICKNESS', 'WIDTH', 'LENGTH')
 TOP_AXES = {'THICKNESS': ('LENGTH', 'WIDTH'), 'WIDTH': ('LENGTH', 'THICKNESS'), 'LENGTH': ('WIDTH', 'THICKNESS')}
 DIM = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}       # size_m 안 순서 (robot.yaml block_actual_m = [길이, 폭, 두께])
 
-# 흩뿌릴 영역 (m) — robot.yaml observe_supply_pose 주석의 값(x 183~586 · y 142~337 mm, W134 10/7). 아직 yaml 키가 없어 여기 둔다.
-SUPPLY_AREA_M = ((0.183, 0.586), (0.142, 0.337))
-
 Z_MIN_M, Z_MAX_M = 0.1, 1.0   # 깊이 유효 범위 — block_checker.depth_to_base_points 기본값과 같게(픽셀 ↔ 점 순서를 맞추려고)
 TILT_MM = 5.0             # 양 끝 높이 차 이상이면 tilted (IRD · E-43)
-TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (실측 장면 −19.5 mm vs yaml −18 mm)
+TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (10/8 실측 장면이 yaml 값과 1.5 mm 다름)
 TOP_MIN_MM = 4.0          # 작업면 위 이보다 낮은 점은 윗면 후보에서 뺀다(깊이 잡음 ±2~3 mm)
 MAX_SLOPE = 0.6           # 이웃 픽셀 사이 높이 기울기(dz/dxy)가 이보다 크면 옆면 · 가장자리 튐 — 윗면에서 뺀다(31°보다 가파름)
 EDGE_PX = 3               # 평면 맞춤 때 마스크 가장자리를 이만큼 깎는다 — 경계 깊이 튐(SDD §6.11 ② "가장자리 몇 픽셀은 버림")
@@ -81,9 +79,10 @@ FINGER_Z_MARGIN_MM = 5.0  # 손가락 끝 높이(윗면 − grasp_depth)보다 �
 def finder_cfg(robot):
     """robot.yaml 을 읽은 dict → BlockFinder 설정 dict. 파일 읽기는 부르는 쪽(노드 · 시험)이 한다.
 
-    입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m).
+    입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m ·
+    supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} — 흩뿌린 공급 영역(빨간 테이프) 안쪽 직사각형 m, 10/11 박진용 교시 · 민범진 확인).
     출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m}.
-    실패: 키가 없으면 KeyError (설정 오류 — 노드가 시작할 때 드러나게).
+    실패: 키가 없으면 KeyError, supply_area_m 의 x_m · y_m 이 두 수가 아니거나 최소 ≥ 최대면 ValueError (설정 오류 — 노드가 시작할 때 드러나게).
     """
     size = robot.get('block_actual_m') or robot['block_size_m']    # 실측 치수가 있으면 그것(쌓는 높이 · 장면 상자와 같은 값)
     return {
@@ -92,8 +91,25 @@ def finder_cfg(robot):
         'min_gap_mm': float(robot['find']['min_gap_mm']),
         'grasp_depth_m': float(robot['grasp_depth_m']),
         'finger_width_m': float(robot['finger']['width_m']),
-        'area_m': SUPPLY_AREA_M,
+        'area_m': _area_rect(robot['supply_area_m']),
     }
+
+
+def _area_rect(area):
+    """robot.yaml supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} (m) → ((x0, x1), (y0, y1)).
+    dict 가 아니거나(옛 꼭짓점 목록 꼴 — #126 첫 커밋) x_m · y_m 이 없거나 두 수가 아니거나 최소 ≥ 최대면 ValueError."""
+    if not isinstance(area, dict) or not {'x_m', 'y_m'} <= area.keys():
+        raise ValueError(f'supply_area_m 은 {{x_m: [최소, 최대], y_m: [최소, 최대]}} 이어야 한다: {area!r}')
+    out = []
+    for k in ('x_m', 'y_m'):
+        try:
+            lo, hi = (float(v) for v in area[k])
+        except (TypeError, ValueError):                 # 두 수가 아님(개수 · 글자)
+            lo = hi = None
+        if lo is None or not lo < hi:
+            raise ValueError(f'supply_area_m.{k} 는 [최소, 최대] 이고 최소 < 최대여야 한다: {area[k]!r}')
+        out.append((lo, hi))
+    return tuple(out)
 
 
 def wrap_deg(a):
@@ -234,7 +250,7 @@ def _measure(mask, P, slope, table_z, depth_m, intr, cfg, score):
     base_conf = score * min(1.0, top.sum() / max(sel.sum(), 1))
     return {
         'mask': mask, 'top': top, 'coef': coef, 'center': center, 'u': u, 'v': v,
-        'z_c': z_c, 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
+        'z_c': z_c, 'z_hi': float(z_hi), 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
         'long_mm': long_mm, 'short_mm': short_mm, 'vis_area': vis_area, 'cost': cost, 'mismatch': mismatch,
         'base_conf': base_conf, 'under': False, 'top_of': False, 'on': [],
     }
@@ -443,7 +459,7 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
         out.append((blk['index'], {
             'x_m': round(float(blk['center'][0]), 4),
             'y_m': round(float(blk['center'][1]), 4),
-            'top_z_m': round(blk['z_c'], 4),
+            'top_z_m': round(blk['z_hi'] if blk['tilted'] else blk['z_c'], 4),   # tilted = 가장 높은 점(E-68 장애물 상자), 나머지 = 윗면 가운데
             'yaw_deg': round(yaw, 1) if round(yaw, 1) < 90.0 else -90.0,
             'up': blk['up'],
             'clear': {k: bool(g >= cfg['min_gap_mm']) for k, g in gaps.items()},
