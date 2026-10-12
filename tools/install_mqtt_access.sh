@@ -40,3 +40,8 @@ bash /usr/local/libexec/d2-mqtt-access.sh check "$robot_ip" "$web_ip"
 systemctl is-enabled d2-mqtt-access.service
 systemctl is-active d2-mqtt-access.service
 iptables -w -S DOCKER-USER
+# 명시한 경우에만 규칙 check 뒤 브로커를 기동한다. 웹 프로세스는 sudo 호출자의 UID/GID로 실행한다.
+if [[ "${3:-}" == --start ]]; then
+    D2_WEB_IPV4="$web_ip" WEB_UID="${SUDO_UID:?sudo 호출자 UID 필요}" WEB_GID="${SUDO_GID:?sudo 호출자 GID 필요}" \
+        docker compose -f "$(dirname -- "$source_script")/../web/compose.yaml" up -d
+fi
