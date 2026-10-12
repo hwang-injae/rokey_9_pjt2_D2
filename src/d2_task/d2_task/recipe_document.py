@@ -133,11 +133,11 @@ class RecipeDocument:
             raise ValueError('recipe 와 placements 의 model_id 가 다르거나 없다')
         if r.get('recipe_sha256') != recipe_sha256(s):
             raise ValueError('placements 의 recipe_sha256 이 recipe(구조)와 맞지 않는다 — 다른 구조에 대해 쓴 조립 방법이다')
-        parts, blocks, steps = s.get('stocks'), s.get('parts'), r.get('steps')
-        if not all(isinstance(items, list) and items for items in (parts, blocks, steps)):
+        stocks, parts, steps = s.get('stocks'), s.get('parts'), r.get('steps')
+        if not all(isinstance(items, list) and items for items in (stocks, parts, steps)):
             raise ValueError('stocks · parts · steps 는 비어 있지 않은 목록이어야 한다')
         sizes = {}
-        for p in parts:
+        for p in stocks:
             if not isinstance(p, dict) or not isinstance(p.get('stock_id'), str) or p['stock_id'] in sizes:
                 raise ValueError('stock_id 가 없거나 중복이다')
             self._vector(p.get('size_mm'), 3, 'size_mm')
@@ -145,7 +145,7 @@ class RecipeDocument:
                 raise ValueError('size_mm 은 양수여야 한다')
             sizes[p['stock_id']] = p['size_mm']
         instances = {}
-        for b in blocks:
+        for b in parts:
             if not isinstance(b, dict) or not isinstance(b.get('part_name'), str) or not re.fullmatch(
                     r'[A-Z]+(?:_[A-Z]+)*_[0-9]{3}_[0-9]{2}', b['part_name']) or b['part_name'] in instances:
                 raise ValueError('block 이름이 역할_부품_블록 형식이 아니거나 중복이다')
@@ -191,4 +191,4 @@ class RecipeDocument:
             if any(sequences[k] >= st['sequence'] for k in st['supports']):
                 raise ValueError('받침은 해당 블록보다 먼저 놓아야 한다')
         return {'schema': 'cad_recipe/1.0', 'model': {'model_id': model_id, 'frame': {'units': 'mm'},
-                'stocks': copy.deepcopy(parts), 'instances': list(instances.values())}, 'steps': rows}
+                'stocks': copy.deepcopy(stocks), 'instances': list(instances.values())}, 'steps': rows}

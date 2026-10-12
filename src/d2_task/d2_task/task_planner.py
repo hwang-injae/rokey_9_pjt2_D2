@@ -36,13 +36,13 @@ class TaskPlanner:
         document = RecipeDocument(recipe, placements)
         recipe = document.geometry
         self.design_id = recipe['model']['model_id']
-        blocks = recipe_parts(cfg, recipe)
+        parts = recipe_parts(cfg, recipe)
         steps = sorted(recipe['steps'], key=lambda s: s['sequence'])
-        if any(st['grasp'] != b['grasp'] for st, b in zip(steps, blocks)):
+        if any(st['grasp'] != b['grasp'] for st, b in zip(steps, parts)):
             raise ValueError('recipe 의 grasp 가 블록 방향 · grasp_axis 와 다르다')
-        block_of = {st['instance_id']: b['part_id'] for st, b in zip(steps, blocks)}
+        block_of = {st['instance_id']: b['part_id'] for st, b in zip(steps, parts)}
         self.parts = [dict(b, supports=[block_of[i] for i in st['support_instance_ids']])
-                       for st, b in zip(steps, blocks)]
+                       for st, b in zip(steps, parts)]
         # 시작 때는 아무것도 본 적이 없다. 첫 진행 확인(관측) 전에 놓으면 이미 있는 블록 위에 겹쳐 놓을 수 있다.
         self.progress = {b['part_id']: {'state': 'unknown', 'dx_m': float('nan'), 'dy_m': float('nan'),
                                          'dz_m': float('nan'), 'top_z_m': float('nan')} for b in self.parts}
@@ -162,15 +162,15 @@ class TaskPlanner:
         stamp = 보낸 시각(epoch s, 이 함수를 부른 때) — 관측한 시각(obs_stamp)과 다르다. 웹이 얼마나 묵은 진행표인지 알아보는 데 쓴다(E-75).
         by 는 robot 만 쓴다(스캔 실물은 W119).
         """
-        blocks = []
+        parts = []
         for b in self.parts:
             row = self.progress[b['part_id']]
-            blocks.append({'part_id': b['part_id'], 'state': row['state'], 'by': 'robot',
+            parts.append({'part_id': b['part_id'], 'state': row['state'], 'by': 'robot',
                            'center_m': list(b['center']), 'quat': list(b['quat']),
                            'top_z_m': _nan_to_none(row['top_z_m']), 'dz_m': _nan_to_none(row['dz_m']),
                            'dx_m': _nan_to_none(row['dx_m']), 'dy_m': _nan_to_none(row['dy_m'])})
         return {'schema': 'progress/2.0', 'stamp': time.time(), 'design_id': self.design_id, 'run_id': run_id,
-                'obs_stamp': obs_stamp, 'parts': blocks}
+                'obs_stamp': obs_stamp, 'parts': parts}
 
     def _pick_slot(self, index, avoid_slots=()):
         """self.parts[index] 를 집을 공급 칸 번호(1부터). 맞는 칸이 모두 비었거나 피할 칸뿐이면 None.

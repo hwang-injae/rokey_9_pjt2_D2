@@ -118,16 +118,16 @@ def test_boxes_round_trip_to_same_recipe(bench):
 
 # 이름 규칙: 꼴이 틀림 · 옵션 두 개(역할 한 단어 + 옵션 0~1) · 같은 이름 두 번 · 번호가 위치 순서와 다름(아래층부터 · 앞 → 뒤 · 왼 → 오른) · 번호 빠짐 → 거부
 @pytest.mark.parametrize('rename, message', [
-    ({'LEG_001_01': 'B001'}, 'block name must be'),
-    ({'SEAT_001_01': 'SEAT_ARM_REST_001_01'}, 'block name must be'),
+    ({'LEG_001_01': 'B001'}, 'part name must be'),
+    ({'SEAT_001_01': 'SEAT_ARM_REST_001_01'}, 'part name must be'),
     ({'LEG_001_01': 'LEG_001_02', 'LEG_001_02': 'LEG_001_02'}, 'used twice'),
     ({'LEG_001_01': 'LEG_001_02', 'LEG_001_02': 'LEG_001_01'}, 'bottom → top'),
     ({'SEAT_001_01': 'SEAT_001_03', 'SEAT_001_03': 'SEAT_001_01'}, 'front → rear'),
     ({'LEG_001_01': 'LEG_002_05', 'LEG_001_02': 'LEG_002_06', 'LEG_001_03': 'LEG_002_07', 'LEG_001_04': 'LEG_002_08',
-      'LEG_002_01': 'LEG_001_01', 'LEG_002_02': 'LEG_001_02', 'LEG_002_03': 'LEG_001_03', 'LEG_002_04': 'LEG_001_04'}, 'block numbers must run'),
+      'LEG_002_01': 'LEG_001_01', 'LEG_002_02': 'LEG_001_02', 'LEG_002_03': 'LEG_001_03', 'LEG_002_04': 'LEG_001_04'}, 'part numbers must run'),
     ({'SEAT_001_03': 'SEAT_001_04'}, 'must run 01..03'),
 ])
-def test_bad_block_names_rejected(bench, rename, message):
+def test_bad_part_names_rejected(bench, rename, message):
     builder, recipe, _, _ = bench
     boxes = [dict(b, part_name=rename.get(b['part_name'], b['part_name'])) for b in make_boxes(recipe)]
     with pytest.raises(ValueError, match=message):

@@ -124,16 +124,16 @@ class PartsToRecipe:
             raise DesignRejected([{'part': None, 'detail': f'레시피 검사: {e}'}]) from e
         return {'recipe': recipe, 'placements': placements}
 
-    def calculate_box(self, block):
+    def calculate_box(self, part):
         """블록 하나가 차지하는 축 정렬 상자.
 
         입력:
             block: parts/3.0 블록 (x · y = 중심, z = 아랫면, mm)
         출력: (lo, hi) — 각각 (x, y, z) 튜플 mm
         """
-        dx, dy, dz = self.extent[block['ori']]
-        lo = (block['x'] - dx / 2, block['y'] - dy / 2, block['z'])
-        hi = (block['x'] + dx / 2, block['y'] + dy / 2, block['z'] + dz)
+        dx, dy, dz = self.extent[part['ori']]
+        lo = (part['x'] - dx / 2, part['y'] - dy / 2, part['z'])
+        hi = (part['x'] + dx / 2, part['y'] + dy / 2, part['z'] + dz)
         return lo, hi
 
     def check_role_names(self, items):
@@ -242,17 +242,17 @@ class PartsToRecipe:
             lo, hi = boxes[order]
             return (round(lo[2], 3), round((lo[1] + hi[1]) / 2, 3), round((lo[0] + hi[0]) / 2, 3))
 
-        parts_by_role = {}
+        groups_by_role = {}
         for (role, _), members in self.group_parts(items).items():
             ordered = sorted(members, key=position)
-            parts_by_role.setdefault(role, []).append(ordered)
+            groups_by_role.setdefault(role, []).append(ordered)
 
 
-        # 역할마다 부품 순서: 첫 블록의 (y, x), 같으면 첫 블록 높이 → 번호 1부터
+        # 역할마다 그룹 순서: 첫 부품의 (y, x), 같으면 첫 부품 높이 → 번호 1부터
         names = {}
-        for role, parts in parts_by_role.items():
-            parts.sort(key=lambda ordered: (position(ordered[0])[1:], position(ordered[0])[0]))
-            for part_no, ordered in enumerate(parts, 1):
-                for block_no, order in enumerate(ordered, 1):
-                    names[order] = f'{role}_{part_no:03d}_{block_no:02d}'
+        for role, groups in groups_by_role.items():
+            groups.sort(key=lambda ordered: (position(ordered[0])[1:], position(ordered[0])[0]))
+            for group_no, ordered in enumerate(groups, 1):
+                for part_no, order in enumerate(ordered, 1):
+                    names[order] = f'{role}_{group_no:03d}_{part_no:02d}'
         return names

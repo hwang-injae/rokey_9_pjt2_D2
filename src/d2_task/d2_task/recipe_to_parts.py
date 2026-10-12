@@ -56,10 +56,10 @@ class RecipeToParts:
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':
             raise ValueError('model.frame.units 가 mm 가 아니다')
-        parts = {p['stock_id']: p['size_mm'] for p in model.get('stocks', [])}
+        stocks = {p['stock_id']: p['size_mm'] for p in model.get('stocks', [])}
         instances = {i['instance_id']: i for i in model.get('instances', [])}
 
-        blocks, seen = [], set()
+        parts, seen = [], set()
         for step in sorted(recipe.get('steps', []), key=lambda s: s['sequence']):
             seq, iid = step['sequence'], step['instance_id']
             if seq in seen:
@@ -68,16 +68,16 @@ class RecipeToParts:
             if iid not in instances:
                 raise ValueError(f'sequence {seq}: instance {iid} 가 model.instances 에 없다')
             inst = instances[iid]
-            if inst['stock_id'] not in parts:
+            if inst['stock_id'] not in stocks:
                 raise ValueError(f'sequence {seq}: stock {inst["stock_id"]} 가 model.stocks 에 없다')
             x, y, cz = inst['center_mm']
-            extent = self._world_extent(seq, inst['R'], parts[inst['stock_id']])
+            extent = self._world_extent(seq, inst['R'], stocks[inst['stock_id']])
             role, group = self._role_group(seq, step['part_name'])
-            blocks.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
+            parts.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
                            'role': role, 'group': group, 'stage': step['stage'], 'grasp': step['grasp']})
-        if not blocks:
+        if not parts:
             raise ValueError('레시피에 steps 가 없다')
-        return {'schema': SCHEMA_OUT, 'design_id': self.design_id, 'parts': blocks}
+        return {'schema': SCHEMA_OUT, 'design_id': self.design_id, 'parts': parts}
 
     @staticmethod
     def _role_group(seq, name):

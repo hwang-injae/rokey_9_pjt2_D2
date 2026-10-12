@@ -197,9 +197,9 @@ class MockRobot:
         self.set_state('SCAN_INFER', '스캔 결과 계산 중', 'scan_running')
         if self.abort.wait(self.step_s):
             return
-        _, blocks = self.local_design(BENCH)
+        _, design = self.local_design(BENCH)
         items = [{'scan_num': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
-                 for i, b in enumerate(blocks['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
+                 for i, b in enumerate(design['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
         scan = {'schema': 'blocks/2', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
         jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
         result = {'schema': 'scan_result/2.0', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,

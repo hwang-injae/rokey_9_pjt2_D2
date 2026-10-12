@@ -386,7 +386,7 @@ def recipe_parts(cfg, recipe):
     c, s = math.cos(yaw), math.sin(yaw)
     top = {}                                         # part_id -> 실제 윗면 z (m, base). 받침을 따라 쌓아 올린다
 
-    def block(part_id, seq, stage, size_mm, center_mm, R, axis, supports):
+    def part(part_id, seq, stage, size_mm, center_mm, R, axis, supports):
         """레시피 블록 하나 -> 목표 항목. 크기는 mm 입력, 설계 치수와 다르면 예외. 윗면 z 는 받침 실제 윗면을 따라 쌓는다."""
         size_m = [v / 1000.0 for v in size_mm]
         if any(abs(a - b) > 1e-4 for a, b in zip(size_m, cfg['block_size_m'])):
@@ -414,7 +414,7 @@ def recipe_parts(cfg, recipe):
         bid = {st['instance_id']: st.get('part_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
-            out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
+            out.append(part(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
                              st['grasp_axis'], [bid[k] for k in st.get('support_instance_ids') or [] if k in bid]))
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
@@ -423,15 +423,15 @@ def recipe_parts(cfg, recipe):
     full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"]}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]
-        out.append(block(full[st['part_name']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
+        out.append(part(full[st['part_name']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
                          st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
     return out
 
 
-def footprint(cfg, blocks):
+def footprint(cfg, parts):
     """블록들이 바닥에서 차지하는 xy 사각형 (min_x, min_y, max_x, max_y) (m, base)."""
     xs, ys = [], []
-    for b in blocks:
+    for b in parts:
         for sx in (-1, 1):
             for sy in (-1, 1):
                 for sz in (-1, 1):
@@ -467,11 +467,11 @@ def layout_designs(cfg, recipes):
         shifts = [dy + mid for dy in shifts]
     o, half = cfg['assembly_origin'], cfg['assembly_area_half_m']
     out = []
-    for blocks, fp, dy, name in zip(designs, fps, shifts, names):
+    for parts, fp, dy, name in zip(designs, fps, shifts, names):
         if (fp[0] < o['x_m'] - half - 1e-6 or fp[2] > o['x_m'] + half + 1e-6
                 or fp[1] + dy < o['y_m'] - half - 1e-6 or fp[3] + dy > o['y_m'] + half + 1e-6):
             raise ValueError(f'설계 {name} 가 조립 작업공간(중심 ± {half * 1000:.0f} mm)을 넘는다')
-        for b in blocks:
+        for b in parts:
             b['center'] = (b['center'][0], b['center'][1] + dy, b['center'][2])
-        out.append((blocks, (0.0, dy)))
+        out.append((parts, (0.0, dy)))
     return out

@@ -56,10 +56,10 @@ class DesignChecker:
         reason: OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · ERROR(변환기 ① 실패).
         """
         errors = []
-        blocks = self._parse(request, errors)
+        parts = self._parse(request, errors)
         if errors:
             return self._result(False, None, errors)
-        boxes = [self._box(b) for b in blocks]
+        boxes = [self._box(b) for b in parts]
         errors += self._penetration(boxes)
         below = self._supports(boxes, errors)
         margin = None
@@ -121,12 +121,12 @@ class DesignChecker:
             raise ValueError(f'JSON 에 유한하지 않은 수({text})가 있다')
         return value
 
-    def grasp_options(self, blocks):
+    def grasp_options(self, parts):
         """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {order: [잡기 이름…]}.
 
         blocks: 형식이 맞는 parts/3.0 의 parts 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
         """
-        boxes = [self._box(b) for b in sorted(blocks, key=lambda b: b['order'])]
+        boxes = [self._box(b) for b in sorted(parts, key=lambda b: b['order'])]
         return {bx['order']: self._grasps(bx, boxes[:i]) for i, bx in enumerate(boxes)}
 
     # ---------------- 1. 형식 ----------------
