@@ -31,18 +31,20 @@ WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부�
 import copy
 import json
 import logging
+import math
 import threading
 import time
 
 from d2_task.block_picker import BlockPicker
 from d2_task.run_logger import RunLogger
-from d2_task.scatter_pick import ScatterFlow, StepTracker
+from d2_task.scatter_pick import REOBSERVE, REPLAN_SAME, ScatterFlow, StepTracker, contact_phase, grasped_now
 from d2_task.task_planner import TaskPlanner
 
 RECIPE_SCHEMA = 'recipe/2.0'
 PLACEMENTS_SCHEMA = 'placements/2.0'
 DESIGN_SCHEMA = 'design/2.0'
 
+GRIPPER_POLL_S = 0.05                          # gripper 상태 대기 간격(s) — 정지가 끼면 이 안에 알아본다
 LOG = logging.getLogger('d2_task')
 
 # 조립이 진행 중인 상태 — 정지 · 실패 뒤 RECOVER 에서 CHECK 로 이어 간다
@@ -98,7 +100,7 @@ class TaskManager:
         self._clock = clock
         self.command_s = cfg['timeout']['command_s']   # 화면 명령(선택 · 출발)을 받은 뒤 확정해야 하는 시간(s) — 넘으면 실행하지 않고 TIMEOUT
         self._epoch = 0                           # 상태가 바뀔 때마다 +1 — 설계 조회 중에 상태가 바뀌었는지 알아보는 표
-        self._steps = StepTracker()               # 집기 요청마다 마지막 피드백 step · 결과 수신 시각(수집만 — 재시도 판단에는 아직 안 쓴다)
+        self._steps = StepTracker()               # 집기 요청마다 마지막 피드백 step · 결과 수신 시각(흩뿌림 집기 실패 뒤 재시도 판단 _scatter_failed 가 쓴다)
         self._pick_seq = 0                        # pick_place 요청마다 새 번호
         self.last_pick = None                     # 가장 최근 pick_place 가 끝났을 때의 {request_id, ok, reason, step, result_at}
         self._stop_count = 0                      # stopped=true 신호를 받은 횟수 — 정지 뒤 [다시 시작]까지 끝나도 그 전에 보낸 요청의 늦은 답을 알아본다
@@ -129,6 +131,15 @@ class TaskManager:
             raise ValueError(f"robot.yaml supply_mode 는 slots · scatter 중 하나다: {self.supply_mode!r}")
         self._scatter = (ScatterFlow(cfg, BlockPicker(cfg['find']['min_gap_mm']), self.supply_mode, open_width_m)
                          if self.supply_mode == 'scatter' else None)
+        if self._scatter is not None:             # 흩뿌림 실패 뒤 재시도 설정(robot.yaml scatter.*) — 없거나 이상하면 만들 때 거절한다
+            sc = cfg['scatter']
+            self.max_attempts = sc['max_attempts']
+            if type(self.max_attempts) is not int or self.max_attempts < 1:
+                raise ValueError(f'robot.yaml scatter.max_attempts 는 1 이상의 정수다: {self.max_attempts!r}')
+            self.gripper_max_age_s = self._positive(sc['gripper_max_age_s'], 'scatter.gripper_max_age_s')
+            self.gripper_wait_s = self._positive(sc['gripper_wait_s'], 'scatter.gripper_wait_s')
+        self._scatter_fail = {}                   # 흩뿌림 집기 시도 횟수(block_id → 번, PickPlace 요청을 보낼 때 +1). 재관측 · 정지 · 복구로 비우지 않고, VERIFY 에서 present 로 확인한 블록만 지운다
+        self._sleep, self._wall = time.sleep, time.time    # 시험에서 바꾼다 — gripper 대기용 sleep · 최신성 판정용 벽시계(grasped_now 는 time.time 기준)
         self._hmi_seen_at = None                  # PC 사이 stamp 대신 이 PC 의 단조 시계로 수신 간격을 잰다
         self._hmi_pause = False                   # 잠깐 끊겼다 다시 붙어도 사람의 start 전에는 풀지 않는다
         self._hmi_recheck = False                 # WAIT_HMI 의 start 는 SELECT 에서 진행표부터 다시 확인한다
@@ -480,8 +491,14 @@ class TaskManager:
         """PICK_PLACE: 목표 하나를 pick_place 로 보내고 결과를 SDD 7.1 표대로 처리한다.
 
         요청마다 새 번호를 만들어 피드백 step · 결과 수신 시각(time.time())을 모으고, 끝나면 self.last_pick 에 남긴다
-        ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 수집만 하고 분기에는 아직 쓰지 않는다.
+        ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 흩뿌림 집기가 실패하면 _scatter_failed 가 step(접촉 전후)과 result_at(gripper 상태가 결과 이후인지)으로 재시도 여부를 정한다.
         """
+        if self._scatter is not None:
+            block = self.goal['block_id']
+            with self._lock:
+                if self._scatter_fail.get(block, 0) >= self.max_attempts:      # 복구 · 다른 실패 경로로 와도 한도를 넘는 요청은 보내지 않는다
+                    return self._to_error(f'{block}: 집기 {self.max_attempts}번 시도를 이미 했다 — 사람이 확인해 주세요')
+                self._scatter_fail[block] = self._scatter_fail.get(block, 0) + 1     # 요청을 보내기 시작할 때 센다(성공 · 실패 · 시간 초과 모두 한 번)
         self._pick_seq += 1
         rid = self._pick_seq
         self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다
@@ -502,8 +519,7 @@ class TaskManager:
             return None
         self.logger.log('fail', self.goal['block_id'], f'pick_place {why}')
         if self._scatter is not None and why in ('PLAN_FAILED', 'GRASP_FAILED', 'SLOT_EMPTY'):
-            # 흩뿌림은 실패 뒤 다시 계획 · 다시 관측(failure_action)을 아직 연결하지 않았다 → 서서 사람을 부른다(실제 흩뿌림 실행 보류)
-            return self._to_error(f'{self.goal["block_id"]}: {why}(흩뿌림 집기 실패 뒤 재시도는 아직 연결 전)')
+            return self._scatter_failed(why)
         if why == 'PLAN_FAILED':
             if self._plan_retry < 1:           # 같은 목표로 다시 계획 1번
                 self._plan_retry += 1
@@ -530,6 +546,8 @@ class TaskManager:
         problems = self.planner.judge(expect_present=[self.placed])
         if problems:
             return self._offset_over(problems)
+        if self.planner.progress[self.placed]['state'] == 'present':     # 오류가 없다는 것만으로는 부족하다 — 놓인 것이 확인된 블록의 시도 횟수만 지운다
+            self._scatter_fail.pop(self.placed, None)
         self._set('SELECT', None, '')
         return None
 
@@ -702,6 +720,75 @@ class TaskManager:
             self._set('SCAN_REVIEW', 'scan_review', '스캔 결과를 확인하고 저장·다시 스캔·취소를 선택하세요')
 
     # ---------- 실패 · 공급 처리 ----------
+    @staticmethod
+    def _positive(value, name):
+        """유한한 양의 실수(bool 아님)면 float 로 돌려주고, 아니면 ValueError."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f'robot.yaml {name} 는 0 보다 큰 유한한 수다: {value!r}')
+        return float(value)
+
+    def _scatter_failed(self, why):
+        """흩뿌림 집기가 실패한 뒤 다음 동작을 정한다(W178): ScatterFlow.on_failure 의 판단을 따르되 블록당 총 집기 시도를 max_attempts 로 막는다.
+
+        입력: why(PickPlace 실패 이유), self.last_pick(마지막 step · 결과 수신 시각), self.gripper. 바깥 영향: REPLAN_SAME 은 같은 후보로 PICK_PLACE 를
+        한 번 더, REOBSERVE 는 SELECT 로 돌아가 observe_supply → find_blocks 를 다시 한다(로봇을 새로 움직이는 건 그 경로뿐).
+        RECOVER · ERROR · 시도 한도 · 후보가 없을 때 · WAIT(입력원이 없어 새 경로를 만들지 않음)는 서서 사람을 부른다(ERROR → [다시 시작] → 기존 RECOVER).
+        손에 블록이 없음(grasped False)이 확인돼야만 다시 시도한다 — 모르면 failure_action 이 RECOVER 로 보낸다.
+        gripper 상태를 기다리는 동안 정지 · 상태 변화 · 새 요청이 끼면(오래된 처리) 아무것도 적용하지 않고 지금 상태를 그대로 둔다.
+        """
+        block = self.goal['block_id']
+        info = self.last_pick
+        with self._lock:
+            token = (self._epoch, self._stop_count)
+        status, grasped = self._grasped_after_result(info, token)
+        if status == 'STALE':
+            return None
+        with self._lock:
+            if self._stale(info['request_id'], token):         # 대기 뒤 적용 직전에 다시 확인 — on_failure 도 이 안에서 부른다
+                return None
+            action = self._scatter.on_failure(why, contact_phase(info['step'], why), grasped, None)
+            n = self._scatter_fail.get(block, 0)
+            if action in (REPLAN_SAME, REOBSERVE):
+                if n >= self.max_attempts:
+                    return self._to_error(f'{block}: {why}(집기 {n}번 모두 실패 — 사람이 확인해 주세요)')
+                req = self._scatter.reusable_request() if action == REPLAN_SAME else None
+                if req is not None:
+                    self._start_goal(dict(req, status='FOUND'))
+                    return self._set('PICK_PLACE', None, f'{block} 를 같은 자리로 다시 집으러 갑니다')
+                return self._set('SELECT', None, f'{block} 를 다시 보고 집으러 갑니다')
+            unknown = ' — 그리퍼 상태를 확인하지 못했다' if status == 'UNKNOWN' else ''
+            return self._to_error(f'{block}: {why}(흩뿌림 집기 실패 — {action}{unknown}, 사람이 확인해 주세요)')
+
+    def _stale(self, request_id, token):
+        """(잠금 안) 대기 중에 정지 · 상태 변화 · 새 요청이 있었나. 있으면 이 실패 처리는 오래된 것이다."""
+        return (self.halted() or (self._epoch, self._stop_count) != token
+                or self.last_pick is None or self.last_pick['request_id'] != request_id)
+
+    def _grasped_after_result(self, info, token):
+        """PickPlace 결과 뒤 그리퍼가 블록을 쥐고 있나. 반환 (status, grasped): ('OK', True/False) · ('UNKNOWN', None) · ('STALE', None).
+
+        gripper 상태는 1초마다 + 바뀔 때 나오므로 결과 직전 값(stamp < 결과 시각)은 grasped_now 가 거절한다. 이 함수는 그것을 완화하지 않고
+        gripper_wait_s 동안만 0.05초 간격으로 새 값을 기다린다(기다리는 동안 잠금을 잡지 않는다). 결과를 못 받았으면(result_at 없음) 기다리지 않는다.
+        UNKNOWN = 제한 시간 안에 믿을 값이 안 왔다(→ 기존 복구 정책). STALE = 기다리는 중 정지 · 상태 변화 · 새 요청이 끼었다(→ 아무것도 적용하지 않음).
+        gripper_wait_s 는 운영 설정 제안값이지 실측으로 보장된 도착 시간이 아니다.
+        """
+        result_at, rid = info['result_at'], info['request_id']
+        if result_at is None:
+            return 'UNKNOWN', None
+        deadline = self._clock() + self.gripper_wait_s
+        while True:
+            with self._lock:
+                if self._stale(rid, token):
+                    return 'STALE', None
+                snapshot = copy.deepcopy(self.gripper)          # 잠금 안에서 복사한 값으로 판정한다
+            grasped = grasped_now(snapshot, result_at, self._wall(), self.gripper_max_age_s)
+            if grasped is not None:
+                return 'OK', grasped
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return 'UNKNOWN', None
+            self._sleep(min(GRIPPER_POLL_S, remaining))
+
     def _grasp_failed(self):
         """GRASP_FAILED: 같은 칸 1번 더 → 다음 칸 1개 → 거기서도 실패하면 ERROR. 모든 칸을 돌지 않는다.
 
@@ -888,6 +975,7 @@ class TaskManager:
         if not ok:
             return self._reject(code, f'시작 점검 실패: {text}')
         self.planner, self.design_id, self.block_id, self.placed = planner, design_id, None, None
+        self._scatter_fail = {}
         self._clear_run()
         self._set('READY', 'ready_to_start', f'{design_id} 준비됐어요. 출발을 누르세요')
         return True, ''
