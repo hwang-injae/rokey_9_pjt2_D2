@@ -72,7 +72,7 @@ class RecipeToBlocks:
                 raise ValueError(f'sequence {seq}: stock {inst["stock_id"]} 가 model.stocks 에 없다')
             x, y, cz = inst['center_mm']
             extent = self._world_extent(seq, inst['R'], parts[inst['stock_id']])
-            role, group = self._role_group(seq, step['block'])
+            role, group = self._role_group(seq, step['part_name'])
             blocks.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
                            'role': role, 'group': group, 'stage': step['stage'], 'grasp': step['grasp']})
         if not blocks:

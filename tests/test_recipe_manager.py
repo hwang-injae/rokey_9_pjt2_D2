@@ -27,7 +27,7 @@ def make_boxes(recipe):
         R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['stock_id']]]
         corners = [tuple(c[i] + sum(R[i][k] * sg[k] * half[k] for k in range(3)) for i in range(3))
                    for sg in itertools.product((-1, 1), repeat=3)]
-        boxes.append({'block': b['block'], 'handle': b['cad']['handle'], 'vertices': corners})
+        boxes.append({'part_name': b['part_name'], 'handle': b['cad']['handle'], 'vertices': corners})
     return boxes
 
 
@@ -39,10 +39,10 @@ def load_saved(model_id):
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
     with open(RM / 'recipes' / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
         rows = list(csv.DictReader(f))
-    steps = [{'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+    steps = [{'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
               'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]}
              for r in rows]
-    hints = {s['block']: {'SEQ': str(s['sequence']), 'STAGE': str(s['stage']), 'GRASP': s['grasp']} for s in steps}
+    hints = {s['part_name']: {'SEQ': str(s['sequence']), 'STAGE': str(s['stage']), 'GRASP': s['grasp']} for s in steps}
     return recipe, steps, hints
 
 
@@ -82,7 +82,7 @@ def test_saved_placements_match_recipe(model_id, cad):
     assert recipe['schema'] == 'recipe/3.0' and recipe['model_id'] == model_id
     assert tuple(reader.fieldnames) == PLACEMENT_COLUMNS
     assert {(r['recipe_sha256'], r['schema']) for r in rows} == {(RecipeBuilder().calculate_recipe_sha256(recipe), 'placements/2.0')}
-    assert sorted(r['block'] for r in rows) == sorted(b['block'] for b in recipe['blocks'])
+    assert sorted(r['part_name'] for r in rows) == sorted(b['part_name'] for b in recipe['blocks'])
 
 
 # 짝 확인 해시: 키 정렬 · 공백 없는 JSON 의 sha256 — 키 순서 · 들여쓰기가 바뀌어도(DB · MQTT 로 다시 써도) 같고, 값이 바뀌면 달라진다.
@@ -99,7 +99,7 @@ def test_recipe_sha256_is_fixed_canonical_json(bench):
     assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
 
 
-BENCH_RECIPE_SHA256 = 'dfbe4e71581404e28ead11b5708c9e34adacba8b4c35baabee4124074652f580'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
+BENCH_RECIPE_SHA256 = '40b007d4311671d1856429b20dfa8801f17a5bcc79c6280226c016d397efae10'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
 
 
 # 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)
@@ -111,7 +111,7 @@ def test_boxes_round_trip_to_same_recipe(bench):
     placements = builder.make_placements(rebuilt, hints)
     assert placements['schema'] == 'placements/2.0' and placements['recipe_sha256'] == builder.calculate_recipe_sha256(recipe)
     assert placements['steps'] == steps
-    assert placements['steps'][0]['block_id'] == '001_CHAIR_BENCH_V000_' + placements['steps'][0]['block']
+    assert placements['steps'][0]['part_id'] == '001_CHAIR_BENCH_V000_' + placements['steps'][0]['part_name']
     assert placements['steps'][-1]['supports'] == ['LEG_001_04', 'LEG_002_04']
     assert {s['grasp']: s['grasp_axis'] for s in placements['steps']} == {'FLAT_SHORT': 'WIDTH', 'FLAT_LONG': 'LENGTH'}
 
@@ -129,7 +129,7 @@ def test_boxes_round_trip_to_same_recipe(bench):
 ])
 def test_bad_block_names_rejected(bench, rename, message):
     builder, recipe, _, _ = bench
-    boxes = [dict(b, block=rename.get(b['block'], b['block'])) for b in make_boxes(recipe)]
+    boxes = [dict(b, part_name=rename.get(b['part_name'], b['part_name'])) for b in make_boxes(recipe)]
     with pytest.raises(ValueError, match=message):
         builder.make_recipe(boxes, 'X', 'x.dxf', '0')
 
@@ -138,8 +138,8 @@ def test_bad_block_names_rejected(bench, rename, message):
 def test_one_option_name_accepted(bench):
     builder, recipe, _, _ = bench
     rename = {f'LEG_002_0{k}': f'LEG_WHEEL_001_0{k}' for k in range(1, 5)}
-    boxes = [dict(b, block=rename.get(b['block'], b['block'])) for b in make_boxes(recipe)]
-    assert {b['block'] for b in builder.make_recipe(boxes, 'X', 'x.dxf', '0')['blocks']} >= set(rename.values())
+    boxes = [dict(b, part_name=rename.get(b['part_name'], b['part_name'])) for b in make_boxes(recipe)]
+    assert {b['part_name'] for b in builder.make_recipe(boxes, 'X', 'x.dxf', '0')['blocks']} >= set(rename.values())
 
 
 # 형상 오류: 같은 자리에 두 블록(겹침) · 책상 아래 블록은 레시피를 만들 때 거부한다
@@ -147,7 +147,7 @@ def test_overlap_and_below_table_rejected(bench):
     builder, recipe, _, _ = bench
     boxes = make_boxes(recipe)
     with pytest.raises(ValueError, match='overlap'):
-        builder.make_recipe(boxes + [dict(boxes[8], block='SEAT_002_01')], 'X', 'x.dxf', '0')
+        builder.make_recipe(boxes + [dict(boxes[8], part_name='SEAT_002_01')], 'X', 'x.dxf', '0')
     sunk = [dict(b, vertices=[(x, y, z - 10) for x, y, z in b['vertices']]) for b in boxes]
     with pytest.raises(ValueError, match='below table'):
         builder.make_recipe(sunk, 'X', 'x.dxf', '0')

@@ -167,12 +167,12 @@ def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/3.0', 'model_id': model_id,
                  'stocks': [{'stock_id': 'PART_001', 'size_mm': list(size_mm)}],
-                 'blocks': [{'block': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
-                            {'block': 'SEAT_001_02', 'stock_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
+                 'blocks': [{'part_name': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
+                            {'part_name': 'SEAT_001_02', 'stock_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
     recipe = {'schema': 'placements/2.0', 'model_id': model_id,
-              'steps': [{'block': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
+              'steps': [{'part_name': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': ['SEAT_001_01']},
-                        {'block': 'SEAT_001_01', 'sequence': 1, 'stage': 1, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
+                        {'part_name': 'SEAT_001_01', 'sequence': 1, 'stage': 1, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': []}]}
     return recipe, structure
 
@@ -184,10 +184,10 @@ def _joined(size_mm=(75, 25, 15)):
 
 
 def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
-    """레시피 2블록: sequence 순서, block_id = '<model_id>_<블록 이름>', 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH),
+    """레시피 2블록: sequence 순서, part_id = '<model_id>_<블록 이름>', 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH),
     위 블록 중심 z = 원점 z + 실측 두께 x 1.5. 설계값(15 mm 층)이 아니라 실측 두께로 쌓아 올린다 — 10/6 실기 교훈(10층에서 +1.8 mm)."""
     blocks = mm.recipe_blocks(robot_cfg, _joined())
-    assert [b['block_id'] for b in blocks] == ['001_CHAIR_BENCH_V000_SEAT_001_01', '001_CHAIR_BENCH_V000_SEAT_001_02']
+    assert [b['part_id'] for b in blocks] == ['001_CHAIR_BENCH_V000_SEAT_001_01', '001_CHAIR_BENCH_V000_SEAT_001_02']
     assert all(b['grasp'] == 'FLAT_SHORT' for b in blocks)
     o, t = robot_cfg['assembly_origin'], robot_cfg['block_actual_m'][2]
     assert close(blocks[0]['center'][2], o['z_m'] + t * 0.5)
@@ -207,7 +207,7 @@ def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
         mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'blocks': []})
 
 
-CSV_COLS = ['block_id', 'block', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
+CSV_COLS = ['part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
             'center_z_mm', 'axis_L', 'axis_W', 'axis_T', 'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema']
 
 
@@ -216,13 +216,13 @@ def _write_files(folder, recipe, structure, sha=None, schema='placements/2.0'):
     sha · schema 를 주면 그 값으로 바꿔 써서 거절 시험에 쓴다. 반환: 구조 파일 경로(글자)."""
     rp = folder / f"{structure['model_id']}_recipe.json"
     rp.write_text(json.dumps(structure, indent=2, ensure_ascii=False), encoding='utf-8')
-    geo = {b['block']: b for b in structure['blocks']}
+    geo = {b['part_name']: b for b in structure['blocks']}
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=CSV_COLS, lineterminator='\n')
     w.writeheader()
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
-        g = geo[st['block']]
-        w.writerow({'block_id': f"{recipe['model_id']}_{st['block']}", 'block': st['block'], 'sequence': st['sequence'],
+        g = geo[st['part_name']]
+        w.writerow({'part_id': f"{recipe['model_id']}_{st['part_name']}", 'part_name': st['part_name'], 'sequence': st['sequence'],
                     'stage': st['stage'], 'stock_id': g['stock_id'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
                     'center_x_mm': g['center_mm'][0], 'center_y_mm': g['center_mm'][1], 'center_z_mm': g['center_mm'][2],
                     'axis_L': '+X', 'axis_W': '+Y', 'axis_T': '+Z', 'grasp': st['grasp'], 'grasp_axis': st['grasp_axis'],
@@ -234,7 +234,7 @@ def _write_files(folder, recipe, structure, sha=None, schema='placements/2.0'):
 
 def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
     """load_recipe: 구조 _recipe.json(recipe/3.0) + 옆 _placements.csv 를 지금 모양(steps + 'structure')으로 붙인다 — sequence · stage 는 정수,
-    supports 는 목록, block_id 는 CSV 값. CSV 가 없으면 FileNotFoundError. recipe_files 는 _recipe.json 만(CSV · 옛 .recipe.json 은 안 넣음)."""
+    supports 는 목록, part_id 는 CSV 값. CSV 가 없으면 FileNotFoundError. recipe_files 는 _recipe.json 만(CSV · 옛 .recipe.json 은 안 넣음)."""
     recipe, structure = _recipe()
     rp = _write_files(tmp_path, recipe, structure)
     (tmp_path / '003_DESK_STAND_V000.recipe.json').write_text('{}')
@@ -275,7 +275,7 @@ def test_real_recipes_read_and_hash_matches_builder(robot_cfg, model_id):
     assert mm.recipe_sha256(structure) == RecipeBuilder().calculate_recipe_sha256(structure)
     loaded = mm.load_recipe(str(path))
     blocks = mm.recipe_blocks(robot_cfg, loaded)
-    assert len(blocks) == len(structure['blocks']) and all(b['block_id'].startswith(model_id + '_') for b in blocks)
+    assert len(blocks) == len(structure['blocks']) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
 
 
 @pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])

@@ -24,7 +24,7 @@ TOL = 1e-6
 class DesignRejected(ValueError):
     """AI가 쓴 값이 틀려 레시피를 만들 수 없음 — 검사 묶음이 CHECK_FAILED(재생성)로 돌려줄 실수. 프로그램 고장(ERROR)과 구분한다.
 
-    errors: [{'block': order 또는 None, 'detail': 사람이 · AI가 읽을 이유}] — 한 번에 찾은 실수를 모두 담아 재생성 횟수를 줄인다.
+    errors: [{'part': order 또는 None, 'detail': 사람이 · AI가 읽을 이유}] — 한 번에 찾은 실수를 모두 담아 재생성 횟수를 줄인다.
     """
 
     def __init__(self, errors):
@@ -78,22 +78,22 @@ class BlocksToRecipe:
         입력:
             request: blocks/2.0 dict — design_id, blocks[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
         출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/2.0}
-        실패: AI가 쓴 값이 틀리면 DesignRejected(errors — block = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
+        실패: AI가 쓴 값이 틀리면 DesignRejected(errors — part = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
         """
         # 형식: 검사 묶음이 먼저 보지만, 따로 불려도 빈 칸을 대신 채우지 않게 다시 확인한다
         if not isinstance(request, dict) or not same_major(request.get('schema'), SCHEMA_REQUEST) or not request.get('design_id'):
-            raise DesignRejected([{'block': None, 'detail': f'schema {SCHEMA_REQUEST} · design_id 가 있는 객체가 아니다'}])
+            raise DesignRejected([{'part': None, 'detail': f'schema {SCHEMA_REQUEST} · design_id 가 있는 객체가 아니다'}])
         items = request.get('blocks')
         if not isinstance(items, list) or not items or not all(isinstance(b, dict) for b in items):
-            raise DesignRejected([{'block': None, 'detail': 'blocks 가 비어 있거나 객체 목록이 아니다'}])
-        missing = [{'block': b.get('order'), 'detail': f'{b.get("order")}번 블록에 {", ".join(k for k in REQUIRED_KEYS if k not in b)} 없음'}
+            raise DesignRejected([{'part': None, 'detail': 'blocks 가 비어 있거나 객체 목록이 아니다'}])
+        missing = [{'part': b.get('order'), 'detail': f'{b.get("order")}번 블록에 {", ".join(k for k in REQUIRED_KEYS if k not in b)} 없음'}
                    for b in items if any(k not in b for k in REQUIRED_KEYS)]
         if missing:
             raise DesignRejected(missing)
         items = sorted(items, key=lambda b: b['order'])
         if [b['order'] for b in items] != list(range(1, len(items) + 1)):
-            raise DesignRejected([{'block': None, 'detail': f'order 가 1부터 {len(items)}까지 하나씩 있지 않다'}])
-        bad = [{'block': b['order'], 'detail': f'{b["order"]}번 ori · role · group · stage 가 형식에 맞지 않다 '
+            raise DesignRejected([{'part': None, 'detail': f'order 가 1부터 {len(items)}까지 하나씩 있지 않다'}])
+        bad = [{'part': b['order'], 'detail': f'{b["order"]}번 ori · role · group · stage 가 형식에 맞지 않다 '
                                                f'(ori 6가지 · role 글자 · group · stage 1 이상 정수)'}
                for b in items if b['ori'] not in self.extent or not isinstance(b['role'], str)
                or any(not isinstance(b[k], int) or isinstance(b[k], bool) or b[k] < 1 for k in ('group', 'stage'))]
@@ -114,14 +114,14 @@ class BlocksToRecipe:
         for b in items:
             lo, hi = boxes[b['order']]
             corners = [tuple((lo, hi)[s][k] for k, s in enumerate(pick)) for pick in itertools.product((0, 1), repeat=3)]
-            vertices.append({'block': names[b['order']], 'handle': None, 'vertices': corners})
+            vertices.append({'part_name': names[b['order']], 'handle': None, 'vertices': corners})
             hints[names[b['order']]] = {'SEQ': b['order'], 'STAGE': b['stage'], 'GRASP': b['grasp']}
         try:
             recipe = self.builder.make_recipe(vertices, request['design_id'], None, None)
             placements = self.builder.make_placements(recipe, hints)
         except ValueError as e:
             # 여기까지 오는 것은 단계 규칙 · 뜬 블록 · 겹침처럼 검사 묶음도 보는 AI 실수다 — 따로 불렸을 때도 CHECK_FAILED 로
-            raise DesignRejected([{'block': None, 'detail': f'레시피 검사: {e}'}]) from e
+            raise DesignRejected([{'part': None, 'detail': f'레시피 검사: {e}'}]) from e
         return {'recipe': recipe, 'placements': placements}
 
     def calculate_box(self, block):
@@ -151,14 +151,14 @@ class BlocksToRecipe:
             seen.add(role)
             match = ROLE_RE.fullmatch(role) if isinstance(role, str) else None
             if not match:
-                errors.append({'block': b['order'], 'detail': f'{b["order"]}번 role={role!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다'})
+                errors.append({'part': b['order'], 'detail': f'{b["order"]}번 role={role!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다'})
                 continue
             name, option = match.groups()
             if name not in self.roles:
-                errors.append({'block': b['order'], 'detail': f'{b["order"]}번 역할 {name} 는 역할 목록에 없다(있는 것: {", ".join(sorted(self.roles))}) — '
+                errors.append({'part': b['order'], 'detail': f'{b["order"]}번 역할 {name} 는 역할 목록에 없다(있는 것: {", ".join(sorted(self.roles))}) — '
                                                          f'맞는 것을 쓰거나, 새 역할이면 뜻과 함께 목록에 더해야 한다'})
             if option is not None and option not in self.options:
-                errors.append({'block': b['order'], 'detail': f'{b["order"]}번 옵션 {option} 는 옵션 목록에 없다(있는 것: {", ".join(sorted(self.options))})'})
+                errors.append({'part': b['order'], 'detail': f'{b["order"]}번 옵션 {option} 는 옵션 목록에 없다(있는 것: {", ".join(sorted(self.options))})'})
         return errors
 
     def check_parts_connected(self, items, boxes):
@@ -184,7 +184,7 @@ class BlocksToRecipe:
                         frontier.append(other)
             apart = [o for o in members if o not in reached]
             if apart:
-                errors.append({'block': apart[0], 'detail': f'{role} group {group} 의 블록 {", ".join(map(str, sorted(reached)))}번과 '
+                errors.append({'part': apart[0], 'detail': f'{role} group {group} 의 블록 {", ".join(map(str, sorted(reached)))}번과 '
                                                             f'{", ".join(map(str, apart))}번이 면으로 맞닿아 있지 않다 — 떨어진 블록은 다른 group 값으로'})
         return errors
 
@@ -211,7 +211,7 @@ class BlocksToRecipe:
             allowed = options.get(b['order']) or []
             if b['grasp'] not in allowed:
                 hint = f'가능: {", ".join(allowed)}' if allowed else '이 순서로는 잡을 수 있는 방향이 없다 — 순서를 바꿀 것'
-                errors.append({'block': b['order'], 'detail': f'{b["order"]}번 grasp {b["grasp"]} 로는 놓는 순간 손가락이 들어가지 않는다({hint})'})
+                errors.append({'part': b['order'], 'detail': f'{b["order"]}번 grasp {b["grasp"]} 로는 놓는 순간 손가락이 들어가지 않는다({hint})'})
         return errors
 
     def group_parts(self, items):

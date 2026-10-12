@@ -103,7 +103,7 @@ class MockRobot:
         self.service_s = float(cfg['timeout']['service_s'])   # get_design 답을 기다리는 시간(작업 관리자와 같은 값)
         self.pending = PendingReplies()
         self.lock = threading.Lock()
-        self.st = dict(state='IDLE', run_id=None, design_id=None, block_id=None, message_id=None, message='대기')
+        self.st = dict(state='IDLE', run_id=None, design_id=None, part_id=None, message_id=None, message='대기')
         self.locked = False
         self.assembling = False       # 멈췄을 때 조립 중이었나 — 다시 시작 뒤 이어 갈지 정한다(진짜 작업 관리자와 같음)
         self.placed = []              # 이번 조립(run)에서 놓은 블록 이름 — 다시 시작 뒤 건너뛴다
@@ -163,11 +163,11 @@ class MockRobot:
         """
         doc, _ = self.design(design_id)
         steps = sorted(doc.placements['steps'], key=lambda s: s['sequence'])
-        ids = [s['block_id'] for s in steps]
+        ids = [s['part_id'] for s in steps]
         if recovering:
             for state, text in (('RECOVER', '다시 시작 — 쥔 블록을 확인합니다'),
                                 ('CHECK', f'진행 확인부터 다시 합니다 — 놓인 블록 {len(placed)}개는 건너뜀')):
-                self.set_state(state, text, block_id=None)
+                self.set_state(state, text, part_id=None)
                 if self.abort.wait(self.step_s):
                     return
         for n, bid in enumerate(ids, 1):
@@ -177,15 +177,15 @@ class MockRobot:
             if jpeg:
                 self.c.publish('d2/vision/wrist_image', jpeg, qos=0)   # 진짜와 같이 retained 아님(IRD 10.1)
             for state in ('PICK_PLACE', 'VERIFY'):
-                self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', block_id=bid)
+                self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', part_id=bid)
                 if self.abort.wait(self.step_s):
                     return
             placed.append(bid)
             self.pub('d2/task/progress', {'schema': 'progress/1.1', 'design_id': design_id, 'run_id': run_id,
                                           'obs_stamp': round(time.time(), 3),
-                                          'blocks': [{'block_id': b, 'state': 'present' if b in placed else 'absent',
+                                          'blocks': [{'part_id': b, 'state': 'present' if b in placed else 'absent',
                                                       'by': 'robot'} for b in ids]})
-        self.set_state('DONE', '완성했어요', 'done', block_id=None)
+        self.set_state('DONE', '완성했어요', 'done', part_id=None)
 
     def _scan(self, run_id):
         """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/1.2(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
@@ -276,7 +276,7 @@ class MockRobot:
             if was and self.assembling and self.st['design_id'] and self.st['run_id']:
                 self._run(self._assemble, self.st['design_id'], self.st['run_id'], self.placed, True)   # 같은 run_id 로 이어서
             elif was:
-                self.set_state('IDLE', '정지가 풀렸어요. 설계를 다시 고르세요', design_id=None, run_id=None, block_id=None)
+                self.set_state('IDLE', '정지가 풀렸어요. 설계를 다시 고르세요', design_id=None, run_id=None, part_id=None)
             return {'success': True, 'message': '잠금을 풀었다' if was else '잠겨 있지 않았다'}
         request = {k: v for k, v in b.items() if k != 'req_id'}   # check_design — 진짜 검사 묶음 그대로(IRD 4.2 응답 칸)
         success, reason, rj = self.checker.handle_json(json.dumps(request, ensure_ascii=False))

@@ -4,8 +4,8 @@
       → 설계 윗면 높이와 비교 → state(present · absent · occluded · unknown) + top_z_m · dz_m. dx_m · dy_m 은 NaN(10/8 W100 전).
 
 입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_blocks(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-69 두 파일:
-구조 recipe/3.0 + 조립 방법 placements/2.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(block_id · center(m, base) · rot 3x3)만 받는다.
-block_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
+구조 recipe/3.0 + 조립 방법 placements/2.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(part_id · center(m, base) · rot 3x3)만 받는다.
+part_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
 (E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/2.0)을
 recipe_blocks 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
@@ -138,10 +138,10 @@ def recipe_from_design(design, design_id):
 class BlockChecker:
     """블록마다 설계 자리의 높이를 보고 있음 · 없음을 판정한다 (로봇 · ROS 없음).
 
-    입력: blocks = recipe_blocks() 출력 목록(dict: block_id · center (x, y, z) m base · rot 3x3 base←블록) ·
+    입력: blocks = recipe_blocks() 출력 목록(dict: part_id · center (x, y, z) m base · rot 3x3 base←블록) ·
           origin_xy = 조립 원점 (x, y) m · half_m = 조립 작업공간 반폭 · size_m = 실측 블록 (길이, 폭, 두께) m (robot.yaml block_actual_m).
-    check(points, block_ids) → 블록마다 dict(block_id, state, top_z_m, dz_m, dx_m, dy_m). dx · dy 는 늘 NaN(1차).
-    바깥 영향 없음. 목록에 없는 block_id 는 state unknown, 높이 NaN."""
+    check(points, part_ids) → 블록마다 dict(part_id, state, top_z_m, dz_m, dx_m, dy_m). dx · dy 는 늘 NaN(1차).
+    바깥 영향 없음. 목록에 없는 part_id 는 state unknown, 높이 NaN."""
 
     def __init__(self, blocks, origin_xy, half_m, size_m, cell_m=CELL_M):
         self.origin_xy, self.half_m, self.cell_m = origin_xy, half_m, cell_m
@@ -151,7 +151,7 @@ class BlockChecker:
             rot = np.asarray(b['rot'], float)
             ext = np.abs(rot) @ size / 2.0                       # base x · y · z 축 방향 반폭 (m)
             cx, cy, cz = b['center']
-            self.blocks[b['block_id']] = {
+            self.blocks[b['part_id']] = {
                 'center': np.array([cx, cy, cz]), 'rot': rot, 'half': size / 2.0, 'ext': ext,
                 'top_z': cz + ext[2], 'height': 2 * ext[2], 'above_tops': [],
             }
@@ -175,31 +175,31 @@ class BlockChecker:
         z = grid[inside]
         return z[~np.isnan(z)]
 
-    def check(self, points, block_ids):
-        """점군(base, m)으로 block_ids 를 판정한다. 출력은 요청 순서대로 같은 길이.
+    def check(self, points, part_ids):
+        """점군(base, m)으로 part_ids 를 판정한다. 출력은 요청 순서대로 같은 길이.
         판정: |측정 − 설계 윗면| ≤ 두께/2 → present · 더 낮음 → absent · 셀 부족 → unknown
               · 더 높음: 설계상 위에 올라가는 블록의 윗면과 맞으면 present(가려짐 — 위 블록이 그 높이에 있으면 받침도 있다,
                 top_z · dz 는 못 재서 NaN) · 설계에 없는 높이면 occluded(설계 밖 물체 · 손)."""
         grid, x0, y0 = height_map(points, self.origin_xy, self.half_m, self.cell_m)
         out = []
-        for bid in block_ids:
+        for bid in part_ids:
             blk = self.blocks.get(bid)
             if blk is None:
-                out.append(dict(block_id=bid, state='unknown', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))
+                out.append(dict(part_id=bid, state='unknown', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))
                 continue
             z = self._roi_cells(grid, x0, y0, blk)
             if len(z) < MIN_CELLS:
-                out.append(dict(block_id=bid, state='unknown', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))
+                out.append(dict(part_id=bid, state='unknown', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))
                 continue
             top = float(np.median(z))
             dz = top - blk['top_z']
             tol = blk['height'] * TOL_FRACTION
             if abs(dz) <= tol:
-                out.append(dict(block_id=bid, state='present', top_z_m=top, dz_m=dz, dx_m=NAN, dy_m=NAN))
+                out.append(dict(part_id=bid, state='present', top_z_m=top, dz_m=dz, dx_m=NAN, dy_m=NAN))
             elif dz < 0:
-                out.append(dict(block_id=bid, state='absent', top_z_m=top, dz_m=NAN, dx_m=NAN, dy_m=NAN))
+                out.append(dict(part_id=bid, state='absent', top_z_m=top, dz_m=NAN, dx_m=NAN, dy_m=NAN))
             elif any(abs(top - t) <= tol for t in blk['above_tops']):
-                out.append(dict(block_id=bid, state='present', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))   # 가려짐
+                out.append(dict(part_id=bid, state='present', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))   # 가려짐
             else:
-                out.append(dict(block_id=bid, state='occluded', top_z_m=top, dz_m=NAN, dx_m=NAN, dy_m=NAN))
+                out.append(dict(part_id=bid, state='occluded', top_z_m=top, dz_m=NAN, dx_m=NAN, dy_m=NAN))
         return out

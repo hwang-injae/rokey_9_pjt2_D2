@@ -17,7 +17,7 @@
   ],
   "blocks": [
     {
-      "block": "LEG_001_01",
+      "part_name": "LEG_001_01",
       "stock_id": "PART_001",
       "center_mm": [
         -30.0,
@@ -46,7 +46,7 @@
       }
     },
     {
-      "block": "LEG_002_01",
+      "part_name": "LEG_002_01",
       "stock_id": "PART_001",
       "center_mm": [
         30.0,
@@ -75,7 +75,7 @@
       }
     },
     {
-      "block": "LEG_003_01",
+      "part_name": "LEG_003_01",
       "stock_id": "PART_001",
       "center_mm": [
         -30.0,
@@ -104,7 +104,7 @@
       }
     },
     {
-      "block": "LEG_004_01",
+      "part_name": "LEG_004_01",
       "stock_id": "PART_001",
       "center_mm": [
         30.0,
@@ -133,7 +133,7 @@
       }
     },
     {
-      "block": "BEAM_001_01",
+      "part_name": "BEAM_001_01",
       "stock_id": "PART_001",
       "center_mm": [
         0.0,
@@ -162,7 +162,7 @@
       }
     },
     {
-      "block": "BEAM_002_01",
+      "part_name": "BEAM_002_01",
       "stock_id": "PART_001",
       "center_mm": [
         0.0,
@@ -191,7 +191,7 @@
       }
     },
     {
-      "block": "TOP_001_01",
+      "part_name": "TOP_001_01",
       "stock_id": "PART_001",
       "center_mm": [
         -25.0,
@@ -220,7 +220,7 @@
       }
     },
     {
-      "block": "TOP_001_02",
+      "part_name": "TOP_001_02",
       "stock_id": "PART_001",
       "center_mm": [
         0.0,
@@ -249,7 +249,7 @@
       }
     },
     {
-      "block": "TOP_001_03",
+      "part_name": "TOP_001_03",
       "stock_id": "PART_001",
       "center_mm": [
         25.0,

@@ -77,20 +77,20 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
 
   const items: Item3D[] = useMemo(() => {
     if (!design) return [];
-    const idBySeq = new Map((design.placements?.steps ?? []).map((s) => [s.sequence, s.block_id]));
+    const idBySeq = new Map((design.placements?.steps ?? []).map((s) => [s.sequence, s.part_id]));
     const prog = running && robot.progress?.run_id === st?.run_id ? robot.progress : null;
-    const stateById = new Map((prog?.blocks ?? []).map((b) => [b.block_id, b.state]));
+    const stateById = new Map((prog?.blocks ?? []).map((b) => [b.part_id, b.state]));
     if (!running) return roleItems(design.blocks.blocks);
     return design.blocks.blocks.map((b) => {
       const at = { x: b.x, y: b.y, z: b.z, ori: b.ori };
       const id = idBySeq.get(b.order);
       const s = id ? stateById.get(id) : undefined;
-      if (id && id === st?.block_id) return { ...at, color: PROG.current };
+      if (id && id === st?.part_id) return { ...at, color: PROG.current };
       if (s === 'present') return { ...at, color: PROG.present };
       if (s === 'occluded' || s === 'unknown') return { ...at, color: PROG.unsure };
       return { ...at, color: PROG.todo, opacity: 0.22 };
     });
-  }, [design, running, st?.block_id, st?.run_id, robot.progress]);
+  }, [design, running, st?.part_id, st?.run_id, robot.progress]);
 
   const roles = design ? [...new Set(design.blocks.blocks.map((b) => roleOf(b.role)))] : [];
   const loading = !!viewId && !failed && design?.design_id !== viewId;

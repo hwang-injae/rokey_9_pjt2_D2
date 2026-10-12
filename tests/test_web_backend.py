@@ -247,7 +247,7 @@ class FakeGen:
         self.release.wait(2)
         cand = {'idea': '안 0', 'blocks': {'schema': 'blocks/2.0', 'design_id': '001_CHAIR_BENCH_V001', 'blocks': []},
                 'check': {'ok': True, 'reason': '', 'min_margin_mm': 9.0, 'errors': [], 'recipe': {'big': 1}, 'placements': {'big': 1}}}
-        bad = {**cand, 'check': {**cand['check'], 'ok': False, 'errors': [{'block': 9, 'reason': 'CHECK_FAILED', 'detail': '받침 없음'}]}}
+        bad = {**cand, 'check': {**cand['check'], 'ok': False, 'errors': [{'part': 9, 'reason': 'CHECK_FAILED', 'detail': '받침 없음'}]}}
         on_progress('reading', {'design_id': '001_CHAIR_BENCH_V000'})
         on_progress('candidates', {'attempt': 1, 'design_id': '001_CHAIR_BENCH_V001',
                                    'candidates': [{k: cand[k] for k in ('idea', 'blocks')}, {k: bad[k] for k in ('idea', 'blocks')}]})
@@ -390,11 +390,11 @@ BENCH, BACK = '001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000'
 
 
 def as_new(store, parent, design_id):
-    """부모 레시피의 ID 만 design_id 로 바꾼 (blocks, recipe, placements) — check_design 이 주는 꼴(recipe_sha256 · block_id 다시 계산)."""
+    """부모 레시피의 ID 만 design_id 로 바꾼 (blocks, recipe, placements) — check_design 이 주는 꼴(recipe_sha256 · part_id 다시 계산)."""
     from d2_task.recipe_document import recipe_sha256
     base = store.get_design(parent)
     recipe = {**base['recipe'], 'model_id': design_id}
-    steps = [{**st, 'block_id': f"{design_id}_{st['block']}"} for st in base['placements']['steps']]
+    steps = [{**st, 'part_id': f"{design_id}_{st['part_name']}"} for st in base['placements']['steps']]
     placements = {**base['placements'], 'model_id': design_id, 'recipe_sha256': recipe_sha256(recipe), 'steps': steps}
     return {**base['blocks'], 'design_id': design_id}, recipe, placements
 
@@ -470,8 +470,8 @@ def test_list_has_last_build_and_builds_for(store):
         return {'schema': 'build/1', 'run_id': run_id, 'design_id': BENCH, 'result': result,
                 'placed': 11 if result == 'DONE' else 4, 'total': 11, 'duration_s': 300.0, 'stop_count': 0, 'blocks': blocks}
     store.save_build(build('R20261010_100000_aaaa', 'STOPPED', []))
-    store.save_build(build('R20261010_140000_bbbb', 'DONE', [{'block_id': 'X', 'dz_m': -0.0021, 'dx_m': None, 'dy_m': None},
-                                                              {'block_id': 'Y', 'dz_m': 0.0008, 'dx_m': None, 'dy_m': None}]))
+    store.save_build(build('R20261010_140000_bbbb', 'DONE', [{'part_id': 'X', 'dz_m': -0.0021, 'dx_m': None, 'dy_m': None},
+                                                              {'part_id': 'Y', 'dz_m': 0.0008, 'dx_m': None, 'dy_m': None}]))
     rows = {r['design_id']: r for r in store.list_designs()}
     assert rows[BENCH]['last_build'] == {'run_id': 'R20261010_140000_bbbb', 'result': 'DONE', 'placed': 11,
                                          'total': 11, 'max_err_mm': 2.1}

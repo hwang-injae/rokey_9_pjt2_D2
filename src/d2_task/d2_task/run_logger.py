@@ -2,7 +2,7 @@
 """기록기 RunLogger — 조립 한 번(run_id)의 CSV 기록과 결과 요약(build/1)을 만든다 (ROS 없이 동작, W065, SDD 6.8 · IRD 6장).
 
 TaskManager 가 기록할 때를 정하고 이 클래스는 받아 적기만 한다(기록기 노드는 없다 — IRD 3장).
-CSV 칸: run_id · design_id · time · module · kind · block_id · value (SDD 기록 칸). 오차는 mm(파일은 mm, NFR-12).
+CSV 칸: run_id · design_id · time · module · kind · part_id · value (SDD 기록 칸). 오차는 mm(파일은 mm, NFR-12).
 저장 위치는 부르는 쪽(task 노드 파라미터 log_dir)이 정한다. 비어 있으면 파일은 쓰지 않고 run_id · 요약만 만든다.
 저장소 안에는 쓰지 않는다 — 부르는 쪽이 저장소 밖 경로를 준다.
 
@@ -24,7 +24,7 @@ import time
 
 LOG = logging.getLogger('d2_task')
 
-COLUMNS = ('run_id', 'design_id', 'time', 'module', 'kind', 'block_id', 'value')
+COLUMNS = ('run_id', 'design_id', 'time', 'module', 'kind', 'part_id', 'value')
 SCHEMA_BUILD = 'build/1'
 RESULTS = ('DONE', 'STOPPED', 'ERROR')     # IRD 6장 build/1 result
 # 쓰기 스레드가 막혔을 때 메모리가 끝없이 늘지 않게 하는 안전 한도. 조립 한 번이 수백 줄이라 정상일 때는 닿지 않는다
@@ -66,7 +66,7 @@ class RunLogger:
         self._started = 0.0
         self._total = 0
         self._stop_count = 0
-        self._placed = {}                    # block_id → {dx_m, dy_m, dz_m} (놓은 순서 유지, 값은 마지막 측정)
+        self._placed = {}                    # part_id → {dx_m, dy_m, dz_m} (놓은 순서 유지, 값은 마지막 측정)
 
     @property
     def enabled(self):
@@ -104,7 +104,7 @@ class RunLogger:
         """run 을 닫고 build/1 요약(dict)을 돌려준다. result = DONE · STOPPED · ERROR. 이미 닫혔으면 None.
 
         요약: run_id · design_id · result · placed(놓은 블록 수) · total · duration_s · stop_count ·
-        blocks[block_id · dz_m · dx_m · dy_m(m, 못 잰 값 null)]. 요약은 메모리에서 바로 확정한다(파일 I/O 없음).
+        blocks[part_id · dz_m · dx_m · dy_m(m, 못 잰 값 null)]. 요약은 메모리에서 바로 확정한다(파일 I/O 없음).
         CSV 끝 줄(end)과 닫기는 쓰기 스레드가 이어서 한다.
         """
         if result not in RESULTS:
@@ -116,7 +116,7 @@ class RunLogger:
             summary = {'schema': SCHEMA_BUILD, 'run_id': self.run_id, 'design_id': self.design_id, 'result': result,
                        'placed': len(self._placed), 'total': self._total,
                        'duration_s': round(self.clock() - self._started, 3), 'stop_count': self._stop_count,
-                       'blocks': [{'block_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
+                       'blocks': [{'part_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
                                   for b, m in self._placed.items()]}
             self._active = False
             if self._thread is not None:
@@ -141,20 +141,20 @@ class RunLogger:
         return done.wait(timeout_s)
 
     # ---------- 적기 ----------
-    def log(self, kind, block_id=None, value=None, module='task'):
+    def log(self, kind, part_id=None, value=None, module='task'):
         """CSV 한 줄(큐에 넣기만 한다). run 이 없거나 파일이 꺼져 있으면 아무것도 안 한다. 실패해도 예외를 내지 않는다."""
         with self._lock:
-            self._row(kind, block_id, value, module)
+            self._row(kind, part_id, value, module)
 
-    def record_placed(self, block_id, slot=None):
+    def record_placed(self, part_id, slot=None):
         """블록 하나를 놓았다(pick_place 성공). 결과 요약의 placed · blocks 에 들어간다. 오차는 아직 안 잼."""
         with self._lock:
             if not self._active:
                 return
-            self._placed.setdefault(block_id, {'dx_m': None, 'dy_m': None, 'dz_m': None})
-            self._row('placed', block_id, '' if slot is None else f'slot {slot}')
+            self._placed.setdefault(part_id, {'dx_m': None, 'dy_m': None, 'dz_m': None})
+            self._row('placed', part_id, '' if slot is None else f'slot {slot}')
 
-    def record_measure(self, block_id, dx_m, dy_m, dz_m):
+    def record_measure(self, part_id, dx_m, dy_m, dz_m):
         """놓은 블록의 배치 확인 측정값(m)을 적는다. 못 잰 값(NaN · None)은 CSV 에 빈 칸, 요약에 null — 0 으로 만들지 않는다.
 
         CSV 는 mm 로 쓴다(dx_mm · dy_mm · dz_mm 세 줄). 요약(build/1)은 m 그대로.
@@ -163,11 +163,11 @@ class RunLogger:
             if not self._active:
                 return
             vals = {'dx_m': _finite_or_none(dx_m), 'dy_m': _finite_or_none(dy_m), 'dz_m': _finite_or_none(dz_m)}
-            if block_id in self._placed:
-                self._placed[block_id] = vals
+            if part_id in self._placed:
+                self._placed[part_id] = vals
             for key in ('dx_m', 'dy_m', 'dz_m'):
                 v = vals[key]
-                self._row(key[:2] + '_mm', block_id, '' if v is None else f'{v * 1000:.3f}')
+                self._row(key[:2] + '_mm', part_id, '' if v is None else f'{v * 1000:.3f}')
 
     def count_stop(self):
         """정지가 한 번 있었다(build/1 stop_count)."""
@@ -298,14 +298,14 @@ class RunLogger:
                 LOG.exception('미전송 요약 저장 완료 알림 실패')
 
     # ---------- 큐 · 쓰기 스레드 (잠금 안에서 부른다) ----------
-    def _row(self, kind, block_id, value, module='task'):
+    def _row(self, kind, part_id, value, module='task'):
         """(잠금 안) 줄 하나를 시각과 함께 큐에 넣는다."""
         if not self._active or not self.file_ok:
             return
         now = self.clock()
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(now))
         self._put(('row', self.run_id, [self.run_id, self.design_id, f'{stamp}.{int(now % 1 * 1000):03d}', module, kind,
-                           '' if block_id is None else block_id, '' if value is None else value]))
+                           '' if part_id is None else part_id, '' if value is None else value]))
 
     def _put(self, item):
         """(잠금 안) 큐에 넣는다(기다리지 않는다). 가득 찼으면 줄을 못 넣은 것이므로 이 run 의 파일 기록을 끄고 False."""
@@ -404,7 +404,7 @@ def _invalid_summary(s, stem):
     if not isinstance(s.get('blocks'), list):
         return 'blocks 가 목록이 아니다'
     for b in s['blocks']:
-        if not isinstance(b, dict) or not isinstance(b.get('block_id'), str) or \
+        if not isinstance(b, dict) or not isinstance(b.get('part_id'), str) or \
                 not all(k in b and _num_or_none(b[k]) for k in ('dz_m', 'dx_m', 'dy_m')):
             return 'blocks 항목이 올바르지 않다'
     return ''

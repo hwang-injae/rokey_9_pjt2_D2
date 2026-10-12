@@ -198,7 +198,7 @@ class Harness:
 
     def ask(self, design_id='D1', run_id='R1', ids=('A',)):
         """check_progress 요청 하나를 on_check 로 보낸다. 결과는 SimpleNamespace(ok, reason, tag, states)."""
-        req = SimpleNamespace(design_id=design_id, run_id=run_id, block_ids=list(ids))
+        req = SimpleNamespace(design_id=design_id, run_id=run_id, part_ids=list(ids))
         if self.kind == 'wrist':
             before = len(self.reached)
             out = self.node.on_check(req, SimpleNamespace())
@@ -345,7 +345,7 @@ def base_tops(model_id):
     """기본 설계 파일(로컬 길)의 {블록 이름: 윗면 높이 m} — AI · 스캔 설계와 높이를 맞춰 본다."""
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()
-    return {b['block_id']: b['center'][2] + mm.half_height(b['rot'], cfg['block_actual_m'])
+    return {b['part_id']: b['center'][2] + mm.half_height(b['rot'], cfg['block_actual_m'])
             for b in mm.recipe_blocks(cfg, mm.load_recipe(str(ROOT / 'src/recipe_manager/recipes' / f'{model_id}_recipe.json')))}
 
 
@@ -366,14 +366,14 @@ def test_mock이_get_design의_AI_스캔_설계로_블록_이름과_윗면_높�
     assert all(name.startswith(design_id.upper() + '_') for name in expected)
     names = list(expected)
     res = SimpleNamespace()
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', block_ids=names + [f'{model_id}_LEG_001_01']), res)
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', part_ids=names + [f'{model_id}_LEG_001_01']), res)
     assert res.success and res.reason == ''
     assert res.states == ['present'] * len(names) + ['unknown']                       # 기본 설계 이름은 이 설계에 없다
     assert res.top_z_m[:-1] == pytest.approx([expected[n] for n in names], abs=1e-9)
     assert math.isnan(res.top_z_m[-1]) and all(math.isnan(v) for v in res.dx_m + res.dy_m)
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', block_ids=names), SimpleNamespace())
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', part_ids=names), SimpleNamespace())
     assert hh.client.requests == [design_id]                                           # 같은 판 — 한 번만 받았다
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R2', block_ids=names), SimpleNamespace())
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R2', part_ids=names), SimpleNamespace())
     assert hh.client.requests == [design_id, design_id]                                # 새 판 — 다시 받았다
 
 

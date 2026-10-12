@@ -42,7 +42,7 @@ def fake_converter(base_id):
         placements['model_id'] = model_id
         placements['recipe_sha256'] = recipe_sha256(recipe)
         for st in placements['steps']:
-            st['block_id'] = f'{model_id.upper()}_{st["block"]}'
+            st['part_id'] = f'{model_id.upper()}_{st["part_name"]}'
         return {'recipe': recipe, 'placements': placements}
     return convert
 
@@ -95,7 +95,7 @@ def test_같은_설계를_두_번_저장해_읽어도_진행표가_같다():
     """저장 → 조회를 반복해도(캐시 · 새 판) 블록 이름 · 순서 · 받침이 바뀌지 않는다."""
     design = check_and_store(generated_design('001_CHAIR_BENCH_V000', 'bench_v2'), '001_CHAIR_BENCH_V000')
     a, b = (TaskPlanner(CFG, design['recipe'], design['placements']) for _ in range(2))
-    assert [(x['block_id'], x['supports'], x['grasp']) for x in a.blocks] == [(x['block_id'], x['supports'], x['grasp']) for x in b.blocks]
+    assert [(x['part_id'], x['supports'], x['grasp']) for x in a.blocks] == [(x['part_id'], x['supports'], x['grasp']) for x in b.blocks]
 
 
 def test_검사_불합격_설계는_저장할_레시피가_없다():

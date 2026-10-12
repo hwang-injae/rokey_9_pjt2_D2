@@ -32,9 +32,9 @@ export const ROLE: Record<string, { ko: string; color: string }> = {
 export const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 나누지 않음)
 
 /** '001_CHAIR_BENCH_V001_LEG_001_03' → '다리 1-3'(부품 1의 3번째 블록) */
-export function blockName(blockId?: string | null, designId?: string | null): string {
-  if (!blockId) return '';
-  const rest = designId && blockId.startsWith(designId + '_') ? blockId.slice(designId.length + 1) : blockId;
+export function blockName(partId?: string | null, designId?: string | null): string {
+  if (!partId) return '';
+  const rest = designId && partId.startsWith(designId + '_') ? partId.slice(designId.length + 1) : partId;
   const m = /^([A-Z]+)(?:_[A-Z]+)?_(\d{3})_(\d{2})$/.exec(rest);
   return m ? `${ROLE[m[1]]?.ko ?? m[1]} ${Number(m[2])}-${Number(m[3])}` : rest;
 }

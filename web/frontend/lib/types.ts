@@ -10,7 +10,7 @@ export interface TaskState {
   state: string;
   run_id: string | null;
   design_id: string | null;
-  block_id: string | null;
+  part_id: string | null;
   message_id: string | null;
   message: string;
 }
@@ -30,7 +30,7 @@ export interface Progress {
   stamp?: number;
   design_id: string | null;
   run_id: string | null;
-  blocks: { block_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
+  blocks: { part_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
 }
 
 /** gripper_state/1 — 폭을 못 읽으면 width_m null(E-62) */
@@ -107,7 +107,7 @@ export interface Design {
   parent_id: string | null;
   made_by: string;
   blocks: { schema: string; blocks: Block2[] };
-  placements: { steps: { block_id: string; sequence: number }[] };
+  placements: { steps: { part_id: string; sequence: number }[] };
 }
 
 /** GET /api/designs 한 줄 — 트리 · 목록용 요약(DesignStore.list_designs) */
@@ -132,7 +132,7 @@ export interface GenCheck {
   ok: boolean;
   reason: string;
   min_margin_mm: number | null;
-  errors: { block: number | null; reason: string; detail: string }[];
+  errors: { part: number | null; reason: string; detail: string }[];
 }
 
 /** AI 후보 하나 — 블록(3D) · 한 줄 생각 · 검사 결과(검사 전이면 없음) */

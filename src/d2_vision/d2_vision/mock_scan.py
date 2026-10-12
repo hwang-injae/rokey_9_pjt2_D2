@@ -80,7 +80,7 @@ def ori_table(size_mm):
 def load_recipe_files(recipe_dir, design_id):
     """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/3.0 dict, 조립 방법 placements/2.0 dict). 바깥 영향 없음(파일 읽기만).
 
-    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, block_id, sequence, stage, grasp,
+    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, part_id, sequence, stage, grasp,
     grasp_axis, supports[]}]} — CSV 에서 sequence · stage 는 정수, supports 는 ';' 로 나눈 목록(빈 칸이면 []).
     d2_motion.load_recipe 를 쓰지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣는다. 거절 규칙은 load_recipe 와 같다.
     출력: 두 파일 중 하나라도 없으면(이름 비었음 · 경로 문자 포함) None.
@@ -103,7 +103,7 @@ def load_recipe_files(recipe_dir, design_id):
     shas = {r['recipe_sha256'] for r in rows}
     if shas != {recipe_sha256(recipe)}:
         raise ValueError(f'{p_path.name} 의 recipe_sha256 이 {r_path.name} 와 다르다(구조가 바뀜 — 레시피 도구로 다시 만든다)')
-    steps = [{'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+    steps = [{'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
               'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]}
              for r in rows]
     return recipe, {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'], 'recipe_sha256': shas.pop(), 'steps': steps}
@@ -116,15 +116,15 @@ def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
     parts = {p['stock_id']: [float(v) for v in p['size_mm']] for p in recipe['stocks']}
-    by_name = {b['block']: b for b in recipe['blocks']}
+    by_name = {b['part_name']: b for b in recipe['blocks']}
     rows = []
     for st in sorted(placements['steps'], key=lambda s: s['sequence']):
-        b = by_name[st['block']]
+        b = by_name[st['part_name']]
         size = parts[b['stock_id']]
         ext = tuple(sum(abs(b['R'][i][k]) * size[k] for k in range(3)) for i in range(3))
         hits = [o for o, e in ori_table(size).items() if e == ext]
         if len(hits) != 1:
-            raise ValueError(f'{st["block"]}: 크기 {ext} 에 맞는 방향 코드가 {len(hits)}개다')
+            raise ValueError(f'{st["part_name"]}: 크기 {ext} 에 맞는 방향 코드가 {len(hits)}개다')
         x, y, cz = (float(v) for v in b['center_mm'])
         rows.append({'order': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
     if not rows:

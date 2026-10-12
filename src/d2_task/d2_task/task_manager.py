@@ -8,7 +8,7 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
   get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/2.0 dict). 제한 시간은 io 가 건다
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
-  check_progress(block_ids, should_abort) -> (ok, reason, rows)   rows = {block_id: {state, dx_m, dy_m, dz_m, top_z_m}}
+  check_progress(part_ids, should_abort) -> (ok, reason, rows)   rows = {part_id: {state, dx_m, dy_m, dz_m, top_z_m}}
   pick_place(goal, should_abort, on_feedback, on_result) -> (ok, reason)    goal = TaskPlanner.next_block 의 FOUND dict. 피드백 step · 결과 수신 시각을 콜백으로 알린다
   request_stop(reason) -> (ok, message)             정지 노드에 먼저 세우라고 요청(응답은 접수 여부)
   publish_state(dict) · publish_progress(dict)
@@ -110,7 +110,7 @@ class TaskManager:
         self.state = 'IDLE'
         self.planner = None
         self.design_id = None
-        self.block_id = None                      # 지금 다루는 블록
+        self.part_id = None                      # 지금 다루는 블록
         self.goal = None                          # 보낼(보낸) pick_place 목표 = next_block 의 FOUND
         self.placed = None                        # 방금 놓은 블록(VERIFY 에서 확인)
         self.safety = None                        # 마지막 safety_state/1
@@ -139,7 +139,7 @@ class TaskManager:
                 raise ValueError(f'robot.yaml scatter.max_attempts 는 1 이상의 정수다: {self.max_attempts!r}')
             self.gripper_max_age_s = self._positive(sc['gripper_max_age_s'], 'scatter.gripper_max_age_s')
             self.gripper_wait_s = self._positive(sc['gripper_wait_s'], 'scatter.gripper_wait_s')
-        self._scatter_fail = {}                   # 흩뿌림 집기 시도 횟수(block_id → 번, PickPlace 요청을 보낼 때 +1). 재관측 · 정지 · 복구로 비우지 않고, VERIFY 에서 present 로 확인한 블록만 지운다
+        self._scatter_fail = {}                   # 흩뿌림 집기 시도 횟수(part_id → 번, PickPlace 요청을 보낼 때 +1). 재관측 · 정지 · 복구로 비우지 않고, VERIFY 에서 present 로 확인한 블록만 지운다
         self._sleep, self._wall = time.sleep, time.time    # 시험에서 바꾼다 — gripper 대기용 sleep · 최신성 판정용 벽시계(grasped_now 는 time.time 기준)
         self._hmi_seen_at = None                  # PC 사이 stamp 대신 이 PC 의 단조 시계로 수신 간격을 잰다
         self._hmi_pause = False                   # 잠깐 끊겼다 다시 붙어도 사람의 start 전에는 풀지 않는다
@@ -333,7 +333,7 @@ class TaskManager:
             return False
         if self.state == 'ERROR':
             self._finish_run('ERROR')
-        self.planner, self.design_id, self.block_id = None, None, None
+        self.planner, self.design_id, self.part_id = None, None, None
         self._clear_run()
         self._set('IDLE', None, '취소했다')
         return True
@@ -365,7 +365,7 @@ class TaskManager:
         ok, why = self._move_observe()
         if not ok:
             return self._failed(why, '관측 자세 이동')
-        if not self._observe([b['block_id'] for b in self.planner.blocks]):
+        if not self._observe([b['part_id'] for b in self.planner.blocks]):
             return None
         problems = self.planner.judge()
         if problems:
@@ -389,7 +389,7 @@ class TaskManager:
             ok, why = self._move_observe()
             if not ok:
                 return self._failed(why, '웹 재연결 뒤 관측 자세 이동')
-            if not self._observe([b['block_id'] for b in self.planner.blocks]):
+            if not self._observe([b['part_id'] for b in self.planner.blocks]):
                 return
             problems = self.planner.judge(expect_present=[self.placed] if self.placed else ())
             if problems:
@@ -407,19 +407,19 @@ class TaskManager:
         status = r['status']
         if status == 'FOUND':
             self._start_goal(r)
-            self._set('PICK_PLACE', None, f'{r["block_id"]} 를 집으러 갑니다')
+            self._set('PICK_PLACE', None, f'{r["part_id"]} 를 집으러 갑니다')
         elif status == 'DONE':
             with self._lock:               # DONE 방송과 요약 확정 사이에 새 설계 선택 · 출발이 끼어들지 못하게 한 잠금 안에서(파일 I/O 없음)
-                self.block_id = None
+                self.part_id = None
                 self._set('DONE', 'done', '조립이 끝났어요')
                 self._finish_run('DONE')
         elif status == 'UNKNOWN_BLOCK' and not self._reobserved:
             self._reobserved = True
-            self._set('CHECK', None, f'{r["block_id"]} 가 있는지 못 봐서 한 번 더 봅니다')
+            self._set('CHECK', None, f'{r["part_id"]} 가 있는지 못 봐서 한 번 더 봅니다')
         elif status == 'WAIT_SUPPLY':
-            self._enter_wait_supply(r['block_id'], r.get('alert'))
+            self._enter_wait_supply(r['part_id'], r.get('alert'))
         else:                                  # NO_SUPPORT · 재관측 뒤에도 UNKNOWN_BLOCK
-            self._to_error(f'{r["block_id"]}: {status}')
+            self._to_error(f'{r["part_id"]}: {status}')
 
     def _next_goal(self, pick_message='{block} 를 집으러 갑니다'):
         """다음 집기 목표를 공급 방식에 맞게 정한다(목표 블록은 작업 판단이, 어디서 집을지는 방식이 정한다).
@@ -469,18 +469,18 @@ class TaskManager:
 
     def _apply_scatter_result(self, target, result, pick_message):
         """(잠금 안) commit 이 적용된 흩뿌림 결과를 상태에 반영한다: PICK → 목표 + PICK_PLACE, 비었음 · 맞는 블록 없음 → WAIT_SUPPLY, 그 밖은 ERROR."""
-        status, block_id = result['status'], target['block_id']
+        status, part_id = result['status'], target['part_id']
         if status == 'PICK':
             self._start_goal(dict(result['request'], status='FOUND'))
-            self._set('PICK_PLACE', None, pick_message.format(block=block_id))
+            self._set('PICK_PLACE', None, pick_message.format(block=part_id))
         elif status == 'EMPTY':
-            self._enter_wait_supply(block_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
+            self._enter_wait_supply(part_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
         elif status == 'NO_MATCH':
             counts = result['counts']
             # 기울어진 블록이 있고 제외 이유가 tilted · under 뿐이면 IRD 알림 tilted_block(E-68 — 덮인 블록이 같이 있어도 사람이 기울어진 것을 바로 놓으면 된다).
             # under 만이거나 다른 제외 이유가 섞이면 no_match_block(E-73) — 이유는 글자(message)로 같이 보낸다
             only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k not in ('tilted', 'under'))
-            self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else 'no_match_block', result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
+            self._enter_wait_supply(part_id, ('tilted_block' if only_tilted else 'no_match_block', result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
         elif status == 'BLOCKED':                  # 장애물 블록 중 형식이 틀린 것이 있다(E-68) — 일부만 보내지 않고 서서 사람을 부른다
@@ -495,7 +495,7 @@ class TaskManager:
         ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 흩뿌림 집기가 실패하면 _scatter_failed 가 step(접촉 전후)과 result_at(gripper 상태가 결과 이후인지)으로 재시도 여부를 정한다.
         """
         if self._scatter is not None:
-            block = self.goal['block_id']
+            block = self.goal['part_id']
             with self._lock:
                 if self._scatter_fail.get(block, 0) >= self.max_attempts:      # 복구 · 다른 실패 경로로 와도 한도를 넘는 요청은 보내지 않는다
                     return self._to_error(f'{block}: 집기 {self.max_attempts}번 시도를 이미 했다 — 사람이 확인해 주세요')
@@ -511,35 +511,35 @@ class TaskManager:
                           'step': self._steps.last_step(rid), 'result_at': self._steps.result_at(rid)}
         self._steps.end(rid)                   # 이 번호의 늦은 피드백이 다음 요청에 섞이지 않게 닫는다
         if ok:
-            self.placed = self.goal['block_id']
+            self.placed = self.goal['part_id']
             self.logger.record_placed(self.placed, self.goal['supply_slot'])
             self.poll_hmi()
             if self._hmi_pause:
                 return self._enter_wait_hmi()
             self._set('VERIFY', None, f'{self.placed} 를 놓았다. 확인합니다')
             return None
-        self.logger.log('fail', self.goal['block_id'], f'pick_place {why}')
+        self.logger.log('fail', self.goal['part_id'], f'pick_place {why}')
         if self._scatter is not None and why in ('PLAN_FAILED', 'GRASP_FAILED', 'SLOT_EMPTY'):
             return self._scatter_failed(why)
         if why == 'PLAN_FAILED':
             if self._plan_retry < 1:           # 같은 목표로 다시 계획 1번
                 self._plan_retry += 1
             else:
-                self._to_error(f'{self.goal["block_id"]}: PLAN_FAILED(다시 계획 1번도 실패)')
+                self._to_error(f'{self.goal["part_id"]}: PLAN_FAILED(다시 계획 1번도 실패)')
         elif why == 'GRASP_FAILED':
             self._grasp_failed()
         elif why == 'SLOT_EMPTY':
             self._slot_empty()
         else:
             # TIMEOUT 은 정지 노드에 요청하고 상태를 확인한다. 그 밖의 정식 코드 · 모르는 코드는 공통 분기를 탄다
-            self._failed(why, f'{self.goal["block_id"]} 집기·놓기', log=False)
+            self._failed(why, f'{self.goal["part_id"]} 집기·놓기', log=False)
 
     def _verify(self):
         """VERIFY: 관측 자세에서 방금 놓은 블록과 그 받침만 다시 보고, 없거나 어긋났으면 ERROR."""
         ok, why = self.io.move_to('observe', self.halted)
         if not ok:
             return self._failed(why, '관측 자세 이동')
-        block = next(b for b in self.planner.blocks if b['block_id'] == self.placed)
+        block = next(b for b in self.planner.blocks if b['part_id'] == self.placed)
         if not self._observe([self.placed] + block['supports']):
             return None
         row = self.planner.progress[self.placed]      # 판정 전에 측정값부터 남긴다(어긋나서 ERROR 가 되어도 값은 기록)
@@ -580,7 +580,7 @@ class TaskManager:
         if r['status'] != 'FOUND':
             return self._to_error(f'공급을 채웠는데 다음 블록을 못 골랐다({r["status"]})')
         self._start_goal(r)
-        self._set('PICK_PLACE', None, f'공급을 채웠다. {r["block_id"]} 를 이어서 집습니다')
+        self._set('PICK_PLACE', None, f'공급을 채웠다. {r["part_id"]} 를 이어서 집습니다')
         return None
 
     def _stopped(self):
@@ -596,7 +596,7 @@ class TaskManager:
         조립 중 복구는 첫 관측 이동에 recover.speed_ratio 를 쓰며, 실패했으면 다음 시도도 저속을 유지한다.
         """
         if not self._assembling:
-            self.planner, self.design_id, self.block_id = None, None, None
+            self.planner, self.design_id, self.part_id = None, None, None
             self._clear_run()
             self._set('IDLE', None, '정지가 풀렸어요. 설계를 다시 고르세요')
             return None
@@ -635,7 +635,7 @@ class TaskManager:
         if not ok:
             return self._reject(code, f'스캔 시작 점검 실패: {text}')
         self._clear_run()
-        self.planner, self.design_id, self.block_id, self.placed = None, None, None, None
+        self.planner, self.design_id, self.part_id, self.placed = None, None, None, None
         self._scan_run = True
         self._scan_poses, self._scan_index = tuple(poses), 0
         self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/1 은 만들지 않는다
@@ -737,7 +737,7 @@ class TaskManager:
         손에 블록이 없음(grasped False)이 확인돼야만 다시 시도한다 — 모르면 failure_action 이 RECOVER 로 보낸다.
         gripper 상태를 기다리는 동안 정지 · 상태 변화 · 새 요청이 끼면(오래된 처리) 아무것도 적용하지 않고 지금 상태를 그대로 둔다.
         """
-        block = self.goal['block_id']
+        block = self.goal['part_id']
         info = self.last_pick
         with self._lock:
             token = (self._epoch, self._stop_count)
@@ -797,12 +797,12 @@ class TaskManager:
         '공급 채워 주세요'를 띄우지 않고 ERROR 로 간다(SLOT_EMPTY 의 WAIT_SUPPLY 와 섞지 않는다).
         """
         self._grasp_stage += 1
-        block = self.goal['block_id']
+        block = self.goal['part_id']
         if self._grasp_stage == 1:             # 같은 칸으로 다시(상태 그대로)
             return None
         if self._grasp_stage == 2:
             r = self.planner.next_block(avoid_slots=(self.goal['supply_slot'],))
-            if r['status'] == 'FOUND' and r['block_id'] == block:
+            if r['status'] == 'FOUND' and r['part_id'] == block:
                 self.goal = r
                 return None
             return self._to_error(f'{block}: GRASP_FAILED(같은 칸 재시도 뒤 쓸 다른 칸이 없다)')
@@ -812,20 +812,20 @@ class TaskManager:
         """SLOT_EMPTY: 그 칸을 빔으로 적고 같은 블록의 다음 칸으로. 맞는 칸이 다 비었으면 진짜 WAIT_SUPPLY 로 간다."""
         self.planner.mark_slot_empty(int(self.goal['supply_slot']))
         r = self.planner.next_block()
-        if r['status'] == 'FOUND' and r['block_id'] == self.goal['block_id']:
+        if r['status'] == 'FOUND' and r['part_id'] == self.goal['part_id']:
             self.goal, self._grasp_stage = r, 0
         elif r['status'] == 'WAIT_SUPPLY':
-            self._enter_wait_supply(r['block_id'])
+            self._enter_wait_supply(r['part_id'])
         else:
             self._to_error(f'공급 칸을 바꾸는 중 이상한 결과({r["status"]})')
 
-    def _enter_wait_supply(self, block_id, alert=None):
+    def _enter_wait_supply(self, part_id, alert=None):
         """WAIT_SUPPLY 상태로 들어간다. 칸 방식은 알림(supply_empty)을 아직 안 낸다 — 관측 자세에 도착한 뒤 _wait_supply 가 낸다.
 
         흩뿌림은 이미 observe_supply 에 와 있으므로 alert=(message_id, 글자)를 주면 도착 확인 없이 그 알림으로 바로 들어간다.
         """
         with self._lock:
-            self.block_id = block_id
+            self.part_id = part_id
             self._pending_start = False        # 이전에 눌린 [계속]은 버린다
             if alert is not None:
                 self._supply_moved = True
@@ -847,7 +847,7 @@ class TaskManager:
         모르는 reason(IRD 7장에 없는 문자열)도 이름을 따로 다루지 않고 일반 실패로 ERROR 에 보낸다. 글자는 알림에 그대로 적는다.
         """
         if log:
-            self.logger.log('fail', self.block_id, f'{where}: {reason or "이유 없음"}')
+            self.logger.log('fail', self.part_id, f'{where}: {reason or "이유 없음"}')
         if reason == 'TIMEOUT':
             with self._lock:
                 self._timeout_pending = True
@@ -874,11 +874,11 @@ class TaskManager:
     def _offset_over(self, problems):
         """판정에서 OFFSET_OVER 가 나왔다. 첫 문제를 알림에 적고 ERROR 로 간다."""
         first = problems[0]
-        self._to_error(f'{first["block_id"]}: OFFSET_OVER — {first["detail"]}', 'offset_over')
+        self._to_error(f'{first["part_id"]}: OFFSET_OVER — {first["detail"]}', 'offset_over')
 
-    def _observe(self, block_ids):
+    def _observe(self, part_ids):
         """블록들을 check_progress 로 보고 진행표에 넣고 progress 를 방송한다. 실패하면 알아서 상태를 바꾸고 False."""
-        ok, why, rows = self.io.check_progress(block_ids, self.halted)
+        ok, why, rows = self.io.check_progress(part_ids, self.halted)
         if not ok:
             self._failed(why, '진행 확인')
             return False
@@ -975,7 +975,7 @@ class TaskManager:
         ok, code, text = self._precheck()
         if not ok:
             return self._reject(code, f'시작 점검 실패: {text}')
-        self.planner, self.design_id, self.block_id, self.placed = planner, design_id, None, None
+        self.planner, self.design_id, self.part_id, self.placed = planner, design_id, None, None
         self._scatter_fail = {}
         self._clear_run()
         self._set('READY', 'ready_to_start', f'{design_id} 준비됐어요. 출발을 누르세요')
@@ -991,14 +991,14 @@ class TaskManager:
             if not ok:
                 return self._reject(code, f'계속 점검 실패: {text}')
             self._hmi_pause, self._hmi_recheck = False, True
-            self.logger.log('command', self.block_id, 'continue_hmi')
+            self.logger.log('command', self.part_id, 'continue_hmi')
             self._set('SELECT', None, '웹이 연결됐어요. 진행 확인부터 이어갑니다')
             return True, ''
         if self.state == 'WAIT_SUPPLY':
             if not self._supply_moved:
                 return self._reject('BUSY', '아직 관측 자세로 가는 중이에요. 도착한 뒤 [계속]을 누르세요')
             self._pending_start = True
-            self.logger.log('command', self.block_id, 'continue')    # 같은 run_id 로 이어 간다
+            self.logger.log('command', self.part_id, 'continue')    # 같은 run_id 로 이어 간다
             return True, ''
         if self.state != 'READY':
             if self.state == 'IDLE':
@@ -1008,7 +1008,7 @@ class TaskManager:
         if not ok:
             return self._reject(code, f'시작 점검 실패: {text}')
         self._reobserved = False
-        self.placed = self.block_id = None
+        self.placed = self.part_id = None
         self.run_id = self.logger.start_run(self.design_id, len(self.planner.blocks))   # 실제 출발 때만 새 run_id
         self._set('CHECK', None, '진행 확인을 시작합니다')
         return True, ''
@@ -1040,7 +1040,7 @@ class TaskManager:
     # ---------- 상태 바꾸기 · 방송 ----------
     def _start_goal(self, found):
         """다음 블록 목표를 잡고 재시도 횟수를 비운다."""
-        self.goal, self.block_id = found, found['block_id']
+        self.goal, self.part_id = found, found['part_id']
         self._plan_retry = self._grasp_stage = 0
         self._reobserved = False
 
@@ -1066,7 +1066,7 @@ class TaskManager:
         """ERROR 로 간다. 로봇은 서 있고 사람을 부른다. message_id 는 IRD 값만 쓰고 맞는 것이 없으면 null."""
         with self._lock:
             self._entered_count = self.safety_count
-            self.logger.log('error', self.block_id, message)
+            self.logger.log('error', self.part_id, message)
             self._set('ERROR', message_id, message)
 
     def _unlocked_since(self, count):
@@ -1117,11 +1117,11 @@ class TaskManager:
             LOG.info('%s → %s %s', self.state, state, message)
             self.state = state
             self._epoch += 1
-            self.logger.log('state', self.block_id, state)
+            self.logger.log('state', self.part_id, state)
             self._publish(message_id, message)
 
     def _publish(self, message_id, message):
         """state/1 한 건을 보낸다. run_id 는 조립 중(끝난 직후 포함)에만 값, message_id 는 IRD 2장 값 또는 null."""
         self.io.publish_state({'schema': 'state/1', 'stamp': time.time(), 'mode': 'auto', 'state': self.state,
-                               'run_id': self.run_id, 'design_id': self.design_id, 'block_id': self.block_id,
+                               'run_id': self.run_id, 'design_id': self.design_id, 'part_id': self.part_id,
                                'message_id': message_id, 'message': message})

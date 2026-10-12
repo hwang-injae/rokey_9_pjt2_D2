@@ -30,7 +30,7 @@ GRIPPER_TIMEOUT_S = 10.0
 # 그리퍼 기본 상태 = 활짝(10/11 박진용): 관측 · 촬영 때 좁은 손가락이 손목 카메라 화면에 찍힌다(W134 · B34).
 # RG2 최대 열림 — 그리퍼 노드가 최대 명령으로 잘라 보낸다. 집는 폭은 지금처럼 집을 블록 바로 위에서 맞춘다
 OPEN_FULL_M = 0.110
-# run_recipe --grasp-test 의 block_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
+# run_recipe --grasp-test 의 part_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
 TEST_BLOCK_PREFIX = 'GRASP_P'
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
 # 팔 끝까지 약 0.9 m 이므로 관절 0.005 rad 는 TCP 4.5 mm 이하 (10/6 한세교 교차 검증)
@@ -179,7 +179,7 @@ class PickPlaceNode(Node):
         req = GripperCommand.Request(width_m=float(width_m), force_n=float(self.cfg['gripper']['force_n']))
         return self.exe.wait_future(self.grip_cli.call_async(req), GRIPPER_TIMEOUT_S)
 
-    def scene_attach(self, block_id, attach, held=None, placed=None):
+    def scene_attach(self, part_id, attach, held=None, placed=None):
         """장면 관리 노드에 쥔 블록 붙이기(attach=True)·떼기를 부탁한다. 장면은 그 노드만 고친다. 반환: 성공하면 True.
 
         held = 붙이기 때 쥔 블록 상자 {'size_m', 'offset_m'}(TCP 기준 m, pick_place_tcp 가 실제 집은 자세로 계산),
@@ -189,7 +189,7 @@ class PickPlaceNode(Node):
         if not self.attach_cli.wait_for_service(timeout_sec=2.0):
             self.get_logger().warn('장면 관리 노드가 없다 — 쥔 블록 없이 계획한다')
             return False
-        req = SceneAttach.Request(block_id=block_id, attach=attach)
+        req = SceneAttach.Request(part_id=part_id, attach=attach)
         if held is not None:
             req.held_size_m, req.held_offset_m = [float(v) for v in held['size_m']], [float(v) for v in held['offset_m']]
         if placed is not None:
@@ -209,7 +209,7 @@ class PickPlaceNode(Node):
         try:
             pick_xyz, pick_q, place_xyz, place_q, held = pick_place_tcp(self.cfg, pc, pr, lc, lr, g.grasp, slot)
         except (ValueError, KeyError) as e:
-            self.get_logger().error(f'{g.block_id}: 목표 계산 실패 — {e}')
+            self.get_logger().error(f'{g.part_id}: 목표 계산 실패 — {e}')
             return None
         m = self.cfg['motion']
         # IK 는 홈 자세에서 출발해 푼다: 지금 자세(예: 관절 0° 로 선 자세)에서 풀면 팔을 뒤로 꺾은 해(관절 1 이 154°)가
@@ -222,7 +222,7 @@ class PickPlaceNode(Node):
             # 움직이기 전에 위 자세에서 수직으로 내려가는 직선이 풀리는지 미리 본다 (Pilz LIN, 위 자세에서 출발)
             down = None if qa is None else self.exe.plan_line(low, quat, self.cfg['speed_scale'] * LINE_SCALE, start_q=qa)[0]
             if down is None:
-                self.get_logger().error(f'{g.block_id}: {kind} IK·직선 실패 ({", ".join(f"{v:.3f}" for v in high)})')
+                self.get_logger().error(f'{g.part_id}: {kind} IK·직선 실패 ({", ".join(f"{v:.3f}" for v in high)})')
                 return None
             out[kind] = {'qa': qa, 'quat': quat, 'high': high, 'low': low}
             seed = qa
@@ -256,7 +256,7 @@ class PickPlaceNode(Node):
             else:
                 gh.abort()
             why = f'{reason} ({self.halt_reason})' if reason in ('CANCELED', 'STOPPED') and self.halt_reason else reason
-            self.get_logger().info(f'{g.block_id}: {"성공" if ok else "실패 " + why} ({res.duration_s:.1f} s)')
+            self.get_logger().info(f'{g.part_id}: {"성공" if ok else "실패 " + why} ({res.duration_s:.1f} s)')
             return res
 
         if self.locked:
@@ -265,14 +265,14 @@ class PickPlaceNode(Node):
             return finish(False, 'TCP_MISMATCH')
         if self.holding:
             # 블록을 쥔 채 출발하면 다른 칸으로 들고 가거나, 집는 폭 '열기' 가 오히려 조이는 명령이 된다 (10/6 실기)
-            self.get_logger().error(f'{g.block_id}: 그리퍼가 블록을 쥐고 있다 — 사람이 블록을 빼고 연 뒤 다시')
+            self.get_logger().error(f'{g.part_id}: 그리퍼가 블록을 쥐고 있다 — 사람이 블록을 빼고 연 뒤 다시')
             return finish(False, 'ERROR')   # IRD 7장: 먼저 세움 → 사람 호출. 자세한 이유는 위 로그
         if g.grasp not in GRASP_AXIS:
             return finish(False, 'PLAN_FAILED')
         open_pick = pick_open_width(self.cfg, g.grasp, g.open_width_m)
         if open_pick is None:
             # 블록 폭 이하로 열면 손가락이 블록 위에 내려앉는다 — 움직이기 전에 거절
-            self.get_logger().error(f'{g.block_id}: open_width_m {g.open_width_m * 1000:.1f} mm 가 블록 폭 이하')
+            self.get_logger().error(f'{g.part_id}: open_width_m {g.open_width_m * 1000:.1f} mm 가 블록 폭 이하')
             return finish(False, 'PLAN_FAILED')
         if not self.busy.acquire(blocking=False):
             return finish(False, 'BUSY')
@@ -290,7 +290,7 @@ class PickPlaceNode(Node):
             def step(name):
                 """중간 보고(step)를 보내고 로그에 남긴다."""
                 gh.publish_feedback(PickPlace.Feedback(step=name))
-                self.get_logger().info(f'{g.block_id}: {name}')
+                self.get_logger().info(f'{g.part_id}: {name}')
 
             step('approach')
             ok, why = self.go_free(pk['qa'], halted, skip_slot=slot, obstacles=around)
@@ -312,12 +312,12 @@ class PickPlaceNode(Node):
             expect, tol = self.cfg['grasp_width_m'][g.grasp], self.cfg['gripper']['check_tolerance_m']
             # 폭을 모르면(가상 그리퍼) 그리퍼 노드의 잡힘만 믿는다. 알면 이 잡기의 블록 폭과 맞는지도 본다
             if not r.grasped or (not math.isnan(width) and abs(width - expect) > tol):
-                self.get_logger().error(f'{g.block_id}: 잡힘 실패 (폭 {width * 1000:.1f} mm, 기대 {expect * 1000:.1f})')
+                self.get_logger().error(f'{g.part_id}: 잡힘 실패 (폭 {width * 1000:.1f} mm, 기대 {expect * 1000:.1f})')
                 return finish(False, 'GRASP_FAILED', width)
             # 쥔 블록이 장면에 안 붙으면 운반 계획이 들고 가는 블록의 충돌을 못 본다 → 들지 않는다.
             # 블록은 아직 바닥에 닿아 있으므로 그 자리에서 다시 열면 원래 자리에 그대로 남는다(공중 개방 아님)
-            if not self.scene_attach(g.block_id, True, held=p['held']) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
-                self.get_logger().error(f'{g.block_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 올라와 멈춘다')
+            if not self.scene_attach(g.part_id, True, held=p['held']) and not g.part_id.startswith(TEST_BLOCK_PREFIX):
+                self.get_logger().error(f'{g.part_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 올라와 멈춘다')
                 self.grip(open_pick)
                 self.go_line(pk['high'], pk['quat'], halted)
                 return finish(False, 'ERROR', width)
@@ -336,9 +336,9 @@ class PickPlaceNode(Node):
             why = grip_failure(self.grip(self.cfg['grasp_open_place_m'][g.grasp]))
             if why:
                 return finish(False, why, width)
-            if not self.scene_attach(g.block_id, False, placed=p['placed']) and not g.block_id.startswith(TEST_BLOCK_PREFIX):
+            if not self.scene_attach(g.part_id, False, placed=p['placed']) and not g.part_id.startswith(TEST_BLOCK_PREFIX):
                 # 떼기 실패는 장면에 블록이 남아 다음 계획이 더 조심스러워질 뿐이라 멈추지 않는다
-                self.get_logger().warn(f'{g.block_id}: 장면에서 쥔 블록을 못 뗐다')
+                self.get_logger().warn(f'{g.part_id}: 장면에서 쥔 블록을 못 뗐다')
             step('retreat')
             ok, why = self.go_line(pl['high'], pl['quat'], halted)
             if not ok:
@@ -347,7 +347,7 @@ class PickPlaceNode(Node):
             why = grip_failure(self.grip(OPEN_FULL_M))
             return finish(not why, why or '', width)
         except Exception as e:            # 예상 못 한 오류: 궤적이 아직 돌고 있을 수 있으니 먼저 세운다
-            self.get_logger().error(f'{g.block_id}: 오류 {e!r}')
+            self.get_logger().error(f'{g.part_id}: 오류 {e!r}')
             self.stopper.stop('ERROR')
             return finish(False, 'ERROR')
         finally:

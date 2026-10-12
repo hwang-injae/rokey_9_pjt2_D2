@@ -63,8 +63,8 @@ def ros():
     side.add_node(client)
     threading.Thread(target=side.spin, daemon=True).start()
     cli = client.create_client(CheckProgress, '/d2/vision/check_progress', callback_group=ReentrantCallbackGroup())
-    block = doc['design_id'].upper() + '_' + doc['placements']['steps'][0]['block']
-    yield SimpleNamespace(hmi=hmi, cli=cli, design_id=doc['design_id'], block=block)
+    block = doc['design_id'].upper() + '_' + doc['placements']['steps'][0]['part_name']
+    yield SimpleNamespace(hmi=hmi, cli=cli, design_id=doc['design_id'], part_name=block)
     side.shutdown(timeout_sec=2)
     hmi.destroy_node()
     client.destroy_node()
@@ -93,7 +93,7 @@ def mock(ros):
 def send(ros, run_id):
     """check_progress 요청을 비동기로 보낸다. 반환 (future, 끝났다는 Event)."""
     req = CheckProgress.Request()
-    req.design_id, req.run_id, req.block_ids = ros.design_id, run_id, [ros.block]
+    req.design_id, req.run_id, req.part_ids = ros.design_id, run_id, [ros.block]
     done = threading.Event()
     fut = ros.cli.call_async(req)
     fut.add_done_callback(lambda _: done.set())

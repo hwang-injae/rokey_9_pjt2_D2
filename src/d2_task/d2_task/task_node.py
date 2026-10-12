@@ -316,21 +316,21 @@ class TaskNode(Node):
         res, why = self._call(self.stop_cli, req, lambda: not rclpy.ok(), self.service_s)
         return (False, why or 'ERROR') if res is None else (res.success, res.message)
 
-    def check_progress(self, block_ids, should_abort):
+    def check_progress(self, part_ids, should_abort):
         """진행 확인을 service_s 초 안에 받는다. 반환: (성공, reason, 블록별 관측). 중단 · 시간 초과 · 실패 때 관측은 빈 dict."""
         req = CheckProgress.Request()
         req.design_id = self.manager.design_id     # 이름에서 _B 앞을 자르면 새 역할 이름(BACK · BEAM)이 설계 ID 를 망가뜨린다(E-52)
         req.run_id = self.manager.run_id or ''      # 손목 블록 인식은 run_id가 바뀔 때 설계를 다시 읽는다(E-60 ②). 조립 · 스캔 시작 때 정해지고 한 판 동안 같다
-        req.block_ids = list(block_ids)
+        req.part_ids = list(part_ids)
         res, why = self._call(self.check_cli, req, should_abort, self.service_s)
         if res is None:
             return False, why or 'ERROR', {}
         if not res.success:
             return False, res.reason, {}
-        n = len(res.block_ids)
+        n = len(res.part_ids)
         if not all(len(a) == n for a in (res.states, res.dx_m, res.dy_m, res.dz_m, res.top_z_m)):
             return False, 'ERROR', {}               # 결과 배열 길이가 서로 다르면 어느 칸이 어느 블록인지 모른다
-        rows = {res.block_ids[i]: {'state': res.states[i], 'dx_m': res.dx_m[i], 'dy_m': res.dy_m[i],
+        rows = {res.part_ids[i]: {'state': res.states[i], 'dx_m': res.dx_m[i], 'dy_m': res.dy_m[i],
                                    'dz_m': res.dz_m[i], 'top_z_m': res.top_z_m[i]} for i in range(n)}
         return True, '', rows
 
@@ -346,7 +346,7 @@ class TaskNode(Node):
         if should_abort():
             return False, 'STOPPED'
         g = PickPlace.Goal()
-        g.block_id, g.supply_slot, g.grasp = goal['block_id'], goal['supply_slot'], goal['grasp']
+        g.part_id, g.supply_slot, g.grasp = goal['part_id'], goal['supply_slot'], goal['grasp']
         g.pick_pose, g.place_pose = to_pose(goal['pick_pose']), to_pose(goal['place_pose'])
         g.open_width_m = float(goal.get('open_width_m', 0.0))              # 흩뿌림만 실제 폭(m). 0 = robot.yaml grasp_open_pick_m (공급 칸 목표는 0)
         g.obstacles = [to_pose(p) for p in goal.get('obstacles', ())]      # 흩뿌림만(E-53 B). 공급 칸 목표에는 없다 → 빈 목록(동작 쪽이 칸 모드에서는 안 쓴다)

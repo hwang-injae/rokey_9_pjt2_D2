@@ -190,7 +190,7 @@ class DesignGenerator:
                 if cands and all(c['check']['service_failed'] for c in cands):
                     first = cands[0]['check']
                     raise GenError(first['reason'] or 'ERROR', '설계 검사를 못 했어요 — 로봇 PC · 다리 연결을 확인하세요',
-                                   [{'block': None, 'reason': first['reason'], 'detail': first['message'] or ''}])
+                                   [{'part': None, 'reason': first['reason'], 'detail': first['message'] or ''}])
                 last = [e for c in cands for e in c['check']['errors']]
                 if attempt > MAX_REGEN:
                     break

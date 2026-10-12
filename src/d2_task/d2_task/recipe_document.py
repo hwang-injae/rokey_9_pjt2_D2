@@ -72,12 +72,12 @@ class RecipeDocument:
     def placements_from_csv(text, model_id):
         """placements.csv 글자 → placements/2.0 객체(전달 JSON 모양). 칸 이름(머리줄)으로 읽어 열 순서에 의존하지 않는다.
 
-        쓰는 칸: block · block_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256 · schema(두 칸 다 모든 줄 같은 값 —
+        쓰는 칸: block · part_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256 · schema(두 칸 다 모든 줄 같은 값 —
         schema 는 placements/2.0 이어야 하고 아니면 받은 값을 적어 거절한다, 한세교 E-69 PR). 표시 칸(크기 · 중심 · 축 · cad_handle)은 읽지 않는다.
         칸이 빠졌거나 숫자가 아니면 ValueError.
         """
         rows = list(csv.DictReader(io.StringIO(text)))
-        need = ('block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema')
+        need = ('part_name', 'part_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema')
         if not rows or any(k not in rows[0] for k in need):
             raise ValueError(f'placements.csv 에 {", ".join(need)} 칸이 모두 있고 한 줄 이상이어야 한다')
         shas, schemas = {r['recipe_sha256'] for r in rows}, {r['schema'] for r in rows}
@@ -89,7 +89,7 @@ class RecipeDocument:
                 seq, stage = int(r['sequence']), int(r['stage'])
             except (TypeError, ValueError) as e:
                 raise ValueError(f'placements.csv 의 sequence · stage 가 정수가 아니다: {e}') from e
-            steps.append({'block': r['block'], 'block_id': r['block_id'], 'sequence': seq, 'stage': stage, 'grasp': r['grasp'],
+            steps.append({'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': seq, 'stage': stage, 'grasp': r['grasp'],
                           'grasp_axis': r['grasp_axis'], 'supports': [k for k in r['supports'].split(';') if k]})
         return {'schema': schemas.pop(), 'model_id': model_id, 'recipe_sha256': shas.pop(), 'steps': steps}
 
@@ -146,11 +146,11 @@ class RecipeDocument:
             sizes[p['stock_id']] = p['size_mm']
         instances = {}
         for b in blocks:
-            if not isinstance(b, dict) or not isinstance(b.get('block'), str) or not re.fullmatch(
-                    r'[A-Z]+(?:_[A-Z]+)*_[0-9]{3}_[0-9]{2}', b['block']) or b['block'] in instances:
+            if not isinstance(b, dict) or not isinstance(b.get('part_name'), str) or not re.fullmatch(
+                    r'[A-Z]+(?:_[A-Z]+)*_[0-9]{3}_[0-9]{2}', b['part_name']) or b['part_name'] in instances:
                 raise ValueError('block 이름이 역할_부품_블록 형식이 아니거나 중복이다')
             if not isinstance(b.get('stock_id'), str) or b['stock_id'] not in sizes:
-                raise ValueError(f'{b["block"]}: 없는 stock_id')
+                raise ValueError(f'{b["part_name"]}: 없는 stock_id')
             self._vector(b.get('center_mm'), 3, 'center_mm')
             R = b.get('R')
             if not isinstance(R, list) or len(R) != 3:
@@ -163,13 +163,13 @@ class RecipeDocument:
                                 R[1][(i + 2) % 3] * R[2][(i + 1) % 3]) for i in range(3))
             if det != 1:
                 raise ValueError('R 은 거울 반사가 아닌 회전이어야 한다')
-            instances[b['block']] = dict(instance_id=b['block'], stock_id=b['stock_id'], center_mm=b['center_mm'], R=R)
+            instances[b['part_name']] = dict(instance_id=b['part_name'], stock_id=b['stock_id'], center_mm=b['center_mm'], R=R)
         sequences, rows = {}, []
         for st in steps:
-            if not isinstance(st, dict) or not isinstance(st.get('block'), str) or st['block'] not in instances:
+            if not isinstance(st, dict) or not isinstance(st.get('part_name'), str) or st['part_name'] not in instances:
                 raise ValueError('step 이 recipe(구조)에 없는 block 을 가리킨다')
             seq = st.get('sequence')
-            if isinstance(seq, bool) or not isinstance(seq, int) or seq <= 0 or seq in sequences.values() or st['block'] in sequences:
+            if isinstance(seq, bool) or not isinstance(seq, int) or seq <= 0 or seq in sequences.values() or st['part_name'] in sequences:
                 raise ValueError('sequence · step block 이 중복이거나 잘못됐다')
             if st.get('grasp_axis') not in ('LENGTH', 'WIDTH', 'THICKNESS') or st.get('grasp') not in GRASPS:
                 raise ValueError('grasp · grasp_axis 가 잘못됐다')
@@ -180,11 +180,11 @@ class RecipeDocument:
                 raise ValueError('supports 가 구조에 없는 block 을 가리킨다')
             if len(supports) != len(set(supports)):
                 raise ValueError('supports 에 같은 block 이 중복이다')
-            sequences[st['block']] = seq
-            block_id = f'{model_id.upper()}_{st["block"]}'
-            if 'block_id' in st and st['block_id'] != block_id:
-                raise ValueError(f'step 의 block_id({st["block_id"]!r})가 <모델ID 대문자>_<블록 이름>({block_id!r})과 다르다')
-            rows.append(dict(st, instance_id=st['block'], block_id=block_id, support_instance_ids=supports))
+            sequences[st['part_name']] = seq
+            part_id = f'{model_id.upper()}_{st["part_name"]}'
+            if 'part_id' in st and st['part_id'] != part_id:
+                raise ValueError(f'step 의 part_id({st["part_id"]!r})가 <모델ID 대문자>_<블록 이름>({part_id!r})과 다르다')
+            rows.append(dict(st, instance_id=st['part_name'], part_id=part_id, support_instance_ids=supports))
         if set(sequences) != set(instances):
             raise ValueError('recipe(구조)의 모든 block 이 placements 에 한 번씩 있어야 한다')
         for st in steps:

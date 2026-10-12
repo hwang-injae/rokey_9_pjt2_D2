@@ -339,7 +339,7 @@ def recipe_sha256(recipe):
 def load_recipe(path):
     """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/2.0)를 읽어
     {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_blocks 가 둘을 블록 이름으로 잇는다(E-69).
-    steps 는 CSV 의 조립 방법 칸(block · block_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
+    steps 는 CSV 의 조립 방법 칸(block · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
     실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/2.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
     recipe_sha256 이 구조와 다르면 ValueError — 구조가 바뀌었는데 옛 조립 방법으로 쌓으면 받침 · 잡기가 어긋난다."""
@@ -357,7 +357,7 @@ def load_recipe(path):
             raise ValueError(f'{os.path.basename(pp)}: 형식 {r.get("schema")!r} 는 읽지 않는다 ({PLACEMENTS_SCHEMA} 앞자리만)')
         if r.get('recipe_sha256') != want:
             raise ValueError(f'{os.path.basename(pp)} 의 recipe_sha256 이 {os.path.basename(path)} 와 다르다 (구조가 바뀜 — 레시피 도구로 다시 만든다)')
-        steps.append({'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+        steps.append({'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
                       'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [k for k in r['supports'].split(';') if k]})
     return {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'], 'recipe_sha256': want, 'steps': steps, 'structure': recipe}
 
@@ -371,26 +371,26 @@ def recipe_model_id(recipe):
 def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · block_id · sequence · stage · grasp_axis · supports — 블록 이름)
+    레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
     + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · blocks[](block · stock_id · center_mm · R)).
-    block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
+    part_id = 조립 방법의 part_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
-    (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
+    (steps[].part_id), task 시험 예시는 이 꼴 파일이다(part_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
     옛 blocks[] 형식 · 로봇 쪽 옛 파일 이름 .recipe.json 은 W139 뒤 뺐다(W138).
     조립 원점은 robot.yaml assembly_origin 하나만 쓴다 (레시피 T_base_from_cad 는 null — 10/4 합의).
     가로 위치는 설계 그대로, 높이는 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
-    반환: [{'block_id', 'sequence', 'stage', 'grasp', 'center': (m), 'rot': 3x3, 'quat'}]
+    반환: [{'part_id', 'sequence', 'stage', 'grasp', 'center': (m), 'rot': 3x3, 'quat'}]
     """
     o = cfg['assembly_origin']
     yaw = math.radians(o['yaw_deg'])
     c, s = math.cos(yaw), math.sin(yaw)
-    top = {}                                         # block_id -> 실제 윗면 z (m, base). 받침을 따라 쌓아 올린다
+    top = {}                                         # part_id -> 실제 윗면 z (m, base). 받침을 따라 쌓아 올린다
 
-    def block(block_id, seq, stage, size_mm, center_mm, R, axis, supports):
+    def block(part_id, seq, stage, size_mm, center_mm, R, axis, supports):
         """레시피 블록 하나 -> 목표 항목. 크기는 mm 입력, 설계 치수와 다르면 예외. 윗면 z 는 받침 실제 윗면을 따라 쌓는다."""
         size_m = [v / 1000.0 for v in size_mm]
         if any(abs(a - b) > 1e-4 for a, b in zip(size_m, cfg['block_size_m'])):
-            raise ValueError(f'{block_id}: 블록 크기 {size_m} 가 robot.yaml block_size_m 와 다르다')
+            raise ValueError(f'{part_id}: 블록 크기 {size_m} 가 robot.yaml block_size_m 와 다르다')
         x, y, z = (v / 1000.0 for v in center_mm)
         rot = rot_z(R, yaw)
         # 높이는 설계값(15 mm 층)이 아니라 실제 블록(약 14.8 mm)으로 쌓아 올린다: 받침들의 실제 윗면 위에 놓는다.
@@ -401,8 +401,8 @@ def recipe_blocks(cfg, recipe):
         else:                                        # 받침이 없으면 작업대 위 (설계상 떠 있으면 설계 높이 그대로)
             bottom = o['z_m'] + max(0.0, z - half_height(R, size_m))
         h = 2 * half_height(rot, cfg['block_actual_m'])
-        top[block_id] = bottom + h
-        return {'block_id': block_id, 'sequence': seq, 'stage': stage, 'grasp': grasp_name(rot, axis),
+        top[part_id] = bottom + h
+        return {'part_id': part_id, 'sequence': seq, 'stage': stage, 'grasp': grasp_name(rot, axis),
                 'center': (o['x_m'] + c * x - s * y, o['y_m'] + s * x + c * y, bottom + h / 2),
                 'rot': rot, 'quat': quat_from_axes(*(column(rot, k) for k in range(3)))}
 
@@ -411,7 +411,7 @@ def recipe_blocks(cfg, recipe):
         model = recipe['model']
         sizes = {p['stock_id']: p['size_mm'] for p in model['stocks']}
         inst = {i['instance_id']: i for i in model['instances']}
-        bid = {st['instance_id']: st.get('block_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
+        bid = {st['instance_id']: st.get('part_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
             out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
@@ -419,11 +419,11 @@ def recipe_blocks(cfg, recipe):
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
     sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
-    geo = {b['block']: b for b in struct['blocks']}
-    full = {st['block']: st.get('block_id') or f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
+    geo = {b['part_name']: b for b in struct['blocks']}
+    full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"]}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
-        g = geo[st['block']]
-        out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
+        g = geo[st['part_name']]
+        out.append(block(full[st['part_name']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
                          st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
     return out
 

@@ -45,7 +45,7 @@ def test_role_part_stage_grasp가_블록_이름과_조립_방법에서_나온다
     steps = {s['sequence']: s for s in placements['steps']}
     for b in convert(model_id)['blocks']:
         st = steps[b['order']]
-        m = re.fullmatch(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_[0-9]{2}', st['block'])
+        m = re.fullmatch(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_[0-9]{2}', st['part_name'])
         assert (b['role'], b['group'], b['stage'], b['grasp']) == (m.group(1), int(m.group(2)), st['stage'], st['grasp'])
 
 
@@ -145,7 +145,7 @@ def test_잘못된_schema():
 
 
 def test_없는_block():
-    bad(lambda r, pl: pl['steps'][0].update(block='NOPE_001_01'))
+    bad(lambda r, pl: pl['steps'][0].update(part_name='NOPE_001_01'))
 
 
 def test_없는_part():
@@ -160,8 +160,8 @@ def test_steps_없음():
     bad(lambda r, pl: pl.update(steps=[]))
 
 
-def test_block_id가_모델ID와_블록_이름으로_만든_값과_다르면_거절():
-    bad(lambda r, pl: pl['steps'][0].update(block_id='001_CHAIR_BENCH_V000_LEG_009_09'))
+def test_part_id가_모델ID와_블록_이름으로_만든_값과_다르면_거절():
+    bad(lambda r, pl: pl['steps'][0].update(part_id='001_CHAIR_BENCH_V000_LEG_009_09'))
 
 
 def test_45도_회전은_방향_복원_불가():
@@ -182,8 +182,8 @@ def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
     def rename(r, pl):
         old = 'LEG_001_01'
         new = 'LEG_ARM_WHEEL_001_01'
-        r['blocks'][0]['block'] = new
-        pl['steps'][0].update(block=new, block_id=f'001_CHAIR_BENCH_V000_{new}')
+        r['blocks'][0]['part_name'] = new
+        pl['steps'][0].update(part_name=new, part_id=f'001_CHAIR_BENCH_V000_{new}')
         for st in pl['steps']:
             st['supports'] = [new if k == old else k for k in st['supports']]
     bad(rename)
@@ -192,9 +192,9 @@ def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
 def test_좌표는_레시피_원본_값_그대로():
     r, pl = load('003_DESK_STAND_V000')
     out = RecipeToBlocks('desk_stand', 'desk', BLOCK_MM).convert(r, pl)
-    center = {b['block']: b['center_mm'] for b in r['blocks']}
+    center = {b['part_name']: b['center_mm'] for b in r['blocks']}
     for step, b in zip(sorted(pl['steps'], key=lambda s: s['sequence']), out['blocks']):
-        cx, cy, _ = center[step['block']]
+        cx, cy, _ = center[step['part_name']]
         assert (b['x'], b['y']) == (cx, cy)
 
 

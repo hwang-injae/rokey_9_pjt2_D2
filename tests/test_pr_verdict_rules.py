@@ -80,7 +80,7 @@ IRD = 'docs/02_인터페이스_IRD_v3_100716.md'
 
 def test_ird_content_change_is_found(mod):
     """IRD 내용(이름 · 칸)이 바뀌면 사람 확인 대상이다."""
-    patch = '@@ -52 +52 @@\n-| 블록 번호 `block_id` | `LV1_B001` |\n+| 블록 이름 `block_id` | `LEG_001_01` |'
+    patch = '@@ -52 +52 @@\n-| 블록 번호 `part_id` | `LV1_B001` |\n+| 블록 이름 `part_id` | `LEG_001_01` |'
     assert mod.ird_changes([{'filename': IRD, 'status': 'modified', 'patch': patch}]) == [IRD]
 
 

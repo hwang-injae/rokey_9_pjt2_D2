@@ -30,7 +30,7 @@ GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', '
 LEGACY_GRASP = {'END_75': 'LENGTH', 'SIDE_25': 'WIDTH', 'THICKNESS_15': 'THICKNESS'}
 
 # 조립 방법 CSV 칸 — (가) 조립 방법 · (나) 표시 칸(레시피 값을 읽기 좋게 옮김) · 짝 확인 해시 · 형식 이름. 모든 줄의 recipe_sha256 · schema 는 같다.
-PLACEMENT_COLUMNS = ('block_id', 'block', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
+PLACEMENT_COLUMNS = ('part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
                      'center_x_mm', 'center_y_mm', 'center_z_mm', 'axis_L', 'axis_W', 'axis_T',
                      'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema')
 
@@ -49,7 +49,7 @@ class RecipeBuilder:
         """블록 목록으로 레시피를 만든다: 꼭짓점 → 치수 · 중심 · 회전, 같은 치수는 같은 부품 규격, 이름 · 배치 검사.
 
         입력:
-            boxes: [{'block': 'LEG_001_01', 'handle': '3E', 'vertices': [(x, y, z), ...] (mm)}] — CadReader.read_dxf 출력.
+            boxes: [{'part_name': 'LEG_001_01', 'handle': '3E', 'vertices': [(x, y, z), ...] (mm)}] — CadReader.read_dxf 출력.
                    CAD가 없는 설계(변환기 ①)는 handle = None
             model_id: 모델 ID (예 001_CHAIR_BENCH_V000)
             source_filename, source_sha256: 원본 CAD 파일 이름과 해시. CAD가 없으면 None
@@ -62,11 +62,11 @@ class RecipeBuilder:
         parts = {}   # 반올림한 치수 → part dict
         blocks = []
         for box in boxes:
-            name = box['block']
+            name = box['part_name']
             if not BLOCK_NAME.fullmatch(name or ''):
                 raise ValueError(f'{name!r}: block name must be <ROLE>[_<OPTION>]_<part 3 digits>_<block 2 digits> '
                                  f'(one word each, e.g. LEG_001_01 · LEG_WHEEL_001_01)')
-            if any(b['block'] == name for b in blocks):
+            if any(b['part_name'] == name for b in blocks):
                 raise ValueError(f'{name}: block name used twice')
 
             # 면마다 중복된 꼭짓점을 하나로 합친다. 직육면체라면 정확히 8개가 남는다.
@@ -94,7 +94,7 @@ class RecipeBuilder:
             key = tuple(round(v, 6) for v in size)
             if key not in parts:
                 parts[key] = {'stock_id': f'PART_{len(parts) + 1:03d}', 'size_mm': size}
-            block = {'block': name,
+            block = {'part_name': name,
                      'stock_id': parts[key]['stock_id'],
                      'center_mm': [float(c) for c in (lo + hi) / 2],
                      'R': [[float(v) for v in row] for row in R]}
@@ -111,11 +111,11 @@ class RecipeBuilder:
         boxes_lo_hi = [self.calculate_bounding_box(recipe, block) for block in blocks]
         for n, (block, (lo, hi)) in enumerate(zip(blocks, boxes_lo_hi)):
             if lo[2] < -TOL:
-                raise ValueError(f'Part below table: {block["block"]}')
+                raise ValueError(f'Part below table: {block["part_name"]}')
             for other, (other_lo, other_hi) in zip(blocks[:n], boxes_lo_hi[:n]):
                 # 겹치는 구간의 세 축 길이가 모두 양수면 부피를 함께 차지한다(면끼리 맞닿은 쌓기는 겹침 아님).
                 if (np.minimum(hi, other_hi) - np.maximum(lo, other_lo) > TOL).all():
-                    raise ValueError(f'Parts overlap: {other["block"]} / {block["block"]}')
+                    raise ValueError(f'Parts overlap: {other["part_name"]} / {block["part_name"]}')
 
 
         # 정한 번호가 작명 규칙의 위치 순서와 맞는지 확인
@@ -134,10 +134,10 @@ class RecipeBuilder:
         # 부품(역할 + 부품 번호)별로 블록을 모은다. 위치 키는 (바닥 z, 중심 y, 중심 x) — 0.001 mm로 반올림해 같은 층을 묶는다.
         part_blocks = {}
         for block, (lo, hi) in zip(recipe['blocks'], boxes_lo_hi):
-            role, part_no, block_no = BLOCK_NAME.fullmatch(block['block']).groups()
+            role, part_no, block_no = BLOCK_NAME.fullmatch(block['part_name']).groups()
             center = (lo + hi) / 2
             key = (round(float(lo[2]), 3), round(float(center[1]), 3), round(float(center[0]), 3))
-            part_blocks.setdefault((role, int(part_no)), []).append((int(block_no), key, block['block']))
+            part_blocks.setdefault((role, int(part_no)), []).append((int(block_no), key, block['part_name']))
 
 
         # 부품 안 블록 번호 = 1..n, 위치 순서와 같음
@@ -172,12 +172,12 @@ class RecipeBuilder:
         입력:
             recipe: make_recipe 출력
             hints: {블록 이름: {'SEQ': '1', 'STAGE': '1', 'GRASP': 'FLAT_SHORT' 또는 옛 이름 SIDE_25 등}} — 정수는 글자 · 정수 둘 다
-        출력: 조립 방법 dict (schema placements/2.0 — model_id · recipe_sha256 · steps[block · block_id · sequence · stage ·
+        출력: 조립 방법 dict (schema placements/2.0 — model_id · recipe_sha256 · steps[block · part_id · sequence · stage ·
               grasp · grasp_axis · supports], steps는 sequence 순서)
         실패: 속성이 빠졌거나 정수가 아니거나 검사 항목을 어기면 블록 이름을 담은 ValueError.
         """
         # ① 블록마다 속성 → 순서 · 단계 · 파지 방법. 빠진 것은 한 번에 모아 알린다.
-        blocks = {block['block']: block for block in recipe['blocks']}
+        blocks = {block['part_name']: block for block in recipe['blocks']}
         missing = [f'{name}({", ".join(t for t in ("SEQ", "STAGE", "GRASP") if t not in hints.get(name, {}))})'
                    for name in blocks if not all(t in hints.get(name, {}) for t in ('SEQ', 'STAGE', 'GRASP'))]
         if missing:
@@ -225,13 +225,13 @@ class RecipeBuilder:
                             if abs(lo[2] - other_hi[2]) < TOL
                             and (np.minimum(hi[:2], other_hi[:2]) - np.maximum(lo[:2], other_lo[:2]) > TOL).all()]
                 if not supports:
-                    raise ValueError(f'{block["block"]}: nothing placed beneath it yet; it would float at this point in the sequence')
-            # block_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 001_CHAIR_BENCH_V001 → 001_CHAIR_BENCH_V001_LEG_001_01, task RecipeDocument 와 같음)
-            steps.append({'block': block['block'], 'block_id': f'{recipe["model_id"].upper()}_{block["block"]}',
+                    raise ValueError(f'{block["part_name"]}: nothing placed beneath it yet; it would float at this point in the sequence')
+            # part_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 001_CHAIR_BENCH_V001 → 001_CHAIR_BENCH_V001_LEG_001_01, task RecipeDocument 와 같음)
+            steps.append({'part_name': block['part_name'], 'part_id': f'{recipe["model_id"].upper()}_{block["part_name"]}',
                           'sequence': sequence, 'stage': stage, 'grasp': grasp,
                           'grasp_axis': next(name for name, k in AXES.items() if k == closing_axis),
                           'supports': supports})
-            placed.append((block['block'], lo, hi))
+            placed.append((block['part_name'], lo, hi))
         return {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'],
                 'recipe_sha256': self.calculate_recipe_sha256(recipe), 'steps': steps}
 
@@ -255,11 +255,11 @@ class RecipeBuilder:
             placements: make_placements 출력
         출력: 줄 목록. 한 줄 = PLACEMENT_COLUMNS 키의 dict (supports 는 목록 그대로 — 글자로 잇는 것은 파일 쓰는 쪽)
         """
-        blocks = {block['block']: block for block in recipe['blocks']}
+        blocks = {block['part_name']: block for block in recipe['blocks']}
         sizes = {part['stock_id']: part['size_mm'] for part in recipe['stocks']}
         rows = []
         for step in placements['steps']:
-            block = blocks[step['block']]
+            block = blocks[step['part_name']]
             size = sizes[block['stock_id']]
 
             # 방향: 부품 L/W/T 축이 모델의 어느 축을 향하는지 '+X' · '-Y' 글자로. R의 k번째 열 = 부품 k번째 축 방향.
@@ -269,7 +269,7 @@ class RecipeBuilder:
                 axis = max(range(3), key=lambda a: abs(column[a]))
                 directions.append(('+' if column[axis] > 0 else '-') + 'XYZ'[axis])
 
-            rows.append({'block_id': step['block_id'], 'block': step['block'],
+            rows.append({'part_id': step['part_id'], 'part_name': step['part_name'],
                          'sequence': step['sequence'], 'stage': step['stage'], 'stock_id': block['stock_id'],
                          'size_L_mm': size[0], 'size_W_mm': size[1], 'size_T_mm': size[2],
                          'center_x_mm': block['center_mm'][0], 'center_y_mm': block['center_mm'][1],
@@ -317,7 +317,7 @@ class RecipeBuilder:
         placed = self.read_placed_state(block)
         state, length = grasp.split('_')
         if state != placed:
-            raise ValueError(f'{block["block"]}: grasp {grasp} needs the part {state}, but CAD places it {placed}')
+            raise ValueError(f'{block["part_name"]}: grasp {grasp} needs the part {state}, but CAD places it {placed}')
 
 
         # 수평 축 중 긴 쪽 또는 짧은 쪽
@@ -337,7 +337,7 @@ class RecipeBuilder:
         long_axis, short_axis = self.find_horizontal_axes(recipe, block)
         if axis not in (long_axis, short_axis):
             name = next(n for n, k in AXES.items() if k == axis)
-            raise ValueError(f'{block["block"]}: closing axis {name} is vertical; top-down grasp needs a horizontal axis')
+            raise ValueError(f'{block["part_name"]}: closing axis {name} is vertical; top-down grasp needs a horizontal axis')
         return f'{self.read_placed_state(block)}_{"LONG" if axis == long_axis else "SHORT"}'
 
     def find_horizontal_axes(self, recipe, block):
@@ -367,4 +367,4 @@ class RecipeBuilder:
         for state, axis in VERTICAL_AXIS.items():
             if abs(abs(block['R'][2][axis]) - 1.0) <= TOL:
                 return state
-        raise ValueError(f'{block["block"]}: no part axis points up; only axis-aligned placement is supported')
+        raise ValueError(f'{block["part_name"]}: no part axis points up; only axis-aligned placement is supported')

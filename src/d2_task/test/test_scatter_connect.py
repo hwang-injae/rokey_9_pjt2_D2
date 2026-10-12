@@ -120,7 +120,7 @@ def test_목표_블록은_작업_판단이_정하고_어디서_집을지만_방�
     start(m)
     drive(m, 'PICK_PLACE')
     t = m.planner.next_target()
-    assert (m.goal['block_id'], m.goal['grasp'], m.goal['place_pose']) == (t['block_id'], t['grasp'], t['place_pose'])
+    assert (m.goal['part_id'], m.goal['grasp'], m.goal['place_pose']) == (t['part_id'], t['grasp'], t['place_pose'])
 
 
 def test_공급에_블록이_없으면_supply_empty로_기다리고_계속하면_다시_관측한다():
@@ -132,7 +132,7 @@ def test_공급에_블록이_없으면_supply_empty로_기다리고_계속하면
     finds = len(calls(io, 'find_blocks'))
     assert m.command('start') == (True, '')                                  # [계속]
     drive(m, 'PICK_PLACE')
-    assert len(calls(io, 'find_blocks')) == finds + 1 and m.block_id == IDS[0]
+    assert len(calls(io, 'find_blocks')) == finds + 1 and m.part_id == IDS[0]
     drive(m, 'DONE')
 
 
@@ -294,7 +294,7 @@ def test_블록당_총_집기_2번이면_사람을_부른다():
 def test_횟수는_재관측과_정지_복구로_비우지_않는다():
     m, io = make()
     fail_then_ok(m, io, [(False, 'GRASP_FAILED')] * 3, [{'step': 'grasp', 'grasped': False}] * 3)
-    block = m.goal['block_id']
+    block = m.goal['part_id']
     assert m._scatter_fail == {block: 2}
     m.on_safety(SAFE_STOP)
     m.on_safety(SAFE_OK)
@@ -304,7 +304,7 @@ def test_횟수는_재관측과_정지_복구로_비우지_않는다():
 def test_놓기_성공_직후에는_횟수를_두고_배치_확인_뒤에_지운다():
     m, io = make()
     fail_then_ok(m, io, [(False, 'GRASP_FAILED')], [{'step': 'grasp', 'grasped': False}])
-    block = m.goal['block_id']
+    block = m.goal['part_id']
     assert m.state == 'VERIFY' and m._scatter_fail == {block: 2}      # PickPlace 성공 직후(실패 1번 + 성공 1번 = 시도 2번)
     m.run_once()                                                        # VERIFY 통과
     assert m.state == 'SELECT' and block not in m._scatter_fail
@@ -400,7 +400,7 @@ def test_한도를_채운_뒤_복구로_와도_새_집기_요청을_보내지_�
 def test_배치가_present로_확인되지_않으면_횟수를_지우지_않는다():
     m, io = make()
     fail_then_ok(m, io, [(False, 'GRASP_FAILED')], [{'step': 'grasp', 'grasped': False}])
-    block = m.goal['block_id']
+    block = m.goal['part_id']
     m.planner.judge = lambda **k: []                   # 오류가 없어도
     m._observe = lambda ids: m.planner.progress[m.placed].__setitem__('state', 'absent') or True    # 놓인 것이 확인되지 않으면
     m.run_once()

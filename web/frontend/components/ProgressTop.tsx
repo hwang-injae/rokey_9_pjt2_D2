@@ -20,7 +20,7 @@ export default function ProgressTop({ robot }: { robot: Robot }) {
       <div className="bar">
         <div className="fill" style={{ width: `${pct}%` }} />
       </div>
-      <div className="top-progress-sub muted">{st?.block_id ? `지금 ${blockName(st.block_id, st.design_id)}` : ' '}</div>
+      <div className="top-progress-sub muted">{st?.part_id ? `지금 ${blockName(st.part_id, st.design_id)}` : ' '}</div>
     </div>
   );
 }

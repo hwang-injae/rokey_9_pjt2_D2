@@ -2,7 +2,7 @@
 """흩뿌림 집기 준비 ScatterFlow — 목표 블록을 유지한 채 find_blocks 결과로 후보를 고르고 집기 요청을 준비한다 (ROS 없이 동작, W130).
 
 TaskManager 의 SELECT 안에서(공개 상태를 늘리지 않고) 쓰려고 만든 계산 클래스다. 아직 TaskManager · 로봇 호출에 연결하지 않았다.
-호출 흐름(연결할 때): ① SELECT 가 TaskPlanner 에서 목표 블록(block_id · 잡기 · 놓을 자세)을 정한다 → ② begin() 으로 요청 표를 받는다 →
+호출 흐름(연결할 때): ① SELECT 가 TaskPlanner 에서 목표 블록(part_id · 잡기 · 놓을 자세)을 정한다 → ② begin() 으로 요청 표를 받는다 →
 ③ 잠금 밖에서 observe_supply 로 가서 find_blocks 를 부르고 prepare() 로 후보를 계산한다(계산만 — 상태를 바꾸지 않는다) →
 ④ **TaskManager 잠금 안에서** commit() 이 요청 번호 · 상태 · 정지 · 종료를 다시 확인하고 같은 구간에서 후보를 적용한다(확인과 적용 사이에 정지가 끼지 못한다) →
 ⑤ 실패하면 on_failure() 가 실행 단계 · 잡힘 상태로 다음 동작(REPLAN_SAME · WAIT · REOBSERVE · RECOVER · ERROR)을 알려 준다.
@@ -234,7 +234,7 @@ class ScatterFlow:
         """목표 블록 + find_blocks 응답 → 집기 요청 준비. 반환 dict 의 status:
 
         (후보는 이 함수가 정하지 않는다 — 계산만. 적용은 commit.)
-        PICK          request = PickPlace 목표 칸(block_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m · obstacles)과 candidate(복사본)
+        PICK          request = PickPlace 목표 칸(part_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m · obstacles)과 candidate(복사본)
                       obstacles = 같은 응답에서 고른 블록 하나(인덱스)만 뺀 나머지 전부의 중심 자세 [(xyz m, 쿼터니언 xyzw)](under · top 포함, 자르기 없음).
                       고른 블록만 있었으면 빈 목록 — 정상이다(다른 블록 없음, 공급 칸 가정 상자로 안 돌아감).
                       기울어진(tilted) 블록도 장애물에 넣는다 — 지금(핵심 단계)은 집기 요청을 막지 않고 IRD 4.2 그대로 '윗면 = 가장 높은 점인 반듯한 상자'로
@@ -246,7 +246,7 @@ class ScatterFlow:
         EMPTY         공급에 블록이 없다 → 채우기 안내(guide 'REFILL')
         NO_MATCH      블록은 있는데 맞는 후보가 없다 → 제외 이유(counts · message)를 안내(guide 'CHECK_BLOCKS')
         LOOKUP_FAILED 조회 실패 · 잘못된 응답 — 공급 부족이 아니다(reason)
-        target = {block_id, grasp, place_pose}. 목표 block_id · 놓을 자세 · 잡기는 그대로 유지하고 복사해서 쓴다.
+        target = {part_id, grasp, place_pose}. 목표 part_id · 놓을 자세 · 잡기는 그대로 유지하고 복사해서 쓴다.
         """
         if not self.configured:
             return {'status': 'NOT_CONFIGURED'}
@@ -266,7 +266,7 @@ class ScatterFlow:
         if isinstance(obstacles, dict):
             return obstacles
         center, quat = block_pose(self.cfg, c['up'], c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
-        request = {'block_id': target['block_id'], 'supply_slot': '', 'grasp': target['grasp'],
+        request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': target['grasp'],
                    'pick_pose': (center, quat), 'place_pose': copy.deepcopy(target['place_pose']),
                    'open_width_m': self.open_width_m, 'obstacles': obstacles}
         return {'status': 'PICK', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm']}

@@ -154,7 +154,7 @@ def test_깨진_파일과_임시_파일은_복원하지_않고_지우지도_않�
     put('R_칸없음.json', {k: v for k, v in dict(good, run_id='R_칸없음').items() if k != 'placed'})
     put('R_자료형.json', dict(good, run_id='R_자료형', placed='11'))
     put('R_결과.json', dict(good, run_id='R_결과', result='FAILED'))
-    put('R_블록.json', dict(good, run_id='R_블록', blocks=[{'block_id': 'B1', 'dz_m': 'x', 'dx_m': None, 'dy_m': None}]))
+    put('R_블록.json', dict(good, run_id='R_블록', blocks=[{'part_id': 'B1', 'dz_m': 'x', 'dx_m': None, 'dy_m': None}]))
     put('R_NaN.json', '{"schema":"build/1","run_id":"R_NaN","duration_s":NaN}')
     put('R_임시.json.tmp', dict(good, run_id='R_임시'))              # 쓰다 만 임시 파일
     before = files(tmp_path)
@@ -261,5 +261,5 @@ def test_보관한_요약의_칸은_build_1_그대로(tmp_path):
     assert log.flush(5.0)
     saved = json.loads((tmp_path / 'pending_builds' / f'{a}.json').read_text(encoding='utf-8'))
     assert set(saved) == {'schema', 'run_id', 'design_id', 'result', 'placed', 'total', 'duration_s', 'stop_count', 'blocks'}
-    assert saved['blocks'][0].keys() == {'block_id', 'dz_m', 'dx_m', 'dy_m'}
+    assert saved['blocks'][0].keys() == {'part_id', 'dz_m', 'dx_m', 'dy_m'}
     assert saved['blocks'][0]['dx_m'] is None

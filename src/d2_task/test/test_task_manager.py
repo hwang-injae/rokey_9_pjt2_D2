@@ -23,7 +23,7 @@ CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
 RECIPE = _DOC.recipe              # 구조(recipe/3.0)
 PLACEMENTS = _DOC.placements      # 조립 방법(placements/2.0)
-IDS = [f'001_CHAIR_BENCH_V000_{s["block"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
+IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
 def reseal(recipe, placements):
@@ -77,13 +77,13 @@ class FakeIO:
         step = self.stop_script.pop(0) if self.stop_script else (False, '가짜 정지 서비스 없음')
         return step(self) if callable(step) else step
 
-    def check_progress(self, block_ids, should_abort):
-        self.events.append(('call', 'check', tuple(block_ids)))
+    def check_progress(self, part_ids, should_abort):
+        self.events.append(('call', 'check', tuple(part_ids)))
         script = self.check_script.pop(0) if self.check_script else None
         if isinstance(script, tuple):                      # (False, reason): 호출 실패
             return False, script[1], {}
         rows = {}
-        for b in block_ids:
+        for b in part_ids:
             state = (script or {}).get(b, 'present' if b in self.world else 'absent')
             here = state == 'present'
             rows[b] = {'state': state, 'dx_m': float('nan'), 'dy_m': float('nan'),
@@ -91,12 +91,12 @@ class FakeIO:
         return True, '', rows
 
     def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
-        self.events.append(('call', 'pick', goal['block_id'], goal['supply_slot']))
+        self.events.append(('call', 'pick', goal['part_id'], goal['supply_slot']))
         step = self.pick_script.pop(0) if self.pick_script else OK
         if callable(step):
             step = step(self)
         if step[0]:
-            self.world.add(goal['block_id'])
+            self.world.add(goal['part_id'])
         return step
 
     def publish_state(self, msg):
@@ -146,7 +146,7 @@ def drive(m, until, limit=500):
 
 
 def picks(io):
-    """pick_place 로 보낸 (block_id, 칸) 들."""
+    """pick_place 로 보낸 (part_id, 칸) 들."""
     return [c[1:] for c in io.calls if c[0] == 'pick']
 
 

@@ -21,7 +21,7 @@ class TraceIO(FakeIO):
         self.plan, self.callbacks = [], []
 
     def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
-        self.events.append(('call', 'pick', goal['block_id'], goal['supply_slot']))
+        self.events.append(('call', 'pick', goal['part_id'], goal['supply_slot']))
         plan = self.plan.pop(0) if self.plan else {}
         self.callbacks.append((on_feedback, on_result))
         for step in plan.get('steps', FULL):
@@ -34,7 +34,7 @@ class TraceIO(FakeIO):
             on_result(at)
         ok, why = plan.get('ret', OK)
         if ok:
-            self.world.add(goal['block_id'])
+            self.world.add(goal['part_id'])
         return ok, why
 
 

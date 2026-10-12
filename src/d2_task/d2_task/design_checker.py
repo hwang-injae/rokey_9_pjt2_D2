@@ -78,9 +78,9 @@ class DesignChecker:
                 document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
                 result.update(recipe=document.recipe, placements=document.placements)
             except DesignRejected as e:      # 변환기 ①이 찾은 AI 실수(역할 목록 · 면 맞닿음 · 잡기) — 설계 탓이므로 CHECK_FAILED 로 돌려 재생성한다
-                return self._result(False, margin, [{'block': x['block'], 'reason': 'CHECK_FAILED', 'detail': x['detail']} for x in e.errors])
+                return self._result(False, margin, [{'part': x['part'], 'reason': 'CHECK_FAILED', 'detail': x['detail']} for x in e.errors])
             except Exception as e:   # 그 밖의 예외는 변환기 쪽 고장이라 ERROR 로 알린다
-                return self._result(False, margin, [{'block': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
+                return self._result(False, margin, [{'part': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result
 
     def handle_json(self, request_json):
@@ -100,12 +100,12 @@ class DesignChecker:
                 raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
             result = self.check(request)
             if result['ok'] and self.blocks_to_recipe is None:
-                result = self._result(False, result['min_margin_mm'], [{'block': None, 'reason': 'ERROR',
+                result = self._result(False, result['min_margin_mm'], [{'part': None, 'reason': 'ERROR',
                                       'detail': '변환기 ① 미연결 — 검사는 통과했지만 레시피를 만들 수 없다'}])
             failed = any(e['reason'] == 'ERROR' for e in result['errors'])   # ERROR 는 변환기 ① 쪽 실패뿐 — 설계 탓이 아니다
             return (not failed), ('ERROR' if failed else ''), json.dumps(result, ensure_ascii=False, allow_nan=False)
         except Exception as e:   # 어떤 예외든 서비스 실패(ERROR)로 알린다 — 검사 때문에 task 노드가 죽으면 안 된다
-            err = self._result(False, None, [{'block': None, 'reason': 'ERROR', 'detail': f'검사 서비스 처리 실패: {e}'}])
+            err = self._result(False, None, [{'part': None, 'reason': 'ERROR', 'detail': f'검사 서비스 처리 실패: {e}'}])
             return False, 'ERROR', json.dumps(err, ensure_ascii=False, allow_nan=False)
 
     @staticmethod
@@ -132,8 +132,8 @@ class DesignChecker:
     # ---------------- 1. 형식 ----------------
     def _parse(self, request, errors):
         """형식을 확인해 order 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
-        def bad(detail, block=None, reason='CHECK_FAILED'):
-            errors.append({'block': block, 'reason': reason, 'detail': f'형식: {detail}'})
+        def bad(detail, part=None, reason='CHECK_FAILED'):
+            errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}'})
 
         items = request.get('blocks') if isinstance(request, dict) else None
         if not isinstance(items, list) or not items:
@@ -203,7 +203,7 @@ class DesignChecker:
                 if (self._gap(a['x0'], a['x1'], b['x0'], b['x1']) > PENETRATION_MM
                         and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > PENETRATION_MM
                         and self._gap(a['z0'], a['z1'], b['z0'], b['z1']) > PENETRATION_MM):
-                    errs.append({'block': b['order'], 'reason': 'CHECK_FAILED',
+                    errs.append({'part': b['order'], 'reason': 'CHECK_FAILED',
                                  'detail': f'{a["order"]}번 ↔ {b["order"]}번 겹침'})
         return errs
 
@@ -227,13 +227,13 @@ class DesignChecker:
                     if x1 > x0 and y1 > y0:
                         sup.append((j, (x0, x1, y0, y1)))
             if a['z0'] < 0:
-                errors.append({'block': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업면 아래(z<0)'})
+                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업면 아래(z<0)'})
                 floating = True
             elif not sup:
                 later = [b['order'] for b in boxes[i + 1:] if b['z1'] == a['z0'] and
                          self._gap(a['x0'], a['x1'], b['x0'], b['x1']) > 0 and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > 0]
                 hint = f' (받침 {later[0]}번이 더 늦게 놓임)' if later else ''
-                errors.append({'block': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 공중{hint}'})
+                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 공중{hint}'})
                 floating = True
             below.append(sup)
         return None if floating else below
@@ -270,7 +270,7 @@ class DesignChecker:
                 if mg < self.margin_mm and (b not in worst or mg < worst[b][0]):
                     worst[b] = (mg, k)
         for b, (mg, k) in sorted(worst.items()):
-            errors.append({'block': boxes[b]['order'], 'reason': 'CHECK_FAILED',
+            errors.append({'part': boxes[b]['order'], 'reason': 'CHECK_FAILED',
                            'detail': f'{boxes[b]["order"]}번 위 덩어리: {boxes[k]["order"]}번까지 놓았을 때 여유 {mg:.1f} mm < {self.margin_mm}'})
         return overall
 
@@ -354,7 +354,7 @@ class DesignChecker:
         errs = []
         for i, a in enumerate(boxes):
             if not self._grasps(a, boxes[:i]):
-                errs.append({'block': a['order'], 'reason': 'CHECK_FAILED',
+                errs.append({'part': a['order'], 'reason': 'CHECK_FAILED',
                              'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다'})
         return errs
 
@@ -371,10 +371,10 @@ class DesignChecker:
                 bx = o['x_m'] + (c * x - s * y) / 1000.0
                 by = o['y_m'] + (s * x + c * y) / 1000.0
                 if abs(bx - o['x_m']) > half or abs(by - o['y_m']) > half:
-                    errs.append({'block': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업영역 밖(조립 작업공간 ± {half} m)'})
+                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업영역 밖(조립 작업공간 ± {half} m)'})
                     break
                 if not (self.table['x_m'][0] <= bx <= self.table['x_m'][1] and self.table['y_m'][0] <= by <= self.table['y_m'][1]):
-                    errs.append({'block': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업대 밖'})
+                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업대 밖'})
                     break
         return errs
 

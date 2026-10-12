@@ -88,7 +88,7 @@ def completed(result):
 
 def goal():
     """통신 시험용 목표. 포즈는 변환하지 않아도 되는 가짜 값이다."""
-    return dict(block_id='b1', supply_slot='1', grasp='FLAT_SHORT', pick_pose=None, place_pose=None)
+    return dict(part_id='b1', supply_slot='1', grasp='FLAT_SHORT', pick_pose=None, place_pose=None)
 
 
 def test_이동_시간초과는_서버취소로_오해하지_않는다(node):

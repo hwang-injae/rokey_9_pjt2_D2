@@ -43,7 +43,7 @@ def check(req, **kw):
 
 
 def reasons(res):
-    return [(e['block'], e['reason']) for e in res['errors']]
+    return [(e['part'], e['reason']) for e in res['errors']]
 
 
 @pytest.mark.parametrize('model_id', DESIGNS)

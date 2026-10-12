@@ -66,16 +66,16 @@ def test_round_trip_matches_cad_recipe(model_id):
 def test_bench_block_names_from_positions(bench):
     for b in bench['blocks']:
         b['group'] = {1: 7, 2: 3}[b['group']] if b['role'] == 'LEG' else 5      # 묶음 값만 바꿔도 이름은 위치로 같다
-    names = [b['block'] for b in make_converter().convert(bench)['recipe']['blocks']]
+    names = [b['part_name'] for b in make_converter().convert(bench)['recipe']['blocks']]
     assert sorted(names) == [f'LEG_001_0{k}' for k in range(1, 5)] + [f'LEG_002_0{k}' for k in range(1, 5)] + [f'SEAT_001_0{k}' for k in range(1, 4)]
 
 
-# 생성 설계 ID(<Template ID>_V<3자리>, E-84)는 레시피 model_id 그대로, block_id 는 대문자 — task RecipeDocument 와 같은 규칙(IRD 2장)
-def test_generated_design_id_block_id_upper(bench):
+# 생성 설계 ID(<Template ID>_V<3자리>, E-84)는 레시피 model_id 그대로, part_id 는 대문자 — task RecipeDocument 와 같은 규칙(IRD 2장)
+def test_generated_design_id_part_id_upper(bench):
     bench['design_id'] = '001_CHAIR_BENCH_V001'
     out = make_converter().convert(bench)
     assert out['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
-    assert out['placements']['steps'][0]['block_id'].startswith('001_CHAIR_BENCH_V001_LEG_')
+    assert out['placements']['steps'][0]['part_id'].startswith('001_CHAIR_BENCH_V001_LEG_')
     RecipeDocument(out['recipe'], out['placements'])
 
 
@@ -108,7 +108,7 @@ def test_role_not_in_list_rejected(bench):
     assert any('ROCKER' in d for d in rejected_details(bench))
     for b in bench['blocks']:
         b['role'] = 'LEG_WHEEL' if b['role'] == 'LEG_ROCKER' else b['role']
-    assert any(b['block'].startswith('LEG_WHEEL_002_') for b in make_converter().convert(bench)['recipe']['blocks'])
+    assert any(b['part_name'].startswith('LEG_WHEEL_002_') for b in make_converter().convert(bench)['recipe']['blocks'])
 
 
 # ② 떨어진 블록을 한 부품으로 묶으면 거부 — 벤치 왼 · 오른 다리를 같은 part 로

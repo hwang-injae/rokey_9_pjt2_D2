@@ -210,7 +210,7 @@ class DesignStore:
     # ---------- 새 설계 ----------
     def new_design_id(self, template, parent_id=None):
         """새 설계의 (design_id, version) 을 정한다 — 저장하지 않는다. **검사 전에** 부른다: 변환기 ①이 이 ID 로 레시피 model_id ·
-        block_id 를 만들기 때문(IRD 2장 — 블록 이름 앞에 설계 ID).
+        part_id 를 만들기 때문(IRD 2장 — 블록 이름 앞에 설계 ID).
 
         규칙(10/10 E-84 · IRD 2장 · SDD 6.8): <Template ID>_V<3자리>, 번호 = 그 Template 에 저장된 가장 큰 V + 1(만든 차례 — 부모와 상관없음).
         Template = 기본 설계 4개 이름(그 _V000 이 등록돼 있어야 함) — AI 생성은 사용자가 확인한 Template, 스캔은 부모의 Template.

@@ -69,7 +69,7 @@ class RecipeManager:
             center = f"({row['center_x_mm']:g}, {row['center_y_mm']:g}, {row['center_z_mm']:g})"
             axes = f"{row['axis_L']}/{row['axis_W']}/{row['axis_T']}"
             supports = ', '.join(row['supports']) or '책상'
-            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['block']:<15}{size:<12}"
+            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['part_name']:<15}{size:<12}"
                   f"{center:<24}{axes:<12}{row['grasp']:<13}{row['grasp_axis']:<11}{supports}")
         print()
 
@@ -98,7 +98,7 @@ class RecipeManager:
         boxes = self.reader.read_dxf(cad_path)
         sha256 = hashlib.sha256(Path(cad_path).read_bytes()).hexdigest()
         recipe = self.builder.make_recipe(boxes, model_id, Path(cad_path).name, sha256)
-        return recipe, {box['block']: box['hints'] for box in boxes}
+        return recipe, {box['part_name']: box['hints'] for box in boxes}
 
     def save_file(self, path, text):
         """text를 파일로 저장한다. 같은 이름이 있으면 덮어쓰기 / 다른 이름으로 저장 / 취소 중에서 고르게 한다.

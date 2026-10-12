@@ -61,10 +61,10 @@ def sealed(recipe, placements):
 def test_두파일_판단은_역할이름과_받침을_보존한다(pair):
     """같은 계산으로 실제 높이를 얻고 전체 역할 이름으로 진행표를 만든다."""
     p = TaskPlanner(CFG, *pair)
-    assert p.blocks[0]['block_id'] == f'{MODEL}_LEG_001_01'
+    assert p.blocks[0]['part_id'] == f'{MODEL}_LEG_001_01'
     assert p.blocks[2]['supports'] == [f'{MODEL}_LEG_001_01']
     p.update_progress({k: {'state': 'absent'} for k in p.progress})
-    assert p.next_block()['block_id'] == f'{MODEL}_LEG_001_01'
+    assert p.next_block()['part_id'] == f'{MODEL}_LEG_001_01'
 
 
 def test_시험용_파일은_레시피_도구의_실제_벤치_파일과_같다():
@@ -89,7 +89,7 @@ def test_순서를_바꿔도_블록이름이_바뀌지_않는다(pair):
     r, p = pair
     p['steps'][0]['sequence'], p['steps'][1]['sequence'] = 2, 1
     planner = TaskPlanner(CFG, r, p)
-    assert planner.blocks[0]['block_id'] == f'{MODEL}_LEG_002_01'
+    assert planner.blocks[0]['part_id'] == f'{MODEL}_LEG_002_01'
     assert planner.blocks[2]['supports'] == [f'{MODEL}_LEG_001_01']
 
 
@@ -108,19 +108,19 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: p.update(recipe_sha256='bad'), False),
     (lambda r, p: p.update(recipe_sha256='0' * 64), False),
     (lambda r, p: r['blocks'][0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
-    (lambda r, p: r['blocks'][0].update(block='B001'), True),
-    (lambda r, p: r['blocks'][1].update(block=r['blocks'][0]['block']), True),
+    (lambda r, p: r['blocks'][0].update(part_name='B001'), True),
+    (lambda r, p: r['blocks'][1].update(part_name=r['blocks'][0]['part_name']), True),
     (lambda r, p: r['blocks'][0].update(stock_id='NOPE'), True),
     (lambda r, p: r['blocks'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
     (lambda r, p: r['blocks'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
-    (lambda r, p: p['steps'][0].update(block='NOPE'), True),
-    (lambda r, p: p['steps'][0].update(block_id='001_CHAIR_BENCH_V000_LEG_009_09'), True),
+    (lambda r, p: p['steps'][0].update(part_name='NOPE'), True),
+    (lambda r, p: p['steps'][0].update(part_id='001_CHAIR_BENCH_V000_LEG_009_09'), True),
     (lambda r, p: p['steps'][1].update(sequence=1), True),
     (lambda r, p: p['steps'][0].update(stage=True), True),
     (lambda r, p: p['steps'][0].update(grasp='NOPE'), True),
     (lambda r, p: p['steps'][0].update(supports=['NOPE']), True),
-    (lambda r, p: p['steps'][0].update(supports=[p['steps'][1]['block']]), True),
-    (lambda r, p: p['steps'][2].update(supports=[p['steps'][0]['block']] * 2), True),
+    (lambda r, p: p['steps'][0].update(supports=[p['steps'][1]['part_name']]), True),
+    (lambda r, p: p['steps'][2].update(supports=[p['steps'][0]['part_name']] * 2), True),
     (lambda r, p: p['steps'].pop(), True),
 ])
 def test_두파일_손상은_조립전_거절한다(pair, mutate, seal):
@@ -171,7 +171,7 @@ def test_옛_파일은_읽지_않는다(tmp_path):
     with pytest.raises(ValueError, match='cad_structure/1.0'):
         RecipeDocument.load(tmp_path, MODEL)
     copy_pair(tmp_path)
-    assert RecipeDocument.load(tmp_path, MODEL).recipe['blocks'][0]['block'] == 'LEG_001_01'
+    assert RecipeDocument.load(tmp_path, MODEL).recipe['blocks'][0]['part_name'] == 'LEG_001_01'
 
 
 def test_조립_방법_없이는_문서를_만들_수_없다(pair):
@@ -216,7 +216,7 @@ def test_CSV_머리줄로_읽고_칸_순서에_의존하지_않는다(tmp_path):
     assert RecipeDocument.load(tmp_path, MODEL).placements == RecipeDocument.load(FIXTURES, MODEL).placements
 
 
-@pytest.mark.parametrize('drop', ['block', 'block_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema'])
+@pytest.mark.parametrize('drop', ['part_name', 'part_id', 'sequence', 'stage', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema'])
 def test_CSV_필수_칸이_빠지면_거절(tmp_path, drop):
     copy_pair(tmp_path)
     rows = list(csv.DictReader(io.StringIO((tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8'))))
@@ -313,7 +313,7 @@ def test_BACK_BEAM도_명시적_설계ID를_보낸다(node):
     blocks = ['002_CHAIR_BACK_V000_BACK_001_01', '002_CHAIR_BACK_V000_BEAM_001_01']
     with pytest.raises(InterruptedError):
         node.check_progress(blocks, lambda: False)
-    assert sent[0].design_id == '002_CHAIR_BACK_V000' and sent[0].block_ids == blocks
+    assert sent[0].design_id == '002_CHAIR_BACK_V000' and sent[0].part_ids == blocks
 
 
 @pytest.mark.parametrize('name', ['recipe_document', 'recipe_to_blocks'])
@@ -353,4 +353,4 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     doc = RecipeDocument.load(FIXTURES, model_id)
     assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
-        assert doc.placements['recipe_sha256'].startswith('dfbe4e71') and doc.placements['recipe_sha256'].endswith('f580')     # 한세교 시험에 고정된 벤치 값
+        assert doc.placements['recipe_sha256'].startswith('40b007d4') and doc.placements['recipe_sha256'].endswith('ae10')     # 한세교 시험에 고정된 벤치 값

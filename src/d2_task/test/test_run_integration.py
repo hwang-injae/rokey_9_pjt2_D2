@@ -53,15 +53,15 @@ class MultiIO(FakeIO):
     """get_design 이 저장소(설계 이름 → design/2.0)에서 꺼내 주는 가짜. check_progress 에 실리는 design_id · run_id 도 기록한다."""
 
     def __init__(self, designs):
-        """설계 저장소를 받는다. check_requests 는 (design_id, run_id 또는 빈 글자, block_ids) 목록."""
+        """설계 저장소를 받는다. check_requests 는 (design_id, run_id 또는 빈 글자, part_ids) 목록."""
         super().__init__()
         self.designs = designs
         self.check_requests = []
 
-    def check_progress(self, block_ids, should_abort):
+    def check_progress(self, part_ids, should_abort):
         """task_node.check_progress 가 요청 칸을 채우는 것과 같은 출처(manager.design_id · manager.run_id)를 기록하고 FakeIO 로 답한다."""
-        self.check_requests.append((self.manager.design_id, self.manager.run_id or '', tuple(block_ids)))
-        return super().check_progress(block_ids, should_abort)
+        self.check_requests.append((self.manager.design_id, self.manager.run_id or '', tuple(part_ids)))
+        return super().check_progress(part_ids, should_abort)
 
     def get_design(self, design_id, should_abort):
         """저장소에 있는 설계의 복사본을 돌려준다. 없으면 (False, '', None)."""
@@ -122,12 +122,12 @@ class Rig:
 
 
 def expected_ids(design):
-    """조립 방법의 sequence 순서대로 본 block_id 목록."""
-    return [s['block_id'] for s in sorted(design['placements']['steps'], key=lambda s: s['sequence'])]
+    """조립 방법의 sequence 순서대로 본 part_id 목록."""
+    return [s['part_id'] for s in sorted(design['placements']['steps'], key=lambda s: s['sequence'])]
 
 
 def request_ids(io, since=0):
-    """pick_place 로 보낸 요청의 block_id 들(순서대로). since = 앞에서 이미 센 요청 수."""
+    """pick_place 로 보낸 요청의 part_id 들(순서대로). since = 앞에서 이미 센 요청 수."""
     return [b for b, _ in picks(io)][since:]
 
 
@@ -139,25 +139,25 @@ def test_한_run_안에서_요청_진행표_CSV_build1이_같은_설계_같은_r
     assert n == 11 and request_ids(r.io) == ids                                        # 요청: 조립 방법 순서 그대로
     mine = [p for p in r.io.progress if p['run_id'] == a]                              # 진행표: 이 run 의 메시지는 모두 이 설계 · 이 run
     assert mine and all(p['design_id'] == A_ID for p in mine)
-    assert all({b['block_id'] for b in p['blocks']} == set(ids) for p in mine)
-    assert {b['block_id']: b['state'] for b in mine[-1]['blocks']} == {i: 'present' for i in ids}
+    assert all({b['part_id'] for b in p['blocks']} == set(ids) for p in mine)
+    assert {b['part_id']: b['state'] for b in mine[-1]['blocks']} == {i: 'present' for i in ids}
     assert {p['run_id'] for p in r.io.progress} <= {None, a}                           # 다른 run_id 가 섞이지 않는다
     rows = r.rows(a)                                                                   # CSV
     assert list(rows[0]) == list(COLUMNS)
     assert {x['run_id'] for x in rows} == {a} and {x['design_id'] for x in rows} == {A_ID}
-    assert [x['block_id'] for x in rows if x['kind'] == 'placed'] == ids
+    assert [x['part_id'] for x in rows if x['kind'] == 'placed'] == ids
     assert (rows[0]['kind'], rows[0]['value']) == ('start', '11') and (rows[-1]['kind'], rows[-1]['value']) == ('end', 'DONE')
     s = r.m.last_build                                                                 # build/1: 마지막 요약 · 대기 목록 · 디스크 보관 · 보낼 글자
     assert (s['schema'], s['run_id'], s['design_id'], s['result'], s['placed'], s['total']) == ('build/1', a, A_ID, 'DONE', n, n)
-    assert [b['block_id'] for b in s['blocks']] == ids
+    assert [b['part_id'] for b in s['blocks']] == ids
     assert r.m.pending_builds == {a: s}
     assert json.loads(r.pending_file(a).read_text(encoding='utf-8')) == s
     r.pump()
     assert len(r.sent) == 1 and json.loads(r.sent[0].payload) == s
     assert r.io.check_requests and {(d, rid) for d, rid, _ in r.io.check_requests} == {(A_ID, a)}   # check_progress 에 실리는 값: 한 run 동안 같은 (설계, run), run_id 는 비지 않는다
     assert all(set(blocks) <= set(ids) for _, _, blocks in r.io.check_requests)
-    assert (set(request_ids(r.io)) == {b['block_id'] for b in mine[-1]['blocks']}      # 네 곳이 같은 블록 집합
-            == {x['block_id'] for x in rows if x['kind'] == 'placed'} == {b['block_id'] for b in s['blocks']})
+    assert (set(request_ids(r.io)) == {b['part_id'] for b in mine[-1]['blocks']}      # 네 곳이 같은 블록 집합
+            == {x['part_id'] for x in rows if x['kind'] == 'placed'} == {b['part_id'] for b in s['blocks']})
 
 
 def test_다른_설계의_다음_run은_이전_기록이_섞이지_않고_저장실패한_첫_결과가_보존된다(tmp_path, designs):
@@ -178,20 +178,20 @@ def test_다른_설계의_다음_run은_이전_기록이_섞이지_않고_저장
     assert request_ids(r.io, picks_a) == ids_b                                         # 요청 · 진행표: B 구간에는 B 이름만
     new = r.io.progress[progress_a:]
     mine_b = [p for p in new if p['run_id'] == b]
-    assert mine_b and all(p['design_id'] == B_ID and {x['block_id'] for x in p['blocks']} == set(ids_b) for p in mine_b)
+    assert mine_b and all(p['design_id'] == B_ID and {x['part_id'] for x in p['blocks']} == set(ids_b) for p in mine_b)
     assert {p['run_id'] for p in new} <= {None, b}                                     # A 의 run_id 는 B 진행표에 다시 나오지 않는다
     pairs = [(d, rid) for d, rid, _ in r.io.check_requests]                            # check_progress 에 실리는 (설계, run): A 쌍이 모두 먼저, 그 뒤 B 쌍, 섞인 쌍 없음
     assert set(pairs) == {(A_ID, a), (B_ID, b)} and pairs == sorted(pairs, key=lambda p: p[1] == b)
     assert all(set(blocks) <= set(ids_b) for _, rid, blocks in r.io.check_requests if rid == b)
     rows_b = r.rows(b)                                                                 # CSV: B 는 B 만, A 는 그대로
     assert {x['run_id'] for x in rows_b} == {b} and {x['design_id'] for x in rows_b} == {B_ID}
-    assert [x['block_id'] for x in rows_b if x['kind'] == 'placed'] == ids_b
+    assert [x['part_id'] for x in rows_b if x['kind'] == 'placed'] == ids_b
     assert r.rows(a) == csv_a
     sb = r.m.pending_builds[b]                                                         # build/1: 각자 자기 설계 · 개수, A 는 한 글자도 안 바뀐다
     assert (sb['run_id'], sb['design_id'], sb['placed'], sb['total'], sb['result']) == (b, B_ID, 9, 9, 'DONE')
-    assert [x['block_id'] for x in sb['blocks']] == ids_b and r.m.last_build == sb
+    assert [x['part_id'] for x in sb['blocks']] == ids_b and r.m.last_build == sb
     assert set(r.m.pending_builds) == {a, b} and r.m.pending_builds[a] == snap_a
-    assert (snap_a['design_id'], snap_a['placed']) == (A_ID, 11) and [x['block_id'] for x in snap_a['blocks']] == ids_a
+    assert (snap_a['design_id'], snap_a['placed']) == (A_ID, 11) and [x['part_id'] for x in snap_a['blocks']] == ids_a
     assert r.pending_file(a).read_text(encoding='utf-8') == disk_a
     assert json.loads(r.pending_file(b).read_text(encoding='utf-8')) == sb
     r.now = 0.5                                                                        # 방금 실패한 A 는 다시 보내기 간격 안이라 B 만 나간다
