@@ -22,7 +22,7 @@
       번호 = scan_dir 에 이미 있는 blocks.json 수 + 1(노드를 다시 켜도 이름이 겹치지 않게). 추론이 끝난 run_id 는 메모리에서 지운다.
   `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + TF 자세 × 보정 → BlockFinder(block_finder.py)
       → {"ok":true,"blocks":[…]}(IRD 4.2 칸, 윗면 높이 순). 블록 0개도 ok true(빈 목록 — 작업 관리자가 WAIT_SUPPLY).
-      마스크: yolo_model 파라미터가 있고 ultralytics 를 쓸 수 있으면 YOLO seg(본 방법 E-38), 아니면 예비(엣지 + 깊이, E-47).
+      마스크: YOLO seg(본 방법 E-38 — 모델은 켤 때 읽는다, 아래 '켤 때 YOLO'). 예비(엣지 + 깊이, E-47)는 yolo_fallback:=true 일 때만.
   `/d2/vision/wrist_image`(sensor_msgs/CompressedImage, JPEG 품질 70, 640×480 그대로) — find_blocks 때마다 검출 결과
       (윤곽 · 번호 · up · yaw)를 그린 그림 한 장(IRD E-67 '때만 내도 됨'). 매 프레임 내지 않는다.
 
@@ -57,7 +57,8 @@
   scan_frames  scan_capture · find_blocks 가 평균 낼 깊이 프레임 수(10 — 30 fps 면 0.33초, task 의 3초 제한 안. 45장까지 1.5초 안)
   scan_dir     스캔 결과 폴더(비우면 ~/d2_data/scan) — <run_id>/color.png · cloud.ply · blocks.json · preview_<n>.ply ·
                <pose_id>_color.png · _depth.png · _pose.json(자세 자료)
-  yolo_model   YOLO seg 모델 파일(.pt) 경로. 비우거나 못 읽으면 예비 마스크(엣지 + 깊이)로 간다(켤 때 로그 한 번)
+  yolo_model   YOLO seg 모델 파일(.pt) 경로. 기본 = 이 패키지 share/models 에 설치된 판(DEFAULT_YOLO_MODEL, E-86)
+  yolo_fallback  true 면 YOLO 를 읽지 않고 예비 마스크(엣지 + 깊이, E-47)만 쓴다(기본 false — 모델 · ultralytics 가 없는 시험 · CI 용)
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
   table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m 를 읽는다.
@@ -66,6 +67,9 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_si
   scan_capture 미리보기 PLY · 자세 자료(사진 · 깊이 · 자세) · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 run_id 가 바뀌었으면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
+켤 때 YOLO(10/11 E-86): yolo_fallback 이 false(기본)인데 ultralytics 가 없거나 · 모델 파일이 없거나 · 읽기 · 미리 돌리기가 실패하면
+  오류 로그 한 줄을 남기고 노드가 켜지지 않는다(종료 코드 1) — 조용히 예비로 돌아 실기 결과를 잘못 읽지 않으려고.
+  돌다가 한 번의 추론이 실패하면 그 find_blocks 만 예비 마스크로 간다(그대로).
 실패 때: 새 프레임이 시간 안에 안 오거나 TF 자세(브링업 robot_state_publisher)를 못 받으면 success=false, reason=TIMEOUT.
          get_design 이 timeout.service_s 안에 답하지 않으면 success=false, reason=TIMEOUT (task_node.get_design 과 같은 코드).
          get_design 서버 없음 · success=false · 응답 형식 오류(옛 design/1 포함), 보정값·레시피를 못 읽음, design_id 칸이 빔
@@ -88,7 +92,8 @@ NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_
 시험 호출 (design_id 칸 + 전체 블록 이름):
   ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH_V000, block_ids: [001_CHAIR_BENCH_V000_LEG_001_01, 001_CHAIR_BENCH_V000_SEAT_001_03]}"
 스캔(촬영 자세마다 scan_capture → 마지막에 scan_infer) · 흩뿌림 찾기 · 검출 그림 보기:
-  ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes -p yolo_model:=<모델 .pt 경로>
+  ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes          (YOLO = 설치된 기본 모델)
+  (ultralytics · 모델 없이 시험할 때만: … -p yolo_fallback:=true — 예비 마스크)
   ros2 service call /d2/vision/scan_capture d2_interfaces/srv/JsonQuery "{request_json: '{\\"pose_id\\": \\"observe_front\\", \\"run_id\\": \\"R1\\"}'}"
   ros2 service call /d2/vision/scan_infer d2_interfaces/srv/JsonQuery "{request_json: '{\\"run_id\\": \\"R1\\"}'}"
   ros2 service call /d2/vision/find_blocks d2_interfaces/srv/JsonQuery "{request_json: '{\\"run_id\\": \\"R1\\"}'}"
@@ -126,6 +131,8 @@ from d2_vision.structure_scanner import StructureScanner, family_of, save_captur
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 
 NAN = float('nan')
+# 설치된 YOLO seg 모델(setup.py 가 share/d2_vision/models 에 넣는다 — 10/8 W086 선정 26s판, 바꿀 때만 새 판 이름으로, E-86)
+DEFAULT_YOLO_MODEL = str(Path(get_package_share_directory('d2_vision')) / 'models' / 'block_seg_26s_e150_261008.pt')
 QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
                         reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.VOLATILE)
 FRESH_WAIT_S = 1.5         # 요청 뒤 새 프레임 n장을 이만큼 기다린다(30 Hz 면 10장에 0.33초 — 여유 포함). 넘으면 TIMEOUT
@@ -147,7 +154,8 @@ class WristBlock(Node):
 
     def __init__(self):
         """파라미터 · 설정 · 보정값 · YOLO 모델 · 기본 설계(스캔 family 용)를 읽고 구독 · 서비스 · 클라이언트(get_design) · TF 리스너 ·
-        발행 · 타이머를 만든다. check_progress 설계는 요청이 올 때 읽는다(설계마다 한 번). 레시피 폴더 · 보정 · 모델이 없어도 노드는 뜬다(경고)."""
+        발행 · 타이머를 만든다. check_progress 설계는 요청이 올 때 읽는다(설계마다 한 번). 레시피 폴더 · 보정이 없어도 노드는 뜬다(경고).
+        YOLO 모델만은 못 읽으면 SystemExit(1) 로 켜지지 않는다(yolo_fallback:=true 면 읽지 않음 — E-86)."""
         super().__init__('wrist_block')
         self.declare_parameter('recipe_dir', '')           # design_source:=local 설계 · 스캔 family 고르기에 쓰는 레시피 폴더(task 와 같음)
         self.declare_parameter('design_source', 'remote')  # task 와 같은 값: remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일
@@ -157,7 +165,8 @@ class WristBlock(Node):
         self.declare_parameter('n_frames', 10)
         self.declare_parameter('scan_frames', 10)
         self.declare_parameter('scan_dir', '')
-        self.declare_parameter('yolo_model', '')
+        self.declare_parameter('yolo_model', DEFAULT_YOLO_MODEL)
+        self.declare_parameter('yolo_fallback', False)     # true = YOLO 안 읽고 예비 마스크만(시험 · CI 용 — E-86, 기본 끔)
         self.declare_parameter('yolo_conf', 0.55)
         self.declare_parameter('status_hz', 2.0)
 
@@ -238,16 +247,16 @@ class WristBlock(Node):
             return None
 
     def _load_yolo(self):
-        """yolo_model 파라미터의 YOLO seg 모델을 읽는다. 비었거나 ultralytics · 파일이 없거나 못 읽으면 None(예비 마스크) — 로그는 여기서 한 번.
+        """yolo_model 파라미터의 YOLO seg 모델을 읽어 돌려준다. yolo_fallback 이 true 면 읽지 않고 None(예비 마스크) — 로그 한 번.
         켤 때 읽는 이유: 처음 읽기는 몇 초 걸려 find_blocks 의 3초 제한(timeout.service_s) 안에 넣지 않으려고.
         읽은 뒤 빈 640×480 그림으로 한 번 미리 돌린다 — 첫 추론 준비(10/8 실측 약 0.9초)를 첫 find_blocks 에서 빼려고.
-        미리 돌리기가 실패해도 None(예비 마스크) — 실제 호출에서도 실패할 것이라."""
-        path = self.get_parameter('yolo_model').value
-        if not path:
-            self.get_logger().info('find_blocks 마스크: 예비(엣지 + 깊이, E-47) — yolo_model 파라미터가 비었다')
+        실패 때: ultralytics 없음 · 파일 없음 · 읽기 · 미리 돌리기 실패면 오류 로그 후 SystemExit(1) — 노드가 켜지지 않는다(E-86)."""
+        if self.get_parameter('yolo_fallback').value:
+            self.get_logger().warn('find_blocks 마스크: 예비(엣지 + 깊이, E-47) — yolo_fallback:=true (YOLO 안 읽음)')
             return None
+        path = self.get_parameter('yolo_model').value
         try:
-            from ultralytics import YOLO      # 로봇 PC 에만 있다 — 없으면 예비로(노드는 뜬다)
+            from ultralytics import YOLO      # 로봇 PC 에서 노드를 돌리는 python 에 있어야 한다 — 없으면 노드가 안 켜짐
             if not Path(path).is_file():
                 raise FileNotFoundError(path)
             model = YOLO(path)
@@ -255,9 +264,11 @@ class WristBlock(Node):
             model(np.zeros((480, 640, 3), np.uint8), imgsz=640, conf=float(self.get_parameter('yolo_conf').value), verbose=False,
                   retina_masks=True)             # _yolo_masks 와 같은 인자로 미리 한 번
             warm_s = time.monotonic() - t0
-        except Exception as e:                # ImportError · 파일 없음 · 모델 형식 · 미리 돌리기 실패 — 무엇이든 예비로 간다
-            self.get_logger().error('YOLO 모델을 못 씀(%s: %s) — find_blocks 는 예비 마스크(엣지 + 깊이)로 간다' % (type(e).__name__, e))
-            return None
+        except Exception as e:                # ImportError · 파일 없음 · 모델 형식 · 미리 돌리기 실패 — 무엇이든 켜지 않는다
+            self.get_logger().error('YOLO 모델을 못 읽어 wrist_block 을 켜지 않는다(%s: %s, yolo_model=%r) — '
+                                    'ultralytics · 모델 파일을 확인하거나, 예비 마스크로 시험하려면 -p yolo_fallback:=true (E-86)'
+                                    % (type(e).__name__, e, path))
+            raise SystemExit(1)
         self.get_logger().info('find_blocks 마스크: YOLO seg %s (conf %.2f) · 미리 돌리기 %.2f초' % (
             path, self.get_parameter('yolo_conf').value, warm_s))
         return model
@@ -666,7 +677,7 @@ class WristBlock(Node):
         return self._answer(res, 'scan_infer', out, t0)
 
     def _yolo_masks(self, color):
-        """YOLO seg 로 블록 마스크 · 신뢰도. 모델이 없거나 추론 예외면 (None, None) → 예비 마스크(엣지 + 깊이)."""
+        """YOLO seg 로 블록 마스크 · 신뢰도. yolo_fallback 이라 모델을 안 읽었거나 추론 예외면 (None, None) → 예비 마스크(엣지 + 깊이)."""
         if self.yolo is None:
             return None, None
         try:
