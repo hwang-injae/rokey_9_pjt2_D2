@@ -15,7 +15,7 @@ import pytest
 
 from d2_task.task_manager import TaskManager
 from test_block_picker import blk
-from test_task_manager import CFG, IDS, SAFE_OK, SAFE_STOP, FakeIO, drive, picks
+from test_task_manager import CFG, IDS, SAFE_OK, SAFE_STOP, FakeIO, drive, picks, seen
 
 SCATTER_CFG = dict(copy.deepcopy(CFG), supply_mode='scatter')
 
@@ -26,11 +26,30 @@ class ScatterIO(FakeIO):
     def __init__(self):
         super().__init__()
         self.find_script = []
+        self.pick_info = []                  # 집기마다 하나씩: {'step': 마지막 피드백, 'grasped': 결과 뒤 gripper 값(없으면 상태를 안 보냄)}
+        self.goals = []
 
     def find_blocks(self, run_id, should_abort):
         self.events.append(('call', 'find_blocks', run_id))
         step = self.find_script.pop(0) if self.find_script else (True, '', good())
         return step(self) if callable(step) else step
+
+
+def _pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
+    """FakeIO.pick_place 에 피드백 · 결과 수신 시각 · 결과 뒤 gripper 상태를 더한다(실패 뒤 판단 재료)."""
+    info = self.pick_info.pop(0) if self.pick_info else None
+    self.goals.append(copy.deepcopy(goal))
+    res = FakeIO.pick_place(self, goal, should_abort, on_feedback, on_result)
+    if info is not None:
+        on_feedback(info['step'])
+        at = self.last_at = time.time()
+        on_result(at)
+        if 'grasped' in info:
+            self.manager.on_gripper({'stamp': at, 'grasped': info['grasped']})
+    return res
+
+
+ScatterIO.pick_place = _pick_place
 
 
 def good():
@@ -42,6 +61,7 @@ def make(open_width_m=0.0865, cfg=SCATTER_CFG):
     io = ScatterIO()
     m = TaskManager(cfg, io, open_width_m=open_width_m)
     io.manager = m
+    fast_wait(m)
     m.on_safety(SAFE_OK)
     m.on_gripper({'grasped': False})
     return m, io
@@ -217,12 +237,103 @@ def test_정지_뒤_다시_시작까지_끝난_다음에_온_늦은_응답도_�
     assert not picks(io) and m.goal is None
 
 
-def test_흩뿌림_집기가_실패하면_재시도_연결_전이라_ERROR():
-    m, io = make()
-    io.pick_script = [(False, 'GRASP_FAILED')]
+def fast_wait(m):
+    """gripper 대기를 실제로 기다리지 않게 한다: sleep 은 가짜 시간(off)만 늘리고, 단조 시계·벽시계는 그 시간만큼 앞서 간다. 반환: [누적 가짜 시간, sleep 호출 수]."""
+    state = [0.0, 0]
+    base_clock, base_wall = m._clock, m._wall
+
+    def sleep(s):
+        state[0] += s
+        state[1] += 1
+        if m.sleep_hook:
+            m.sleep_hook(state[1])
+    m.sleep_hook = None
+    m._sleep = sleep
+    m._clock = lambda: base_clock() + state[0]
+    m._wall = lambda: base_wall() + state[0]
+    m.fake = state
+    return state
+
+
+def fail_then_ok(m, io, script, info):
+    """집기 결과 script · 피드백/그리퍼 info 를 쓰고 끝까지(VERIFY 나 ERROR) 돌린다."""
+    io.pick_script, io.pick_info = list(script), list(info)
     start(m)
-    drive(m, 'ERROR')
-    assert 'GRASP_FAILED' in io.states[-1]['message'] and len(picks(io)) == 1
+    drive(m, ('VERIFY', 'ERROR'))
+
+
+def test_접촉_전_계획_실패는_같은_후보로_다시_집는다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'PLAN_FAILED')], [{'step': 'approach', 'grasped': False}])
+    assert m.state == 'VERIFY' and len(picks(io)) == 2 and len(calls(io, 'find_blocks')) == 1
+    assert io.goals[0]['pick_pose'] == io.goals[1]['pick_pose']      # 같은 관측 후보
+
+
+def test_집기_실패_뒤_손이_비었으면_다시_관측해서_다시_집는다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')], [{'step': 'grasp', 'grasped': False}])
+    assert m.state == 'VERIFY' and len(picks(io)) == 2 and len(calls(io, 'find_blocks')) == 2
+    assert [c[1] for c in io.calls if c[0] == 'move_to'].count('observe_supply') == 2
+
+
+@pytest.mark.parametrize('info', [[{'step': 'grasp', 'grasped': True}], [{'step': 'grasp'}], []],
+                         ids=['쥐고_있음', '결과_뒤_상태_없음', '결과_시각_없음'])
+def test_쥐었거나_모르면_새_집기_없이_ERROR(info):
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')], info)
+    assert m.state == 'ERROR' and len(picks(io)) == 1 and len(calls(io, 'find_blocks')) == 1
+
+
+def test_블록당_총_집기_2번이면_사람을_부른다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')] * 3, [{'step': 'grasp', 'grasped': False}] * 3)
+    assert m.state == 'ERROR' and len(picks(io)) == 2 and len(calls(io, 'find_blocks')) == 2
+    assert '2번' in io.states[-1]['message']
+
+
+def test_횟수는_재관측과_정지_복구로_비우지_않는다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')] * 3, [{'step': 'grasp', 'grasped': False}] * 3)
+    block = m.goal['block_id']
+    assert m._scatter_fail == {block: 2}
+    m.on_safety(SAFE_STOP)
+    m.on_safety(SAFE_OK)
+    assert m._scatter_fail == {block: 2}          # 정지 · 해제로 지워지지 않는다
+
+
+def test_놓기_성공_직후에는_횟수를_두고_배치_확인_뒤에_지운다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')], [{'step': 'grasp', 'grasped': False}])
+    block = m.goal['block_id']
+    assert m.state == 'VERIFY' and m._scatter_fail == {block: 2}      # PickPlace 성공 직후(실패 1번 + 성공 1번 = 시도 2번)
+    m.run_once()                                                        # VERIFY 통과
+    assert m.state == 'SELECT' and block not in m._scatter_fail
+
+
+def test_새_설계_선택은_횟수를_비운다():
+    m, io = make()
+    m._scatter_fail = {'X': 1}
+    assert m.command('select_design', 'bench') == (True, '')
+    assert m._scatter_fail == {}
+
+
+def test_TIMEOUT은_기존_처리로_재시도하지_않는다():
+    m, io = make()
+    io.pick_script, io.pick_info = [(False, 'TIMEOUT')], [{'step': 'move', 'grasped': False}]
+    start(m)
+    drive(m, ('ERROR', 'STOPPED'))
+    assert len(picks(io)) == 1 and list(m._scatter_fail.values()) == [1]      # 시간 초과도 시도 한 번으로 센다
+
+
+def test_scatter_설정_키가_없으면_만들_때_거절():
+    cfg = copy.deepcopy(SCATTER_CFG)
+    del cfg['scatter']
+    with pytest.raises(KeyError):
+        TaskManager(cfg, ScatterIO(), open_width_m=0.0)
+    cfg = copy.deepcopy(SCATTER_CFG)
+    cfg['scatter']['max_attempts'] = 0
+    with pytest.raises(ValueError):
+        TaskManager(cfg, ScatterIO(), open_width_m=0.0)
 
 
 def test_공급_칸_방식은_find_blocks를_부르지_않는다():
@@ -262,3 +373,128 @@ def test_commit과_PICK_PLACE_전환_사이에는_정지가_끼지_못한다():
     assert m.safety == SAFE_STOP and not picks(io)
     m.run_once()                                            # 다음 단계 맨 앞에서 정지를 반영 → 집기 요청 전에 STOPPED
     assert m.state == 'STOPPED' and not picks(io)
+
+
+# ---------- W178: 시도 한도 · 배치 확인 · gripper 대기 ----------
+def one_fail(m, io, hook=None, info=None, why='GRASP_FAILED'):
+    """첫 집기 하나가 why 로 실패하게 하고, sleep 때마다 hook(n)을 부르며 PICK_PLACE 실패 처리까지 한 단계씩 돌린다."""
+    io.pick_script = [(False, why)]
+    io.pick_info = [info if info is not None else {'step': 'grasp'}]     # 'grasped' 가 없으면 결과 뒤 gripper 상태는 안 온다
+    m.sleep_hook = hook
+    start(m)
+    drive(m, 'PICK_PLACE')
+    m.run_once()
+
+
+def test_한도를_채운_뒤_복구로_와도_새_집기_요청을_보내지_않는다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')] * 3, [{'step': 'grasp', 'grasped': False}] * 3)
+    assert m.state == 'ERROR' and len(picks(io)) == 2
+    m.on_safety(SAFE_STOP)
+    m.on_safety(SAFE_OK)
+    drive(m, 'PICK_PLACE')
+    m.run_once()                                    # 같은 블록 — 한도를 넘는 요청은 보내지 않는다
+    assert m.state == 'ERROR' and len(picks(io)) == 2
+
+
+def test_배치가_present로_확인되지_않으면_횟수를_지우지_않는다():
+    m, io = make()
+    fail_then_ok(m, io, [(False, 'GRASP_FAILED')], [{'step': 'grasp', 'grasped': False}])
+    block = m.goal['block_id']
+    m.planner.judge = lambda **k: []                   # 오류가 없어도
+    m._observe = lambda ids: m.planner.progress[m.placed].__setitem__('state', 'absent') or True    # 놓인 것이 확인되지 않으면
+    m.run_once()
+    assert m._scatter_fail.get(block) == 2
+
+
+def test_결과_뒤_gripper_상태가_대기_중_도착하면_그_값으로_판단한다():
+    m, io = make()
+    arrive = lambda n: n == 2 and m.on_gripper({'stamp': io.last_at, 'grasped': False})
+    one_fail(m, io, hook=arrive)
+    assert m.fake[1] == 2 and m.fake[0] < 1.5            # 도착 즉시 끝, 상한까지 기다리지 않음
+    assert m.state == 'SELECT'                           # 손이 비었음 → 다시 관측
+
+
+def test_믿을_상태가_끝내_안_오면_상한_뒤_모르는_것으로_ERROR():
+    m, io = make()
+    one_fail(m, io)
+    assert m.state == 'ERROR' and 1.45 <= m.fake[0] <= 1.55 and len(picks(io)) == 1       # 새 요청 없음, 마지막 sleep 은 남은 시간 이하
+    assert '확인하지 못했다' in io.states[-1]['message']
+
+
+@pytest.mark.parametrize('state', [
+    lambda at: {'stamp': at - 5.0, 'grasped': False},          # 결과보다 이전 값
+    lambda at: {'stamp': at + 1e6, 'grasped': False},          # 미래 stamp(시계 이상)
+    lambda at: {'stamp': at, 'grasped': 'False'},              # bool 이 아님
+], ids=['결과_이전', '미래', 'bool_아님'])
+def test_믿을_수_없는_상태는_기다린_뒤에도_완화하지_않는다(state):
+    m, io = make()
+    m.sleep_hook = lambda n: m.on_gripper(state(io.last_at))
+    one_fail(m, io, hook=m.sleep_hook)
+    assert m.state == 'ERROR' and len(picks(io)) == 1
+
+
+def test_이미_믿을_상태가_있으면_기다리지_않는다():
+    m, io = make()
+    one_fail(m, io, info={'step': 'grasp', 'grasped': False})
+    assert m.fake[1] == 0 and m.state == 'SELECT'
+
+
+def test_대기_중_정지가_끼면_ERROR나_새_목표를_적용하지_않고_STOPPED로_간다():
+    m, io = make()
+    one_fail(m, io, hook=lambda n: m.on_safety(SAFE_STOP) if n == 1 else None)
+    assert m.state == 'PICK_PLACE' and 'ERROR' not in seen(io)         # 오래된 처리는 아무것도 적용하지 않는다
+    m.run_once()
+    assert m.state == 'STOPPED' and len(picks(io)) == 1 and len(calls(io, 'find_blocks')) == 1
+
+
+def test_대기_중_요청이_바뀌거나_상태가_바뀌면_오래된_처리를_버린다():
+    for hook in (lambda n: m.last_pick.__setitem__('request_id', 999) if n == 1 else None,
+                 lambda n: setattr(m, '_epoch', m._epoch + 1) if n == 1 else None):
+        m, io = make()
+        one_fail(m, io, hook=hook)
+        assert m.state == 'PICK_PLACE' and 'ERROR' not in seen(io) and len(picks(io)) == 1
+
+
+def test_대기가_끝난_뒤_적용_직전에도_토큰을_다시_확인한다():
+    m, io = make()
+    orig = m._grasped_after_result
+
+    def late_change(info, token):
+        out = orig(info, token)
+        m._epoch += 1                                     # 대기는 정상 반환했지만 그 직후 상태가 바뀜
+        return out
+
+    m._grasped_after_result = late_change
+    one_fail(m, io, info={'step': 'grasp', 'grasped': False})
+    assert m.state == 'PICK_PLACE' and 'ERROR' not in seen(io) and len(picks(io)) == 1 and len(calls(io, 'find_blocks')) == 1
+
+
+def test_대기_중에는_잠금을_잡지_않아_다른_스레드가_막히지_않는다():
+    m, io = make()
+    done = []
+
+    def other():
+        t = threading.Thread(target=lambda: (m.on_gripper({'stamp': 0.0, 'grasped': False}), done.append(1)))
+        t.start()
+        t.join(timeout=1.0)
+    one_fail(m, io, hook=lambda n: other() if n == 1 else None)
+    assert done == [1]
+
+
+@pytest.mark.parametrize('key,value', [
+    ('max_attempts', True), ('max_attempts', 2.0), ('max_attempts', 1.5), ('max_attempts', 0), ('max_attempts', '2'),
+    ('gripper_wait_s', 0), ('gripper_wait_s', True), ('gripper_wait_s', float('inf')), ('gripper_wait_s', float('nan')), ('gripper_wait_s', -1),
+    ('gripper_max_age_s', 0), ('gripper_max_age_s', float('inf')), ('gripper_max_age_s', float('nan')), ('gripper_max_age_s', False)])
+def test_scatter_설정_값이_정수나_유한한_양수가_아니면_거절(key, value):
+    cfg = copy.deepcopy(SCATTER_CFG)
+    cfg['scatter'][key] = value
+    with pytest.raises(ValueError):
+        TaskManager(cfg, ScatterIO(), open_width_m=0.0)
+
+
+def test_scatter_wait_키가_없으면_거절():
+    cfg = copy.deepcopy(SCATTER_CFG)
+    del cfg['scatter']['gripper_wait_s']
+    with pytest.raises(KeyError):
+        TaskManager(cfg, ScatterIO(), open_width_m=0.0)
