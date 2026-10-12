@@ -39,7 +39,7 @@ def test_blocks_2_0의_role_part로_번호를_다시_매기면_레시피_블록_
     name_of = {s['sequence']: s['block'] for s in doc.placements['steps']}
     groups = {}
     for b in blocks['blocks']:
-        groups.setdefault((b['role'], b['part']), []).append(b)
+        groups.setdefault((b['role'], b['group']), []).append(b)
     for (role, part), items in groups.items():
         ordered = sorted(items, key=lambda b: (b['z'], b['y'], b['x']))
         for k, b in enumerate(ordered, 1):
@@ -51,7 +51,7 @@ def test_같은_역할의_부품_번호는_1부터_빈틈없이_이어진다(mod
     _, blocks = blocks_of(model_id)
     parts = {}
     for b in blocks['blocks']:
-        parts.setdefault(b['role'], set()).add(b['part'])
+        parts.setdefault(b['role'], set()).add(b['group'])
     assert all(sorted(p) == list(range(1, len(p) + 1)) for p in parts.values())
 
 
@@ -61,4 +61,4 @@ def test_blocks_2_0_왕복으로_같은_구조가_다시_나온다(model_id):
     doc, blocks = blocks_of(model_id)
     _, again = blocks_of(model_id)
     assert blocks == again
-    assert all(set(b) == {'order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp'} for b in blocks['blocks'])
+    assert all(set(b) == {'order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'} for b in blocks['blocks'])

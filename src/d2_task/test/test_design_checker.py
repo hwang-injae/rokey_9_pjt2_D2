@@ -34,7 +34,7 @@ def base_design(model_id):
 def design(*items):
     """(x, y, z, ori) 들 → order 1.. 의 blocks/2.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT)."""
     return {'schema': 'blocks/2.0', 'design_id': 't', 'family': 'test',
-            'blocks': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'part': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
+            'blocks': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
                        for i, (x, y, z, o) in enumerate(items, 1)]}
 
 
@@ -295,7 +295,7 @@ def one_error_detail(req):
     return res['errors'][0]['detail']
 
 
-@pytest.mark.parametrize('key', ['role', 'part', 'stage', 'grasp'])
+@pytest.mark.parametrize('key', ['role', 'group', 'stage', 'grasp'])
 def test_AI_칸이_빠지면_CHECK_FAILED이고_코드가_대신_채우지_않는다(key):
     req = ai_blocks()
     del req['blocks'][1][key]
@@ -316,7 +316,7 @@ def test_역할_한_단어_옵션_0_1개는_통과(role):
     assert check(req)['ok']
 
 
-@pytest.mark.parametrize('key, value', [('part', 0), ('part', -1), ('part', True), ('part', 1.5), ('part', '1'),
+@pytest.mark.parametrize('key, value', [('group', 0), ('group', -1), ('group', True), ('group', 1.5), ('group', '1'),
                                         ('stage', 0), ('stage', True), ('stage', None), ('grasp', 'SIDE_25'), ('grasp', 'flat_short'), ('grasp', None)])
 def test_part_stage_grasp_값이_틀리면_거절(key, value):
     req = ai_blocks()
@@ -353,7 +353,7 @@ def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
     req = ai_blocks()
     req['schema'] = 'blocks/1'
     for b in req['blocks']:
-        for k in ('role', 'part', 'stage', 'grasp'):
+        for k in ('role', 'group', 'stage', 'grasp'):
             del b[k]
     ok, reason, text = DesignChecker(CFG).handle_json(json.dumps(req))
     assert (ok, reason) == (False, 'ERROR') and 'blocks/1' in text

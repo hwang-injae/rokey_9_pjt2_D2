@@ -92,7 +92,7 @@ export interface Block2 {
   z: number;
   ori: string; // x · y · xe · ye · zx · zy (IRD 2장)
   role?: string;
-  part?: number;
+  group?: number;
   stage?: number;
   grasp?: string;
   inferred?: boolean; // 스캔 설계만

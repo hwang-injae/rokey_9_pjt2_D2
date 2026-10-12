@@ -40,7 +40,7 @@ FIX_HINTS = (
     ('작업대 밖', '작업대를 넘는다 — 가운데 쪽으로 옮기거나 크기를 줄여라'),
     ('z<0', 'z 는 0 이상이다'),
     ('역할 목록', '역할은 [역할 목록]의 이름만 쓴다'),
-    ('part', '같은 role · part 블록은 면으로 이어져야 한다 — 떨어진 덩어리는 part 번호를 나눠라'),
+    ('group', '같은 role · group 블록은 면으로 이어져야 한다 — 떨어진 덩어리는 group 번호를 나눠라'),
 )
 ORIS = ('x', 'y', 'xe', 'ye', 'zx', 'zy')   # IRD 2장 방향 코드
 PROMPTS = Path(__file__).parent / 'prompts'
@@ -398,10 +398,10 @@ class DesignGenerator:
     def _candidates_format(self):
         """후보 3개 구조화 출력 형식(JSON Schema strict). role 은 역할 목록 파일의 이름만(enum — 목록 밖 이름은 변환기 ①이 어차피 거절)."""
         block = {'type': 'object', 'additionalProperties': False,
-                 'required': ['order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp'],
+                 'required': ['order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'],
                  'properties': {'order': {'type': 'integer'}, 'x': {'type': 'number'}, 'y': {'type': 'number'},
                                 'z': {'type': 'number'}, 'ori': {'type': 'string', 'enum': list(ORIS)},
-                                'role': {'type': 'string', 'enum': self.role_names}, 'part': {'type': 'integer'},
+                                'role': {'type': 'string', 'enum': self.role_names}, 'group': {'type': 'integer'},
                                 'stage': {'type': 'integer'}, 'grasp': {'type': 'string', 'enum': list(GRASPS)}}}
         return self._format('design_candidates', {
             'type': 'object', 'additionalProperties': False, 'required': ['out_of_scope', 'reason', 'candidates'],

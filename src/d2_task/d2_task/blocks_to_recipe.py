@@ -11,7 +11,7 @@ from d2_task.recipe_builder import RecipeBuilder
 from d2_task.recipe_document import same_major
 
 SCHEMA_REQUEST = 'blocks/2.0'
-REQUIRED_KEYS = ('order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp')
+REQUIRED_KEYS = ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')
 ROLES_PATH = Path(__file__).with_name('roles.json')
 
 # 역할[_옵션] — 영문 대문자 한 단어씩, 옵션 0~1개 (작명 규칙 v3 2장)
@@ -76,7 +76,7 @@ class BlocksToRecipe:
         """blocks/2.0 하나를 레시피 + 조립 방법으로 바꾼다. 입력을 바꾸지 않는다.
 
         입력:
-            request: blocks/2.0 dict — design_id, blocks[{order, x, y, z(아랫면), ori, role, part, stage, grasp}] (mm, 설계 좌표계)
+            request: blocks/2.0 dict — design_id, blocks[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
         출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/2.0}
         실패: AI가 쓴 값이 틀리면 DesignRejected(errors — block = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
         """
@@ -93,10 +93,10 @@ class BlocksToRecipe:
         items = sorted(items, key=lambda b: b['order'])
         if [b['order'] for b in items] != list(range(1, len(items) + 1)):
             raise DesignRejected([{'block': None, 'detail': f'order 가 1부터 {len(items)}까지 하나씩 있지 않다'}])
-        bad = [{'block': b['order'], 'detail': f'{b["order"]}번 ori · role · part · stage 가 형식에 맞지 않다 '
-                                               f'(ori 6가지 · role 글자 · part · stage 1 이상 정수)'}
+        bad = [{'block': b['order'], 'detail': f'{b["order"]}번 ori · role · group · stage 가 형식에 맞지 않다 '
+                                               f'(ori 6가지 · role 글자 · group · stage 1 이상 정수)'}
                for b in items if b['ori'] not in self.extent or not isinstance(b['role'], str)
-               or any(not isinstance(b[k], int) or isinstance(b[k], bool) or b[k] < 1 for k in ('part', 'stage'))]
+               or any(not isinstance(b[k], int) or isinstance(b[k], bool) or b[k] < 1 for k in ('group', 'stage'))]
         if bad:
             raise DesignRejected(bad)
 
@@ -162,7 +162,7 @@ class BlocksToRecipe:
         return errors
 
     def check_parts_connected(self, items, boxes):
-        """② 같은 부품(역할 + part 값)의 블록이 면으로 맞닿아 한 덩어리인지 본다.
+        """② 같은 부품 그룹(역할 + group 값)의 블록이 면으로 맞닿아 한 덩어리인지 본다.
 
         맞닿음 = 한 축에서 면이 붙고(간격 0) 나머지 두 축에서 넓이가 0보다 크게 겹침 — 모서리 · 꼭짓점만 닿는 것은 아님(10/8 한세교:
         젠가는 면으로 닿아야 버틴다). 겹치는 넓이가 버틸 만큼인지는 검사 묶음의 안정성 검사가 본다.
@@ -173,7 +173,7 @@ class BlocksToRecipe:
         출력: errors 목록 — 떨어진 덩어리마다 블록 번호를 적는다
         """
         errors = []
-        for (role, part), members in self.group_parts(items).items():
+        for (role, group), members in self.group_parts(items).items():
             # 첫 블록부터 맞닿은 블록을 따라가며 닿는 블록을 모은다
             reached, frontier = {members[0]}, [members[0]]
             while frontier:
@@ -184,8 +184,8 @@ class BlocksToRecipe:
                         frontier.append(other)
             apart = [o for o in members if o not in reached]
             if apart:
-                errors.append({'block': apart[0], 'detail': f'{role} part {part} 의 블록 {", ".join(map(str, sorted(reached)))}번과 '
-                                                            f'{", ".join(map(str, apart))}번이 면으로 맞닿아 있지 않다 — 떨어진 블록은 다른 part 값으로'})
+                errors.append({'block': apart[0], 'detail': f'{role} group {group} 의 블록 {", ".join(map(str, sorted(reached)))}번과 '
+                                                            f'{", ".join(map(str, apart))}번이 면으로 맞닿아 있지 않다 — 떨어진 블록은 다른 group 값으로'})
         return errors
 
     def is_face_contact(self, a, b):
@@ -215,20 +215,20 @@ class BlocksToRecipe:
         return errors
 
     def group_parts(self, items):
-        """블록을 부품(역할[_옵션], part 값)별로 모은다.
+        """블록을 부품 그룹(역할[_옵션], group 값)별로 모은다.
 
         입력:
             items: order 순 블록 목록
-        출력: {(역할, part 값): [order …]} — order 순
+        출력: {(역할, group 값): [order …]} — order 순
         """
         groups = {}
         for b in items:
-            groups.setdefault((b['role'], b['part']), []).append(b['order'])
+            groups.setdefault((b['role'], b['group']), []).append(b['order'])
         return groups
 
     def make_block_names(self, items, boxes):
         """블록 이름을 매긴다 — 작명 규칙 v3: 역할[_옵션]마다 부품 번호(첫 블록 위치 앞 −y → 뒤, 왼 −x → 오른),
-        부품 안 블록 번호(아래층부터, 같은 층은 앞 → 뒤, 왼 → 오른). AI의 part 값은 묶음 표시일 뿐 번호로 쓰지 않는다.
+        부품 안 블록 번호(아래층부터, 같은 층은 앞 → 뒤, 왼 → 오른). AI의 group 값은 묶음 표시일 뿐 번호로 쓰지 않는다.
 
         RecipeBuilder.check_block_numbering 과 같은 위치 키(0.001 mm 반올림)를 써서 그 검사를 그대로 통과한다.
 

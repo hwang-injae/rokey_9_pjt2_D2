@@ -146,9 +146,9 @@ class DesignChecker:
             if not isinstance(it, dict):
                 bad(f'{k}번째 항목이 객체가 아니다')
                 continue
-            miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'part', 'stage', 'grasp') if key not in it]
+            miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp') if key not in it]
             if miss:
-                bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · part · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)')
+                bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · group · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)')
                 continue
             for key in ('x', 'y', 'z'):
                 if not self._num(it[key]):
@@ -157,7 +157,7 @@ class DesignChecker:
                 bad(f'{k}번째 항목 ori={it["ori"]!r} 는 x, y, xe, ye, zx, zy 가 아니다')
             if not isinstance(it['role'], str) or not ROLE_RE.fullmatch(it['role']):
                 bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다')
-            for key in ('part', 'stage'):
+            for key in ('group', 'stage'):
                 if not isinstance(it[key], int) or isinstance(it[key], bool) or it[key] < 1:
                     bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다')
             if it['grasp'] not in GRASPS:

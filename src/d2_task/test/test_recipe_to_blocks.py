@@ -46,14 +46,14 @@ def test_role_part_stage_grasp가_블록_이름과_조립_방법에서_나온다
     for b in convert(model_id)['blocks']:
         st = steps[b['order']]
         m = re.fullmatch(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_[0-9]{2}', st['block'])
-        assert (b['role'], b['part'], b['stage'], b['grasp']) == (m.group(1), int(m.group(2)), st['stage'], st['grasp'])
+        assert (b['role'], b['group'], b['stage'], b['grasp']) == (m.group(1), int(m.group(2)), st['stage'], st['grasp'])
 
 
 def test_벤치_역할과_부품_묶음():
     b = {x['order']: x for x in convert('001_CHAIR_BENCH_V000')['blocks']}
-    assert (b[1]['role'], b[1]['part'], b[1]['stage'], b[1]['grasp']) == ('LEG', 1, 1, 'FLAT_SHORT')
-    assert (b[2]['role'], b[2]['part']) == ('LEG', 2)               # 오른쪽 다리는 다른 부품 묶음
-    assert (b[3]['role'], b[3]['part'], b[3]['stage']) == ('LEG', 1, 2)
+    assert (b[1]['role'], b[1]['group'], b[1]['stage'], b[1]['grasp']) == ('LEG', 1, 1, 'FLAT_SHORT')
+    assert (b[2]['role'], b[2]['group']) == ('LEG', 2)               # 오른쪽 다리는 다른 부품 묶음
+    assert (b[3]['role'], b[3]['group'], b[3]['stage']) == ('LEG', 1, 2)
     assert b[9]['role'] == 'SEAT' and b[11]['role'] == 'SEAT'
 
 

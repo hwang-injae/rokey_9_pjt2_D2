@@ -65,7 +65,7 @@ def test_round_trip_matches_cad_recipe(model_id):
 # 블록 번호는 코드가: 벤치 → LEG_001_01~04(왼 다리) · LEG_002_01~04(오른 다리) · SEAT_001_01~03. AI 의 part 값(묶음 표시)은 번호가 아니다
 def test_bench_block_names_from_positions(bench):
     for b in bench['blocks']:
-        b['part'] = {1: 7, 2: 3}[b['part']] if b['role'] == 'LEG' else 5      # 묶음 값만 바꿔도 이름은 위치로 같다
+        b['group'] = {1: 7, 2: 3}[b['group']] if b['role'] == 'LEG' else 5      # 묶음 값만 바꿔도 이름은 위치로 같다
     names = [b['block'] for b in make_converter().convert(bench)['recipe']['blocks']]
     assert sorted(names) == [f'LEG_001_0{k}' for k in range(1, 5)] + [f'LEG_002_0{k}' for k in range(1, 5)] + [f'SEAT_001_0{k}' for k in range(1, 4)]
 
@@ -90,7 +90,7 @@ def test_ai_values_kept_as_written(bench):
 
 
 # 칸이 빠지면 대신 채우지 않고 거부 — 어느 블록의 어느 칸인지 적는다
-@pytest.mark.parametrize('key', ['role', 'part', 'stage', 'grasp'])
+@pytest.mark.parametrize('key', ['role', 'group', 'stage', 'grasp'])
 def test_missing_ai_field_rejected(bench, key):
     del bench['blocks'][2][key]
     assert any(key in d and '3번' in d for d in rejected_details(bench))
@@ -112,12 +112,12 @@ def test_role_not_in_list_rejected(bench):
 
 
 # ② 떨어진 블록을 한 부품으로 묶으면 거부 — 벤치 왼 · 오른 다리를 같은 part 로
-def test_separate_legs_in_one_part_rejected(bench):
+def test_separate_legs_in_one_group_rejected(bench):
     for b in bench['blocks']:
         if b['role'] == 'LEG':
-            b['part'] = 1
+            b['group'] = 1
     details = rejected_details(bench)
-    assert len(details) == 1 and 'LEG part 1' in details[0] and '맞닿아 있지 않다' in details[0]
+    assert len(details) == 1 and 'LEG group 1' in details[0] and '맞닿아 있지 않다' in details[0]
 
 
 # ② 맞닿음 = 면 접촉: 옆면이 붙으면 한 부품, 모서리만 닿으면(대각선 자리) 한 부품이 아니다
@@ -150,7 +150,7 @@ def test_all_mistakes_reported_together(bench):
     bench['blocks'][0]['role'] = 'FOOT'
     for b in bench['blocks']:
         if b['role'] == 'SEAT':
-            b['part'] = b['order']                       # 좌판 3장 → 각자 다른 part(한 장짜리 부품, 맞닿음 문제 없음)
+            b['group'] = b['order']                       # 좌판 3장 → 각자 다른 part(한 장짜리 부품, 맞닿음 문제 없음)
     bench['blocks'][-1]['grasp'] = 'EDGE_LONG'
     details = rejected_details(bench)
     assert any('FOOT' in d for d in details) and any('EDGE_LONG' in d for d in details)
