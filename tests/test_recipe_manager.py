@@ -21,10 +21,10 @@ DESIGNS = [('001_CHAIR_BENCH_V000', '001_chair_bench_v000'), ('002_CHAIR_BACK_V0
 
 def make_boxes(recipe):
     """저장된 레시피(중심 · 회전 · 치수)로 블록 꼭짓점 8개씩을 만든다 — DXF 없이 RecipeBuilder 를 시험한다."""
-    sizes = {p['part_id']: p['size_mm'] for p in recipe['stocks']}
+    sizes = {p['stock_id']: p['size_mm'] for p in recipe['stocks']}
     boxes = []
     for b in recipe['blocks']:
-        R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['part_id']]]
+        R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['stock_id']]]
         corners = [tuple(c[i] + sum(R[i][k] * sg[k] * half[k] for k in range(3)) for i in range(3))
                    for sg in itertools.product((-1, 1), repeat=3)]
         boxes.append({'block': b['block'], 'handle': b['cad']['handle'], 'vertices': corners})
@@ -99,7 +99,7 @@ def test_recipe_sha256_is_fixed_canonical_json(bench):
     assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
 
 
-BENCH_RECIPE_SHA256 = '807c3a937cb378d253c2762ef1b4e7c723a00f08c6d9dddff9cf7ef96d20da6f'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
+BENCH_RECIPE_SHA256 = 'dfbe4e71581404e28ead11b5708c9e34adacba8b4c35baabee4124074652f580'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
 
 
 # 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)

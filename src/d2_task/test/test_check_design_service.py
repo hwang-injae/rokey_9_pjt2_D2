@@ -38,7 +38,7 @@ def test_변환기2의_출력이_check_design을_거쳐_레시피_파일과_같�
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
     assert result['schema'] == 'check_result/2.0'
     # CAD 에서만 오는 칸(cad.handle · source_cad)과 그 위에 계산한 recipe_sha256 은 blocks/2.0 에 없으므로 비교에서 뺀다
-    keep = lambda r: [(x['block'], x['part_id'], x['center_mm'], x['R']) for x in r['blocks']]
+    keep = lambda r: [(x['block'], x['stock_id'], x['center_mm'], x['R']) for x in r['blocks']]
     assert keep(result['recipe']) == keep(doc.recipe)
     steps = lambda p: [{k: v for k, v in st.items()} for st in p['steps']]
     assert steps(result['placements']) == steps(doc.placements)

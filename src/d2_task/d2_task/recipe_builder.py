@@ -30,7 +30,7 @@ GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', '
 LEGACY_GRASP = {'END_75': 'LENGTH', 'SIDE_25': 'WIDTH', 'THICKNESS_15': 'THICKNESS'}
 
 # 조립 방법 CSV 칸 — (가) 조립 방법 · (나) 표시 칸(레시피 값을 읽기 좋게 옮김) · 짝 확인 해시 · 형식 이름. 모든 줄의 recipe_sha256 · schema 는 같다.
-PLACEMENT_COLUMNS = ('block_id', 'block', 'sequence', 'stage', 'part_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
+PLACEMENT_COLUMNS = ('block_id', 'block', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
                      'center_x_mm', 'center_y_mm', 'center_z_mm', 'axis_L', 'axis_W', 'axis_T',
                      'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema')
 
@@ -53,7 +53,7 @@ class RecipeBuilder:
                    CAD가 없는 설계(변환기 ①)는 handle = None
             model_id: 모델 ID (예 001_CHAIR_BENCH_V000)
             source_filename, source_sha256: 원본 CAD 파일 이름과 해시. CAD가 없으면 None
-        출력: 레시피 dict (schema recipe/3.0 — source_cad · stocks · blocks[block · part_id · center_mm · R · cad.handle]).
+        출력: 레시피 dict (schema recipe/3.0 — source_cad · stocks · blocks[block · stock_id · center_mm · R · cad.handle]).
               CAD가 없으면 source_cad = None, 블록에 cad 칸 없음
         실패: 이름이 규칙과 다르거나 겹치거나 번호가 위치 순서와 다르면, 직육면체가 아니거나 축에 평행하지 않거나
               책상 아래이거나 서로 겹치면 ValueError.
@@ -90,12 +90,12 @@ class RecipeBuilder:
                 R[:, 1] *= -1
             size = [float(d) for d in dims[order]]
 
-            # part_id 는 CAD에서 처음 나온 치수 순서. 젠가 블록만 쓰면 PART_001 하나다.
+            # stock_id 는 CAD에서 처음 나온 치수 순서. 젠가 블록만 쓰면 PART_001 하나다.
             key = tuple(round(v, 6) for v in size)
             if key not in parts:
-                parts[key] = {'part_id': f'PART_{len(parts) + 1:03d}', 'size_mm': size}
+                parts[key] = {'stock_id': f'PART_{len(parts) + 1:03d}', 'size_mm': size}
             block = {'block': name,
-                     'part_id': parts[key]['part_id'],
+                     'stock_id': parts[key]['stock_id'],
                      'center_mm': [float(c) for c in (lo + hi) / 2],
                      'R': [[float(v) for v in row] for row in R]}
             if box.get('handle') is not None:
@@ -256,11 +256,11 @@ class RecipeBuilder:
         출력: 줄 목록. 한 줄 = PLACEMENT_COLUMNS 키의 dict (supports 는 목록 그대로 — 글자로 잇는 것은 파일 쓰는 쪽)
         """
         blocks = {block['block']: block for block in recipe['blocks']}
-        sizes = {part['part_id']: part['size_mm'] for part in recipe['stocks']}
+        sizes = {part['stock_id']: part['size_mm'] for part in recipe['stocks']}
         rows = []
         for step in placements['steps']:
             block = blocks[step['block']]
-            size = sizes[block['part_id']]
+            size = sizes[block['stock_id']]
 
             # 방향: 부품 L/W/T 축이 모델의 어느 축을 향하는지 '+X' · '-Y' 글자로. R의 k번째 열 = 부품 k번째 축 방향.
             directions = []
@@ -270,7 +270,7 @@ class RecipeBuilder:
                 directions.append(('+' if column[axis] > 0 else '-') + 'XYZ'[axis])
 
             rows.append({'block_id': step['block_id'], 'block': step['block'],
-                         'sequence': step['sequence'], 'stage': step['stage'], 'part_id': block['part_id'],
+                         'sequence': step['sequence'], 'stage': step['stage'], 'stock_id': block['stock_id'],
                          'size_L_mm': size[0], 'size_W_mm': size[1], 'size_T_mm': size[2],
                          'center_x_mm': block['center_mm'][0], 'center_y_mm': block['center_mm'][1],
                          'center_z_mm': block['center_mm'][2],
@@ -298,7 +298,7 @@ class RecipeBuilder:
         출력: (lo, hi) — 최소 · 최대 꼭짓점 numpy 배열 (mm)
         """
         # 회전된 직육면체를 모델 축에 투영한 반폭 = |R| @ (치수 / 2). 축 정렬 회전만 받으므로 정확한 경계다.
-        size = next(part['size_mm'] for part in recipe['stocks'] if part['part_id'] == block['part_id'])
+        size = next(part['size_mm'] for part in recipe['stocks'] if part['stock_id'] == block['stock_id'])
         half = np.abs(np.array(block['R'])) @ (np.array(size) / 2)
         center = np.array(block['center_mm'])
         return center - half, center + half
@@ -351,7 +351,7 @@ class RecipeBuilder:
         출력: [긴 쪽 축 번호, 짧은 쪽 축 번호]
         """
         up = VERTICAL_AXIS[self.read_placed_state(block)]
-        size = next(part['size_mm'] for part in recipe['stocks'] if part['part_id'] == block['part_id'])
+        size = next(part['size_mm'] for part in recipe['stocks'] if part['stock_id'] == block['stock_id'])
         return sorted((k for k in AXES.values() if k != up), key=lambda k: (-size[k], k))
 
     def read_placed_state(self, block):

@@ -149,7 +149,7 @@ def test_없는_block():
 
 
 def test_없는_part():
-    bad(lambda r, pl: r['blocks'][0].update(part_id='PART_999'))
+    bad(lambda r, pl: r['blocks'][0].update(stock_id='PART_999'))
 
 
 def test_sequence_중복():

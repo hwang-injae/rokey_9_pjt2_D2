@@ -110,7 +110,7 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: r['blocks'][0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
     (lambda r, p: r['blocks'][0].update(block='B001'), True),
     (lambda r, p: r['blocks'][1].update(block=r['blocks'][0]['block']), True),
-    (lambda r, p: r['blocks'][0].update(part_id='NOPE'), True),
+    (lambda r, p: r['blocks'][0].update(stock_id='NOPE'), True),
     (lambda r, p: r['blocks'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
     (lambda r, p: r['blocks'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
     (lambda r, p: p['steps'][0].update(block='NOPE'), True),
@@ -353,4 +353,4 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     doc = RecipeDocument.load(FIXTURES, model_id)
     assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
-        assert doc.placements['recipe_sha256'].startswith('807c3a93') and doc.placements['recipe_sha256'].endswith('da6f')     # 한세교 시험에 고정된 벤치 값
+        assert doc.placements['recipe_sha256'].startswith('dfbe4e71') and doc.placements['recipe_sha256'].endswith('f580')     # 한세교 시험에 고정된 벤치 값

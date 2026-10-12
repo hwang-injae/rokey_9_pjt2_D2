@@ -7,7 +7,7 @@
   },
   "stocks": [
     {
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "size_mm": [
         75.0,
         25.0,
@@ -18,7 +18,7 @@
   "blocks": [
     {
       "block": "LEG_001_01",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         -25.0,
         0.0,
@@ -47,7 +47,7 @@
     },
     {
       "block": "LEG_002_01",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         25.0,
         0.0,
@@ -76,7 +76,7 @@
     },
     {
       "block": "LEG_001_02",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         -25.0,
         0.0,
@@ -105,7 +105,7 @@
     },
     {
       "block": "LEG_002_02",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         25.0,
         0.0,
@@ -134,7 +134,7 @@
     },
     {
       "block": "LEG_001_03",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         -25.0,
         0.0,
@@ -163,7 +163,7 @@
     },
     {
       "block": "LEG_002_03",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         25.0,
         0.0,
@@ -192,7 +192,7 @@
     },
     {
       "block": "LEG_001_04",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         -25.0,
         0.0,
@@ -221,7 +221,7 @@
     },
     {
       "block": "LEG_002_04",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         25.0,
         0.0,
@@ -250,7 +250,7 @@
     },
     {
       "block": "SEAT_001_01",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         -25.0,
@@ -279,7 +279,7 @@
     },
     {
       "block": "SEAT_001_02",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         0.0,
@@ -308,7 +308,7 @@
     },
     {
       "block": "SEAT_001_03",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,
@@ -337,7 +337,7 @@
     },
     {
       "block": "BACK_001_01",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,
@@ -366,7 +366,7 @@
     },
     {
       "block": "BACK_001_02",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,
@@ -395,7 +395,7 @@
     },
     {
       "block": "BACK_001_03",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,
@@ -424,7 +424,7 @@
     },
     {
       "block": "BACK_001_04",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,
@@ -453,7 +453,7 @@
     },
     {
       "block": "BACK_001_05",
-      "part_id": "PART_001",
+      "stock_id": "PART_001",
       "center_mm": [
         0.0,
         25.0,

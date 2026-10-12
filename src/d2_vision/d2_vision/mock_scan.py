@@ -115,12 +115,12 @@ def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
     order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
-    parts = {p['part_id']: [float(v) for v in p['size_mm']] for p in recipe['stocks']}
+    parts = {p['stock_id']: [float(v) for v in p['size_mm']] for p in recipe['stocks']}
     by_name = {b['block']: b for b in recipe['blocks']}
     rows = []
     for st in sorted(placements['steps'], key=lambda s: s['sequence']):
         b = by_name[st['block']]
-        size = parts[b['part_id']]
+        size = parts[b['stock_id']]
         ext = tuple(sum(abs(b['R'][i][k]) * size[k] for k in range(3)) for i in range(3))
         hits = [o for o, e in ori_table(size).items() if e == ext]
         if len(hits) != 1:

@@ -138,19 +138,19 @@ class RecipeDocument:
             raise ValueError('stocks · blocks · steps 는 비어 있지 않은 목록이어야 한다')
         sizes = {}
         for p in parts:
-            if not isinstance(p, dict) or not isinstance(p.get('part_id'), str) or p['part_id'] in sizes:
-                raise ValueError('part_id 가 없거나 중복이다')
+            if not isinstance(p, dict) or not isinstance(p.get('stock_id'), str) or p['stock_id'] in sizes:
+                raise ValueError('stock_id 가 없거나 중복이다')
             self._vector(p.get('size_mm'), 3, 'size_mm')
             if any(v <= 0 for v in p['size_mm']):
                 raise ValueError('size_mm 은 양수여야 한다')
-            sizes[p['part_id']] = p['size_mm']
+            sizes[p['stock_id']] = p['size_mm']
         instances = {}
         for b in blocks:
             if not isinstance(b, dict) or not isinstance(b.get('block'), str) or not re.fullmatch(
                     r'[A-Z]+(?:_[A-Z]+)*_[0-9]{3}_[0-9]{2}', b['block']) or b['block'] in instances:
                 raise ValueError('block 이름이 역할_부품_블록 형식이 아니거나 중복이다')
-            if not isinstance(b.get('part_id'), str) or b['part_id'] not in sizes:
-                raise ValueError(f'{b["block"]}: 없는 part_id')
+            if not isinstance(b.get('stock_id'), str) or b['stock_id'] not in sizes:
+                raise ValueError(f'{b["block"]}: 없는 stock_id')
             self._vector(b.get('center_mm'), 3, 'center_mm')
             R = b.get('R')
             if not isinstance(R, list) or len(R) != 3:
@@ -163,7 +163,7 @@ class RecipeDocument:
                                 R[1][(i + 2) % 3] * R[2][(i + 1) % 3]) for i in range(3))
             if det != 1:
                 raise ValueError('R 은 거울 반사가 아닌 회전이어야 한다')
-            instances[b['block']] = dict(instance_id=b['block'], part_id=b['part_id'], center_mm=b['center_mm'], R=R)
+            instances[b['block']] = dict(instance_id=b['block'], stock_id=b['stock_id'], center_mm=b['center_mm'], R=R)
         sequences, rows = {}, []
         for st in steps:
             if not isinstance(st, dict) or not isinstance(st.get('block'), str) or st['block'] not in instances:

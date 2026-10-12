@@ -204,7 +204,7 @@ def test_recipe_sha256_matches_team_value():
     folder = ROOT / 'src/d2_task/test/fixtures'
     recipe = json.loads((folder / '001_CHAIR_BENCH_V000_recipe.json').read_text(encoding='utf-8'))
     csv_sha = (folder / '001_CHAIR_BENCH_V000_placements.csv').read_text(encoding='utf-8').splitlines()[1].split(',')[-2]
-    assert recipe_sha256(recipe) == csv_sha == '807c3a937cb378d253c2762ef1b4e7c723a00f08c6d9dddff9cf7ef96d20da6f'
+    assert recipe_sha256(recipe) == csv_sha == 'dfbe4e71581404e28ead11b5708c9e34adacba8b4c35baabee4124074652f580'
 
 
 def test_recipe_from_design_attaches_structure():

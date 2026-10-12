@@ -166,9 +166,9 @@ def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
     반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/3.0', 'model_id': model_id,
-                 'stocks': [{'part_id': 'PART_001', 'size_mm': list(size_mm)}],
-                 'blocks': [{'block': 'SEAT_001_01', 'part_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
-                            {'block': 'SEAT_001_02', 'part_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
+                 'stocks': [{'stock_id': 'PART_001', 'size_mm': list(size_mm)}],
+                 'blocks': [{'block': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
+                            {'block': 'SEAT_001_02', 'stock_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
     recipe = {'schema': 'placements/2.0', 'model_id': model_id,
               'steps': [{'block': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': ['SEAT_001_01']},
@@ -207,7 +207,7 @@ def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
         mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'blocks': []})
 
 
-CSV_COLS = ['block_id', 'block', 'sequence', 'stage', 'part_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
+CSV_COLS = ['block_id', 'block', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
             'center_z_mm', 'axis_L', 'axis_W', 'axis_T', 'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema']
 
 
@@ -223,7 +223,7 @@ def _write_files(folder, recipe, structure, sha=None, schema='placements/2.0'):
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['block']]
         w.writerow({'block_id': f"{recipe['model_id']}_{st['block']}", 'block': st['block'], 'sequence': st['sequence'],
-                    'stage': st['stage'], 'part_id': g['part_id'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
+                    'stage': st['stage'], 'stock_id': g['stock_id'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
                     'center_x_mm': g['center_mm'][0], 'center_y_mm': g['center_mm'][1], 'center_z_mm': g['center_mm'][2],
                     'axis_L': '+X', 'axis_W': '+Y', 'axis_T': '+Z', 'grasp': st['grasp'], 'grasp_axis': st['grasp_axis'],
                     'supports': ';'.join(st['supports']), 'cad_handle': '', 'recipe_sha256': sha or mm.recipe_sha256(structure),

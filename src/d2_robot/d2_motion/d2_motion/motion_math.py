@@ -372,7 +372,7 @@ def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
     레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · block_id · sequence · stage · grasp_axis · supports — 블록 이름)
-    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · blocks[](block · part_id · center_mm · R)).
+    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · blocks[](block · stock_id · center_mm · R)).
     block_id = 조립 방법의 block_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].block_id), task 시험 예시는 이 꼴 파일이다(block_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
@@ -409,21 +409,21 @@ def recipe_blocks(cfg, recipe):
     out = []
     if 'model' in recipe:                           # 옛 한 파일 꼴 — task RecipeDocument.geometry · task 시험 예시(W141 전)
         model = recipe['model']
-        sizes = {p['part_id']: p['size_mm'] for p in model['stocks']}
+        sizes = {p['stock_id']: p['size_mm'] for p in model['stocks']}
         inst = {i['instance_id']: i for i in model['instances']}
         bid = {st['instance_id']: st.get('block_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
-            out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['part_id']], i['center_mm'], i['R'],
+            out.append(block(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
                              st['grasp_axis'], [bid[k] for k in st.get('support_instance_ids') or [] if k in bid]))
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
-    sizes = {p['part_id']: p['size_mm'] for p in struct['stocks']}
+    sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
     geo = {b['block']: b for b in struct['blocks']}
     full = {st['block']: st.get('block_id') or f'{recipe["model_id"]}_{st["block"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['block']]
-        out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['part_id']], g['center_mm'], g['R'],
+        out.append(block(full[st['block']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
                          st['grasp_axis'], [full[k] for k in st.get('supports') or [] if k in full]))
     return out
 

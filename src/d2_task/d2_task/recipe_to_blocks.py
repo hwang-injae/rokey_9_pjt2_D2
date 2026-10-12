@@ -56,7 +56,7 @@ class RecipeToBlocks:
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':
             raise ValueError('model.frame.units 가 mm 가 아니다')
-        parts = {p['part_id']: p['size_mm'] for p in model.get('stocks', [])}
+        parts = {p['stock_id']: p['size_mm'] for p in model.get('stocks', [])}
         instances = {i['instance_id']: i for i in model.get('instances', [])}
 
         blocks, seen = [], set()
@@ -68,10 +68,10 @@ class RecipeToBlocks:
             if iid not in instances:
                 raise ValueError(f'sequence {seq}: instance {iid} 가 model.instances 에 없다')
             inst = instances[iid]
-            if inst['part_id'] not in parts:
-                raise ValueError(f'sequence {seq}: part {inst["part_id"]} 가 model.parts 에 없다')
+            if inst['stock_id'] not in parts:
+                raise ValueError(f'sequence {seq}: part {inst["stock_id"]} 가 model.parts 에 없다')
             x, y, cz = inst['center_mm']
-            extent = self._world_extent(seq, inst['R'], parts[inst['part_id']])
+            extent = self._world_extent(seq, inst['R'], parts[inst['stock_id']])
             role, part = self._role_part(seq, step['block'])
             blocks.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
                            'role': role, 'part': part, 'stage': step['stage'], 'grasp': step['grasp']})
