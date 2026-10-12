@@ -71,7 +71,7 @@ def fake_wrist_jpeg(seed, text):
 def fake_scan_media(blocks, origin, size_mm):
     """가짜 스캔 사진(위에서 본 블록, JPEG 바이트) · 점군(블록 윗면, base_link m ASCII PLY 바이트) — 비전 가짜 스캔과 같은 그림 · 점.
 
-    입력: blocks = blocks/1 · origin = robot.yaml assembly_origin · size_mm = 블록 크기. numpy · PIL 이 없으면 (None, None).
+    입력: blocks = blocks/2 · origin = robot.yaml assembly_origin · size_mm = 블록 크기. numpy · PIL 이 없으면 (None, None).
     """
     try:
         from d2_vision.mock_scan import blocks_to_points, top_view, write_ply
@@ -188,7 +188,7 @@ class MockRobot:
         self.set_state('DONE', '완성했어요', 'done', part_id=None)
 
     def _scan(self, run_id):
-        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
+        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/2, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
         for pose in ('observe', 'observe_front', 'observe_side'):
             for state in ('SCAN_MOVE', 'SCAN_CAPTURE'):
                 self.set_state(state, f'스캔 중 — {pose}', 'scan_running')
@@ -198,9 +198,9 @@ class MockRobot:
         if self.abort.wait(self.step_s):
             return
         _, blocks = self.local_design(BENCH)
-        items = [{'order': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
+        items = [{'scan_num': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
                  for i, b in enumerate(blocks['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
-        scan = {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
+        scan = {'schema': 'blocks/2', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
         jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
         result = {'schema': 'scan_result/2.0', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
                   'image_path': f'/mock/scan/{run_id}/color.png' if jpeg else '',   # 로봇 PC 경로 흉내 — 웹은 열지 않는다

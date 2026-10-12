@@ -235,7 +235,7 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
 
 
-@pytest.mark.parametrize('schema', ['other/1', 'blocks/1', 'blocks/1.5', 'blocks/3.0', None, 5])
+@pytest.mark.parametrize('schema', ['other/1', 'blocks/2', 'blocks/2.5', 'blocks/3.0', None, 5])
 def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
     req = base_design('001_CHAIR_BENCH_V000')
     req['schema'] = schema
@@ -258,7 +258,7 @@ def test_서비스_유한하지_않은_수는_불합격이_아니라_ERROR(liter
 
 
 def test_서비스_오류_응답도_순수_JSON():
-    _, _, text = DesignChecker(CFG).handle_json('{"schema":"blocks/1","blocks":[{"x":NaN}]}')
+    _, _, text = DesignChecker(CFG).handle_json('{"schema":"blocks/2","blocks":[{"x":NaN}]}')
     json.loads(text, parse_constant=lambda c: pytest.fail(c))
 
 
@@ -349,14 +349,14 @@ def test_inferred는_선택이고_불리언이어야_한다():
 
 
 def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
-    """E-69: blocks/1 은 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 ERROR."""
+    """E-69: blocks/2 는 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 ERROR."""
     req = ai_blocks()
-    req['schema'] = 'blocks/1'
+    req['schema'] = 'blocks/2'
     for b in req['parts']:
         for k in ('role', 'group', 'stage', 'grasp'):
             del b[k]
     ok, reason, text = DesignChecker(CFG).handle_json(json.dumps(req))
-    assert (ok, reason) == (False, 'ERROR') and 'blocks/1' in text
+    assert (ok, reason) == (False, 'ERROR') and 'blocks/2' in text
 
 
 def test_변환기_결과의_짝_해시가_안_맞으면_ERROR():

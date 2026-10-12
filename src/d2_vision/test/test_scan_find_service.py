@@ -127,11 +127,11 @@ def test_draw_found_keeps_size():
 
 def _infer_result(ok=True):
     """StructureScanner.infer() 모양(numpy 수가 섞인) 결과."""
-    blocks = [{'order': np.int64(1), 'x': np.float64(-25.0), 'y': np.float64(0.0), 'z': np.float64(0.0), 'ori': 'y', 'inferred': np.bool_(True)},
-              {'order': 2, 'x': 25.000001, 'y': 0.0, 'z': 15.0, 'ori': 'x', 'inferred': False}]
+    blocks = [{'scan_num': np.int64(1), 'x': np.float64(-25.0), 'y': np.float64(0.0), 'z': np.float64(0.0), 'ori': 'y', 'inferred': np.bool_(True)},
+              {'scan_num': 2, 'x': 25.000001, 'y': 0.0, 'z': 15.0, 'ori': 'x', 'inferred': False}]
     return {'ok': ok, 'reason': '' if ok else '점 설명률 0.51 < 0.8', 'inferred_count': 1, 'confidence': {'explained': 0.9},
             'nearest_base': '001_CHAIR_BENCH_V000',
-            'blocks': {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': blocks}}
+            'blocks': {'schema': 'blocks/2', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': blocks}}
 
 
 def test_scan_response_ok_matches_task_checks():
@@ -142,8 +142,8 @@ def test_scan_response_ok_matches_task_checks():
     text = json.dumps(body, allow_nan=False)
     back = json.loads(text)
     rows = back['blocks']['blocks']
-    assert back['blocks']['schema'] == 'blocks/1' and back['inferred_count'] == 1
-    assert all(type(b['order']) is int and type(b['inferred']) is bool for b in rows)
+    assert back['blocks']['schema'] == 'blocks/2' and back['inferred_count'] == 1
+    assert all(type(b['scan_num']) is int and type(b['inferred']) is bool for b in rows)
     assert rows[1]['x'] == 25.0
 
 
@@ -156,7 +156,7 @@ def test_scan_response_without_cloud_and_failed():
 
 
 def test_family_of_and_bases_from_recipes():
-    """기본 설계 4개(레시피 두 파일 _recipe.json + _placements.csv) → blocks/1 + family(이름의 CHAIR · DESK) — scan_infer 의 nearest_base 후보."""
+    """기본 설계 4개(레시피 두 파일 _recipe.json + _placements.csv) → blocks/2 + family(이름의 CHAIR · DESK) — scan_infer 의 nearest_base 후보."""
     assert [family_of(d) for d in ('001_CHAIR_BENCH_V000', '004_DESK_PEDESTAL_V000', 'scan_x')] == ['chair', 'desk', 'unknown']
     found = sorted(RECIPES.glob('*_recipe.json'))
     if not found:

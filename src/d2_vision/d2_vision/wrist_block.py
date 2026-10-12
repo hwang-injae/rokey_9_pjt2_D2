@@ -17,7 +17,7 @@
       (capture_scene 과 같은 칸 — intrinsics_px · depth_unit · T_base2cam_m(m) · tcp + run_id · index)을 남긴다. 같은 자세 다시 찍으면 덮어씀.
       컬러는 요청 뒤 들어온 것이 있을 때만(답 시간이 늘지 않게 기다리지 않음). 실패는 경고 로그만. 스캔이 저절로 구조물 사진 자료가 되게.
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
-      → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
+      → {"ok":true,"blocks":blocks/2,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
       번호 = scan_dir 에 이미 있는 blocks.json 수 + 1(노드를 다시 켜도 이름이 겹치지 않게). 추론이 끝난 run_id 는 메모리에서 지운다.
   `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + TF 자세 × 보정 → BlockFinder(block_finder.py)
@@ -125,7 +125,7 @@ from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
 from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_depth_mm, recipe_from_design, recipe_path
 from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
 from d2_vision.design_cache import RunDesignCache
-# 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
+# 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/2 는 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
 from d2_vision.structure_scanner import StructureScanner, family_of, save_capture, save_preview, scan_response
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
@@ -274,7 +274,7 @@ class WristBlock(Node):
         return model
 
     def _load_bases(self):
-        """recipe_dir 의 기본 설계(이름에 CHAIR · DESK, 레시피 두 파일 `_recipe.json` + `_placements.csv`, E-69) → blocks/1 목록. scan_infer 가 family 를 고르는 데 쓴다(nearest_base).
+        """recipe_dir 의 기본 설계(이름에 CHAIR · DESK, 레시피 두 파일 `_recipe.json` + `_placements.csv`, E-69) → blocks/2 목록. scan_infer 가 family 를 고르는 데 쓴다(nearest_base).
         폴더가 비었거나 못 읽은 설계는 빼고 경고 — 하나도 없으면 스캔 family 는 unknown."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir:
@@ -291,7 +291,7 @@ class WristBlock(Node):
                     continue
                 bases.append(structure_to_blocks(*pair, design_id, family_of(design_id), 0))
             except (OSError, KeyError, TypeError, ValueError, IndexError) as e:
-                self.get_logger().warn('기본 설계 %s 를 blocks/1 로 못 바꿈: %s — 스캔 family 후보에서 뺀다' % (design_id, e))
+                self.get_logger().warn('기본 설계 %s 를 blocks/2 로 못 바꿈: %s — 스캔 family 후보에서 뺀다' % (design_id, e))
         self.get_logger().info('스캔 family 후보(기본 설계): %s' % [b['design_id'] for b in bases])
         return bases
 

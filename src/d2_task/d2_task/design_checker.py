@@ -13,7 +13,7 @@ from d2_task.recipe_to_blocks import ori_extents
 from d2_task.blocks_to_recipe import DesignRejected
 from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
 
-SCHEMA_REQUEST = 'parts/3.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 옛 blocks/1 은 위치 · 방향만이라 거절)
+SCHEMA_REQUEST = 'parts/3.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 스캔 형식 blocks/2 는 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/3.0'
 ROLE_RE = re.compile(r'[A-Z]+(?:_[A-Z]+)?')     # 역할 한 단어 + 옵션 0~1개 한 단어(영문 대문자, 작명 규칙 v3)
 PENETRATION_MM = 0.000001     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 — 레시피 도구 · 변환기(TOL 1e-6)와 같은 기준(E-84, 10/11 PL). 0 이 아닌 이유: 부동소수 계산 오차로 정상 면접촉이 거절되지 않게 (SDD 6.7 검사 2)
@@ -86,7 +86,7 @@ class DesignChecker:
     def handle_json(self, request_json):
         """`check_design`(JsonQuery) 한 번을 처리한다. 반환: (success, reason, response_json 글자).
 
-        요청은 parts/3.0 객체 글자 그대로(schema 가 'parts/3.0' 이어야 하고, 옛 blocks/1 은 받은 schema 를 적어 ERROR). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
+        요청은 parts/3.0 객체 글자 그대로(schema 가 'parts/3.0' 이어야 하고, 스캔 형식 blocks/2 는 받은 schema 를 적어 ERROR). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
         설계 불합격은 (True, '', ok:false + errors) — 좌표가 유한한 수가 아닌 것(NaN · Infinity · 1e999 처럼 읽으면 무한대가 되는 수)은 불합격이 아니라 요청 오류다.
         변환기 ①이 AI 실수(DesignRejected — 역할 목록 · 면 맞닿음 · 잡기)를 찾으면 불합격 CHECK_FAILED 로 errors 에 그대로 옮긴다(재생성 대상, success true).
         JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 그 밖의 예외 · 잘못된 결과를 내면 (False, 'ERROR', 이유).

@@ -680,19 +680,19 @@ class TaskManager:
             return self._failed('STOPPED' if self.halted() else why, '스캔 추론')
         try:
             blocks = body['blocks']
-            if body.get('ok') is not True or not isinstance(blocks, dict) or not same_major(blocks.get('schema'), 'blocks/1'):
-                raise ValueError('blocks/1 객체가 아니다')
+            if body.get('ok') is not True or not isinstance(blocks, dict) or not same_major(blocks.get('schema'), 'blocks/2'):
+                raise ValueError('blocks/2 객체가 아니다')
             if any(not isinstance(blocks.get(k), str) or not blocks[k] for k in ('design_id', 'family')):
                 raise ValueError('design_id · family 가 없다')
             rows = blocks.get('blocks')
             if not isinstance(rows, list) or not rows:
                 raise ValueError('추론 블록이 없다')
-            orders = set()
+            nums = set()
             for b in rows:
-                order = b['order']
-                if isinstance(order, bool) or not isinstance(order, int) or order <= 0 or order in orders:
-                    raise ValueError('블록 order 가 잘못됐다')
-                orders.add(order)
+                num = b['scan_num']
+                if isinstance(num, bool) or not isinstance(num, int) or num <= 0 or num in nums:
+                    raise ValueError('블록 scan_num 이 잘못됐다')
+                nums.add(num)
                 if b.get('ori') not in ('x', 'y', 'xe', 'ye', 'zx', 'zy') or not isinstance(b.get('inferred', False), bool):
                     raise ValueError('블록 ori · inferred 가 잘못됐다')
                 if any(isinstance(b[k], bool) or not isinstance(b[k], (int, float)) for k in ('x', 'y', 'z')):

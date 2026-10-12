@@ -158,7 +158,7 @@ def test_all_mistakes_reported_together(bench):
 
 # 형식이 틀린 요청(schema · order 빠짐)은 레시피를 만들지 않고 거부
 def test_bad_request_rejected(bench):
-    assert rejected_details(dict(bench, schema='blocks/1'))
+    assert rejected_details(dict(bench, schema='blocks/2'))
     bench['parts'][3]['order'] = 99
     assert any('order' in d for d in rejected_details(bench))
 

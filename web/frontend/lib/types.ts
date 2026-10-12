@@ -40,13 +40,13 @@ export interface GripperState {
   grasped: boolean;
 }
 
-/** scan_result/2.0 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
+/** scan_result/2.0 — 추론 블록(blocks/2, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
  *  nearest_base(1.2, E-79 선택 칸). poses_used 개수는 정해져 있지 않다(W166 — 3개를 가정하지 않는다) */
 export interface ScanResult {
   schema: string;
   stamp?: number;
   run_id: string;
-  blocks: { schema: string; design_id: string; family: string; blocks: { order: number; x: number; y: number; z: number; ori: string; inferred: boolean }[] };
+  blocks: { schema: string; design_id: string; family: string; blocks: { scan_num: number; x: number; y: number; z: number; ori: string; inferred: boolean }[] };
   inferred_count: number;
   image_path?: string;
   cloud_path?: string;

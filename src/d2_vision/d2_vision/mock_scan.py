@@ -2,7 +2,7 @@
 
 IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) 의 응답을 카메라 없이 만든다.
 노드와 나눈 이유: ROS 없이 pytest 로 응답 모양을 시험하려고(CLAUDE.md 2장 — 계산 파일은 같은 패키지 다른 파일로).
-- scan_infer 의 blocks/1 은 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
+- scan_infer 의 blocks/2 는 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
   직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
   d2_task 의 변환기 ②(RecipeToBlocks)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
   d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
@@ -11,7 +11,7 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
   PNG 는 표준 라이브러리(zlib)로, PLY 는 글자(ASCII)로 쓴다 — cv2 · open3d 없이(CI 에 없음, 가짜라 가볍게).
 - 스캔 중 점군 미리보기(10/10 E-82): preview() 가 `<임시 폴더>/d2_scan/<run_id>/preview_<index>.ply` 와 scan_preview/1.0 dict 를 만든다
   (wrist_block 과 같은 칸). 가짜 점군 = scan_design_id 설계 블록 윗면을 찍은 자세 수만큼 늘려 보인다(1곳 1/3 · 2곳 2/3 · 3곳 이상 전부).
-단위: blocks/1 은 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
+단위: blocks/2 는 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
 바깥 영향: infer 가 임시 폴더에 파일 두 개를 쓴다. 그 밖에는 계산만.
 실패: 잘못된 요청 → (False, 코드, {"ok":false,"reason","detail"}) — 서비스 success=false 로 답한다.
       답은 냈지만 결과가 실패(촬영 안 한 run_id · 레시피 못 읽음 · scan_fail 흉내) → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail"}).
@@ -110,7 +110,7 @@ def load_recipe_files(recipe_dir, design_id):
 
 
 def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
-    """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/3.0, load_recipe_files 출력) → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
+    """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/3.0, load_recipe_files 출력) → blocks/2 dict(mm, 설계 좌표계). 바깥 영향 없음.
 
     order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
@@ -126,16 +126,16 @@ def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
         if len(hits) != 1:
             raise ValueError(f'{st["part_name"]}: 크기 {ext} 에 맞는 방향 코드가 {len(hits)}개다')
         x, y, cz = (float(v) for v in b['center_mm'])
-        rows.append({'order': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
+        rows.append({'scan_num': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
     if not rows:
         raise ValueError('조립 방법에 steps 가 없다')
     for r in rows[:max(0, min(int(inferred_count), len(rows)))]:
         r['inferred'] = True
-    return {'schema': 'blocks/1', 'design_id': design_id, 'family': family, 'blocks': rows}
+    return {'schema': 'blocks/2', 'design_id': design_id, 'family': family, 'blocks': rows}
 
 
 def _footprints(blocks, size_mm):
-    """blocks/1 블록마다 (x0, x1, y0, y1, 윗면 z) mm — 설계 좌표계. size_mm = 블록 크기(robot.yaml block_size_m × 1000)."""
+    """blocks/2 블록마다 (x0, x1, y0, y1, 윗면 z) mm — 설계 좌표계. size_mm = 블록 크기(robot.yaml block_size_m × 1000)."""
     table = ori_table(size_mm)
     out = []
     for b in blocks['blocks']:
@@ -145,7 +145,7 @@ def _footprints(blocks, size_mm):
 
 
 def blocks_to_points(blocks, origin, size_mm, step_mm=CLOUD_STEP_MM):
-    """blocks/1(mm, 설계) → 블록 윗면 점군 (N, 3) m, base_link. 바깥 영향 없음.
+    """blocks/2(mm, 설계) → 블록 윗면 점군 (N, 3) m, base_link. 바깥 영향 없음.
 
     size_mm = 블록 크기(길이 · 폭 · 두께). origin = robot.yaml assembly_origin(x_m · y_m · z_m · yaw_deg) — 설계 원점을 base 로 옮긴다(motion_math.recipe_blocks 와 같은 뜻:
     설계 좌표를 yaw 만큼 돌리고 원점만큼 민다). 위에서 보는 손목 카메라처럼 윗면만 둔다(가려진 아래 블록 윗면도 겹쳐 남는다 — 가짜라 그대로)."""
@@ -183,7 +183,7 @@ def write_png(path, rgb):
 
 
 def top_view(blocks, size_mm):
-    """blocks/1 · 블록 크기(mm) → 위에서 본 가짜 사진 (IMG_H, IMG_W, 3) uint8. 1 px = 1 mm, 가운데 = 설계 원점, 위층일수록 밝게.
+    """blocks/2 · 블록 크기(mm) → 위에서 본 가짜 사진 (IMG_H, IMG_W, 3) uint8. 1 px = 1 mm, 가운데 = 설계 원점, 위층일수록 밝게.
     화면의 '실물 사진' 칸을 채워 보려는 그림이라 실제 카메라 모습과는 다르다."""
     img = np.full((IMG_H, IMG_W, 3), 40, np.uint8)          # 어두운 작업면
     for x0, x1, y0, y1, top in sorted(_footprints(blocks, size_mm), key=lambda f: f[4]):   # 낮은 것부터 칠해 위층이 위에 남게
@@ -229,7 +229,7 @@ class MockScan:
         return True, '', {'ok': True, 'points': MOCK_POINTS}
 
     def infer(self, text, recipe_dir, design_id, family, inferred_count, fail=False):
-        """scan_infer: {"run_id"} → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}.
+        """scan_infer: {"run_id"} → {"ok":true,"blocks":blocks/2,"inferred_count","image_path","cloud_path"}.
 
         blocks 는 recipe_dir 의 design_id 레시피 두 파일로 만든다(그 설계를 '스캔했다'고 흉내). 설계 이름은 scan_<family>_<번호>.
         바깥 영향: out_root/<run_id>/color.png · cloud.ply 를 쓴다. 실패: 촬영 안 한 run_id · 레시피 못 읽음 · fail 흉내 → ok:false SCAN_FAILED."""
@@ -248,7 +248,7 @@ class MockScan:
                 return _result_fail(f'레시피 {design_id} 두 파일(_recipe.json · _placements.csv)을 못 찾음(recipe_dir={recipe_dir!r})')
             blocks = structure_to_blocks(*pair, f'scan_{family}_{self.n_designs + 1:02d}', family, inferred_count)
         except (OSError, KeyError, TypeError, ValueError, IndexError) as e:
-            return _result_fail(f'레시피 {design_id} 를 blocks/1 로 못 바꿈: {e}')
+            return _result_fail(f'레시피 {design_id} 를 blocks/2 로 못 바꿈: {e}')
         out = self.out_root / rid
         out.mkdir(parents=True, exist_ok=True)
         image, cloud = out / 'color.png', out / 'cloud.ply'

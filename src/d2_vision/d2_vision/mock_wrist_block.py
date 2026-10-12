@@ -20,7 +20,7 @@
 - `/d2/vision/scan_capture`(JsonQuery): {"pose_id","run_id"} → {"ok":true,"points"}. run_id 별로 촬영한 자세를 기억한다.
   답한 뒤 따로 스레드가 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 — wrist_block 과 같은 칸, 10/10 E-82)를 낸다:
   <임시 폴더>/d2_scan/<run_id>/preview_<index>.ply = scan_design_id 블록을 찍은 자세 수만큼(MockScan.preview). 실패는 경고 로그만.
-- `/d2/vision/scan_infer`(JsonQuery): {"run_id"} → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}.
+- `/d2/vision/scan_infer`(JsonQuery): {"run_id"} → {"ok":true,"blocks":blocks/2,"inferred_count","image_path","cloud_path"}.
   blocks = 파라미터 scan_design_id 레시피 두 파일(recipe_dir)을 '스캔했다'고 흉내(설계 이름 scan_<scan_family>_<번호>,
   앞 순서 scan_inferred 개는 inferred: true). image_path · cloud_path 는 실제 파일(<임시 폴더>/d2_scan/<run_id>/color.png · cloud.ply,
   PLY 는 base_link m) — 다리가 읽어 보낼 수 있다. 그 run_id 로 촬영(scan_capture)을 안 했으면 ok:false SCAN_FAILED.
@@ -100,7 +100,7 @@ class MockWristBlock(Node):
         self.declare_parameter('fail', False)            # True 면 success=false (카메라 고장 흉내)
         self.declare_parameter('status_hz', 2.0)         # camera_status 주기 (IRD 2 Hz)
         self.declare_parameter('scan_design_id', '001_CHAIR_BENCH_V000')   # scan_infer 가 '스캔했다'고 흉내 낼 설계(recipe_dir 의 두 파일)
-        self.declare_parameter('scan_family', 'chair')   # 스캔 설계 family(blocks/1 칸 · 이름 scan_<family>_<번호>)
+        self.declare_parameter('scan_family', 'chair')   # 스캔 설계 family(blocks/2 칸 · 이름 scan_<family>_<번호>)
         self.declare_parameter('scan_inferred', 2)       # inferred: true 로 표시할 블록 수(앞 순서부터 — 가려진 아래층 흉내)
         self.declare_parameter('scan_fail', False)       # True 면 scan_infer 가 ok:false SCAN_FAILED (격자 맞추기 실패 흉내)
         self.declare_parameter('find_blocks_json', '')   # find_blocks 블록 목록 JSON. 빈 값 = IRD 예시 블록 하나, "[]" = 공급 빔
@@ -281,7 +281,7 @@ class MockWristBlock(Node):
         self.get_logger().info('scan_preview %s #%d (%s): 점 %d → %s' % (rid, index, pose_id, msg['points'], msg['cloud_path']))
 
     def on_scan_infer(self, req, res):
-        """scan_infer 콜백. 입력 request_json {"run_id"}. 출력 blocks/1 · inferred_count · image_path · cloud_path.
+        """scan_infer 콜백. 입력 request_json {"run_id"}. 출력 blocks/2 · inferred_count · image_path · cloud_path.
         바깥 영향: 임시 폴더에 color.png · cloud.ply 쓰기 · 로그. 실패는 MockScan.infer 설명(ok:false SCAN_FAILED 등)."""
         out = self.scan.infer(req.request_json, self.get_parameter('recipe_dir').value,
                               self.get_parameter('scan_design_id').value, self.get_parameter('scan_family').value,
