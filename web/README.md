@@ -189,3 +189,41 @@ IRD 10.1 표 그대로. 구독 QoS는 IRD 4.1(`task/state` · `progress` · `sca
 | IRD 8.4 ⑦ · SDD 6.9 스캔 설계 부모 = GPT가 DB 목록에서 고른 같은 family 설계(실패 땐 `nearest_base`) · [AI로 고치기] 버튼(10/9 PL ② ③) | PM | PR #109 |
 | SDD 3.1.1 `designs/[id]/page.tsx` → `designs/page.tsx?id=`(정적 내보내기 제약) | PM | W047 · W112 때 전달 |
 | FR-G02 · `count = 2` 처리 | PL — W108 결과 보고 | 10/10 이후 |
+
+## 두 PC Wi-Fi 연결 — W173/W174, PR #136
+
+화면은 웹 PC `http://localhost:8000`에서 사용한다. MQTT는 웹 PC의 Wi-Fi IPv4에 공개하되 로봇 PC IPv4만 허용한다. 현재 확인한 값: 로봇 `172.24.0.137`, 웹 `172.24.2.213`. Wi-Fi의 다른 기기를 자동 허용하지 않는다. IP가 바뀌면 두 실제 IP를 확인하고 아래 설정을 다시 적용한다.
+
+Docker의 공개 포트는 ufw만으로 제한하지 않고 DNAT 전 목적지를 검사하는 DOCKER-USER 규칙을 사용한다. 컨테이너 내부 web→mosquitto 통신은 이 호스트 공개 포트 규칙에 포함되지 않는다. IPv4 주소에만 바인딩하여 IPv6 전체 공개를 하지 않는다.
+
+브로커가 정지한 상태에서 먼저 방화벽을 적용한 뒤 기동한다:
+
+```bash
+sudo bash tools/mqtt_access.sh apply 172.24.0.137 172.24.2.213
+sudo bash tools/mqtt_access.sh check 172.24.0.137 172.24.2.213
+D2_WEB_IPV4=172.24.2.213 WEB_UID=$(id -u) WEB_GID=$(id -g) docker compose -f web/compose.yaml up -d
+```
+
+위 규칙은 첫 번째 로봇 허용, 두 번째 다른 출발지 거부로 검사한다. 방화벽 검사 실패 시 브로커를 공개하지 않는다. 장치/토픽 확인과 로봇 이동을 같은 시험으로 집계하지 않는다.
+
+재부팅 후 Docker가 체인을 만든 다음 같은 apply/check를 먼저 수행한다. mosquitto의 자동 재시작은 꺼 두어 방화벽 적용 전에 공개되지 않게 한다. 자동 기동이 필요하면 관리자가 다음 systemd oneshot을 `/etc/systemd/system/d2-mqtt-access.service`에 설치한다. `<저장소 절대경로>`는 그 웹 PC의 실제 체크아웃으로 바꾼다(저장소에는 개인 절대경로를 넣지 않음).
+
+```ini
+[Unit]
+Description=D2 MQTT access restriction
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash <저장소 절대경로>/tools/mqtt_access.sh apply 172.24.0.137 172.24.2.213
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`sudo systemctl daemon-reload`와 `sudo systemctl enable --now d2-mqtt-access.service` 후 check를 통과한 뒤 compose를 기동한다. Docker를 다시 시작하거나 IP가 바뀌면 서비스도 다시 실행하고 check한다. 서비스 설치 없이 수동 apply/check를 매번 수행해도 된다.
+
+검증: 로봇 PC는1883연결성공, 비허용PC는1883연결실패, 외부PC는8000연결실패, 웹PC localhost:8000성공을 각각 실제로 확인한다. 방화벽 적용 전 수행한 과거 LAN 성공 결과를 제한 적용 후 검증으로 대신 쓰지 않는다.
