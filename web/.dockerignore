@@ -1,0 +1,7 @@
+# 빌드 컨텍스트 = web/. Dockerfile 은 backend/requirements.txt 만 쓴다.
+.env
+.env.*
+frontend
+backend/.venv
+backend/data
+backend/__pycache__
