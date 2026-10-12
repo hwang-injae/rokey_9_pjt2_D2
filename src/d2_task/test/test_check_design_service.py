@@ -31,14 +31,14 @@ def blocks_of(model_id):
 
 @pytest.mark.parametrize('model_id', IDS)
 def test_변환기2의_출력이_check_design을_거쳐_레시피_파일과_같은_recipe_placements로_돌아온다(model_id):
-    """V-45 왕복: 레시피 → blocks/2.0(②) → check_design(검사 + 변환기 ①) → 처음과 같은 블록 이름 · 중심 · 회전 · 조립 방법이 돌아온다."""
+    """V-45 왕복: 레시피 → parts/3.0(②) → check_design(검사 + 변환기 ①) → 처음과 같은 블록 이름 · 중심 · 회전 · 조립 방법이 돌아온다."""
     doc, blocks = blocks_of(model_id)
     ok, reason, text = attached().handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
-    assert result['schema'] == 'check_result/2.0'
-    # CAD 에서만 오는 칸(cad.handle · source_cad)과 그 위에 계산한 recipe_sha256 은 blocks/2.0 에 없으므로 비교에서 뺀다
-    keep = lambda r: [(x['part_name'], x['stock_id'], x['center_mm'], x['R']) for x in r['blocks']]
+    assert result['schema'] == 'check_result/3.0'
+    # CAD 에서만 오는 칸(cad.handle · source_cad)과 그 위에 계산한 recipe_sha256 은 parts/3.0 에 없으므로 비교에서 뺀다
+    keep = lambda r: [(x['part_name'], x['stock_id'], x['center_mm'], x['R']) for x in r['parts']]
     assert keep(result['recipe']) == keep(doc.recipe)
     steps = lambda p: [{k: v for k, v in st.items()} for st in p['steps']]
     assert steps(result['placements']) == steps(doc.placements)
@@ -47,7 +47,7 @@ def test_변환기2의_출력이_check_design을_거쳐_레시피_파일과_같�
 
 def test_AI가_역할을_틀리면_CHECK_FAILED로_돌리고_서비스는_성공이다():
     _, blocks = blocks_of('001_CHAIR_BENCH_V000')
-    blocks['blocks'][0]['role'] = 'NOPE'
+    blocks['parts'][0]['role'] = 'NOPE'
     ok, reason, text = attached().handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', False)                      # 서비스는 처리했고 설계가 불합격 — 생성 쪽이 재생성한다
@@ -57,8 +57,8 @@ def test_AI가_역할을_틀리면_CHECK_FAILED로_돌리고_서비스는_성공
 
 def test_변환기가_찾은_실수가_여러_개면_한_번에_모두_errors에_담는다():
     _, blocks = blocks_of('001_CHAIR_BENCH_V000')
-    blocks['blocks'][0]['role'] = 'NOPE'
-    blocks['blocks'][1]['role'] = 'NADA'
+    blocks['parts'][0]['role'] = 'NOPE'
+    blocks['parts'][1]['role'] = 'NADA'
     result = json.loads(attached().handle_json(json.dumps(blocks))[2])
     assert len(result['errors']) >= 2 and all(e['reason'] == 'CHECK_FAILED' and e['detail'] for e in result['errors'])
 

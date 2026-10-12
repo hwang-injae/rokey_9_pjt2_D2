@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""변환기 ① 시험 (W110, E-69) — blocks/2.0 → recipe/3.0 + placements/2.0.
+"""변환기 ① 시험 (W110, E-69) — parts/3.0 → recipe/3.0 + placements/3.0.
 
-기본 설계 4종 왕복(V-45: 레시피 → 변환기 ② → blocks/2.0 → 변환기 ① → 같은 레시피), 블록 번호 매기기,
+기본 설계 4종 왕복(V-45: 레시피 → 변환기 ② → parts/3.0 → 변환기 ① → 같은 레시피), 블록 번호 매기기,
 AI 실수 세 가지(역할 목록 · 부품 면 맞닿음 · 고른 잡기) 거부, AI 값을 대신 채우지 않음을 본다. ROS · 로봇 없이 돈다."""
 import copy
 import json
@@ -28,7 +28,7 @@ def make_converter():
 
 
 def load_base(model_id):
-    """기본 설계 레시피 두 파일 → (RecipeDocument, 변환기 ② 로 만든 blocks/2.0)."""
+    """기본 설계 레시피 두 파일 → (RecipeDocument, 변환기 ② 로 만든 parts/3.0)."""
     document = RecipeDocument.load(RECIPES, model_id)
     blocks = RecipeToBlocks(model_id, FAMILY[model_id], BLOCK_MM).convert(document.recipe, document.placements)
     return document, blocks
@@ -43,11 +43,11 @@ def rejected_details(request):
 
 @pytest.fixture
 def bench():
-    """벤치(001) blocks/2.0 — 고치며 시험할 복사본."""
+    """벤치(001) parts/3.0 — 고치며 시험할 복사본."""
     return copy.deepcopy(load_base('001_CHAIR_BENCH_V000')[1])
 
 
-# V-45 왕복: 기본 설계 4종 레시피 → blocks/2.0 → 변환기 ① 이 저장된 레시피와 같다(CAD 대응 칸 source_cad · cad.handle 만 빠짐),
+# V-45 왕복: 기본 설계 4종 레시피 → parts/3.0 → 변환기 ① 이 저장된 레시피와 같다(CAD 대응 칸 source_cad · cad.handle 만 빠짐),
 # 조립 방법은 recipe_sha256 까지 맞아 task RecipeDocument 가 받는다
 @pytest.mark.parametrize('model_id', FAMILY)
 def test_round_trip_matches_cad_recipe(model_id):
@@ -55,7 +55,7 @@ def test_round_trip_matches_cad_recipe(model_id):
     out = make_converter().convert(blocks)
     expected = copy.deepcopy(document.recipe)
     expected['source_cad'] = None
-    for b in expected['blocks']:
+    for b in expected['parts']:
         b.pop('cad')
     assert out['recipe'] == expected
     assert out['placements']['steps'] == document.placements['steps']
@@ -64,9 +64,9 @@ def test_round_trip_matches_cad_recipe(model_id):
 
 # 블록 번호는 코드가: 벤치 → LEG_001_01~04(왼 다리) · LEG_002_01~04(오른 다리) · SEAT_001_01~03. AI 의 part 값(묶음 표시)은 번호가 아니다
 def test_bench_block_names_from_positions(bench):
-    for b in bench['blocks']:
+    for b in bench['parts']:
         b['group'] = {1: 7, 2: 3}[b['group']] if b['role'] == 'LEG' else 5      # 묶음 값만 바꿔도 이름은 위치로 같다
-    names = [b['part_name'] for b in make_converter().convert(bench)['recipe']['blocks']]
+    names = [b['part_name'] for b in make_converter().convert(bench)['recipe']['parts']]
     assert sorted(names) == [f'LEG_001_0{k}' for k in range(1, 5)] + [f'LEG_002_0{k}' for k in range(1, 5)] + [f'SEAT_001_0{k}' for k in range(1, 4)]
 
 
@@ -81,39 +81,39 @@ def test_generated_design_id_part_id_upper(bench):
 
 # AI 값은 그대로: 순서 · 단계 · 잡기를 옮기고, 둘 다 되는 블록에서 AI 가 고른 긴 쪽도 짧은 쪽으로 바꾸지 않는다(공식 채움 없음)
 def test_ai_values_kept_as_written(bench):
-    options = DesignChecker(CFG).grasp_options(bench['blocks'])
-    both = next(b for b in bench['blocks'] if {'FLAT_SHORT', 'FLAT_LONG'} <= set(options[b['order']]))
+    options = DesignChecker(CFG).grasp_options(bench['parts'])
+    both = next(b for b in bench['parts'] if {'FLAT_SHORT', 'FLAT_LONG'} <= set(options[b['order']]))
     both['grasp'] = 'FLAT_LONG'
     steps = {s['sequence']: s for s in make_converter().convert(bench)['placements']['steps']}
     assert steps[both['order']]['grasp'] == 'FLAT_LONG'
-    assert all((steps[b['order']]['stage'], steps[b['order']]['grasp']) == (b['stage'], b['grasp']) for b in bench['blocks'])
+    assert all((steps[b['order']]['stage'], steps[b['order']]['grasp']) == (b['stage'], b['grasp']) for b in bench['parts'])
 
 
 # 칸이 빠지면 대신 채우지 않고 거부 — 어느 블록의 어느 칸인지 적는다
 @pytest.mark.parametrize('key', ['role', 'group', 'stage', 'grasp'])
 def test_missing_ai_field_rejected(bench, key):
-    del bench['blocks'][2][key]
+    del bench['parts'][2][key]
     assert any(key in d and '3번' in d for d in rejected_details(bench))
 
 
 # ① 역할 · 옵션이 목록에 없으면 거부(있는 것을 알려 줌). 목록에 있는 옵션(LEG_WHEEL)은 받는다
 def test_role_not_in_list_rejected(bench):
-    for b in bench['blocks']:
+    for b in bench['parts']:
         if b['role'] == 'SEAT':
             b['role'] = 'SEATING'
     details = rejected_details(bench)
     assert len(details) == 1 and 'SEATING' in details[0] and 'SEAT' in details[0]
-    for b in bench['blocks']:
+    for b in bench['parts']:
         b['role'] = {'SEATING': 'SEAT', 'LEG': 'LEG_ROCKER'}[b['role']]
     assert any('ROCKER' in d for d in rejected_details(bench))
-    for b in bench['blocks']:
+    for b in bench['parts']:
         b['role'] = 'LEG_WHEEL' if b['role'] == 'LEG_ROCKER' else b['role']
-    assert any(b['part_name'].startswith('LEG_WHEEL_002_') for b in make_converter().convert(bench)['recipe']['blocks'])
+    assert any(b['part_name'].startswith('LEG_WHEEL_002_') for b in make_converter().convert(bench)['recipe']['parts'])
 
 
 # ② 떨어진 블록을 한 부품으로 묶으면 거부 — 벤치 왼 · 오른 다리를 같은 part 로
 def test_separate_legs_in_one_group_rejected(bench):
-    for b in bench['blocks']:
+    for b in bench['parts']:
         if b['role'] == 'LEG':
             b['group'] = 1
     details = rejected_details(bench)
@@ -134,24 +134,24 @@ def test_face_contact_only():
 
 # ③ AI 가 고른 잡기로 손가락이 안 들어가면 거부하고 가능한 잡기를 알려 준다 · 놓인 자세와 다른 잡기(눕힌 블록에 STAND)도 거부
 def test_blocked_or_wrong_state_grasp_rejected(bench):
-    options = DesignChecker(CFG).grasp_options(bench['blocks'])
-    only = next(b for b in bench['blocks'] if len(options[b['order']]) == 1)
+    options = DesignChecker(CFG).grasp_options(bench['parts'])
+    only = next(b for b in bench['parts'] if len(options[b['order']]) == 1)
     allowed = options[only['order']][0]
     only['grasp'] = 'FLAT_LONG' if allowed == 'FLAT_SHORT' else 'FLAT_SHORT'
     details = rejected_details(bench)
     assert len(details) == 1 and f'{only["order"]}번' in details[0] and f'가능: {allowed}' in details[0]
     only['grasp'] = allowed
-    bench['blocks'][0]['grasp'] = 'STAND_SHORT'
+    bench['parts'][0]['grasp'] = 'STAND_SHORT'
     assert any('1번 grasp STAND_SHORT' in d for d in rejected_details(bench))
 
 
 # 실수 여러 개는 한 번에 모아 돌려준다(재생성 횟수를 줄이려고)
 def test_all_mistakes_reported_together(bench):
-    bench['blocks'][0]['role'] = 'FOOT'
-    for b in bench['blocks']:
+    bench['parts'][0]['role'] = 'FOOT'
+    for b in bench['parts']:
         if b['role'] == 'SEAT':
             b['group'] = b['order']                       # 좌판 3장 → 각자 다른 part(한 장짜리 부품, 맞닿음 문제 없음)
-    bench['blocks'][-1]['grasp'] = 'EDGE_LONG'
+    bench['parts'][-1]['grasp'] = 'EDGE_LONG'
     details = rejected_details(bench)
     assert any('FOOT' in d for d in details) and any('EDGE_LONG' in d for d in details)
 
@@ -159,7 +159,7 @@ def test_all_mistakes_reported_together(bench):
 # 형식이 틀린 요청(schema · order 빠짐)은 레시피를 만들지 않고 거부
 def test_bad_request_rejected(bench):
     assert rejected_details(dict(bench, schema='blocks/1'))
-    bench['blocks'][3]['order'] = 99
+    bench['parts'][3]['order'] = 99
     assert any('order' in d for d in rejected_details(bench))
 
 
@@ -178,4 +178,4 @@ def test_attached_to_design_checker(model_id):
     ok, reason, text = checker.handle_json(json.dumps(load_base(model_id)[1]))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
-    assert result['recipe']['schema'] == 'recipe/3.0' and result['placements']['schema'] == 'placements/2.0'
+    assert result['recipe']['schema'] == 'recipe/3.0' and result['placements']['schema'] == 'placements/3.0'

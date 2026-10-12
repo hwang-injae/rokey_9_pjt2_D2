@@ -66,7 +66,7 @@ def test_세자세_같은_run_검토대기와_CSV(tmp_path):
     rid = m.run_id
     assert io.captures == [(p, rid) for p in CFG['scan']['poses']]
     assert io.infers == [rid] and io.results[0]['poses_used'] == CFG['scan']['poses']
-    assert io.results[0]['schema'] == 'scan_result/1.2' and isinstance(io.results[0]['stamp'], float) and io.results[0]['stamp'] > 1.7e9    # 보낸 시각(epoch s, E-75)
+    assert io.results[0]['schema'] == 'scan_result/2.0' and isinstance(io.results[0]['stamp'], float) and io.results[0]['stamp'] > 1.7e9    # 보낸 시각(epoch s, E-75)
     assert not m.pending_builds and m.last_build is None
     m.finalize()
     text = (tmp_path / f'{rid}.csv').read_text()
@@ -151,7 +151,7 @@ def test_잘못된_점군응답은_다음_자세로_넘어가지_않는다(point
     lambda b: b.update(ok='true'),
     lambda b: b.update(blocks=[]),
     lambda b: b['blocks'].update(schema='other/1'),
-    lambda b: b['blocks'].update(schema='blocks/2.0'),        # 스캔 추론기는 위치 · 방향만(blocks/1) — AI 칸이 든 blocks/2.0 은 scan_infer 응답이 아니다(E-69)
+    lambda b: b['blocks'].update(schema='parts/3.0'),        # 스캔 추론기는 위치 · 방향만(blocks/1) — AI 칸이 든 parts/3.0 은 scan_infer 응답이 아니다(E-69)
     lambda b: b['blocks'].update(blocks=[]),
     lambda b: b['blocks']['blocks'][0].update(x=float('inf')),
     lambda b: b['blocks']['blocks'][0].update(ori='other'),

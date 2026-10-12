@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""W122 생성 흐름 통합 시험(task 쪽, 로봇 · 웹 없이, E-69): 생성된 blocks/2.0 → 검사(check_design) + 변환기 ①(가짜) → recipe + placements 두 문서 →
-저장(design/2.0 를 JSON 으로 오가며) → 설계 선택 → 출발 → 진행표 → 끝까지 가상 로봇 조립.
+"""W122 생성 흐름 통합 시험(task 쪽, 로봇 · 웹 없이, E-69): 생성된 parts/3.0 → 검사(check_design) + 변환기 ①(가짜) → recipe + placements 두 문서 →
+저장(design/3.0 를 JSON 으로 오가며) → 설계 선택 → 출발 → 진행표 → 끝까지 가상 로봇 조립.
 
 웹 backend(AI 생성 · DesignStore)와 다리(d2_bridge)는 이 저장소에 아직 없고, 변환기 ① 본체(W110 한세교, 10/10 오전)도 아직 없다.
 여기서는 그 둘이 하는 일을 함수 몇 개로 흉내 낸다 — 블록 JSON 은 기본 설계 레시피를 변환기 ②로 바꿔 쓰고, 가짜 변환기 ①은 그 반대로
@@ -25,14 +25,14 @@ BASE = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DE
 
 
 def generated_design(base_id, design_id):
-    """AI 생성이 내는 blocks/2.0 을 흉내 낸다: 기본 설계를 변환기 ②로 바꾸고 design_id 만 새 이름(같은 Template 의 다음 번호, IRD 2장 예시 001_CHAIR_BENCH_V001 — E-84)으로."""
+    """AI 생성이 내는 parts/3.0 을 흉내 낸다: 기본 설계를 변환기 ②로 바꾸고 design_id 만 새 이름(같은 Template 의 다음 번호, IRD 2장 예시 001_CHAIR_BENCH_V001 — E-84)으로."""
     doc = RecipeDocument.load(FIXTURES, base_id)
     blocks = RecipeToBlocks(base_id, BASE[base_id], BLOCK_MM).convert(doc.recipe, doc.placements)
     return dict(blocks, design_id=design_id)
 
 
 def fake_converter(base_id):
-    """변환기 ①(W110) 자리: blocks/2.0 요청을 받아 같은 기하의 {recipe, placements} 를 요청의 design_id 를 모델 ID 로 해서 돌려준다."""
+    """변환기 ①(W110) 자리: parts/3.0 요청을 받아 같은 기하의 {recipe, placements} 를 요청의 design_id 를 모델 ID 로 해서 돌려준다."""
     doc = RecipeDocument.load(FIXTURES, base_id)
 
     def convert(request):
@@ -48,18 +48,18 @@ def fake_converter(base_id):
 
 
 def check_and_store(blocks, base_id):
-    """check_design 서비스(JsonQuery 글자)를 부르고, 합격 응답의 recipe · placements 를 design/2.0 로 JSON 글자로 저장했다가 읽어 온다(저장소 + MQTT 흉내)."""
+    """check_design 서비스(JsonQuery 글자)를 부르고, 합격 응답의 recipe · placements 를 design/3.0 로 JSON 글자로 저장했다가 읽어 온다(저장소 + MQTT 흉내)."""
     checker = DesignChecker(CFG, blocks_to_recipe=fake_converter(base_id))
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (True, ''), text
     result = json.loads(text)
-    assert result['ok'] and result['errors'] == [] and result['min_margin_mm'] is not None and result['schema'] == 'check_result/2.0'
-    stored = json.dumps({'schema': 'design/2.0', 'design_id': blocks['design_id'], 'recipe': result['recipe'], 'placements': result['placements']})
+    assert result['ok'] and result['errors'] == [] and result['min_margin_mm'] is not None and result['schema'] == 'check_result/3.0'
+    stored = json.dumps({'schema': 'design/3.0', 'design_id': blocks['design_id'], 'recipe': result['recipe'], 'placements': result['placements']})
     return json.loads(stored)
 
 
 class StoreIO(FakeIO):
-    """get_design 이 저장소에서 꺼낸 design/2.0 을 돌려주는 가짜 입출력 — 조회한 design_id 도 기록한다."""
+    """get_design 이 저장소에서 꺼낸 design/3.0 을 돌려주는 가짜 입출력 — 조회한 design_id 도 기록한다."""
 
     def __init__(self, design):
         super().__init__()
@@ -82,7 +82,7 @@ def test_생성_설계는_검사_저장_선택_출발_끝까지_조립된다(bas
     assert m.command('select_design', '001_CHAIR_BENCH_V001') == (True, '') and m.state == 'READY'
     assert m.command('start') == (True, '') and m.state == 'CHECK'
     drive(m, 'DONE')
-    n = len(blocks['blocks'])
+    n = len(blocks['parts'])
     assert m.last_build['placed'] == n
     placed = [b for b, _ in picks(io)]
     assert len(placed) == n and len(set(placed)) == n
@@ -101,7 +101,7 @@ def test_같은_설계를_두_번_저장해_읽어도_진행표가_같다():
 def test_검사_불합격_설계는_저장할_레시피가_없다():
     """뜬 블록(받침 없음)은 check_design 이 CHECK_FAILED 로 막아 레시피가 안 나온다 — 로봇은 움직일 수 없다(SR-09)."""
     blocks = generated_design('001_CHAIR_BENCH_V000', 'bad_v1')
-    blocks['blocks'][-1]['z'] += 40.0
+    blocks['parts'][-1]['z'] += 40.0
     checker = DesignChecker(CFG, blocks_to_recipe=fake_converter('001_CHAIR_BENCH_V000'))
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     result = json.loads(text)
@@ -110,7 +110,7 @@ def test_검사_불합격_설계는_저장할_레시피가_없다():
 
 def test_AI가_칸을_빠뜨리면_CHECK_FAILED로_돌려보내고_코드가_채우지_않는다():
     blocks = generated_design('001_CHAIR_BENCH_V000', '001_CHAIR_BENCH_V001')
-    del blocks['blocks'][3]['role']
+    del blocks['parts'][3]['role']
     ok, reason, text = DesignChecker(CFG, blocks_to_recipe=fake_converter('001_CHAIR_BENCH_V000')).handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason) == (True, '') and not result['ok'] and result['errors'][0]['reason'] == 'CHECK_FAILED' and 'role' in result['errors'][0]['detail']

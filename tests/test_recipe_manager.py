@@ -1,4 +1,4 @@
-"""recipe_manager(CAD → 레시피 recipe/3.0 + 조립 방법 placements/2.0, 10/8 E-69) — 기본 설계 4종을 DXF에서 다시 만들면
+"""recipe_manager(CAD → 레시피 recipe/3.0 + 조립 방법 placements/3.0, 10/8 E-69) — 기본 설계 4종을 DXF에서 다시 만들면
 저장된 _recipe.json · _placements.csv 와 같고, 짝 해시 · 이름 규칙 · 번호 순서 · 겹침 · 뜬 블록 · 순서 · 단계 · 잡기 상태 · 빠진 CAD 속성을 거부한다."""
 import copy
 import csv
@@ -23,7 +23,7 @@ def make_boxes(recipe):
     """저장된 레시피(중심 · 회전 · 치수)로 블록 꼭짓점 8개씩을 만든다 — DXF 없이 RecipeBuilder 를 시험한다."""
     sizes = {p['stock_id']: p['size_mm'] for p in recipe['stocks']}
     boxes = []
-    for b in recipe['blocks']:
+    for b in recipe['parts']:
         R, c, half = b['R'], b['center_mm'], [s / 2 for s in sizes[b['stock_id']]]
         corners = [tuple(c[i] + sum(R[i][k] * sg[k] * half[k] for k in range(3)) for i in range(3))
                    for sg in itertools.product((-1, 1), repeat=3)]
@@ -34,7 +34,7 @@ def make_boxes(recipe):
 def load_saved(model_id):
     """recipes/ 의 두 파일 → (레시피 dict, CSV 에서 읽은 조립 steps, steps 에서 되살린 CAD 속성 hints).
 
-    CSV 는 글자라 sequence · stage 는 정수로, supports 는 ';' 로 나눠 placements/2.0 steps 와 같은 모양으로 바꾼다.
+    CSV 는 글자라 sequence · stage 는 정수로, supports 는 ';' 로 나눠 placements/3.0 steps 와 같은 모양으로 바꾼다.
     """
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
     with open(RM / 'recipes' / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
@@ -72,7 +72,7 @@ def test_folders_hold_only_cad_and_results():
     assert names == sorted(f'{m}_{k}' for m, _ in DESIGNS for k in ('recipe.json', 'placements.csv'))
 
 
-# 저장된 두 파일의 짝: 레시피 schema recipe/3.0, CSV 칸 = PLACEMENT_COLUMNS, 모든 줄 recipe_sha256 = 레시피 객체 해시 · schema placements/2.0
+# 저장된 두 파일의 짝: 레시피 schema recipe/3.0, CSV 칸 = PLACEMENT_COLUMNS, 모든 줄 recipe_sha256 = 레시피 객체 해시 · schema placements/3.0
 @pytest.mark.parametrize('model_id, cad', DESIGNS)
 def test_saved_placements_match_recipe(model_id, cad):
     recipe = json.loads((RM / 'recipes' / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
@@ -81,8 +81,8 @@ def test_saved_placements_match_recipe(model_id, cad):
         rows = list(reader)
     assert recipe['schema'] == 'recipe/3.0' and recipe['model_id'] == model_id
     assert tuple(reader.fieldnames) == PLACEMENT_COLUMNS
-    assert {(r['recipe_sha256'], r['schema']) for r in rows} == {(RecipeBuilder().calculate_recipe_sha256(recipe), 'placements/2.0')}
-    assert sorted(r['part_name'] for r in rows) == sorted(b['part_name'] for b in recipe['blocks'])
+    assert {(r['recipe_sha256'], r['schema']) for r in rows} == {(RecipeBuilder().calculate_recipe_sha256(recipe), 'placements/3.0')}
+    assert sorted(r['part_name'] for r in rows) == sorted(b['part_name'] for b in recipe['parts'])
 
 
 # 짝 확인 해시: 키 정렬 · 공백 없는 JSON 의 sha256 — 키 순서 · 들여쓰기가 바뀌어도(DB · MQTT 로 다시 써도) 같고, 값이 바뀌면 달라진다.
@@ -95,11 +95,11 @@ def test_recipe_sha256_is_fixed_canonical_json(bench):
     assert builder.calculate_recipe_sha256(recipe) == hashlib.sha256(canonical).hexdigest()
     assert builder.calculate_recipe_sha256(recipe) == BENCH_RECIPE_SHA256
     moved = copy.deepcopy(recipe)
-    moved['blocks'][0]['center_mm'][0] += 1
+    moved['parts'][0]['center_mm'][0] += 1
     assert builder.calculate_recipe_sha256(moved) != BENCH_RECIPE_SHA256
 
 
-BENCH_RECIPE_SHA256 = '40b007d4311671d1856429b20dfa8801f17a5bcc79c6280226c016d397efae10'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
+BENCH_RECIPE_SHA256 = '2685767e217623bd2dcbe58d52625b1feccb32f35ab7ce1bd7a829b1b4081c76'   # 벤치 레시피(recipe/3.0) 해시 — 계산 방법이 바뀌면 깨진다
 
 
 # 저장 레시피로 다시 만든 레시피 · 조립 방법이 원본과 같다 (꼭짓점 → 치수 · 회전 · 받침 · 블록 이름)
@@ -109,7 +109,7 @@ def test_boxes_round_trip_to_same_recipe(bench):
                                   recipe['source_cad']['filename'], recipe['source_cad']['sha256'])
     assert rebuilt == recipe
     placements = builder.make_placements(rebuilt, hints)
-    assert placements['schema'] == 'placements/2.0' and placements['recipe_sha256'] == builder.calculate_recipe_sha256(recipe)
+    assert placements['schema'] == 'placements/3.0' and placements['recipe_sha256'] == builder.calculate_recipe_sha256(recipe)
     assert placements['steps'] == steps
     assert placements['steps'][0]['part_id'] == '001_CHAIR_BENCH_V000_' + placements['steps'][0]['part_name']
     assert placements['steps'][-1]['supports'] == ['LEG_001_04', 'LEG_002_04']
@@ -139,7 +139,7 @@ def test_one_option_name_accepted(bench):
     builder, recipe, _, _ = bench
     rename = {f'LEG_002_0{k}': f'LEG_WHEEL_001_0{k}' for k in range(1, 5)}
     boxes = [dict(b, part_name=rename.get(b['part_name'], b['part_name'])) for b in make_boxes(recipe)]
-    assert {b['part_name'] for b in builder.make_recipe(boxes, 'X', 'x.dxf', '0')['blocks']} >= set(rename.values())
+    assert {b['part_name'] for b in builder.make_recipe(boxes, 'X', 'x.dxf', '0')['parts']} >= set(rename.values())
 
 
 # 형상 오류: 같은 자리에 두 블록(겹침) · 책상 아래 블록은 레시피를 만들 때 거부한다

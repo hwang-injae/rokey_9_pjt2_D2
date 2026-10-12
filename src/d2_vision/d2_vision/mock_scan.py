@@ -2,7 +2,7 @@
 
 IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) 의 응답을 카메라 없이 만든다.
 노드와 나눈 이유: ROS 없이 pytest 로 응답 모양을 시험하려고(CLAUDE.md 2장 — 계산 파일은 같은 패키지 다른 파일로).
-- scan_infer 의 blocks/1 은 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/2.0, E-69)에서
+- scan_infer 의 blocks/1 은 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
   직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
   d2_task 의 변환기 ②(RecipeToBlocks)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
   d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
@@ -78,13 +78,13 @@ def ori_table(size_mm):
 
 
 def load_recipe_files(recipe_dir, design_id):
-    """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/3.0 dict, 조립 방법 placements/2.0 dict). 바깥 영향 없음(파일 읽기만).
+    """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/3.0 dict, 조립 방법 placements/3.0 dict). 바깥 영향 없음(파일 읽기만).
 
     조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, part_id, sequence, stage, grasp,
     grasp_axis, supports[]}]} — CSV 에서 sequence · stage 는 정수, supports 는 ';' 로 나눈 목록(빈 칸이면 []).
     d2_motion.load_recipe 를 쓰지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣는다. 거절 규칙은 load_recipe 와 같다.
     출력: 두 파일 중 하나라도 없으면(이름 비었음 · 경로 문자 포함) None.
-    실패: 형식이 recipe/3.0 · placements/2.0 이 아님(옛 cad_* 는 바꿔 읽지 않음) · 줄마다 schema · recipe_sha256 이 다름 ·
+    실패: 형식이 recipe/3.0 · placements/3.0 이 아님(옛 cad_* 는 바꿔 읽지 않음) · 줄마다 schema · recipe_sha256 이 다름 ·
           recipe_sha256 이 구조와 다름 · model_id 다름 → ValueError. 칸이 없으면 KeyError, 숫자가 아니면 ValueError."""
     r_path = recipe_path(recipe_dir, design_id, ('_recipe.json',))
     p_path = recipe_path(recipe_dir, design_id, ('_placements.csv',))
@@ -110,13 +110,13 @@ def load_recipe_files(recipe_dir, design_id):
 
 
 def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
-    """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/2.0, load_recipe_files 출력) → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
+    """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/3.0, load_recipe_files 출력) → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
 
     order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
     parts = {p['stock_id']: [float(v) for v in p['size_mm']] for p in recipe['stocks']}
-    by_name = {b['part_name']: b for b in recipe['blocks']}
+    by_name = {b['part_name']: b for b in recipe['parts']}
     rows = []
     for st in sorted(placements['steps'], key=lambda s: s['sequence']):
         b = by_name[st['part_name']]

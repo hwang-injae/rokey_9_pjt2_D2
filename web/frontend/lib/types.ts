@@ -2,7 +2,7 @@
 
 export type Cmd = 'select_design' | 'start' | 'scan' | 'cancel';
 
-/** state/1 — 작업 관리자 상태(IRD 2장 state · message_id) */
+/** state/2 — 작업 관리자 상태(IRD 2장 state · message_id) */
 export interface TaskState {
   schema: string;
   stamp?: number;
@@ -24,13 +24,13 @@ export interface SafetyState {
   reason: string;
 }
 
-/** progress/1.1 — 진행표(1.1 = 보낸 시각 stamp 더함, E-75). 판정은 없다(dx · dy 는 측정값, 지금은 NaN). 형식은 앞자리만 본다 */
+/** progress/2.0 — 진행표(2.0 = 부품 목록 이름 parts · part_id, 10/13 · 1.1 = 보낸 시각 stamp 더함, E-75). 판정은 없다(dx · dy 는 측정값, 지금은 NaN). 형식은 앞자리만 본다 */
 export interface Progress {
   schema: string;
   stamp?: number;
   design_id: string | null;
   run_id: string | null;
-  blocks: { part_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
+  parts: { part_id: string; state: 'present' | 'absent' | 'occluded' | 'unknown'; by?: string }[];
 }
 
 /** gripper_state/1 — 폭을 못 읽으면 width_m null(E-62) */
@@ -40,7 +40,7 @@ export interface GripperState {
   grasped: boolean;
 }
 
-/** scan_result/1.2 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
+/** scan_result/2.0 — 추론 블록(blocks/1, inferred 표시) · 사진 · 점군 경로(cloud_path 선택 칸) · stamp(1.1, E-75) ·
  *  nearest_base(1.2, E-79 선택 칸). poses_used 개수는 정해져 있지 않다(W166 — 3개를 가정하지 않는다) */
 export interface ScanResult {
   schema: string;
@@ -84,7 +84,7 @@ export interface CmdResult {
   message?: string;
 }
 
-/** blocks/2.0 블록 하나(IRD 6장) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
+/** parts/3.0 블록 하나(IRD 6장) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
 export interface Block2 {
   order: number;
   x: number;
@@ -98,7 +98,7 @@ export interface Block2 {
   inferred?: boolean; // 스캔 설계만
 }
 
-/** design/2.0 — 화면이 쓰는 칸만(recipe 는 그리지 않는다). placements.steps 로 블록 이름 ↔ order(= sequence) 를 잇는다 */
+/** design/3.0 — 화면이 쓰는 칸만(recipe 는 그리지 않는다). placements.steps 로 블록 이름 ↔ order(= sequence) 를 잇는다 */
 export interface Design {
   schema: string;
   design_id: string;
@@ -106,7 +106,7 @@ export interface Design {
   version: string;
   parent_id: string | null;
   made_by: string;
-  blocks: { schema: string; blocks: Block2[] };
+  parts: { schema: string; parts: Block2[] };
   placements: { steps: { part_id: string; sequence: number }[] };
 }
 
@@ -127,7 +127,7 @@ export interface Rules {
   assembly_area_half_mm: number;
 }
 
-/** AI 생성 — 후보 하나의 검사 결과(check_result/2.0 중 화면이 쓰는 칸, 레시피는 backend 에만) */
+/** AI 생성 — 후보 하나의 검사 결과(check_result/3.0 중 화면이 쓰는 칸, 레시피는 backend 에만) */
 export interface GenCheck {
   ok: boolean;
   reason: string;
@@ -138,7 +138,7 @@ export interface GenCheck {
 /** AI 후보 하나 — 블록(3D) · 한 줄 생각 · 검사 결과(검사 전이면 없음) */
 export interface GenCandidate {
   idea: string;
-  blocks: { schema: string; design_id: string; family: string; blocks: Block2[] };
+  parts: { schema: string; design_id: string; parts: Block2[] };
   check?: GenCheck;
 }
 

@@ -20,7 +20,7 @@ JOBS_KEEP = 20      # 들고 있는 생성 작업 수 — 넘으면 오래된 �
 
 def slim(cand):
     """화면에 보낼 후보 — 블록(3D 미리보기) · 검사 결과 요약. 레시피 · 조립 방법(크다)은 backend 에만 둔다."""
-    out = {'idea': cand['idea'], 'blocks': cand['blocks']}
+    out = {'idea': cand['idea'], 'parts': cand['parts']}
     if 'check' in cand:
         out['check'] = {k: cand['check'][k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}
     return out
@@ -188,7 +188,7 @@ def templates(request: Request):
 
 @router.get('/{design_id}')
 def get_design(design_id: str, request: Request):
-    """design/2.0 하나. 없으면 404, 저장된 형식이 다르면 409(옛 형식은 변환하지 않는다 — E-69)."""
+    """design/3.0 하나. 없으면 404, 저장된 형식이 다르면 409(옛 형식은 변환하지 않는다 — E-69)."""
     try:
         return request.app.state.store.get_design(design_id)
     except KeyError:
@@ -199,7 +199,7 @@ def get_design(design_id: str, request: Request):
 
 @router.get('/{design_id}/builds')
 def builds(design_id: str, request: Request):
-    """이 설계의 조립 기록(build/1 전부, 최근 것 먼저). 설계가 없으면 404 — 기록이 없으면 빈 목록."""
+    """이 설계의 조립 기록(build/2 전부, 최근 것 먼저). 설계가 없으면 404 — 기록이 없으면 빈 목록."""
     store = request.app.state.store
     try:
         store.get_design(design_id)

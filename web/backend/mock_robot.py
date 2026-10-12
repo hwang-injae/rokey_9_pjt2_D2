@@ -3,7 +3,7 @@
 
 - d2/bridge/alive 를 1초마다(LWT alive false), 처음 상태를 retained 로(task/state IDLE · safety/state · gripper/state)
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
-  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.2 · cancel
+  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/2.0) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/2.0 · cancel
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결,
   ROS 없는 파일이라 웹 PC 에서도 돎) — AI 생성(W108) 을 로봇 PC 없이 실제 검사 결과로 시험한다
   safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
@@ -117,10 +117,10 @@ class MockRobot:
 
     # ---------- 설계 ----------
     def design(self, design_id):
-        """설계 → (doc, blocks/2.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
+        """설계 → (doc, parts/3.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
         body = self.fetch_design(design_id)
         if body is not None:
-            return RecipeDocument(body['recipe'], body['placements']), body['blocks']
+            return RecipeDocument(body['recipe'], body['placements']), body['parts']
         return self.local_design(design_id)
 
     def fetch_design(self, design_id):
@@ -132,7 +132,7 @@ class MockRobot:
         return body if body and body.get('success') is True else None
 
     def local_design(self, design_id):
-        """레시피 두 파일 → (doc, blocks/2.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
+        """레시피 두 파일 → (doc, parts/3.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
         family = 'chair' if 'CHAIR' in design_id.upper() else 'desk'
         doc = RecipeDocument.load(RECIPES, design_id)
         return doc, RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
@@ -143,10 +143,10 @@ class MockRobot:
         self.c.publish(topic, json.dumps({**body, 'stamp': round(time.time(), 3)}, ensure_ascii=False), qos=qos, retain=True)
 
     def set_state(self, state, message='', message_id=None, **kw):
-        """작업 관리자 상태를 바꾸고 state/1 을 보낸다."""
+        """작업 관리자 상태를 바꾸고 state/2 을 보낸다."""
         with self.lock:
             self.st.update(state=state, message=message, message_id=message_id, **kw)
-            body = dict(schema='state/1', mode='auto', **self.st)
+            body = dict(schema='state/2', mode='auto', **self.st)
         self.pub('d2/task/state', body)
         print(f'[가짜 로봇] {state} {message}')
 
@@ -181,14 +181,14 @@ class MockRobot:
                 if self.abort.wait(self.step_s):
                     return
             placed.append(bid)
-            self.pub('d2/task/progress', {'schema': 'progress/1.1', 'design_id': design_id, 'run_id': run_id,
+            self.pub('d2/task/progress', {'schema': 'progress/2.0', 'design_id': design_id, 'run_id': run_id,
                                           'obs_stamp': round(time.time(), 3),
-                                          'blocks': [{'part_id': b, 'state': 'present' if b in placed else 'absent',
+                                          'parts': [{'part_id': b, 'state': 'present' if b in placed else 'absent',
                                                       'by': 'robot'} for b in ids]})
         self.set_state('DONE', '완성했어요', 'done', part_id=None)
 
     def _scan(self, run_id):
-        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/1.2(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
+        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
         for pose in ('observe', 'observe_front', 'observe_side'):
             for state in ('SCAN_MOVE', 'SCAN_CAPTURE'):
                 self.set_state(state, f'스캔 중 — {pose}', 'scan_running')
@@ -199,10 +199,10 @@ class MockRobot:
             return
         _, blocks = self.local_design(BENCH)
         items = [{'order': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
-                 for i, b in enumerate(blocks['blocks'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
+                 for i, b in enumerate(blocks['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
         scan = {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
         jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
-        result = {'schema': 'scan_result/1.2', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
+        result = {'schema': 'scan_result/2.0', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
                   'image_path': f'/mock/scan/{run_id}/color.png' if jpeg else '',   # 로봇 PC 경로 흉내 — 웹은 열지 않는다
                   'poses_used': ['observe', 'observe_front', 'observe_side'], 'nearest_base': BENCH}   # E-79 힌트
         if ply:

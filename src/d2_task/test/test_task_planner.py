@@ -15,7 +15,7 @@ SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
-RECIPE, PLACEMENTS = _DOC.recipe, _DOC.placements       # 구조(recipe/3.0) · 조립 방법(placements/2.0)
+RECIPE, PLACEMENTS = _DOC.recipe, _DOC.placements       # 구조(recipe/3.0) · 조립 방법(placements/3.0)
 IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
@@ -179,10 +179,10 @@ def test_progress_message는_NaN_없는_JSON():
     msg = p.progress_message(None, 12.5)
     text = json.dumps(msg, allow_nan=False)                        # NaN 이 남아 있으면 ValueError
     got = json.loads(text)
-    assert got['schema'] == 'progress/1.1' and got['run_id'] is None and got['obs_stamp'] == 12.5
+    assert got['schema'] == 'progress/2.0' and got['run_id'] is None and got['obs_stamp'] == 12.5
     assert before <= got['stamp'] <= time.time()                   # 보낸 시각(E-75) — 관측한 시각(obs_stamp)과 따로다
-    assert len(got['blocks']) == 11 and got['blocks'][0]['by'] == 'robot'
-    assert got['blocks'][0]['top_z_m'] == 0.0123 and got['blocks'][0]['dx_m'] is None
+    assert len(got['parts']) == 11 and got['parts'][0]['by'] == 'robot'
+    assert got['parts'][0]['top_z_m'] == 0.0123 and got['parts'][0]['dx_m'] is None
 
 
 def test_빔으로_적은_칸은_다음_호출에서도_계속_제외_채우면_복귀():

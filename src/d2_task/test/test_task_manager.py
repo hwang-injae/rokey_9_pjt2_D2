@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/3.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/3.0 구조 + placements/3.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -22,7 +22,7 @@ ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
 RECIPE = _DOC.recipe              # 구조(recipe/3.0)
-PLACEMENTS = _DOC.placements      # 조립 방법(placements/2.0)
+PLACEMENTS = _DOC.placements      # 조립 방법(placements/3.0)
 IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
@@ -56,11 +56,11 @@ class FakeIO:
         return [e[1:] for e in self.events if e[0] == 'call']
 
     def get_design(self, design_id, should_abort):
-        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/2.0 dict."""
+        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/3.0 dict."""
         self.events.append(('call', 'load', design_id))
         if design_id != 'bench':
             return False, '', None
-        return True, '', {'schema': 'design/2.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
+        return True, '', {'schema': 'design/3.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
 
     def services_ready(self):
         return list(self.missing)
@@ -163,9 +163,9 @@ def two_flat_short_slots():
 
 
 def assert_ird_only(io):
-    """방송한 state/1 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null 또는 R<날짜>_<시각>_<무작위 4자>, mode 는 auto."""
+    """방송한 state/2 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null 또는 R<날짜>_<시각>_<무작위 4자>, mode 는 auto."""
     for s in io.states:
-        assert s['schema'] == 'state/1' and s['mode'] == 'auto'
+        assert s['schema'] == 'state/2' and s['mode'] == 'auto'
         assert s['run_id'] is None or re.fullmatch(r'R\d{8}_\d{6}_[0-9a-f]{4}', s['run_id']), s
         assert s['message_id'] is None or s['message_id'] in IRD_MESSAGE_IDS, s
 

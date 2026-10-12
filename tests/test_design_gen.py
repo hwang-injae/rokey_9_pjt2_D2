@@ -55,7 +55,7 @@ def tool_call(design_id, cid='c1'):
 def answer(cands, out=False, reason=''):
     """AI 의 후보 답(구조화 출력 JSON)."""
     body = {'out_of_scope': out, 'reason': reason,
-            'candidates': [{'idea': f'안 {i}', 'plan': 'z0: …', 'blocks': b} for i, b in enumerate(cands)]}
+            'candidates': [{'idea': f'안 {i}', 'plan': 'z0: …', 'parts': b} for i, b in enumerate(cands)]}
     return SimpleNamespace(content=json.dumps(body, ensure_ascii=False), refusal=None, tool_calls=None)
 
 
@@ -81,7 +81,7 @@ def store(tmp_path):
 @pytest.fixture
 def good(store):
     """검사에 합격하는 블록 목록(벤치 V000 그대로)."""
-    return store.get_design(BENCH)['blocks']['blocks']
+    return store.get_design(BENCH)['parts']['parts']
 
 
 @pytest.fixture
@@ -105,13 +105,13 @@ def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
     r = gen.generate('벤치를 만들어 줘', TEMPLATE, on_progress=lambda stage, info: events.append(stage))
     assert r['design_id'] == '001_CHAIR_BENCH_V001' and r['parent_id'] == BENCH and r['reference'] == [BENCH]
     assert [c['check']['ok'] for c in r['candidates']] == [True, False, True]
-    assert r['candidates'][1]['check']['errors'] and r['candidates'][0]['blocks']['design_id'] == '001_CHAIR_BENCH_V001'
+    assert r['candidates'][1]['check']['errors'] and r['candidates'][0]['parts']['design_id'] == '001_CHAIR_BENCH_V001'
     assert events == ['reading', 'candidates', 'checked', 'checked', 'checked']
     first, second = client.calls
     assert first['model'] == 'gpt-4o' and first['temperature'] == 0 and first['tool_choice'] == 'required'
     assert first['parallel_tool_calls'] is False and first['response_format']['json_schema']['strict'] is True
     assert first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [BENCH]   # 이 Template 설계만
-    assert second['messages'][-1]['role'] == 'tool' and '"blocks"' in second['messages'][-1]['content']
+    assert second['messages'][-1]['role'] == 'tool' and '"parts"' in second['messages'][-1]['content']
     rec = gen.save(r, 0)
     assert rec['design_id'] == '001_CHAIR_BENCH_V001' and rec['parent_id'] == BENCH and rec['made_by'] == 'web'
     assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
@@ -215,7 +215,7 @@ def test_prompt_takes_rules_from_robot_yaml_and_roles(store):
     gen, _ = make(store, [])
     p = gen.design_prompt
     assert '75 × 25 × 15' in p and f"{CFG['check']['margin_mm']} mm" in p and 'COLUMN' in p and '$' not in p
-    role_enum = gen._candidates_format()['json_schema']['schema']['properties']['candidates']['items']['properties']['blocks'][
+    role_enum = gen._candidates_format()['json_schema']['schema']['properties']['candidates']['items']['properties']['parts'][
         'items']['properties']['role']['enum']
     assert 'LEG' in role_enum and 'LEG_WHEEL' in role_enum
 

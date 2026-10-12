@@ -1,4 +1,4 @@
-"""변환기 ① — AI가 쓴 설계도(blocks/2.0)를 레시피(recipe/3.0) + 조립 방법(placements/2.0)으로 바꾼다 (W110, E-69).
+"""변환기 ① — AI가 쓴 설계도(parts/3.0)를 레시피(recipe/3.0) + 조립 방법(placements/3.0)으로 바꾼다 (W110, E-69).
 
 검사 묶음(DesignChecker)이 설계를 통과시킨 뒤 부른다. ROS · 파일 쓰기 · 로봇 · 메시지 영향 없음(계산만).
 """
@@ -10,14 +10,14 @@ from pathlib import Path
 from d2_task.recipe_builder import RecipeBuilder
 from d2_task.recipe_document import same_major
 
-SCHEMA_REQUEST = 'blocks/2.0'
+SCHEMA_REQUEST = 'parts/3.0'
 REQUIRED_KEYS = ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')
 ROLES_PATH = Path(__file__).with_name('roles.json')
 
 # 역할[_옵션] — 영문 대문자 한 단어씩, 옵션 0~1개 (작명 규칙 v3 2장)
 ROLE_RE = re.compile(r'([A-Z]+)(?:_([A-Z]+))?')
 
-# 같은 높이 · 같은 면으로 볼 허용오차(mm). blocks/2.0 좌표는 JSON 숫자 그대로라 부동소수 오차만 흡수한다.
+# 같은 높이 · 같은 면으로 볼 허용오차(mm). parts/3.0 좌표는 JSON 숫자 그대로라 부동소수 오차만 흡수한다.
 TOL = 1e-6
 
 
@@ -34,7 +34,7 @@ class DesignRejected(ValueError):
 
 
 class BlocksToRecipe:
-    """blocks/2.0 → {'recipe': recipe/3.0, 'placements': placements/2.0}.
+    """parts/3.0 → {'recipe': recipe/3.0, 'placements': placements/3.0}.
 
     AI가 고른 값(역할 · 옵션 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로 옮기고 대신 채우지 않는다(E-69 ②).
     코드가 정하는 것은 블록 번호 · 중심 · 회전 R · 받침 · 닫힘 축 · recipe_sha256 뿐이다(RecipeBuilder — CAD 도구와 같은 규칙).
@@ -73,19 +73,19 @@ class BlocksToRecipe:
         return set(roles), set(options)
 
     def convert(self, request):
-        """blocks/2.0 하나를 레시피 + 조립 방법으로 바꾼다. 입력을 바꾸지 않는다.
+        """parts/3.0 하나를 레시피 + 조립 방법으로 바꾼다. 입력을 바꾸지 않는다.
 
         입력:
-            request: blocks/2.0 dict — design_id, blocks[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
-        출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/2.0}
+            request: parts/3.0 dict — design_id, parts[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
+        출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/3.0}
         실패: AI가 쓴 값이 틀리면 DesignRejected(errors — part = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
         """
         # 형식: 검사 묶음이 먼저 보지만, 따로 불려도 빈 칸을 대신 채우지 않게 다시 확인한다
         if not isinstance(request, dict) or not same_major(request.get('schema'), SCHEMA_REQUEST) or not request.get('design_id'):
             raise DesignRejected([{'part': None, 'detail': f'schema {SCHEMA_REQUEST} · design_id 가 있는 객체가 아니다'}])
-        items = request.get('blocks')
+        items = request.get('parts')
         if not isinstance(items, list) or not items or not all(isinstance(b, dict) for b in items):
-            raise DesignRejected([{'part': None, 'detail': 'blocks 가 비어 있거나 객체 목록이 아니다'}])
+            raise DesignRejected([{'part': None, 'detail': 'parts 가 비어 있거나 객체 목록이 아니다'}])
         missing = [{'part': b.get('order'), 'detail': f'{b.get("order")}번 블록에 {", ".join(k for k in REQUIRED_KEYS if k not in b)} 없음'}
                    for b in items if any(k not in b for k in REQUIRED_KEYS)]
         if missing:
@@ -128,7 +128,7 @@ class BlocksToRecipe:
         """블록 하나가 차지하는 축 정렬 상자.
 
         입력:
-            block: blocks/2.0 블록 (x · y = 중심, z = 아랫면, mm)
+            block: parts/3.0 블록 (x · y = 중심, z = 아랫면, mm)
         출력: (lo, hi) — 각각 (x, y, z) 튜플 mm
         """
         dx, dy, dz = self.extent[block['ori']]

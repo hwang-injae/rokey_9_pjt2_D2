@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""기록기 RunLogger — 조립 한 번(run_id)의 CSV 기록과 결과 요약(build/1)을 만든다 (ROS 없이 동작, W065, SDD 6.8 · IRD 6장).
+"""기록기 RunLogger — 조립 한 번(run_id)의 CSV 기록과 결과 요약(build/2)을 만든다 (ROS 없이 동작, W065, SDD 6.8 · IRD 6장).
 
 TaskManager 가 기록할 때를 정하고 이 클래스는 받아 적기만 한다(기록기 노드는 없다 — IRD 3장).
 CSV 칸: run_id · design_id · time · module · kind · part_id · value (SDD 기록 칸). 오차는 mm(파일은 mm, NFR-12).
 저장 위치는 부르는 쪽(task 노드 파라미터 log_dir)이 정한다. 비어 있으면 파일은 쓰지 않고 run_id · 요약만 만든다.
 저장소 안에는 쓰지 않는다 — 부르는 쪽이 저장소 밖 경로를 준다.
 
-**미전송 build/1 요약은 log_dir/pending_builds/<run_id>.json 으로도 보관한다**(save_pending · delete_pending · load_pending, W119).
+**미전송 build/2 요약은 log_dir/pending_builds/<run_id>.json 으로도 보관한다**(save_pending · delete_pending · load_pending, W119).
 같은 폴더의 임시 파일에 쓰고 flush · fsync 한 뒤 os.replace 로 완성본을 만든다. CSV 의 file_ok 와는 따로 실패를 다룬다.
 
 **파일 쓰기는 전용 스레드 하나가 한다.** 부르는 쪽(상태표 · 정지 · 취소 경로)은 메모리 값을 바꾸고 줄을 큐에 넣기만 하므로
-디스크가 느리거나 멈춰도 정지 · 취소 처리가 기다리지 않는다. run_id 와 build/1 요약은 메모리에서 바로 확정된다.
+디스크가 느리거나 멈춰도 정지 · 취소 처리가 기다리지 않는다. run_id 와 build/2 요약은 메모리에서 바로 확정된다.
 """
 import csv
 import json
@@ -25,8 +25,8 @@ import time
 LOG = logging.getLogger('d2_task')
 
 COLUMNS = ('run_id', 'design_id', 'time', 'module', 'kind', 'part_id', 'value')
-SCHEMA_BUILD = 'build/1'
-RESULTS = ('DONE', 'STOPPED', 'ERROR')     # IRD 6장 build/1 result
+SCHEMA_BUILD = 'build/2'
+RESULTS = ('DONE', 'STOPPED', 'ERROR')     # IRD 6장 build/2 result
 # 쓰기 스레드가 막혔을 때 메모리가 끝없이 늘지 않게 하는 안전 한도. 조립 한 번이 수백 줄이라 정상일 때는 닿지 않는다
 QUEUE_LIMIT = 10000
 
@@ -101,7 +101,7 @@ class RunLogger:
         return run_id
 
     def finish(self, result):
-        """run 을 닫고 build/1 요약(dict)을 돌려준다. result = DONE · STOPPED · ERROR. 이미 닫혔으면 None.
+        """run 을 닫고 build/2 요약(dict)을 돌려준다. result = DONE · STOPPED · ERROR. 이미 닫혔으면 None.
 
         요약: run_id · design_id · result · placed(놓은 블록 수) · total · duration_s · stop_count ·
         blocks[part_id · dz_m · dx_m · dy_m(m, 못 잰 값 null)]. 요약은 메모리에서 바로 확정한다(파일 I/O 없음).
@@ -116,7 +116,7 @@ class RunLogger:
             summary = {'schema': SCHEMA_BUILD, 'run_id': self.run_id, 'design_id': self.design_id, 'result': result,
                        'placed': len(self._placed), 'total': self._total,
                        'duration_s': round(self.clock() - self._started, 3), 'stop_count': self._stop_count,
-                       'blocks': [{'part_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
+                       'parts': [{'part_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
                                   for b, m in self._placed.items()]}
             self._active = False
             if self._thread is not None:
@@ -157,7 +157,7 @@ class RunLogger:
     def record_measure(self, part_id, dx_m, dy_m, dz_m):
         """놓은 블록의 배치 확인 측정값(m)을 적는다. 못 잰 값(NaN · None)은 CSV 에 빈 칸, 요약에 null — 0 으로 만들지 않는다.
 
-        CSV 는 mm 로 쓴다(dx_mm · dy_mm · dz_mm 세 줄). 요약(build/1)은 m 그대로.
+        CSV 는 mm 로 쓴다(dx_mm · dy_mm · dz_mm 세 줄). 요약(build/2)은 m 그대로.
         """
         with self._lock:
             if not self._active:
@@ -170,7 +170,7 @@ class RunLogger:
                 self._row(key[:2] + '_mm', part_id, '' if v is None else f'{v * 1000:.3f}')
 
     def count_stop(self):
-        """정지가 한 번 있었다(build/1 stop_count)."""
+        """정지가 한 번 있었다(build/2 stop_count)."""
         with self._lock:
             if self._active:
                 self._stop_count += 1
@@ -384,7 +384,7 @@ def _num_or_none(v):
 
 
 def _invalid_summary(s, stem):
-    """보관된 build/1 요약이 올바른가. 올바르면 빈 글자, 아니면 이유. stem = 파일 이름(확장자 뺀 것) = run_id."""
+    """보관된 build/2 요약이 올바른가. 올바르면 빈 글자, 아니면 이유. stem = 파일 이름(확장자 뺀 것) = run_id."""
     if not isinstance(s, dict):
         return '객체가 아니다'
     if s.get('schema') != SCHEMA_BUILD:
@@ -401,9 +401,9 @@ def _invalid_summary(s, stem):
             return f'{key} 가 0 이상 정수가 아니다'
     if not _num_or_none(s.get('duration_s')) or s.get('duration_s') is None:
         return 'duration_s 가 숫자가 아니다'
-    if not isinstance(s.get('blocks'), list):
+    if not isinstance(s.get('parts'), list):
         return 'blocks 가 목록이 아니다'
-    for b in s['blocks']:
+    for b in s['parts']:
         if not isinstance(b, dict) or not isinstance(b.get('part_id'), str) or \
                 not all(k in b and _num_or_none(b[k]) for k in ('dz_m', 'dx_m', 'dy_m')):
             return 'blocks 항목이 올바르지 않다'

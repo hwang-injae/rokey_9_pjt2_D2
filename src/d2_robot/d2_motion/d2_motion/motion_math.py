@@ -298,7 +298,7 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 RECIPE_SUFFIXES = ('_recipe.json',)    # 레시피 = 구조 파일 <모델ID>_recipe.json (E-69 — 옛 이름 .recipe.json 은 W139 뒤 뺌)
 PLACEMENTS_SUFFIX = '_placements.csv'  # 조립 방법 원본 — 구조 파일과 같은 폴더 · 같은 모델 ID (E-69)
 RECIPE_SCHEMA = 'recipe/3.0'          # 10/11 E-84: parts → stocks
-PLACEMENTS_SCHEMA = 'placements/2.0'
+PLACEMENTS_SCHEMA = 'placements/3.0'
 
 
 def same_major(got, expected):
@@ -337,11 +337,11 @@ def recipe_sha256(recipe):
 
 
 def load_recipe(path):
-    """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/2.0)를 읽어
+    """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/3.0)를 읽어
     {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_blocks 가 둘을 블록 이름으로 잇는다(E-69).
     steps 는 CSV 의 조립 방법 칸(block · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
-    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/2.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
+    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/3.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
     recipe_sha256 이 구조와 다르면 ValueError — 구조가 바뀌었는데 옛 조립 방법으로 쌓으면 받침 · 잡기가 어긋난다."""
     with open(path) as f:
         recipe = json.load(f)
@@ -371,8 +371,8 @@ def recipe_model_id(recipe):
 def recipe_blocks(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    레시피 = E-69 두 파일: 조립 방법 placements/2.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
-    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · blocks[](block · stock_id · center_mm · R)).
+    레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
+    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · parts[](part_name · stock_id · center_mm · R)).
     part_id = 조립 방법의 part_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].part_id), task 시험 예시는 이 꼴 파일이다(part_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
@@ -419,7 +419,7 @@ def recipe_blocks(cfg, recipe):
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
     sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
-    geo = {b['part_name']: b for b in struct['blocks']}
+    geo = {b['part_name']: b for b in struct['parts']}
     full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"]}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]

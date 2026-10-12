@@ -26,15 +26,15 @@ CONVERTED = {'recipe': _DOC.recipe, 'placements': _DOC.placements}      # 변환
 
 def base_design(model_id):
     design_id, family, _ = DESIGNS[model_id]
-    """레시피 두 파일(시험용 사본)을 읽어 blocks/2.0 으로 바꾼다. 읽기 실패는 시험에 알린다."""
+    """레시피 두 파일(시험용 사본)을 읽어 parts/3.0 으로 바꾼다. 읽기 실패는 시험에 알린다."""
     document = RecipeDocument.load(FIXTURES, model_id)
     return RecipeToBlocks(design_id, family, BLOCK_MM).convert(document.recipe, document.placements)
 
 
 def design(*items):
-    """(x, y, z, ori) 들 → order 1.. 의 blocks/2.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT)."""
-    return {'schema': 'blocks/2.0', 'design_id': 't', 'family': 'test',
-            'blocks': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
+    """(x, y, z, ori) 들 → order 1.. 의 parts/3.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT)."""
+    return {'schema': 'parts/3.0', 'design_id': 't', 'family': 'test',
+            'parts': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
                        for i, (x, y, z, o) in enumerate(items, 1)]}
 
 
@@ -49,7 +49,7 @@ def reasons(res):
 @pytest.mark.parametrize('model_id', DESIGNS)
 def test_기본_설계_3종_통과(model_id):
     res = check(base_design(model_id))
-    assert res['ok'] and res['errors'] == [] and res['schema'] == 'check_result/2.0'
+    assert res['ok'] and res['errors'] == [] and res['schema'] == 'check_result/3.0'
     assert res['min_margin_mm'] == DESIGNS[model_id][2]
 
 
@@ -110,10 +110,10 @@ def test_양쪽_막힌_칸():
 
 def test_잡기_후보는_놓는_시점_기준():
     bench = base_design('001_CHAIR_BENCH_V000')
-    opts = DesignChecker(CFG).grasp_options(bench['blocks'])
+    opts = DesignChecker(CFG).grasp_options(bench['parts'])
     assert sorted(opts[1]) == ['FLAT_LONG', 'FLAT_SHORT']
     assert opts[10] == ['FLAT_LONG']                                    # 9번이 옆에 있어 좁은 쪽(FLAT_SHORT)은 막힘
-    stand = DesignChecker(CFG).grasp_options(base_design('003_DESK_STAND_V000')['blocks'])
+    stand = DesignChecker(CFG).grasp_options(base_design('003_DESK_STAND_V000')['parts'])
     assert sorted(stand[1]) == ['STAND_LONG', 'STAND_SHORT']
 
 
@@ -124,14 +124,14 @@ def test_작업영역_밖():
 
 
 @pytest.mark.parametrize('mutate, text', [
-    (lambda r: r.pop('blocks'), 'blocks'),
-    (lambda r: r.update(blocks=[]), 'blocks'),
-    (lambda r: r['blocks'][0].pop('ori'), 'ori 없음'),
-    (lambda r: r['blocks'][0].update(ori='q'), 'ori='),
-    (lambda r: r['blocks'][0].update(x='1'), 'x 가 숫자가 아니다'),
-    (lambda r: r['blocks'][0].update(z=True), 'z 가 숫자가 아니다'),
-    (lambda r: r['blocks'][1].update(order=5), 'order'),
-    (lambda r: r['blocks'][1].update(order=True), 'order'),
+    (lambda r: r.pop('parts'), 'parts'),
+    (lambda r: r.update(parts=[]), 'parts'),
+    (lambda r: r['parts'][0].pop('ori'), 'ori 없음'),
+    (lambda r: r['parts'][0].update(ori='q'), 'ori='),
+    (lambda r: r['parts'][0].update(x='1'), 'x 가 숫자가 아니다'),
+    (lambda r: r['parts'][0].update(z=True), 'z 가 숫자가 아니다'),
+    (lambda r: r['parts'][1].update(order=5), 'order'),
+    (lambda r: r['parts'][1].update(order=True), 'order'),
 ])
 def test_형식_오류(mutate, text):
     req = design((0, 0, 0, 'x'), (0, 0, 15, 'x'))
@@ -153,7 +153,7 @@ def test_블록_수_상한():
 
 def test_order_순서가_섞여_와도_order로_검사():
     req = design((0, 0, 0, 'x'), (0, 0, 15, 'x'))
-    req['blocks'].reverse()
+    req['parts'].reverse()
     assert check(req)['ok']
 
 
@@ -264,7 +264,7 @@ def test_서비스_오류_응답도_순수_JSON():
 
 def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
     req = base_design('001_CHAIR_BENCH_V000')
-    req['blocks'][0]['ori'] = []
+    req['parts'][0]['ori'] = []
     ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and not res['ok']
 
@@ -283,9 +283,9 @@ def test_변환기가_옛_한_파일만_돌려주면_ERROR():
     assert not res['ok'] and res['errors'][0]['reason'] == 'ERROR'
 
 
-# ---------- blocks/2.0 의 AI 칸(role · part · stage · grasp) 형식 검사 (E-69) ----------
+# ---------- parts/3.0 의 AI 칸(role · part · stage · grasp) 형식 검사 (E-69) ----------
 def ai_blocks(n=3):
-    """쌓인 블록 n개(아랫면 0, 15, 30)의 정상 blocks/2.0."""
+    """쌓인 블록 n개(아랫면 0, 15, 30)의 정상 parts/3.0."""
     return design(*[(0, 0, 15 * i, 'x') for i in range(n)])
 
 
@@ -298,21 +298,21 @@ def one_error_detail(req):
 @pytest.mark.parametrize('key', ['role', 'group', 'stage', 'grasp'])
 def test_AI_칸이_빠지면_CHECK_FAILED이고_코드가_대신_채우지_않는다(key):
     req = ai_blocks()
-    del req['blocks'][1][key]
+    del req['parts'][1][key]
     assert key in one_error_detail(req) and '없음' in one_error_detail(req)
 
 
 @pytest.mark.parametrize('role', ['leg', 'ARM_REST_X', 'LEG_', '_LEG', 'LEG1', '', 5, None])
 def test_역할_형식이_틀리면_거절(role):
     req = ai_blocks()
-    req['blocks'][0]['role'] = role
+    req['parts'][0]['role'] = role
     assert 'role' in one_error_detail(req)
 
 
 @pytest.mark.parametrize('role', ['LEG', 'LEG_WHEEL', 'SEAT'])
 def test_역할_한_단어_옵션_0_1개는_통과(role):
     req = ai_blocks()
-    req['blocks'][0]['role'] = role
+    req['parts'][0]['role'] = role
     assert check(req)['ok']
 
 
@@ -320,14 +320,14 @@ def test_역할_한_단어_옵션_0_1개는_통과(role):
                                         ('stage', 0), ('stage', True), ('stage', None), ('grasp', 'SIDE_25'), ('grasp', 'flat_short'), ('grasp', None)])
 def test_part_stage_grasp_값이_틀리면_거절(key, value):
     req = ai_blocks()
-    req['blocks'][1][key] = value
+    req['parts'][1][key] = value
     assert key in one_error_detail(req)
 
 
 @pytest.mark.parametrize('stages', [[2, 2, 3], [1, 3, 3], [1, 2, 1], [2, 3, 4]])
 def test_단계는_1부터_같거나_1씩_늘어야_한다(stages):
     req = ai_blocks()
-    for b, st in zip(req['blocks'], stages):
+    for b, st in zip(req['parts'], stages):
         b['stage'] = st
     assert 'stage' in one_error_detail(req)
 
@@ -335,16 +335,16 @@ def test_단계는_1부터_같거나_1씩_늘어야_한다(stages):
 @pytest.mark.parametrize('stages', [[1, 1, 1], [1, 1, 2], [1, 2, 3], [1, 2, 2]])
 def test_단계가_같거나_1씩_늘면_통과(stages):
     req = ai_blocks()
-    for b, st in zip(req['blocks'], stages):
+    for b, st in zip(req['parts'], stages):
         b['stage'] = st
     assert check(req)['ok']
 
 
 def test_inferred는_선택이고_불리언이어야_한다():
     req = ai_blocks()
-    req['blocks'][2]['inferred'] = True
+    req['parts'][2]['inferred'] = True
     assert check(req)['ok']
-    req['blocks'][2]['inferred'] = 'yes'
+    req['parts'][2]['inferred'] = 'yes'
     assert 'inferred' in one_error_detail(req)
 
 
@@ -352,7 +352,7 @@ def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
     """E-69: blocks/1 은 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 ERROR."""
     req = ai_blocks()
     req['schema'] = 'blocks/1'
-    for b in req['blocks']:
+    for b in req['parts']:
         for k in ('role', 'group', 'stage', 'grasp'):
             del b[k]
     ok, reason, text = DesignChecker(CFG).handle_json(json.dumps(req))

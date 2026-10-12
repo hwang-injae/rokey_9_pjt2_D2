@@ -163,7 +163,7 @@ def test_bench_blocks_match_ird_example():
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
     """변환기 ②(d2_task RecipeToBlocks)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
-    변환기 ②는 blocks/2.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/1 이라 order · x · y · z · ori 만 비교한다."""
+    변환기 ②는 parts/3.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/1 이라 order · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:
@@ -173,8 +173,8 @@ def test_same_blocks_as_converter_2(design_id, n):
     want = rtb.RecipeToBlocks('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
     got = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)
     keys = ('order', 'x', 'y', 'z', 'ori')
-    assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['blocks']]
-    assert (got['design_id'], got['family'], len(got['blocks'])) == (want['design_id'], want['family'], n)
+    assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['parts']]
+    assert (got['design_id'], len(got['blocks'])) == (want['design_id'], n)
 
 
 def test_points_follow_origin_yaw():

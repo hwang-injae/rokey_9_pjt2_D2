@@ -1,4 +1,4 @@
-"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/3.0 + 조립 방법 placements/2.0).
+"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/3.0 + 조립 방법 placements/3.0).
 build: cads/<모델ID 소문자>.dxf → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)."""
 import argparse
 import csv

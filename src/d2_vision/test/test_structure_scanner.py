@@ -42,8 +42,10 @@ CFG_OLD = {**CFG, 'assembly_origin': {**CFG['assembly_origin'], 'z_m': -0.018}}
 
 
 def truth(design_id):
-    """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — blocks/2.0, 자리 · 방향 칸은 blocks/1 과 같다)."""
-    return RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
+    """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — parts/3.0, 자리 · 방향 칸은 blocks/1 과 같다).
+    스캔은 진짜 블록을 보므로 목록 칸 이름을 스캔 쪽(blocks)으로 맞춰 돌려준다(10/13 이름 규칙)."""
+    d = RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
+    return {**d, 'blocks': d['parts']}
 
 
 def cam_rot(look):

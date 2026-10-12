@@ -29,7 +29,7 @@ class TaskPlanner:
     def __init__(self, cfg, recipe, placements):
         """레시피 블록을 sequence 순서로 펼치고, 블록마다 받침 part_id 를 붙인다. 진행표는 모두 unknown 으로 시작한다.
 
-        recipe 는 구조 dict(recipe/3.0, mm), placements 는 조립 방법 dict(placements/2.0). 바깥 영향 없음.
+        recipe 는 구조 dict(recipe/3.0, mm), placements 는 조립 방법 dict(placements/3.0). 바깥 영향 없음.
         블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_blocks 한 곳에서 한다.
         """
         self.cfg = cfg
@@ -156,7 +156,7 @@ class TaskPlanner:
         return problems
 
     def progress_message(self, run_id, obs_stamp):
-        """진행표를 /d2/task/progress 의 JSON progress/1.1 (dict) 로 만든다. 안 잰 값(NaN)은 null.
+        """진행표를 /d2/task/progress 의 JSON progress/2.0 (dict) 로 만든다. 안 잰 값(NaN)은 null.
 
         입력: run_id(없으면 None), obs_stamp = 관측한 시각(s). center_m · quat 은 설계 자리(base_link, m).
         stamp = 보낸 시각(epoch s, 이 함수를 부른 때) — 관측한 시각(obs_stamp)과 다르다. 웹이 얼마나 묵은 진행표인지 알아보는 데 쓴다(E-75).
@@ -169,8 +169,8 @@ class TaskPlanner:
                            'center_m': list(b['center']), 'quat': list(b['quat']),
                            'top_z_m': _nan_to_none(row['top_z_m']), 'dz_m': _nan_to_none(row['dz_m']),
                            'dx_m': _nan_to_none(row['dx_m']), 'dy_m': _nan_to_none(row['dy_m'])})
-        return {'schema': 'progress/1.1', 'stamp': time.time(), 'design_id': self.design_id, 'run_id': run_id,
-                'obs_stamp': obs_stamp, 'blocks': blocks}
+        return {'schema': 'progress/2.0', 'stamp': time.time(), 'design_id': self.design_id, 'run_id': run_id,
+                'obs_stamp': obs_stamp, 'parts': blocks}
 
     def _pick_slot(self, index, avoid_slots=()):
         """self.blocks[index] 를 집을 공급 칸 번호(1부터). 맞는 칸이 모두 비었거나 피할 칸뿐이면 None.

@@ -220,7 +220,7 @@ function TemplateCards(props: {
 }
 
 function TemplatePreview({ design, rules, dark }: { design: Design; rules: Rules; dark: boolean }) {
-  const items = useMemo(() => roleItems(design.blocks.blocks), [design]);
+  const items = useMemo(() => roleItems(design.parts.parts), [design]);
   return <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={design.design_id} dark={dark} />;
 }
 
@@ -266,7 +266,7 @@ function JobView({ job, rules, dark, canPick, onPick }: { job: GenJob; rules: Ru
 function CandidateCard(props: { cand: GenCandidate; index: number; rules: Rules | null; dark: boolean; canPick: boolean; picked: boolean; onPick: () => void }) {
   const { cand, index, rules, dark, canPick, picked, onPick } = props;
   const ck = cand.check;
-  const items = useMemo(() => roleItems(cand.blocks.blocks), [cand.blocks.blocks]);
+  const items = useMemo(() => roleItems(cand.parts.parts), [cand.parts.parts]);
   let verdict = '검사 중…';
   if (ck?.ok) verdict = '합격';
   else if (ck) verdict = `불합격 · ${[...new Set(ck.errors.map((e) => checkReasonKo(e.detail ?? '')))].slice(0, 2).join(', ') || '규칙 위반'}`;
@@ -275,10 +275,10 @@ function CandidateCard(props: { cand: GenCandidate; index: number; rules: Rules 
     <div className={`cand${ck && !ck.ok ? ' failed' : ''}${picked ? ' picked' : ''}`}>
       <div className="cand-head">
         <b>후보 {index + 1}</b>
-        <span className="muted small">블록 {cand.blocks.blocks.length}개</span>
+        <span className="muted small">블록 {cand.parts.parts.length}개</span>
       </div>
       {rules ? (
-        <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={`${cand.blocks.design_id}-${index}-${cand.blocks.blocks.length}`} dark={dark} />
+        <Preview3D items={items} blockMm={rules.block_size_mm} frameKey={`${cand.parts.design_id}-${index}-${cand.parts.parts.length}`} dark={dark} />
       ) : (
         <div className="view3d-empty">블록 크기를 아직 못 받았어요</div>
       )}

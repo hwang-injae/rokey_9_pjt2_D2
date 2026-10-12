@@ -2,8 +2,8 @@
 // 설계 3D 패널 — [설계 목록](열 보기 DesignTree)에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑥ ⑦ ⑧).
 // 보는 곳에서 보낸다(10/10 황인재): 보고 있는 설계 바로 아래 [이 설계로 조립 준비](= select_design)가 로봇에 보내는 유일한 버튼.
 // 그다음 [출발]은 왼쪽 로봇 패널(사람이 영역 밖 확인 — SR-09).
-// 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/1.1) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
-// 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = blocks.order 로 잇는다.
+// 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/2.0) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
+// 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = parts.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import type { Block2, CmdResult, Design, Rules } from '@/lib/types';
@@ -79,9 +79,9 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
     if (!design) return [];
     const idBySeq = new Map((design.placements?.steps ?? []).map((s) => [s.sequence, s.part_id]));
     const prog = running && robot.progress?.run_id === st?.run_id ? robot.progress : null;
-    const stateById = new Map((prog?.blocks ?? []).map((b) => [b.part_id, b.state]));
-    if (!running) return roleItems(design.blocks.blocks);
-    return design.blocks.blocks.map((b) => {
+    const stateById = new Map((prog?.parts ?? []).map((b) => [b.part_id, b.state]));
+    if (!running) return roleItems(design.parts.parts);
+    return design.parts.parts.map((b) => {
       const at = { x: b.x, y: b.y, z: b.z, ori: b.ori };
       const id = idBySeq.get(b.order);
       const s = id ? stateById.get(id) : undefined;
@@ -92,7 +92,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
     });
   }, [design, running, st?.part_id, st?.run_id, robot.progress]);
 
-  const roles = design ? [...new Set(design.blocks.blocks.map((b) => roleOf(b.role)))] : [];
+  const roles = design ? [...new Set(design.parts.parts.map((b) => roleOf(b.role)))] : [];
   const loading = !!viewId && !failed && design?.design_id !== viewId;
 
   let body: React.ReactNode;
@@ -109,7 +109,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
         {design && (
           <span className="head-sub" title={design.design_id}>
             <strong>{designName(design.design_id)}</strong>
-            <span className="muted"> · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.blocks.blocks.length}개{loading ? ' · 바꾸는 중…' : ''}</span>
+            <span className="muted"> · {MADE_KO[design.made_by] ?? design.made_by} · 블록 {design.parts.parts.length}개{loading ? ' · 바꾸는 중…' : ''}</span>
           </span>
         )}
         {design && onRobot && <span className="tag ok">로봇에 선택됨</span>}
@@ -151,7 +151,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
               </span>
             ))
           )}
-          {!running && design.blocks.blocks.some((b) => b.inferred) && <span><i className="ghost" style={{ background: OTHER }} />스캔 추정</span>}
+          {!running && design.parts.parts.some((b) => b.inferred) && <span><i className="ghost" style={{ background: OTHER }} />스캔 추정</span>}
         </div>
       )}
     </section>

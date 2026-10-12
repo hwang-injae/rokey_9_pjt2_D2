@@ -167,9 +167,9 @@ def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/3.0', 'model_id': model_id,
                  'stocks': [{'stock_id': 'PART_001', 'size_mm': list(size_mm)}],
-                 'blocks': [{'part_name': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
+                 'parts': [{'part_name': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
                             {'part_name': 'SEAT_001_02', 'stock_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
-    recipe = {'schema': 'placements/2.0', 'model_id': model_id,
+    recipe = {'schema': 'placements/3.0', 'model_id': model_id,
               'steps': [{'part_name': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': ['SEAT_001_01']},
                         {'part_name': 'SEAT_001_01', 'sequence': 1, 'stage': 1, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
@@ -204,19 +204,19 @@ def test_recipe_blocks_rejects_wrong_size(robot_cfg):
 def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
     """옛 blocks[] 형식(구조 칸 · model 칸 없음)은 W139 뒤 읽지 않는다(W138) — KeyError."""
     with pytest.raises(KeyError):
-        mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'blocks': []})
+        mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'parts': []})
 
 
 CSV_COLS = ['part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
             'center_z_mm', 'axis_L', 'axis_W', 'axis_T', 'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema']
 
 
-def _write_files(folder, recipe, structure, sha=None, schema='placements/2.0'):
+def _write_files(folder, recipe, structure, sha=None, schema='placements/3.0'):
     """_recipe() 를 E-69 파일 두 개로 쓴다: <모델ID>_recipe.json(구조) + <모델ID>_placements.csv(20칸, supports 는 ';').
     sha · schema 를 주면 그 값으로 바꿔 써서 거절 시험에 쓴다. 반환: 구조 파일 경로(글자)."""
     rp = folder / f"{structure['model_id']}_recipe.json"
     rp.write_text(json.dumps(structure, indent=2, ensure_ascii=False), encoding='utf-8')
-    geo = {b['part_name']: b for b in structure['blocks']}
+    geo = {b['part_name']: b for b in structure['parts']}
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=CSV_COLS, lineterminator='\n')
     w.writeheader()
@@ -241,7 +241,7 @@ def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
     files = mm.recipe_files(str(tmp_path))
     assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH_V000']
     loaded = mm.load_recipe(rp)
-    assert loaded['schema'] == 'placements/2.0' and loaded['structure'] == structure
+    assert loaded['schema'] == 'placements/3.0' and loaded['structure'] == structure
     assert loaded['steps'][1]['supports'] == ['SEAT_001_01'] and loaded['steps'][0]['supports'] == []
     assert all(isinstance(st['sequence'], int) and isinstance(st['stage'], int) for st in loaded['steps'])
     assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH_V000'
@@ -275,7 +275,7 @@ def test_real_recipes_read_and_hash_matches_builder(robot_cfg, model_id):
     assert mm.recipe_sha256(structure) == RecipeBuilder().calculate_recipe_sha256(structure)
     loaded = mm.load_recipe(str(path))
     blocks = mm.recipe_blocks(robot_cfg, loaded)
-    assert len(blocks) == len(structure['blocks']) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
+    assert len(blocks) == len(structure['parts']) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
 
 
 @pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])

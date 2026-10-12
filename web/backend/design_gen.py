@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from d2_task.recipe_document import GRASPS
-from design_store import SCHEMA_BLOCKS, build_summary, family_of
+from design_store import SCHEMA_PARTS, build_summary, family_of
 
 MODEL = 'gpt-4o'                 # 설계 작성(SDD 6.6 · TR-12)
 MODEL_CLASSIFY = 'gpt-4o'        # Template 고르기 — 팀 키 프로젝트는 gpt-4o · whisper-1 만 열려 있다(10/10 모델 목록 확인 — mini 는 403)
@@ -67,7 +67,7 @@ class GenError(Exception):
 class DesignGenerator:
     """요청 문장 → Template 고르기 · 후보 3개 · 검사 · 저장. 상태 없음(요청마다 새 대화) — 후보는 부르는 쪽(작업 job)이 들고 있다.
 
-    입력: store(DesignStore), check(blocks/2.0 dict → check_design 응답 dict — MqttClient.request 로 만든 함수),
+    입력: store(DesignStore), check(parts/3.0 dict → check_design 응답 dict — MqttClient.request 로 만든 함수),
           rules(app.load_rules — robot.yaml 설계 규칙 E-78), client(OpenAI 클라이언트 — 시험 때 가짜, 비우면 처음 부를 때 만듦).
     바깥 영향: OpenAI 호출(돈 · 시간), check_design 요청(로봇은 안 움직임), store 에 기록 · 저장. 로봇을 움직이지 않는다.
     실패: GenError(code, message) — 부르는 쪽이 화면에 그대로 알린다.
@@ -168,18 +168,18 @@ class DesignGenerator:
                 if data.get('out_of_scope') is True:
                     raise GenError('OUT_OF_SCOPE', data.get('reason') or '지금 만들 수 있는 모양이 아니에요')
                 raw = data.get('candidates')
-                if not isinstance(raw, list) or not all(isinstance(c, dict) and isinstance(c.get('blocks'), list) for c in raw):
+                if not isinstance(raw, list) or not all(isinstance(c, dict) and isinstance(c.get('parts'), list) for c in raw):
                     raise GenError('GEN_FAILED', 'AI 답의 모양이 틀렸어요(candidates)')
                 if design_id is None:
                     design_id, _ = self.store.new_design_id(template, parent)   # 검사 전에 — 변환기 ①이 이 ID 로 레시피를 만든다
-                cands = [{'idea': str(c.get('idea') or ''), 'blocks': {'schema': SCHEMA_BLOCKS, 'design_id': design_id,
-                                                                       'family': family, 'blocks': c['blocks']}}
+                cands = [{'idea': str(c.get('idea') or ''), 'parts': {'schema': SCHEMA_PARTS, 'design_id': design_id,
+                                                                      'parts': c['parts']}}
                          for c in raw[:N_CANDIDATES]]
                 progress('candidates', {'attempt': attempt, 'design_id': design_id, 'candidates': cands})
                 for i, c in enumerate(cands):
-                    c['check'] = self._check(c['blocks'])
+                    c['check'] = self._check(c['parts'])
                     progress('checked', {'attempt': attempt, 'index': i, 'check': c['check']})
-                log['attempts'].append([{'idea': c['idea'], 'blocks': len(c['blocks']['blocks']),
+                log['attempts'].append([{'idea': c['idea'], 'block_count': len(c['parts']['parts']),
                                          'check': {k: c['check'][k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}} for c in cands])
                 if any(c['check']['ok'] for c in cands):
                     result = {'text': text, 'template': template, 'family': family, 'design_id': design_id, 'parent_id': parent,
@@ -217,7 +217,7 @@ class DesignGenerator:
         chk = cand['check']
         if not chk['ok']:
             raise ValueError('검사에 떨어진 후보는 고를 수 없다')
-        return self.store.save_design(cand['blocks'], chk['recipe'], chk['placements'], result['parent_id'], made_by,
+        return self.store.save_design(cand['parts'], chk['recipe'], chk['placements'], result['parent_id'], made_by,
                                       prompt=result['text'],
                                       check={'ok': True, 'min_margin_mm': chk['min_margin_mm'], 'errors': chk['errors']})
 
@@ -258,7 +258,7 @@ class DesignGenerator:
         read.append(design_id)
         builds = self.store.builds_for(design_id)
         return json.dumps({'design_id': design_id, 'made_by': d.get('made_by'), 'parent_id': d.get('parent_id'),
-                           'last_build': build_summary(builds[0]) if builds else None, 'blocks': d['blocks']['blocks']},
+                           'last_build': build_summary(builds[0]) if builds else None, 'parts': d['parts']['parts']},
                           ensure_ascii=False, separators=(',', ':'))
 
     def _chat(self, log, model, messages, response_format, **kw):
@@ -327,7 +327,7 @@ class DesignGenerator:
             if not errs:
                 continue
             lines.append(f"후보 {i}({c['idea']}):")
-            blocks = {b.get('order'): b for b in c['blocks']['blocks'] if isinstance(b, dict)}
+            blocks = {b.get('order'): b for b in c['parts']['parts'] if isinstance(b, dict)}
             for e in errs:
                 detail = str(e.get('detail') or e.get('reason'))
                 hint = next((h for key, h in FIX_HINTS if key in detail), '')
@@ -383,7 +383,7 @@ class DesignGenerator:
         parts = ['[참고 설계 — 도구 대신 코드가 넣음]']
         for e in self.store.examples_for(template, n=3):
             parts.append(f"({e['design_id']}, 최근 조립 {e['last_build'] or '없음'})\n"
-                         + json.dumps(e['blocks']['blocks'], ensure_ascii=False, separators=(',', ':')))
+                         + json.dumps(e['parts']['parts'], ensure_ascii=False, separators=(',', ':')))
         return '\n'.join(parts)
 
     @staticmethod
@@ -391,7 +391,7 @@ class DesignGenerator:
         """도구 get_design 정의 — design_id 는 이 Template 설계 목록 안에서만 고르게 enum 으로 묶는다(E-84 ③)."""
         return {'type': 'function', 'function': {
             'name': 'get_design', 'strict': True,
-            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(blocks/2.0)과 최근 조립 결과. 참고할 설계를 1 ~ 2개 읽는다.',
+            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(parts/3.0)과 최근 조립 결과. 참고할 설계를 1 ~ 2개 읽는다.',
             'parameters': {'type': 'object', 'additionalProperties': False, 'required': ['design_id'],
                            'properties': {'design_id': {'type': 'string', 'enum': list(allowed)}}}}}
 
@@ -407,9 +407,9 @@ class DesignGenerator:
             'type': 'object', 'additionalProperties': False, 'required': ['out_of_scope', 'reason', 'candidates'],
             'properties': {'out_of_scope': {'type': 'boolean'}, 'reason': {'type': 'string'},
                            'candidates': {'type': 'array', 'items': {
-                               'type': 'object', 'additionalProperties': False, 'required': ['idea', 'plan', 'blocks'],
+                               'type': 'object', 'additionalProperties': False, 'required': ['idea', 'plan', 'parts'],
                                'properties': {'idea': {'type': 'string'}, 'plan': {'type': 'string'},     # plan 먼저 — 층별 계산을 쓰고 블록을 쓰게
-                                              'blocks': {'type': 'array', 'items': block}}}}}})
+                                              'parts': {'type': 'array', 'items': block}}}}}})
 
     @staticmethod
     def _format(name, schema):

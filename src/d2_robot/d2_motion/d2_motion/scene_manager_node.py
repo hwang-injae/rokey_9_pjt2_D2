@@ -208,13 +208,13 @@ class SceneManagerNode(Node):
         return res
 
     def _on_progress(self, msg):
-        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: present 는 진행표의 center_m · quat(설계 자리)로 넣고, absent 는 뺀다.
+        """진행표 progress/2.0 을 따라 놓인 블록을 맞춘다: present 는 진행표의 center_m · quat(설계 자리)로 넣고, absent 는 뺀다.
         occluded · unknown 은 있는지 모르므로 그대로 둔다. state 이름은 IRD 2장 '블록 관측 states'(task_planner.STATES)와 같다.
 
         진행표에 없는 놓인 블록(앞 설계 것)도 뺀다 — 진행표는 지금 설계의 블록 전부라, 설계가 바뀌면 앞 설계 블록이
         조립 영역에 남아 새 설계의 놓기 경로를 막는다(10/7 실기: 벤치 11개가 남아 003 PLAN_FAILED).
         """
-        blocks = json.loads(msg.data).get('blocks', [])
+        blocks = json.loads(msg.data).get('parts', [])
         gone = self.placed - {blk.get('part_id') for blk in blocks}
         for blk in blocks:
             bid, state = blk.get('part_id'), blk.get('state')

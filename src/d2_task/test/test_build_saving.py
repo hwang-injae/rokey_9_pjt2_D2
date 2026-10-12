@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""결과 저장(save_build) 시험 (W119 ①) — 끝난 조립의 build/1 요약을 run_id 별로 들고 있다가 저장이 확인된 것만 지운다.
+"""결과 저장(save_build) 시험 (W119 ①) — 끝난 조립의 build/2 요약을 run_id 별로 들고 있다가 저장이 확인된 것만 지운다.
 
 ROS 없이 TaskManager 의 builds_to_send · build_result · build_failed 를 가짜 서비스 대신 직접 부른다.
 (실제 노드가 서비스를 부르고 답을 이 메서드로 넘기는 부분은 task_node 의 일 — 따로 ROS 로 확인한다.)

@@ -50,7 +50,7 @@ class MqttClient:
 
     입력: host · port(.env), req_timeout_s · alive_s · lost_after_s(robot.yaml mqtt.*). client 는 시험 때 가짜를 넣는다.
     바깥 영향: d2/web/alive 를 alive_s 마다 retained 로 보낸다(작업 관리자는 3초 끊기면 WAIT_HMI — IRD 10.3).
-    실패: 브로커가 없으면 paho 가 1~5초 간격으로 다시 붙는다. 요청은 자동으로 다시 보내지 않는다(실제 상태는 state/1 로 본다).
+    실패: 브로커가 없으면 paho 가 1~5초 간격으로 다시 붙는다. 요청은 자동으로 다시 보내지 않는다(실제 상태는 state/2 로 본다).
     """
 
     def __init__(self, host, port, req_timeout_s, alive_s, lost_after_s, client=None, clock=time.monotonic):

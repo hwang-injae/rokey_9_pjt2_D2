@@ -7,8 +7,8 @@ import type { Robot } from '@/lib/ws';
 export default function ProgressTop({ robot }: { robot: Robot }) {
   const st = robot.state;
   const p = robot.progress && robot.progress.design_id === st?.design_id ? robot.progress : null;
-  const total = p?.blocks.length ?? 0;
-  const present = p?.blocks.filter((b) => b.state === 'present').length ?? 0;
+  const total = p?.parts.length ?? 0;
+  const present = p?.parts.filter((b) => b.state === 'present').length ?? 0;
   const pct = st?.state === 'DONE' && total ? 100 : total ? Math.round((present / total) * 100) : 0;
 
   return (

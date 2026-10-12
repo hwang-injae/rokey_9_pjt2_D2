@@ -10,7 +10,7 @@ import time
 
 
 class BuildSender:
-    """미전송 build/1 요약을 보내고 답을 TaskManager 에 넘긴다.
+    """미전송 build/2 요약을 보내고 답을 TaskManager 에 넘긴다.
 
     입력: manager(builds_to_send · build_result · build_failed 를 가진 TaskManager), call(summary dict) → future,
     cancel(future), ready() → 서버가 떠 있나, service_s(제한 시간 = 다시 보내기 간격, robot.yaml timeout.service_s), clock(시험용).

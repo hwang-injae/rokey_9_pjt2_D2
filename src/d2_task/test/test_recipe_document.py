@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """W141 회귀 시험(E-69): 두 파일 참조 · schema 거절 · 짝 해시 · 역할 이름 · 파일 읽기 · 검사 응답 · 작업 시작. ROS 없이 실제 계산 클래스를 검증한다.
 
-레시피 두 파일 = 구조 `<모델ID>_recipe.json`(recipe/3.0 — 10/11 parts → stocks) + 조립 방법 `<모델ID>_placements.csv`(placements/2.0). 옛 `_structure.json`(cad_structure/1.0) ·
+레시피 두 파일 = 구조 `<모델ID>_recipe.json`(recipe/3.0 — 10/11 parts → stocks) + 조립 방법 `<모델ID>_placements.csv`(placements/3.0). 옛 `_structure.json`(cad_structure/1.0) ·
 `cad_recipe/1.0` · `assembly.recipe/1.0` 은 schema 를 보고 거절한다(변환하지 않음).
 """
 import ast
@@ -98,7 +98,7 @@ def test_입력문서는_변경하지_않는다(pair):
     original = copy.deepcopy(pair)
     d = RecipeDocument(*pair)
     d.geometry['steps'][0]['supports'].append('other')
-    d.design(MODEL)['recipe']['blocks'].clear()
+    d.design(MODEL)['recipe']['parts'].clear()
     assert pair == original
 
 
@@ -107,12 +107,12 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: p.update(model_id='OTHER'), True),
     (lambda r, p: p.update(recipe_sha256='bad'), False),
     (lambda r, p: p.update(recipe_sha256='0' * 64), False),
-    (lambda r, p: r['blocks'][0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
-    (lambda r, p: r['blocks'][0].update(part_name='B001'), True),
-    (lambda r, p: r['blocks'][1].update(part_name=r['blocks'][0]['part_name']), True),
-    (lambda r, p: r['blocks'][0].update(stock_id='NOPE'), True),
-    (lambda r, p: r['blocks'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
-    (lambda r, p: r['blocks'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
+    (lambda r, p: r['parts'][0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
+    (lambda r, p: r['parts'][0].update(part_name='B001'), True),
+    (lambda r, p: r['parts'][1].update(part_name=r['parts'][0]['part_name']), True),
+    (lambda r, p: r['parts'][0].update(stock_id='NOPE'), True),
+    (lambda r, p: r['parts'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
+    (lambda r, p: r['parts'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
     (lambda r, p: p['steps'][0].update(part_name='NOPE'), True),
     (lambda r, p: p['steps'][0].update(part_id='001_CHAIR_BENCH_V000_LEG_009_09'), True),
     (lambda r, p: p['steps'][1].update(sequence=1), True),
@@ -133,10 +133,10 @@ def test_두파일_손상은_조립전_거절한다(pair, mutate, seal):
         TaskPlanner(CFG, r, p)
 
 
-@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/2.0', 'recipe/4.0', 'placements/2.0', None])
+@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/2.0', 'recipe/4.0', 'placements/3.0', None])
 def test_구조_schema가_recipe_3이_아니면_받은_schema를_적어_거절(pair, schema):
     r, p = pair
-    if schema == 'placements/2.0':           # 두 문서를 바꿔 넣은 경우
+    if schema == 'placements/3.0':           # 두 문서를 바꿔 넣은 경우
         r, p = p, r
     else:
         r = dict(r, schema=schema)
@@ -144,8 +144,8 @@ def test_구조_schema가_recipe_3이_아니면_받은_schema를_적어_거절(p
         RecipeDocument(r, p)
 
 
-@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'placements/1.0', 'placements/3.0', 'recipe/3.0', None])
-def test_조립_방법_schema가_placements_2_0이_아니면_거절(pair, schema):
+@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'placements/1.0', 'placements/2.0', 'recipe/3.0', None])
+def test_조립_방법_schema가_placements_3_0이_아니면_거절(pair, schema):
     r, p = pair
     with pytest.raises(ValueError, match='schema'):
         RecipeDocument(r, dict(p, schema=schema))
@@ -171,7 +171,7 @@ def test_옛_파일은_읽지_않는다(tmp_path):
     with pytest.raises(ValueError, match='cad_structure/1.0'):
         RecipeDocument.load(tmp_path, MODEL)
     copy_pair(tmp_path)
-    assert RecipeDocument.load(tmp_path, MODEL).recipe['blocks'][0]['part_name'] == 'LEG_001_01'
+    assert RecipeDocument.load(tmp_path, MODEL).recipe['parts'][0]['part_name'] == 'LEG_001_01'
 
 
 def test_조립_방법_없이는_문서를_만들_수_없다(pair):
@@ -195,7 +195,7 @@ def test_구조_파일이_바뀌어_짝_해시가_다르면_거절한다(tmp_pat
     """조립 방법이 쓰인 뒤 구조가 바뀌면(재생성 · 수작업) 읽기를 거부한다."""
     copy_pair(tmp_path)
     recipe = json.loads((tmp_path / f'{MODEL}_recipe.json').read_text(encoding='utf-8'))
-    recipe['blocks'][0]['center_mm'][2] += 1.0
+    recipe['parts'][0]['center_mm'][2] += 1.0
     (tmp_path / f'{MODEL}_recipe.json').write_text(json.dumps(recipe))
     with pytest.raises(ValueError, match='recipe_sha256'):
         RecipeDocument.load(tmp_path, MODEL)
@@ -247,12 +247,12 @@ def test_경로이름을_설계ID로_쓰지_않는다(tmp_path, design_id):
 
 
 def test_검사응답은_recipe와_placements_원본을_반환한다(pair):
-    """변환기 ① 두 문서 계약을 받으면 HMI 에 recipe · placements 를 함께 내보낸다(check_result/2.0)."""
+    """변환기 ① 두 문서 계약을 받으면 HMI 에 recipe · placements 를 함께 내보낸다(check_result/3.0)."""
     request = RecipeToBlocks(MODEL, 'chair', [75, 25, 15]).convert(*pair)
     checker = DesignChecker(CFG, blocks_to_recipe=lambda _: dict(recipe=pair[0], placements=pair[1]))
     ok, reason, text = checker.handle_json(json.dumps(request))
     result = json.loads(text)
-    assert (ok, reason) == (True, '') and result['ok'] and result['schema'] == 'check_result/2.0'
+    assert (ok, reason) == (True, '') and result['ok'] and result['schema'] == 'check_result/3.0'
     assert (result['recipe'], result['placements']) == pair
 
 
@@ -274,7 +274,7 @@ def test_옛_이름_structure로_돌려주면_ERROR(pair):
 
 
 def test_작업관리자는_원격_두문서로_조립한다(pair):
-    """선택·출발 조회에서 받은 design/2.0 의 두 문서로 같은 run을 DONE까지 진행한다. 가짜 로봇만 사용한다."""
+    """선택·출발 조회에서 받은 design/3.0 의 두 문서로 같은 run을 DONE까지 진행한다. 가짜 로봇만 사용한다."""
     io = FakeIO()
     io.get_design = lambda design_id, abort: (True, '', RecipeDocument(*pair).design(design_id))
     m = TaskManager(CFG, io, RunLogger(''))
@@ -289,12 +289,12 @@ def test_작업관리자는_원격_두문서로_조립한다(pair):
 
 
 def test_노드_로컬조회는_두문서를_반환한다(node, tmp_path):
-    """실제 TaskNode 로컬 메서드가 새 파일 이름으로 design/2.0 로컬 모양(design_id · recipe · placements)을 만든다."""
+    """실제 TaskNode 로컬 메서드가 새 파일 이름으로 design/3.0 로컬 모양(design_id · recipe · placements)을 만든다."""
     copy_pair(tmp_path)
     node.get_parameter = lambda name: SimpleNamespace(value=str(tmp_path))
     ok, reason, design = node._local_design(MODEL)
-    assert ok and reason == '' and design['schema'] == 'design/2.0' and design['design_id'] == MODEL
-    assert design['recipe']['schema'] == 'recipe/3.0' and design['placements']['schema'] == 'placements/2.0'
+    assert ok and reason == '' and design['schema'] == 'design/3.0' and design['design_id'] == MODEL
+    assert design['recipe']['schema'] == 'recipe/3.0' and design['placements']['schema'] == 'placements/3.0'
     (tmp_path / f'{MODEL}_recipe.json').write_text('{}')
     assert node._local_design(MODEL) == (False, '', None)
 
@@ -329,10 +329,10 @@ def test_웹이_import하는_두_파일은_ROS를_가져오지_않는다(name):
 
 
 def test_CSV_schema_칸이_옛_형식이면_받은_schema를_적어_거절(tmp_path):
-    """한세교 E-69 PR: CSV 에 schema 칸(모든 줄 placements/2.0)을 더했다 — 읽는 쪽이 앞자리 확인으로 거절할 수 있게."""
+    """한세교 E-69 PR: CSV 에 schema 칸(모든 줄 placements/3.0)을 더했다 — 읽는 쪽이 앞자리 확인으로 거절할 수 있게."""
     copy_pair(tmp_path)
     text = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8')
-    (tmp_path / f'{MODEL}_placements.csv').write_text(text.replace('placements/2.0', 'cad_recipe/1.0'), encoding='utf-8')
+    (tmp_path / f'{MODEL}_placements.csv').write_text(text.replace('placements/3.0', 'cad_recipe/1.0'), encoding='utf-8')
     with pytest.raises(ValueError, match='cad_recipe/1.0'):
         RecipeDocument.load(tmp_path, MODEL)
 
@@ -340,7 +340,7 @@ def test_CSV_schema_칸이_옛_형식이면_받은_schema를_적어_거절(tmp_p
 def test_CSV_schema_칸이_줄마다_다르면_거절(tmp_path):
     copy_pair(tmp_path)
     lines = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8').splitlines()
-    lines[-1] = lines[-1].replace('placements/2.0', 'placements/3.0')
+    lines[-1] = lines[-1].replace('placements/3.0', 'placements/2.0')
     (tmp_path / f'{MODEL}_placements.csv').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     with pytest.raises(ValueError, match='schema'):
         RecipeDocument.load(tmp_path, MODEL)
@@ -353,4 +353,4 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     doc = RecipeDocument.load(FIXTURES, model_id)
     assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
-        assert doc.placements['recipe_sha256'].startswith('40b007d4') and doc.placements['recipe_sha256'].endswith('ae10')     # 한세교 시험에 고정된 벤치 값
+        assert doc.placements['recipe_sha256'].startswith('2685767e') and doc.placements['recipe_sha256'].endswith('1c76')     # 한세교 시험에 고정된 벤치 값

@@ -6,8 +6,8 @@
   설계는 요청 design_id 칸으로만 고른다(E-52 ④ — 블록 이름에서 잘라 내지 않는다). 비었으면 success=false, reason ERROR(wrist_block 과 같음).
   part_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)을 그대로 맞춘다.
   설계 읽기는 wrist_block 과 같다(**task · wrist_block 과 같은 design_source 값을 준다**, W157):
-    remote(기본)  `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/2.0)으로 받는다 — AI 생성 · 스캔 설계(DB에만 있음)도 같은 길.
-                  design/2.0 → block_checker.recipe_from_design → motion_math.recipe_blocks 로 블록 이름 · 윗면 높이를 만든다.
+    remote(기본)  `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — AI 생성 · 스캔 설계(DB에만 있음)도 같은 길.
+                  design/3.0 → block_checker.recipe_from_design → motion_math.recipe_blocks 로 블록 이름 · 윗면 높이를 만든다.
     local         `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 옆 `_placements.csv` 도)만(웹 없이 개발할 때 명시).
   캐시는 한 판(run) 안에서만(design_cache.RunDesignCache — wrist_block 과 같은 규칙): 요청 run_id 가 지난 요청과 다르면 설계를 다시 읽고,
   같으면(블록을 전부 묻든 몇 개 묻든) 읽어 둔 설계를 쓴다. 빈 run_id 는 판 구분 없음(CheckProgress.srv) — 빈 값끼리는 캐시, 이름 있는 판과 오가면 다시 읽는다.
@@ -182,8 +182,8 @@ class MockWristBlock(Node):
         return tops, ''
 
     def _remote_tops(self, design_id):
-        """/d2/hmi/get_design 으로 design/2.0 을 받아 윗면 높이를 만든다. 출력: (tops, '') 또는 (None, 코드) — wrist_block._remote_checker 와 같은 코드:
-        서버 없음 → ERROR · timeout.service_s 안에 답 없음 → TIMEOUT · success=false → ERROR · JSON · design/2.0 형식(옛 design/1 은 거절) · 짝 해시 ·
+        """/d2/hmi/get_design 으로 design/3.0 을 받아 윗면 높이를 만든다. 출력: (tops, '') 또는 (None, 코드) — wrist_block._remote_checker 와 같은 코드:
+        서버 없음 → ERROR · timeout.service_s 안에 답 없음 → TIMEOUT · success=false → ERROR · JSON · design/3.0 형식(옛 design/1 은 거절) · 짝 해시 ·
         레시피 내용 오류 → ERROR. 로컬 파일로 몰래 대신하지 않는다. 바깥 영향: get_design 요청 하나 · 로그."""
         if not self.cli_design.service_is_ready():
             self.get_logger().error('get_design 서버가 없다(다리 · 웹?) — 설계 %s 를 못 받음 → ERROR' % design_id)
@@ -199,7 +199,7 @@ class MockWristBlock(Node):
             return None, 'ERROR'
         try:
             tops = recipe_tops(self.cfg, recipe_from_design(json.loads(res.response_json), design_id))
-        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/2.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡는다
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/3.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡는다
             self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
             return None, 'ERROR'
         self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(tops)))

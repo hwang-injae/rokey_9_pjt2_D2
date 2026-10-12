@@ -184,14 +184,14 @@ def test_new_full_names_match_and_foreign_ids_unknown():
     assert all(math.isnan(r['top_z_m']) and math.isnan(r['dz_m']) for r in res[1:3])
 
 
-# ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/2.0) → recipe_blocks 에 넣을 레시피 ----------------
+# ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/3.0) → recipe_blocks 에 넣을 레시피 ----------------
 RECIPE = {'schema': 'recipe/3.0', 'model_id': '001_CHAIR_BENCH_V000', 'stocks': [], 'blocks': []}
-PLACEMENTS = {'schema': 'placements/2.0', 'model_id': '001_CHAIR_BENCH_V000', 'recipe_sha256': recipe_sha256(RECIPE), 'steps': []}
+PLACEMENTS = {'schema': 'placements/3.0', 'model_id': '001_CHAIR_BENCH_V000', 'recipe_sha256': recipe_sha256(RECIPE), 'steps': []}
 
 
 def design(recipe=RECIPE, placements=PLACEMENTS, design_id='001_CHAIR_BENCH_V000', **extra):
-    """시험용 design/2.0 dict. recipe · placements 가 None 이면 그 칸을 넣지 않는다."""
-    d = {'schema': 'design/2.0', 'design_id': design_id, **extra}
+    """시험용 design/3.0 dict. recipe · placements 가 None 이면 그 칸을 넣지 않는다."""
+    d = {'schema': 'design/3.0', 'design_id': design_id, **extra}
     if recipe is not None:
         d['recipe'] = recipe
     if placements is not None:
@@ -204,12 +204,12 @@ def test_recipe_sha256_matches_team_value():
     folder = ROOT / 'src/d2_task/test/fixtures'
     recipe = json.loads((folder / '001_CHAIR_BENCH_V000_recipe.json').read_text(encoding='utf-8'))
     csv_sha = (folder / '001_CHAIR_BENCH_V000_placements.csv').read_text(encoding='utf-8').splitlines()[1].split(',')[-2]
-    assert recipe_sha256(recipe) == csv_sha == '40b007d4311671d1856429b20dfa8801f17a5bcc79c6280226c016d397efae10'
+    assert recipe_sha256(recipe) == csv_sha == '2685767e217623bd2dcbe58d52625b1feccb32f35ab7ce1bd7a829b1b4081c76'
 
 
 def test_recipe_from_design_attaches_structure():
-    """design/2.0: 조립 방법에 구조를 'structure' 칸으로 붙인다(load_recipe 와 같은 모양). 입력 design 은 바꾸지 않는다."""
-    d = design(family='chair', blocks={'schema': 'blocks/2.0'})
+    """design/3.0: 조립 방법에 구조를 'structure' 칸으로 붙인다(load_recipe 와 같은 모양). 입력 design 은 바꾸지 않는다."""
+    d = design(family='chair', blocks={'schema': 'parts/3.0'})
     out = recipe_from_design(d, '001_CHAIR_BENCH_V000')
     assert out['structure'] is RECIPE
     assert {k: v for k, v in out.items() if k != 'structure'} == PLACEMENTS
@@ -221,7 +221,7 @@ OLD_RECIPE = {'schema': 'cad_recipe/1.0', 'model_id': '001_CHAIR_BENCH_V000', 's
 
 
 @pytest.mark.parametrize('bad', [
-    None, [], {'schema': 'blocks/2.0'},                                          # design/2.0 아님
+    None, [], {'schema': 'parts/3.0'},                                          # design/3.0 아님
     {'schema': 'design/1', 'design_id': '001_CHAIR_BENCH_V000', 'structure': OLD_STRUCT, 'recipe': OLD_RECIPE},   # 옛 E-52 design/1
     {'schema': 'design/1', 'design_id': '001_CHAIR_BENCH_V000', 'recipe': dict(OLD_RECIPE, schema='assembly.recipe/1.0')},
     design(OLD_STRUCT, OLD_RECIPE),                                              # 봉투만 새것 — 안은 옛 cad_* (칸 이름이 아니라 schema 로 본다)
@@ -240,7 +240,7 @@ def test_recipe_from_design_rejects(bad):
 
 @pytest.mark.parametrize('design_id, n', [('001_CHAIR_BENCH_V000', 11), ('002_CHAIR_BACK_V000', 16), ('003_DESK_STAND_V000', 9), ('004_DESK_PEDESTAL_V000', 11)])
 def test_local_and_get_design_paths_give_same_blocks(design_id, n):
-    """한석형 부탁(10/7): 로컬 파일 길(load_recipe)과 get_design 길(task 의 RecipeDocument.load(...).design() 으로 만든 design/2.0 →
+    """한석형 부탁(10/7): 로컬 파일 길(load_recipe)과 get_design 길(task 의 RecipeDocument.load(...).design() 으로 만든 design/3.0 →
     recipe_from_design)이 같은 블록 이름 · 자리를 낸다. 작업 관리자(TaskPlanner)가 쓰는 블록 이름과도 같다.
     d2_motion · d2_task 가 import 되지 않으면(CI 의 d2_vision 시험은 d2_vision 만 경로에 넣는다) 건너뛴다 — 로컬에서 colcon 빌드 뒤 돈다."""
     mm = pytest.importorskip('d2_motion.motion_math')

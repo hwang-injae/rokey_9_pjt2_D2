@@ -5,7 +5,7 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
 이 클래스는 MQTT 를 전혀 모른다. task 노드(task_node.py)가 콜백에서 on_* · command 를 부르고,
 작업 스레드 하나가 run_once() 를 되풀이한다.
 바깥 일(이동 · 관측 · 집기 · 방송)은 생성할 때 받은 io 객체로 한다. io 가 갖춰야 할 것(ROS 노드나 시험용 가짜):
-  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/2.0 dict). 제한 시간은 io 가 건다
+  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/3.0 dict). 제한 시간은 io 가 건다
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
   check_progress(part_ids, should_abort) -> (ok, reason, rows)   rows = {part_id: {state, dx_m, dy_m, dz_m, top_z_m}}
@@ -19,7 +19,7 @@ should_abort() 가 참이 되면(정지 신호 · Ctrl+C) 곧바로 빠져나와
 범위: 자동 조립 상태 11개 + 기록(CSV · run_id, W065 — RunLogger), 설계 조회 · 결과 저장 · 시간 제한(W119 일부).
 웹 끊김은 WAIT_HMI 로 기다린다(서기 궤적 아님). 스캔은 촬영 자세 이동 → 점군 수집 → 추론 → 검토 순서다.
 run_id 는 조립 출발(READY → CHECK) 또는 스캔 시작(SCAN_MOVE) 때 새로 만든다. 조립 정지 · 복구 · 공급 보충은 같은 ID 를 쓴다.
-끝난 조립의 build/1 요약은 last_build(최근 결과 표시용)와 pending_builds(run_id 별 미전송 요약)에 둔다.
+끝난 조립의 build/2 요약은 last_build(최근 결과 표시용)와 pending_builds(run_id 별 미전송 요약)에 둔다.
 /d2/hmi/save_build 로 보내는 일은 task 노드가 하고(네트워크 대기는 이 클래스의 잠금 밖), 이 클래스는 무엇을 보낼지(builds_to_send) ·
 답이 오면 어떻게 할지(build_result)만 정한다. 저장이 확인된 run_id 만 목록에서 지운다 — 실패 · 시간 초과 · 잘못된 답은 요약을 남긴다.
 WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부지만 SDD 5장 상태표에 있어 W044 에서 먼저 구현했다 — **W119 완료가 아니다**
@@ -42,8 +42,8 @@ from d2_task.scatter_pick import REOBSERVE, REPLAN_SAME, ScatterFlow, StepTracke
 from d2_task.task_planner import TaskPlanner
 
 RECIPE_SCHEMA = 'recipe/3.0'
-PLACEMENTS_SCHEMA = 'placements/2.0'
-DESIGN_SCHEMA = 'design/2.0'
+PLACEMENTS_SCHEMA = 'placements/3.0'
+DESIGN_SCHEMA = 'design/3.0'
 
 GRIPPER_POLL_S = 0.05                          # gripper 상태 대기 간격(s) — 정지가 끼면 이 안에 알아본다
 LOG = logging.getLogger('d2_task')
@@ -92,8 +92,8 @@ class TaskManager:
         self.cfg, self.io = cfg, io
         self.logger = logger if logger is not None else RunLogger()
         self.run_id = None                        # 지금(또는 방금 끝난) 조립의 run_id. 새 설계를 고르거나 IDLE 로 가면 비운다
-        self.last_build = None                    # 가장 최근에 끝난 조립의 build/1 요약(표시용). 새 출발로는 지우지 않는다
-        self.pending_builds = {}                  # run_id → 아직 DB 저장이 확인 안 된 build/1 요약(복사본)
+        self.last_build = None                    # 가장 최근에 끝난 조립의 build/2 요약(표시용). 새 출발로는 지우지 않는다
+        self.pending_builds = {}                  # run_id → 아직 DB 저장이 확인 안 된 build/2 요약(복사본)
         self._build_inflight = set()              # 지금 save_build 요청을 보내고 답을 기다리는 run_id
         self._build_last_try = {}                 # run_id → 마지막으로 보낸 시각(monotonic, 다시 보내기 간격 계산)
         self._build_ready = set()                 # 디스크 보관이 끝났거나(성공 · 실패) 보관하지 않는 run_id — 이것만 보낸다
@@ -144,7 +144,7 @@ class TaskManager:
         self._hmi_seen_at = None                  # PC 사이 stamp 대신 이 PC 의 단조 시계로 수신 간격을 잰다
         self._hmi_pause = False                   # 잠깐 끊겼다 다시 붙어도 사람의 start 전에는 풀지 않는다
         self._hmi_recheck = False                 # WAIT_HMI 의 start 는 SELECT 에서 진행표부터 다시 확인한다
-        self._scan_run = False                    # 스캔 CSV 는 남기되 조립 결과 build/1 로 보내지 않는다
+        self._scan_run = False                    # 스캔 CSV 는 남기되 조립 결과 build/2 로 보내지 않는다
         self._scan_poses, self._scan_index = (), 0
         for run_id, summary in self.logger.load_pending():
             self.pending_builds[run_id] = summary
@@ -287,7 +287,7 @@ class TaskManager:
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
         거절한다(로컬 파일로 몰래 대신하지 않는다 — 개발용 로컬은 노드가 design_source=local 로 명시해야 한다).
         reason 은 IRD 7장에 이미 있는 코드만 쓴다: 운전 중 'BUSY', 정지 중 'STOPPED', 조회 시간 초과 'TIMEOUT'. 맞는 코드가 없는 거절(설계 없음 ·
-        점검 실패 · 아직 없는 명령)은 reason 을 빈 값으로 두고 이유를 state/1 의 message 글자로만 알린다.
+        점검 실패 · 아직 없는 명령)은 reason 을 빈 값으로 두고 이유를 state/2 의 message 글자로만 알린다.
         """
         if cmd == 'select_design':
             return self._lookup_then(design_id, 'select')
@@ -638,7 +638,7 @@ class TaskManager:
         self.planner, self.design_id, self.part_id, self.placed = None, None, None, None
         self._scan_run = True
         self._scan_poses, self._scan_index = tuple(poses), 0
-        self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/1 은 만들지 않는다
+        self.run_id = self.logger.start_run('', 0)     # 구조가 아직 설계가 아니므로 CSV 만 열고 build/2 은 만들지 않는다
         self.logger.log('scan', None, 'start')
         self._set('SCAN_MOVE', 'scan_running', '스캔 촬영 자세로 갑니다')
         return True, ''
@@ -671,7 +671,7 @@ class TaskManager:
             self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', 'scan_running', '스캔 촬영을 마쳤습니다')
 
     def _scan_infer(self):
-        """모은 점군을 추론해 scan_result/1.2 로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
+        """모은 점군을 추론해 scan_result/2.0 로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
 
         구조 합격 검사는 HMI의 check_design 요청 때 한다. 여기서는 JSON 형식·필수 값만 확인하며 잘못된 답은 SCAN_FAILED.
         """
@@ -703,7 +703,7 @@ class TaskManager:
             cloud = body.get('cloud_path', '')                # 화면 점군 창용 PLY 경로(로봇 PC). 선택 칸(10/8 PL, IRD 4.2 · 6장): 없거나 빈 글자 = 점군 없음 → 스캔은 그대로, 결과에서 뺀다
             if not isinstance(cloud, str):                    # 글자가 아닌 값(null · 숫자 · 목록 …)만 잘못된 응답이다 → SCAN_FAILED
                 raise ValueError('cloud_path 가 글자가 아니다')
-            result = dict(schema='scan_result/1.2', stamp=time.time(), run_id=self.run_id, blocks=copy.deepcopy(blocks),
+            result = dict(schema='scan_result/2.0', stamp=time.time(), run_id=self.run_id, blocks=copy.deepcopy(blocks),
                           inferred_count=count, image_path=body['image_path'], poses_used=list(self._scan_poses))
             if cloud:
                 result['cloud_path'] = cloud                  # 비어 있지 않은 글자는 그대로 넘긴다(작업 관리자는 파일을 열지 않는다)
@@ -945,9 +945,9 @@ class TaskManager:
             return self._start()
 
     def _planner_from(self, design, design_id):
-        """조회 답(design/2.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
+        """조회 답(design/3.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
 
-        검증: 객체 · schema design/2.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/3.0 · placements/2.0 객체
+        검증: 객체 · schema design/3.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/3.0 · placements/3.0 객체
         (두 문서는 block 이름과 recipe_sha256 으로 연결한다). 칸 이름이 아니라 schema 로 내용을 확인하고, 옛 형식(design/1 · cad_*)은 받은 schema 를
         적어 거절한다(변환하지 않음). 레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
         """
@@ -1075,10 +1075,10 @@ class TaskManager:
         return bool(st) and self.safety_count > count and not st.get('stopped') and not st.get('locked')
 
     def _finish_run(self, result):
-        """열린 CSV를 result로 닫는다. 조립만 build/1 요약을 보존하고 스캔은 DB 조립 목록에 넣지 않는다. run_id는 화면에 남긴다."""
+        """열린 CSV를 result로 닫는다. 조립만 build/2 요약을 보존하고 스캔은 DB 조립 목록에 넣지 않는다. run_id는 화면에 남긴다."""
         summary = self.logger.finish(result)
         if self._scan_run:
-            return                                  # 스캔은 CSV 와 scan_result 로 남기고 조립 build/1 로 저장하지 않는다
+            return                                  # 스캔은 CSV 와 scan_result 로 남기고 조립 build/2 로 저장하지 않는다
         if summary is not None:
             with self._lock:
                 self.last_build = summary
@@ -1121,7 +1121,7 @@ class TaskManager:
             self._publish(message_id, message)
 
     def _publish(self, message_id, message):
-        """state/1 한 건을 보낸다. run_id 는 조립 중(끝난 직후 포함)에만 값, message_id 는 IRD 2장 값 또는 null."""
-        self.io.publish_state({'schema': 'state/1', 'stamp': time.time(), 'mode': 'auto', 'state': self.state,
+        """state/2 한 건을 보낸다. run_id 는 조립 중(끝난 직후 포함)에만 값, message_id 는 IRD 2장 값 또는 null."""
+        self.io.publish_state({'schema': 'state/2', 'stamp': time.time(), 'mode': 'auto', 'state': self.state,
                                'run_id': self.run_id, 'design_id': self.design_id, 'part_id': self.part_id,
                                'message_id': message_id, 'message': message})

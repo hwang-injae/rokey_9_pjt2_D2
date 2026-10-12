@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""미전송 build/1 요약의 디스크 보관 시험 (W119) — log_dir/pending_builds/<run_id>.json.
+"""미전송 build/2 요약의 디스크 보관 시험 (W119) — log_dir/pending_builds/<run_id>.json.
 
 저장 → 전송 → 확인 뒤 삭제 순서, 시작할 때 복원, 깨진 파일 · 임시 파일, 저장 · 삭제 실패, 디스크가 멈춘 동안의 정지 · 취소.
 파일 쓰기는 기록 스레드가 하므로 파일을 보기 전에 flush 로 다 처리될 때까지 기다린다.
@@ -75,7 +75,7 @@ def test_저장_뒤_새_객체에서_복원되고_다시_보낼_수_있다(tmp_p
     a = assemble(m, io)
     assert log.flush(5.0) and files(tmp_path) == [f'{a}.json']
     saved = json.loads((tmp_path / 'pending_builds' / f'{a}.json').read_text(encoding='utf-8'))
-    assert saved == m.pending_builds[a] and saved['schema'] == 'build/1'
+    assert saved == m.pending_builds[a] and saved['schema'] == 'build/2'
     m2, io2, log2 = make(tmp_path)                                  # 재시작: 새 객체
     assert m2.pending_builds == {a: saved}
     assert [r for r, _ in m2.builds_to_send(0.0, RETRY_S)] == [a]   # 로봇 작업을 받기 전에 이미 복원돼 있고 바로 보낼 수 있다
@@ -149,13 +149,13 @@ def test_깨진_파일과_임시_파일은_복원하지_않고_지우지도_않�
 
     put('R_깨짐.json', '{깨진')
     put('R_배열.json', '[]')
-    put('R_schema.json', dict(good, run_id='R_schema', schema='build/2'))
+    put('R_schema.json', dict(good, run_id='R_schema', schema='build/3'))
     put('R_이름다름.json', dict(good, run_id='다른이름'))
     put('R_칸없음.json', {k: v for k, v in dict(good, run_id='R_칸없음').items() if k != 'placed'})
     put('R_자료형.json', dict(good, run_id='R_자료형', placed='11'))
     put('R_결과.json', dict(good, run_id='R_결과', result='FAILED'))
-    put('R_블록.json', dict(good, run_id='R_블록', blocks=[{'part_id': 'B1', 'dz_m': 'x', 'dx_m': None, 'dy_m': None}]))
-    put('R_NaN.json', '{"schema":"build/1","run_id":"R_NaN","duration_s":NaN}')
+    put('R_블록.json', dict(good, run_id='R_블록', parts=[{'part_id': 'B1', 'dz_m': 'x', 'dx_m': None, 'dy_m': None}]))
+    put('R_NaN.json', '{"schema":"build/2","run_id":"R_NaN","duration_s":NaN}')
     put('R_임시.json.tmp', dict(good, run_id='R_임시'))              # 쓰다 만 임시 파일
     before = files(tmp_path)
     got = RunLogger(str(tmp_path)).load_pending()
@@ -255,11 +255,11 @@ def test_디스크가_멈춘_동안에도_정지와_종료는_기다리지_않�
     assert log.flush(5.0)
 
 
-def test_보관한_요약의_칸은_build_1_그대로(tmp_path):
+def test_보관한_요약의_칸은_build_2_그대로(tmp_path):
     m, io, log = make(tmp_path)
     a = assemble(m, io)
     assert log.flush(5.0)
     saved = json.loads((tmp_path / 'pending_builds' / f'{a}.json').read_text(encoding='utf-8'))
-    assert set(saved) == {'schema', 'run_id', 'design_id', 'result', 'placed', 'total', 'duration_s', 'stop_count', 'blocks'}
-    assert saved['blocks'][0].keys() == {'part_id', 'dz_m', 'dx_m', 'dy_m'}
-    assert saved['blocks'][0]['dx_m'] is None
+    assert set(saved) == {'schema', 'run_id', 'design_id', 'result', 'placed', 'total', 'duration_s', 'stop_count', 'parts'}
+    assert saved['parts'][0].keys() == {'part_id', 'dz_m', 'dx_m', 'dy_m'}
+    assert saved['parts'][0]['dx_m'] is None
