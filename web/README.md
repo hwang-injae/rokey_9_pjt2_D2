@@ -227,3 +227,14 @@ WantedBy=multi-user.target
 `sudo systemctl daemon-reload`와 `sudo systemctl enable --now d2-mqtt-access.service` 후 check를 통과한 뒤 compose를 기동한다. Docker를 다시 시작하거나 IP가 바뀌면 서비스도 다시 실행하고 check한다. 서비스 설치 없이 수동 apply/check를 매번 수행해도 된다.
 
 검증: 로봇 PC는1883연결성공, 비허용PC는1883연결실패, 외부PC는8000연결실패, 웹PC localhost:8000성공을 각각 실제로 확인한다. 방화벽 적용 전 수행한 과거 LAN 성공 결과를 제한 적용 후 검증으로 대신 쓰지 않는다.
+
+
+외부 PC 시험 명령(로봇 PC와 다른 PC에서 각각 같은 명령 실행):
+
+```bash
+python3 tools/check_web_ports.py 172.24.2.213
+```
+
+명령은 TCP 연결 후 닫기만 하며 MQTT 메시지/로봇 명령을 보내지 않는다. source_ip와connected를기록한다. 로봇PC1883=true,다른PC1883=false/8000=false가필요하다. 웹PC자신이나내부컨테이너의접속은외부PC시험으로대체하지않는다.
+
+실제설치한지속성구성은 `/usr/local/libexec/d2-mqtt-access.sh` 및 `/etc/d2-mqtt-access.env`를사용한다. systemd서비스에EnvironmentFile과 `PartOf=docker.service`를두어Docker재시작에도정책을다시적용한다. Wi-Fi IP변경시브로커를정지한뒤관리자가env의두IP를갱신하고 `sudo systemctl restart d2-mqtt-access.service`,새IP로check한뒤D2_WEB_IPV4를바꿔compose기동한다. 실제재부팅시험은enabled/active확인과별도로기록한다.
