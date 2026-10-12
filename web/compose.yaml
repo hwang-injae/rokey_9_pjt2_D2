@@ -1,6 +1,6 @@
 # 웹 PC 컨테이너(W102) — mosquitto · web. DB 는 W088 에서 더한다.
 # 실행: WEB_UID=$(id -u) WEB_GID=$(id -g) docker compose up -d   (WEB_UID · WEB_GID 가 없으면 시작하지 않는다)
-# 호스트 실행(W173)과 같은 동작: 브로커 · backend 모두 호스트의 127.0.0.1 에만 공개. LAN 공개는 별도 단계.
+# MQTT는 웹 PC Wi-Fi IPv4에만 공개하고 DOCKER-USER로 로봇 PC만 허용한다. 화면은 localhost에서만 사용한다.
 # 코드 · 설정 · 레시피는 이미지에 복사하지 않고 필요한 경로만 읽기 전용으로 연결한다(.venv · node_modules · .env 는 연결하지 않음).
 services:
   mosquitto:
@@ -8,8 +8,8 @@ services:
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
-      - "127.0.0.1:1883:1883"
-    restart: unless-stopped
+      - "${D2_WEB_IPV4:?웹 PC Wi-Fi IPv4를 지정한다}:1883:1883"
+    restart: "no"  # 재부팅 후 방화벽 확인 전에 브로커를 자동 공개하지 않는다
 
   web:
     build:
