@@ -255,6 +255,12 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
     # 공급 칸은 잡기가 하나로 고정이다: 다른 잡기로 집으면 손목을 돌려 찍은 방향과 달라진다 (10/6 실기)
     if slot_cfg is not None and slot_cfg.get('grasp') not in (None, grasp):
         raise ValueError(f'공급 칸 {slot} 은 {slot_cfg["grasp"]} 칸인데 잡기는 {grasp}')
+    # 카메라로 잰 윗면이 낮게 나오면 블록 바닥이 작업대 아래로 계산되고, 그 자리에 붙인 쥔 블록 상자가 작업대와 겹쳐
+    # 들어 올리기부터 막힌다(10/11 실기: 윗면 −4.2 mm → 바닥 1 mm 아래 → lift CheckStartStateCollision held-table).
+    # 블록은 작업대를 뚫을 수 없으므로 바닥을 작업대 높이로 올린다 — 잡는 높이는 그만큼(수 mm 이내)만 바뀐다
+    floor = cfg['table_z_m'] + half_height(pick_rot, cfg['block_actual_m'])
+    if pick_center[2] < floor:
+        pick_center = (pick_center[0], pick_center[1], floor)
     pick_xyz, pick_q, _ = tcp_target(cfg, pick_center, pick_rot, grasp, slot_cfg)
     # 놓는 높이는 조립 원점에서 교시한 높이(tcp_z_m, record_cell 의 m)가 있으면 그것 기준, 없으면 손가락 끝 보정식 (원본과 같음)
     place_xyz, place_q, held = tcp_target(cfg, place_center, place_rot, grasp, cfg['assembly_origin'])

@@ -134,6 +134,19 @@ def test_pick_place_tcp_slot1(robot_cfg):
     assert len(held['size_m']) == 3 and len(held['offset_m']) == 3
 
 
+def test_pick_place_tcp_keeps_block_bottom_on_table(robot_cfg):
+    """흩뿌림(칸 없음)에서 잰 중심이 낮아 블록 바닥이 작업대 아래로 계산되면 바닥을 작업대에 맞춘다 — 그렇게 안 하면 쥔 블록 상자가
+    작업대와 겹쳐 들어 올리기가 막힌다(10/11 실기). 작업대 위에 제대로 있는 블록은 그대로."""
+    rot = mm.rpy_matrix(0.0, 0.0, 0.3)
+    floor = robot_cfg['table_z_m'] + mm.half_height(rot, robot_cfg['block_actual_m'])
+    place = _place_center(robot_cfg, rot)
+    low = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor - 0.001), rot, place, rot, 'FLAT_SHORT')
+    ok = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor), rot, place, rot, 'FLAT_SHORT')
+    assert close(low[0], ok[0])
+    above = mm.pick_place_tcp(robot_cfg, (0.40, 0.22, floor + 0.015), rot, place, rot, 'FLAT_SHORT')   # 다른 블록 위 — 그대로
+    assert abs((above[0][2] - ok[0][2]) - 0.015) < 1e-9
+
+
 def test_pick_place_tcp_rejects_other_grasp_in_slot(robot_cfg):
     """공급 칸의 잡기는 하나로 고정 — 칸 1(FLAT_LONG)에 FLAT_SHORT 를 주면 ValueError (10/6 실기)."""
     center, rot = mm.slot_block_pose(robot_cfg, 1)
