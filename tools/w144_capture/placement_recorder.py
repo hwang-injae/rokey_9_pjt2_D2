@@ -22,9 +22,9 @@ class PlacementRecorder:
         self.rows=[]
 
     def _capture(self, destination):
-        """capture.py로 정지 상태의 RGB·깊이·TF20쌍 저장. 수집 실패면 예외, 로봇 이동 없음."""
+        """capture.py로 정지 상태의 RGB·깊이·TF 한 쌍 저장. 수집 실패면 예외, 로봇 이동 없음."""
         subprocess.run([sys.executable,str(Path(__file__).with_name('capture.py')),
-                        '--out',str(destination),'--label',destination.name],check=True,timeout=40)
+                        '--out',str(destination),'--label',destination.name,'--frames','1'],check=True,timeout=40)
 
     def after_place(self, block_id, target_center_m, target_quaternion_xyzw):
         """배치 성공 뒤에만 호출: 목표 저장→observe 이동→촬영. 실패는 정지 콜백 후 다시 예외를 낸다.

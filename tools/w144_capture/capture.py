@@ -101,6 +101,9 @@ class Capture(Node):
                       distortion_model=self.info.distortion_model),
                       base_camera=self.lookup(color.header.frame_id, ts), base_tcp=self.lookup(self.args.tcp, ts))
         name = f'frame_{len(self.samples):03d}'
+        import cv2
+        if not cv2.imwrite(str(self.args.out / (name + '.png')), c):
+            raise RuntimeError('촬영 사진 저장 실패')
         np.savez_compressed(self.args.out / (name + '.npz'), color_bgr=c, depth_m=dm)
         (self.args.out / (name + '.json')).write_text(json.dumps(record, ensure_ascii=False, indent=2))
         self.samples.append(record)
@@ -116,7 +119,7 @@ def main():
     p.add_argument('--prefix', default='/camera/camera')
     p.add_argument('--base', default='base_link')
     p.add_argument('--tcp', default='rg2_tcp')
-    p.add_argument('--frames', type=int, default=20)
+    p.add_argument('--frames', type=int, default=1)
     p.add_argument('--timeout-s', type=float, default=30)
     p.add_argument('--max-skew-ms', type=float, default=20)
     a = p.parse_args()

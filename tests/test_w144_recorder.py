@@ -29,3 +29,14 @@ def test_failed_observe_stops_and_keeps_failure(tmp_path):
     with pytest.raises(RuntimeError):r.after_place('a',[0,0,0],[0,0,0,1])
     assert events==['stop']
     assert r.finish(False).is_file() and not r.rows[0]['captured']
+
+
+
+def test_capture_requests_exactly_one_pair(tmp_path,monkeypatch):
+    """관측1회에RGB·깊이1쌍만요청하여20장반복촬영으로회귀하지않는다."""
+    calls=[]
+    monkeypatch.setattr('placement_recorder.subprocess.run',lambda args,**kwargs:calls.append(args))
+    r=PlacementRecorder(tmp_path/'run',lambda:True,lambda:None)
+    r._capture(tmp_path/'capture')
+    assert len(calls)==1
+    assert calls[0][calls[0].index('--frames')+1]=='1'
