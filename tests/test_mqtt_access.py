@@ -17,6 +17,7 @@ p=Path(os.environ['D2_RULES_FILE']);rules=json.loads(p.read_text()) if p.exists(
 a=sys.argv[1:];a=a[1:] if a[0]=='-w' else a
 op=a[0];args=a[2:]
 if op=='-C':sys.exit(0 if args in rules else 1)
+if op=='-D':rules.remove(args);p.write_text(json.dumps(rules))
 if op=='-I':rules.insert(int(args[0])-1,args[1:]);p.write_text(json.dumps(rules))
 if op=='-S':
  for rule in rules:
@@ -55,3 +56,33 @@ def test_invalid_address_changes_nothing(tmp_path):
     for address in ('bad','::1','127.0.0.1'):
         assert subprocess.run(['bash',str(SCRIPT),'apply',address,'172.24.2.213'],env=env,capture_output=True).returncode!=0
     assert not path.exists()
+
+
+def packet_result(rules,source,direction):
+    """저장된 규칙의 출발지/원본방향 조건을 평가한다. 실제 kernel 대신 명시 모델이다."""
+    for rule in rules:
+        if '--ctdir' in rule and rule[rule.index('--ctdir')+1]!=direction:continue
+        if '-s' in rule and rule[rule.index('-s')+1]!=source:continue
+        return rule[-1]
+    return 'CONTINUE'
+
+
+def test_robot_request_passes_and_reply_is_not_dropped(tmp_path):
+    """허용로봇SYN은통과하고응답SYN-ACK은거부규칙에서제외,다른요청만차단한다."""
+    env,path=firewall(tmp_path)
+    subprocess.run(['bash',str(SCRIPT),'apply','172.24.0.137','172.24.2.213'],env=env,check=True)
+    rules=json.loads(path.read_text())
+    assert packet_result(rules,'172.24.0.137','ORIGINAL')=='RETURN'
+    assert packet_result(rules,'172.24.2.119','ORIGINAL')=='DROP'
+    assert packet_result(rules,'172.18.0.2','REPLY')=='CONTINUE'
+
+
+def test_legacy_bidirectional_rules_are_removed(tmp_path):
+    """이전양방향DROP이새규칙뒤에남아응답을막지않도록정확히이전두규칙만제거한다."""
+    env,path=firewall(tmp_path)
+    base=['-p','tcp','-m','conntrack','--ctorigdst','172.24.2.213','--ctorigdstport','1883']
+    path.write_text(json.dumps([base+['-s','172.24.0.137','-j','RETURN'],base+['-j','DROP']]))
+    subprocess.run(['bash',str(SCRIPT),'apply','172.24.0.137','172.24.2.213'],env=env,check=True)
+    rules=json.loads(path.read_text())
+    assert len(rules)==2 and all('--ctdir' in rule for rule in rules)
+    assert packet_result(rules,'172.18.0.2','REPLY')=='CONTINUE'
