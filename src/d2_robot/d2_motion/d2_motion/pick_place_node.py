@@ -20,7 +20,8 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_motion.executor import MoveItExecutor
-from d2_motion.motion_math import GRASP_AXIS, matrix_from_quat, move_speed_scale, pick_open_width, pick_place_tcp
+from d2_motion.motion_math import (GRASP_AXIS, matrix_from_quat, move_speed_scale, pick_open_width, pick_place_tcp,
+                                  scan_structure_box)
 from d2_safety.safe_stop import SafeStop, init_ros
 
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
@@ -29,8 +30,6 @@ GRIPPER_TIMEOUT_S = 10.0
 # 그리퍼 기본 상태 = 활짝(10/11 박진용): 관측 · 촬영 때 좁은 손가락이 손목 카메라 화면에 찍힌다(W134 · B34).
 # RG2 최대 열림 — 그리퍼 노드가 최대 명령으로 잘라 보낸다. 집는 폭은 지금처럼 집을 블록 바로 위에서 맞춘다
 OPEN_FULL_M = 0.110
-# move_to 가 받는 자세 이름 (IRD 4.2 MoveTo). 값은 robot.yaml <이름>_pose — 공급 관측 · 스캔 앞 · 옆은 W134 교시
-MOVE_TARGETS = ('observe', 'home', 'observe_supply', 'observe_front', 'observe_side')
 # run_recipe --grasp-test 의 block_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
 TEST_BLOCK_PREFIX = 'GRASP_P'
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
@@ -120,11 +119,12 @@ class PickPlaceNode(Node):
         return None
 
     # ---------- 동작 단위 ----------
-    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None, obstacles=None):
+    def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None, obstacles=None, structure=None):
         """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다. 반환: (성공, 실패 이유).
 
         skip_slot = 장애물로 넣지 않을 공급 칸 (집으러 가는 칸, 방금 집은 칸). scale = 속도 비율(없으면 robot.yaml speed_scale).
         obstacles = 흩뿌림의 주변 블록 자세 목록(PickPlace.obstacles) — 주면 공급 칸 가정 상자 대신 이것을 피한다(E-53 ②).
+        structure = 스캔 이동의 구조물 상자(motion_math.scan_structure_box) — 사람이 쌓아 장면에 없는 구조물을 피한다(W186).
         """
         # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
         if keep_down and not self.exe.valid(self.exe.current(), self.exe.down_constraint())[0]:
@@ -136,7 +136,7 @@ class PickPlaceNode(Node):
         for pad in (clear, clear / 2):
             for planner in PLANNERS:
                 jt, err = self.exe.plan(goal, keep_down, planner, pad_m=pad, skip_slot=skip_slot, scale=scale,
-                                        obstacles=obstacles)
+                                        obstacles=obstacles, structure=structure)
                 if jt is not None:
                     break
                 self.get_logger().warn(f'길 찾기 실패 ({planner}, 여유 {pad * 1000:.0f} mm): {err}')
@@ -377,16 +377,18 @@ class PickPlaceNode(Node):
                 self.get_logger().info(f'제어기 활성 {kind}: {got} (config/{kind}.json 과 같음)')
 
     def _on_move_to(self, req, res):
-        """정해진 자세(observe · home · observe_supply · observe_front · observe_side)로 간다. 다 간 뒤 답한다.
+        """robot.yaml 에 <target>_pose(joints_deg)가 있는 자세로 간다. 다 간 뒤 답한다(W186 — 고정 목록 대신 robot.yaml).
 
         도착한 뒤 블록을 쥐고 있지 않으면 그리퍼를 활짝 연다(기본 상태). 그리퍼가 답이 없으면 GRIPPER_NO_RESPONSE.
 
-        자세 값은 robot.yaml <target>_pose. 이름이 목록 밖이거나 값이 없으면(교시 전) PLAN_FAILED.
+        자세 값은 robot.yaml <target>_pose. 값이 없거나(교시 전 · 모르는 이름) 관절 6개가 아니면 PLAN_FAILED.
+        스캔 촬영 자세 사이를 오갈 때는 사람이 쌓은 구조물 자리 상자를 피해 계획한다(motion_math.scan_structure_box, W186).
         speed_ratio(0 = 평소, 0 < 값 ≤ 1 = 느리게, 다시 시작 뒤 첫 이동 0.5)를 speed_scale 에 곱한다. 범위 밖이면 PLAN_FAILED.
         """
         pose = self.cfg.get(f'{req.target}_pose')
         scale = move_speed_scale(self.cfg, req.speed_ratio)
-        if req.target not in MOVE_TARGETS or not pose or scale is None:
+        joints = pose.get('joints_deg') if isinstance(pose, dict) else None
+        if not isinstance(joints, list) or len(joints) != 6 or scale is None:
             self.get_logger().error(f'move_to {req.target}: 자세 없음 또는 speed_ratio {req.speed_ratio} 범위 밖')
             res.success, res.reason = False, 'PLAN_FAILED'
             return res
@@ -400,7 +402,11 @@ class PickPlaceNode(Node):
             res.success, res.reason = False, 'BUSY'
             return res
         try:
-            ok, why = self.go_free([math.radians(v) for v in pose['joints_deg']], self._halted, keep_down=False, scale=scale)
+            box = scan_structure_box(self.cfg, req.target, [math.degrees(v) for v in self.exe.current()])
+            if box is not None:
+                self.get_logger().info(f'move_to {req.target}: 스캔 구조물 상자 {box[1]} m 를 피해 계획')
+            ok, why = self.go_free([math.radians(v) for v in joints], self._halted, keep_down=False, scale=scale,
+                                   structure=box)
             # 도착한 뒤 기본 상태(활짝)로 — 관측 · 촬영 사진에 손가락이 안 찍히게. 블록을 쥐고 있으면 떨어뜨리므로 열지 않는다
             if ok and not self.holding:
                 why = grip_failure(self.grip(OPEN_FULL_M)) or ''

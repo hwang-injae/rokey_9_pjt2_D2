@@ -226,6 +226,28 @@ def move_speed_scale(cfg, speed_ratio):
     return cfg['speed_scale'] * speed_ratio
 
 
+def scan_structure_box(cfg, target, current_deg, tol_deg=1.0):
+    """스캔 이동 때 사람이 쌓은 구조물 자리에 둘 상자 (계획 요청에만 싣는다 — 실제 장면은 안 바뀐다, W186).
+
+    사람이 쌓은 구조물은 장면에 없어서 MoveIt 이 모르고, 대각선 촬영 자세는 구조물 가까이 지난다(10/12 실기 — 로봇 쪽
+    대각선은 상자와 여유 20 mm). 그래서 scan.poses 의 두 번째 자세부터 그 자세로 갈 때와, 그 자세에서 떠날 때만 상자를 둔다.
+    첫 자세(observe)로 갈 때는 두지 않는다 — 조립 중에도 observe 로 가며, 그때 손이 이 상자 안(놓은 블록 옆)에 있을 수 있다.
+    입력: target = move_to 자세 이름 · current_deg = 지금 관절값(도, 6개) · tol_deg = '그 자세에 있음'으로 볼 관절 차이(도).
+    반환: (중심 (x, y, z) m, 크기 (x, y, z) m) — 조립 원점 위, 바닥 = 작업면(table_z_m), 크기 = robot.yaml scan.structure_box_m.
+          둘 필요가 없거나 scan.structure_box_m 이 없으면 None.
+    """
+    scan = cfg.get('scan') or {}
+    size = scan.get('structure_box_m')
+    later = [p for p in (scan.get('poses') or [])[1:] if f'{p}_pose' in cfg]
+    if not size or not later:
+        return None
+    here = any(max(abs(a - b) for a, b in zip(cfg[f'{p}_pose']['joints_deg'], current_deg)) <= tol_deg for p in later)
+    if target not in later and not here:
+        return None
+    o = cfg['assembly_origin']
+    return (o['x_m'], o['y_m'], cfg['table_z_m'] + size[2] / 2), tuple(size)
+
+
 def pick_open_width(cfg, grasp, open_width_m):
     """집기 전에 여는 실제 폭 (m) (IRD 4.2 PickPlace open_width_m · W121 C-10).
 
