@@ -269,7 +269,7 @@ def test_경로이름을_설계ID로_쓰지_않는다(tmp_path, design_id):
 
 def test_검사응답은_recipe와_placements_원본을_반환한다(pair):
     """변환기 ① 두 문서 계약을 받으면 HMI 에 recipe · placements 를 함께 내보낸다(check_result/3.0)."""
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], placements=pair[1]))
     ok, reason, text = checker.handle_json(json.dumps(request))
     result = json.loads(text)
@@ -282,14 +282,14 @@ def test_변환기_두문서_누락은_ERROR(pair, missing):
     """부분 출력은 설계 합격이나 저장 가능한 결과로 전달하지 않는다."""
     output = dict(recipe=pair[0], placements=pair[1])
     del output[missing]
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: output)
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 
 
 def test_옛_이름_structure로_돌려주면_ERROR(pair):
     """E-52 의 {structure, recipe} 모양은 더 받지 않는다."""
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], structure=pair[1]))
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 

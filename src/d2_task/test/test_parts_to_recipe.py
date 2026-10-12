@@ -270,7 +270,8 @@ def test_role_list_file():
 def test_attached_to_design_checker(model_id):
     checker = DesignChecker(CFG)
     checker.parts_to_recipe = PartsToRecipe(checker.grasp_options, BLOCK_MM).convert
-    ok, reason, text = checker.handle_json(json.dumps(load_base(model_id)[1]))
+    document, blocks = load_base(model_id)
+    ok, reason, text = checker.handle_json(json.dumps(dict(blocks, base_recipe=document.recipe)))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
     assert result['recipe']['schema'] == 'recipe/3.0' and result['placements']['schema'] == 'placements/3.0'

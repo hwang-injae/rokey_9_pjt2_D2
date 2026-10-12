@@ -27,7 +27,7 @@ def test_4종_읽기_진행표_검사가_이어진다(model_id):
     planner = TaskPlanner(CFG, doc.recipe, doc.placements)
     assert len(planner.parts) == len(blocks['parts']) == IDS[model_id][2]
     assert all(b['part_id'].startswith(model_id + '_') for b in planner.parts)
-    result = DesignChecker(CFG).check(blocks)
+    result = DesignChecker(CFG).check(dict(blocks, design_id=model_id, base_recipe=doc.recipe))       # 실제 요청: 그 Template 의 V000 레시피를 통째로 싣는다
     assert result['ok'] and result['errors'] == [] and result['schema'] == 'check_result/3.0'
     assert result['min_margin_mm'] == DESIGNS[model_id][2]                 # V-45: 12.5 / 12.5 / 7.5 / 12.5
 

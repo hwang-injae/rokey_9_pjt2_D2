@@ -25,21 +25,37 @@ CONVERTED = {'recipe': _DOC.recipe, 'placements': _DOC.placements}      # 변환
 
 
 def base_design(model_id):
-    design_id, family, _ = DESIGNS[model_id]
-    """레시피 두 파일(시험용 사본)을 읽어 parts/3.0 으로 바꾼다. 읽기 실패는 시험에 알린다."""
+    """레시피 두 파일(시험용 사본)을 읽어 실제 check_design 요청(parts/3.0 + base_recipe = 그 Template 의 V000 레시피 통째)으로 바꾼다. 읽기 실패는 시험에 알린다."""
+    _, family, _ = DESIGNS[model_id]
     document = RecipeDocument.load(FIXTURES, model_id)
-    return RecipeToParts(design_id, family, BLOCK_MM).convert(document.recipe, document.placements)
+    request = RecipeToParts(model_id, family, BLOCK_MM).convert(document.recipe, document.placements)
+    return dict(request, base_recipe=copy.deepcopy(document.recipe))
 
 
 def design(*items):
-    """(x, y, z, ori) 들 → order 1.. 의 parts/3.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT)."""
+    """(x, y, z, ori) 들 → order 1.. 의 parts/3.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT). base_recipe 는 없다 — NO_TEMPLATE 과 같이 쓴다."""
     return {'schema': 'parts/3.0', 'design_id': 't', 'family': 'test',
             'parts': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
                        for i, (x, y, z, o) in enumerate(items, 1)]}
 
 
+class NoTemplate:
+    """기하(1~20번) 단독 시험용 Template 검사 대역 — 21번을 일부러 건너뛴다. 실제 서비스는 늘 진짜 TemplateChecker 를 쓰고(기본 생성자),
+    이 대역은 시험이 template_checker= 로 직접 넣을 때만 켜진다. 21번 시험은 test_template_checker.py."""
+
+    def read_base(self, request):
+        return None
+
+    def check(self, rules, parts):
+        return []
+
+
+NO_TEMPLATE = NoTemplate()
+
+
 def check(req, **kw):
-    return DesignChecker(CFG, **kw).check(req)
+    """기하 시험용: 늘 NO_TEMPLATE 대역을 쓴다(kw 로 바꿀 수 있음)."""
+    return DesignChecker(CFG, **{'template_checker': NO_TEMPLATE, **kw}).check(req)
 
 
 def reasons(res):
@@ -124,8 +140,6 @@ def test_작업영역_밖():
 
 
 @pytest.mark.parametrize('mutate, text', [
-    (lambda r: r.pop('parts'), 'parts'),
-    (lambda r: r.update(parts=[]), 'parts'),
     (lambda r: r['parts'][0].pop('ori'), 'ori 없음'),
     (lambda r: r['parts'][0].update(ori='q'), 'ori='),
     (lambda r: r['parts'][0].update(x='1'), 'x 가 숫자가 아니다'),
@@ -141,8 +155,20 @@ def test_형식_오류(mutate, text):
     assert text in res['errors'][0]['detail']
 
 
+@pytest.mark.parametrize('mutate', [lambda r: r.pop('parts'), lambda r: r.update(parts=[]), lambda r: r.update(parts={}),
+                                    lambda r: r.update(parts='x'), lambda r: r.pop('design_id'), lambda r: r.update(design_id=5),
+                                    lambda r: r.update(design_id='')])
+def test_봉투_오류는_REQUEST_INVALID(mutate):
+    """design_id · parts 목록 누락 · 타입 · 빈 목록 = 웹 쪽 잘못(D10). 대역을 써도 봉투 확인은 늘 한다."""
+    req = design((0, 0, 0, 'x'))
+    mutate(req)
+    res = check(req)
+    assert [(e['reason'], 'kind' in e) for e in res['errors']] == [('REQUEST_INVALID', False)] and not res['ok']
+
+
 def test_요청이_객체가_아님():
-    assert not check([])['ok']
+    res = check([])
+    assert not res['ok'] and res['errors'][0]['reason'] == 'REQUEST_INVALID'
 
 
 def test_블록_수_상한():
@@ -162,7 +188,8 @@ def test_변환기_연결():
     bench = base_design('001_CHAIR_BENCH_V000')
     calls = []
     res = check(bench, parts_to_recipe=lambda blocks: calls.append(blocks) or CONVERTED)
-    assert res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements']) and calls == [bench]
+    assert res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements'])
+    assert calls == [{k: v for k, v in bench.items() if k != 'base_recipe'}]       # 변환기 ①에는 base_recipe 를 뗀 사본이 간다
     assert 'recipe' not in check(bench)
     bad = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')), parts_to_recipe=lambda b: calls.append(b))
     assert not bad['ok'] and len(calls) == 1                           # 통과 못 하면 변환기를 부르지 않는다
@@ -204,14 +231,15 @@ def test_서비스_변환기_미연결이면_합격이어도_success_false():
 
 
 def test_서비스_변환기_미연결이어도_불합격은_검사_이유_그대로():
-    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))))
+    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))), template_checker=NO_TEMPLATE)
     assert (ok, reason) == (True, '') and not res['ok'] and res['errors'][0]['reason'] == 'CHECK_FAILED'
 
 
 @pytest.mark.parametrize('text', ['{깨진', '[]', '"글자"', 'null'])
-def test_서비스_JSON이_아니거나_객체가_아니면_ERROR(text):
+def test_서비스_JSON이_아니거나_객체가_아니면_REQUEST_INVALID(text):
+    """봉투 오류는 웹 쪽 잘못 — 서비스는 처리했으므로 success true, kind 없음(재생성 안 함)."""
     ok, reason, res = handle(text)
-    assert (ok, reason) == (False, 'ERROR') and res['errors'][0]['reason'] == 'ERROR'
+    assert (ok, reason, res['ok']) == (True, '', False) and [(e['reason'], 'kind' in e) for e in res['errors']] == [('REQUEST_INVALID', False)]
 
 
 def test_서비스_안쪽_예외도_ERROR():
@@ -236,25 +264,32 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
 
 
 @pytest.mark.parametrize('schema', ['other/1', 'blocks/2', 'blocks/2.5', 'blocks/3.0', None, 5])
-def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
+def test_서비스_schema가_parts_3이_아니면_REQUEST_INVALID(schema):
     req = base_design('001_CHAIR_BENCH_V000')
     req['schema'] = schema
-    ok, reason, _ = handle(json.dumps(req), parts_to_recipe=lambda b: CONVERTED)
-    assert (ok, reason) == (False, 'ERROR')
+    ok, reason, res = handle(json.dumps(req), parts_to_recipe=lambda b: CONVERTED)
+    assert (ok, reason, res['ok']) == (True, '', False) and res['errors'][0]['reason'] == 'REQUEST_INVALID'
+    assert repr(schema) in res['errors'][0]['detail']                   # 받은 schema 를 이유에 적는다
 
 
-def test_서비스_schema_없으면_ERROR():
+def test_서비스_parts_2_0도_REQUEST_INVALID():
+    req = dict(base_design('001_CHAIR_BENCH_V000'), schema='parts/2.0')
+    ok, reason, res = handle(json.dumps(req))
+    assert (ok, reason) == (True, '') and res['errors'][0]['reason'] == 'REQUEST_INVALID' and 'parts/2.0' in res['errors'][0]['detail']
+
+
+def test_서비스_schema_없으면_REQUEST_INVALID():
     req = base_design('001_CHAIR_BENCH_V000')
     del req['schema']
-    assert handle(json.dumps(req), parts_to_recipe=lambda b: {})[:2] == (False, 'ERROR')
+    assert handle(json.dumps(req), parts_to_recipe=lambda b: {})[:2] == (True, '')
 
 
 @pytest.mark.parametrize('literal', ['NaN', 'Infinity', '-Infinity'])
-def test_서비스_유한하지_않은_수는_불합격이_아니라_ERROR(literal):
+def test_서비스_유한하지_않은_수는_설계_불합격이_아니라_REQUEST_INVALID(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH_V000')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
     ok, reason, res = handle(text, parts_to_recipe=lambda b: CONVERTED)
-    assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
+    assert (ok, reason, res['ok']) == (True, '', False) and res['errors'][0]['reason'] == 'REQUEST_INVALID' and literal in res['errors'][0]['detail']
 
 
 def test_서비스_오류_응답도_순수_JSON():
@@ -262,19 +297,21 @@ def test_서비스_오류_응답도_순수_JSON():
     json.loads(text, parse_constant=lambda c: pytest.fail(c))
 
 
-def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
+@pytest.mark.parametrize('value', [[], {}, None, 5, 'q', [1]])
+def test_서비스_ori가_이상한_타입이어도_TypeError_없이_부품_칸_오류(value):
+    """부품별 칸 오류는 봉투 오류가 아니다 — CHECK_FAILED + position, 서비스는 성공."""
     req = base_design('001_CHAIR_BENCH_V000')
-    req['parts'][0]['ori'] = []
+    req['parts'][0]['ori'] = value
     ok, reason, res = handle(json.dumps(req), parts_to_recipe=lambda b: CONVERTED)
-    assert (ok, reason) == (False, 'ERROR') and not res['ok']
+    assert (ok, reason, res['ok']) == (True, '', False) and [(e['reason'], e['kind']) for e in res['errors']] == [('CHECK_FAILED', 'position')]
 
 
 @pytest.mark.parametrize('literal', ['1e999', '-1e999', '1E400'])
-def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
+def test_서비스_읽으면_무한대가_되는_수도_REQUEST_INVALID(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH_V000')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
     ok, reason, res = handle(text, parts_to_recipe=lambda b: CONVERTED)
-    assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
+    assert (ok, reason, res['ok']) == (True, '', False) and res['errors'][0]['reason'] == 'REQUEST_INVALID' and literal in res['errors'][0]['detail']
 
 
 def test_변환기가_옛_한_파일만_돌려주면_ERROR():
@@ -349,14 +386,14 @@ def test_inferred는_선택이고_불리언이어야_한다():
 
 
 def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
-    """E-69: blocks/2 는 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 ERROR."""
+    """E-69: blocks/2 는 스캔 추론기 출력(위치 · 방향만)이라 check_design 요청으로 받지 않는다 — 받은 schema 를 이유에 적어 REQUEST_INVALID(서비스는 성공)."""
     req = ai_blocks()
     req['schema'] = 'blocks/2'
     for b in req['parts']:
         for k in ('role', 'group', 'stage', 'grasp'):
             del b[k]
     ok, reason, text = DesignChecker(CFG).handle_json(json.dumps(req))
-    assert (ok, reason) == (False, 'ERROR') and 'blocks/2' in text
+    assert (ok, reason) == (True, '') and 'blocks/2' in text and json.loads(text)['errors'][0]['reason'] == 'REQUEST_INVALID'
 
 
 def test_변환기_결과의_짝_해시가_안_맞으면_ERROR():
