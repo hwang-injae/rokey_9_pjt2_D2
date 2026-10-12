@@ -56,7 +56,7 @@ def test_다_놓이면_DONE():
 def test_받침이_없으면_NO_SUPPORT():
     """레시피 읽기가 '받침은 먼저'를 보장해서 파일로는 만들 수 없다 — 진행표 쪽 방어를 만든 뒤 받침을 뒤 블록으로 바꿔 시험한다."""
     p = planner(0)
-    p.blocks[0]['supports'] = [IDS[4]]
+    p.parts[0]['supports'] = [IDS[4]]
     assert p.next_block() == {'status': 'NO_SUPPORT', 'part_id': IDS[0]}
 
 

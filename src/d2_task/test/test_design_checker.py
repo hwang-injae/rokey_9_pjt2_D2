@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from d2_task.design_checker import DesignChecker
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from d2_task.recipe_document import RecipeDocument
 
 SRC = Path(__file__).resolve().parents[2]
@@ -28,7 +28,7 @@ def base_design(model_id):
     design_id, family, _ = DESIGNS[model_id]
     """레시피 두 파일(시험용 사본)을 읽어 parts/3.0 으로 바꾼다. 읽기 실패는 시험에 알린다."""
     document = RecipeDocument.load(FIXTURES, model_id)
-    return RecipeToBlocks(design_id, family, BLOCK_MM).convert(document.recipe, document.placements)
+    return RecipeToParts(design_id, family, BLOCK_MM).convert(document.recipe, document.placements)
 
 
 def design(*items):
@@ -161,12 +161,12 @@ def test_변환기_연결():
     """변환기 ①은 {recipe, placements} 두 문서를 돌려준다. 한 문서만 준 답은 ERROR."""
     bench = base_design('001_CHAIR_BENCH_V000')
     calls = []
-    res = check(bench, blocks_to_recipe=lambda blocks: calls.append(blocks) or CONVERTED)
+    res = check(bench, parts_to_recipe=lambda blocks: calls.append(blocks) or CONVERTED)
     assert res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements']) and calls == [bench]
     assert 'recipe' not in check(bench)
-    bad = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')), blocks_to_recipe=lambda b: calls.append(b))
+    bad = check(design((0, 0, 0, 'x'), (0, 0, 20, 'x')), parts_to_recipe=lambda b: calls.append(b))
     assert not bad['ok'] and len(calls) == 1                           # 통과 못 하면 변환기를 부르지 않는다
-    boom = check(bench, blocks_to_recipe=lambda b: 1 / 0)
+    boom = check(bench, parts_to_recipe=lambda b: 1 / 0)
     assert not boom['ok'] and boom['errors'][0]['reason'] == 'ERROR'
 
 
@@ -178,7 +178,7 @@ def test_robot_yaml에_키가_없으면_만들_때_알림():
 
 
 def test_결과는_JSON으로_직렬화된다():
-    json.dumps(check(base_design('002_CHAIR_BACK_V000'), blocks_to_recipe=lambda b: {}))
+    json.dumps(check(base_design('002_CHAIR_BACK_V000'), parts_to_recipe=lambda b: {}))
 
 
 # ---------------- check_design 서비스 한 번 처리(handle_json) ----------------
@@ -188,12 +188,12 @@ def handle(req_text, **kw):
 
 
 def test_서비스_합격은_success_true와_레시피():
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), blocks_to_recipe=lambda b: CONVERTED)
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (True, '') and res['ok'] and (res['recipe'], res['placements']) == (CONVERTED['recipe'], CONVERTED['placements'])
 
 
 def test_서비스_설계_불합격은_success_true_ok_false():
-    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))), blocks_to_recipe=lambda b: {})
+    ok, reason, res = handle(json.dumps(design((0, 0, 0, 'x'), (0, 0, 20, 'x'))), parts_to_recipe=lambda b: {})
     assert (ok, reason) == (True, '') and not res['ok'] and res['errors']
 
 
@@ -215,23 +215,23 @@ def test_서비스_JSON이_아니거나_객체가_아니면_ERROR(text):
 
 
 def test_서비스_안쪽_예외도_ERROR():
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), blocks_to_recipe=lambda b: float('nan'))
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: float('nan'))
     assert (ok, reason) == (False, 'ERROR')           # NaN 은 allow_nan=False 로 직렬화에서 걸린다
 
 
 def test_서비스_응답은_순수_JSON():
-    _, _, text = DesignChecker(CFG, blocks_to_recipe=lambda b: CONVERTED).handle_json(json.dumps(base_design('002_CHAIR_BACK_V000')))
+    _, _, text = DesignChecker(CFG, parts_to_recipe=lambda b: CONVERTED).handle_json(json.dumps(base_design('002_CHAIR_BACK_V000')))
     assert json.loads(text, parse_constant=lambda c: pytest.fail(c))['ok']
 
 
 def test_서비스_변환기_예외는_success_false():
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), blocks_to_recipe=lambda b: 1 / 0)
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: 1 / 0)
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and '변환기' in res['errors'][0]['detail']
 
 
 @pytest.mark.parametrize('bad_recipe', [None, [], 'x', {}, {'schema': 'other/1'}, {'schema': 'assembly.recipe/1.0'}])
 def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_recipe):
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), blocks_to_recipe=lambda b: bad_recipe)
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: bad_recipe)
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe' not in res
 
 
@@ -239,21 +239,21 @@ def test_서비스_변환기_결과가_레시피_객체가_아니면_ERROR(bad_r
 def test_서비스_schema가_blocks_1이_아니면_ERROR(schema):
     req = base_design('001_CHAIR_BENCH_V000')
     req['schema'] = schema
-    ok, reason, _ = handle(json.dumps(req), blocks_to_recipe=lambda b: CONVERTED)
+    ok, reason, _ = handle(json.dumps(req), parts_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR')
 
 
 def test_서비스_schema_없으면_ERROR():
     req = base_design('001_CHAIR_BENCH_V000')
     del req['schema']
-    assert handle(json.dumps(req), blocks_to_recipe=lambda b: {})[:2] == (False, 'ERROR')
+    assert handle(json.dumps(req), parts_to_recipe=lambda b: {})[:2] == (False, 'ERROR')
 
 
 @pytest.mark.parametrize('literal', ['NaN', 'Infinity', '-Infinity'])
 def test_서비스_유한하지_않은_수는_불합격이_아니라_ERROR(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH_V000')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
-    ok, reason, res = handle(text, blocks_to_recipe=lambda b: CONVERTED)
+    ok, reason, res = handle(text, parts_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
 
 
@@ -265,7 +265,7 @@ def test_서비스_오류_응답도_순수_JSON():
 def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
     req = base_design('001_CHAIR_BENCH_V000')
     req['parts'][0]['ori'] = []
-    ok, reason, res = handle(json.dumps(req), blocks_to_recipe=lambda b: CONVERTED)
+    ok, reason, res = handle(json.dumps(req), parts_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and not res['ok']
 
 
@@ -273,13 +273,13 @@ def test_서비스_ori가_이상한_값이어도_ERROR로_돌려준다():
 def test_서비스_읽으면_무한대가_되는_수도_ERROR(literal):
     text = json.dumps(base_design('001_CHAIR_BENCH_V000')).replace('"x": -25', f'"x": {literal}', 1)
     assert literal in text
-    ok, reason, res = handle(text, blocks_to_recipe=lambda b: CONVERTED)
+    ok, reason, res = handle(text, parts_to_recipe=lambda b: CONVERTED)
     assert (ok, reason) == (False, 'ERROR') and literal in res['errors'][0]['detail']
 
 
 def test_변환기가_옛_한_파일만_돌려주면_ERROR():
     """recipe(구조)만 있는 답(placements 없음)은 합격 결과로 내보내지 않는다."""
-    res = check(base_design('001_CHAIR_BENCH_V000'), blocks_to_recipe=lambda b: CONVERTED['recipe'])
+    res = check(base_design('001_CHAIR_BENCH_V000'), parts_to_recipe=lambda b: CONVERTED['recipe'])
     assert not res['ok'] and res['errors'][0]['reason'] == 'ERROR'
 
 
@@ -362,5 +362,5 @@ def test_옛_blocks_1은_AI_칸이_없어_서비스에서_거절():
 def test_변환기_결과의_짝_해시가_안_맞으면_ERROR():
     from d2_task.recipe_document import recipe_sha256  # noqa: F401  (해시 규칙은 test_recipe_document 가 본다)
     wrong = {'recipe': CONVERTED['recipe'], 'placements': dict(CONVERTED['placements'], recipe_sha256='0' * 64)}
-    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), blocks_to_recipe=lambda b: wrong)
+    ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: wrong)
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe_sha256' in res['errors'][0]['detail']

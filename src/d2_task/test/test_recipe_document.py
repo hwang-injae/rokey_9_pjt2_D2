@@ -17,7 +17,7 @@ import pytest
 
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument, recipe_sha256
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from d2_task.run_logger import RunLogger
 from d2_task.task_manager import TaskManager
 from d2_task.task_planner import TaskPlanner
@@ -61,8 +61,8 @@ def sealed(recipe, placements):
 def test_두파일_판단은_역할이름과_받침을_보존한다(pair):
     """같은 계산으로 실제 높이를 얻고 전체 역할 이름으로 진행표를 만든다."""
     p = TaskPlanner(CFG, *pair)
-    assert p.blocks[0]['part_id'] == f'{MODEL}_LEG_001_01'
-    assert p.blocks[2]['supports'] == [f'{MODEL}_LEG_001_01']
+    assert p.parts[0]['part_id'] == f'{MODEL}_LEG_001_01'
+    assert p.parts[2]['supports'] == [f'{MODEL}_LEG_001_01']
     p.update_progress({k: {'state': 'absent'} for k in p.progress})
     assert p.next_block()['part_id'] == f'{MODEL}_LEG_001_01'
 
@@ -89,8 +89,8 @@ def test_순서를_바꿔도_블록이름이_바뀌지_않는다(pair):
     r, p = pair
     p['steps'][0]['sequence'], p['steps'][1]['sequence'] = 2, 1
     planner = TaskPlanner(CFG, r, p)
-    assert planner.blocks[0]['part_id'] == f'{MODEL}_LEG_002_01'
-    assert planner.blocks[2]['supports'] == [f'{MODEL}_LEG_001_01']
+    assert planner.parts[0]['part_id'] == f'{MODEL}_LEG_002_01'
+    assert planner.parts[2]['supports'] == [f'{MODEL}_LEG_001_01']
 
 
 def test_입력문서는_변경하지_않는다(pair):
@@ -248,8 +248,8 @@ def test_경로이름을_설계ID로_쓰지_않는다(tmp_path, design_id):
 
 def test_검사응답은_recipe와_placements_원본을_반환한다(pair):
     """변환기 ① 두 문서 계약을 받으면 HMI 에 recipe · placements 를 함께 내보낸다(check_result/3.0)."""
-    request = RecipeToBlocks(MODEL, 'chair', [75, 25, 15]).convert(*pair)
-    checker = DesignChecker(CFG, blocks_to_recipe=lambda _: dict(recipe=pair[0], placements=pair[1]))
+    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], placements=pair[1]))
     ok, reason, text = checker.handle_json(json.dumps(request))
     result = json.loads(text)
     assert (ok, reason) == (True, '') and result['ok'] and result['schema'] == 'check_result/3.0'
@@ -261,15 +261,15 @@ def test_변환기_두문서_누락은_ERROR(pair, missing):
     """부분 출력은 설계 합격이나 저장 가능한 결과로 전달하지 않는다."""
     output = dict(recipe=pair[0], placements=pair[1])
     del output[missing]
-    request = RecipeToBlocks(MODEL, 'chair', [75, 25, 15]).convert(*pair)
-    checker = DesignChecker(CFG, blocks_to_recipe=lambda _: output)
+    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    checker = DesignChecker(CFG, parts_to_recipe=lambda _: output)
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 
 
 def test_옛_이름_structure로_돌려주면_ERROR(pair):
     """E-52 의 {structure, recipe} 모양은 더 받지 않는다."""
-    request = RecipeToBlocks(MODEL, 'chair', [75, 25, 15]).convert(*pair)
-    checker = DesignChecker(CFG, blocks_to_recipe=lambda _: dict(recipe=pair[0], structure=pair[1]))
+    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], structure=pair[1]))
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 
 
@@ -316,9 +316,9 @@ def test_BACK_BEAM도_명시적_설계ID를_보낸다(node):
     assert sent[0].design_id == '002_CHAIR_BACK_V000' and sent[0].part_ids == blocks
 
 
-@pytest.mark.parametrize('name', ['recipe_document', 'recipe_to_blocks'])
+@pytest.mark.parametrize('name', ['recipe_document', 'recipe_to_parts'])
 def test_웹이_import하는_두_파일은_ROS를_가져오지_않는다(name):
-    """E-59 · E-62: 웹 backend(ROS 없음)가 d2_task.recipe_document · recipe_to_blocks 를 import 한다 → rclpy · ROS 메시지 import 가 들어오면 안 된다."""
+    """E-59 · E-62: 웹 backend(ROS 없음)가 d2_task.recipe_document · recipe_to_parts 를 import 한다 → rclpy · ROS 메시지 import 가 들어오면 안 된다."""
     tree = ast.parse((Path(__file__).parents[1] / 'd2_task' / f'{name}.py').read_text(encoding='utf-8'))
     mods = set()
     for n in ast.walk(tree):

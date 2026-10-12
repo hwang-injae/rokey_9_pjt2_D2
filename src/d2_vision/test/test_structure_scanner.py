@@ -1,6 +1,6 @@
 """StructureScanner 시험 (pytest, ROS · 로봇 없음) — W115 스캔 추론기 ③ · V-48 일치율.
 
-1. 합성: 기본 설계 4개의 정답 blocks/2(변환기 ② RecipeToBlocks 로 레시피에서)을 실측 크기(74.45 × 24.8 × 14.8 mm) 상자로 놓고
+1. 합성: 기본 설계 4개의 정답 blocks/2(변환기 ② RecipeToParts 로 레시피에서)을 실측 크기(74.45 × 24.8 × 14.8 mm) 상자로 놓고
    촬영 자세 3곳(W134 실측 카메라 위치와 같은 곳)에서 깊이 영상을 광선으로 그린다(깊이 잡음 ± 0.5 mm, 1 mm 단위 PNG 와 같음).
    기본 · 구조물 전체가 몇 mm 밀림 · 작업면 높이 1 mm 틀림 세 경우 모두 일치율 ≥ 0.9.
 2. 실측(W114 s11 — 사람이 쌓은 001_CHAIR_BENCH_V000, 자세 3곳): 파일이 있을 때만, 통과 기준 없이 숫자만 출력(`pytest -s`).
@@ -23,7 +23,7 @@ from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extent
 
 SRC = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC / 'd2_task'))
-from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents as task_ori_extents   # noqa: E402
+from d2_task.recipe_to_parts import RecipeToParts, ori_extents as task_ori_extents   # noqa: E402
 
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 RECIPES = SRC / 'recipe_manager/recipes'
@@ -44,7 +44,7 @@ CFG_OLD = {**CFG, 'assembly_origin': {**CFG['assembly_origin'], 'z_m': -0.018}}
 def truth(design_id):
     """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — parts/3.0, 자리 · 방향 칸은 blocks/2 과 같다).
     스캔은 진짜 블록을 보므로 목록 칸 이름을 스캔 쪽(blocks)으로 맞춰 돌려준다(10/13 이름 규칙)."""
-    d = RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
+    d = RecipeToParts(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
     return {**d, 'blocks': d['parts']}
 
 
@@ -103,7 +103,7 @@ def scan(blocks, poses=tuple(CAMS), **kw):
     return sc
 
 
-def test_ori_table_same_as_recipe_to_blocks():
+def test_ori_table_same_as_recipe_to_parts():
     """방향 코드 표가 변환기 ②(정답을 만드는 쪽)와 같아야 일치율 비교가 맞다."""
     assert ori_extents([75, 25, 15]) == task_ori_extents([75, 25, 15])
     assert ori_extents(ACTUAL_MM) == task_ori_extents(ACTUAL_MM)

@@ -7,7 +7,7 @@ task 노드(TaskManager)가 부른다. ROS 없이 시험할 수 있게 노드와
 import math
 import time
 
-from d2_motion.motion_math import column, quat_from_axes, recipe_blocks, slot_block_pose, up_axis
+from d2_motion.motion_math import column, quat_from_axes, recipe_parts, slot_block_pose, up_axis
 from d2_task.recipe_document import RecipeDocument
 
 STATES = ('present', 'absent', 'occluded', 'unknown')   # IRD 2장 '블록 관측 states'
@@ -30,22 +30,22 @@ class TaskPlanner:
         """레시피 블록을 sequence 순서로 펼치고, 블록마다 받침 part_id 를 붙인다. 진행표는 모두 unknown 으로 시작한다.
 
         recipe 는 구조 dict(recipe/3.0, mm), placements 는 조립 방법 dict(placements/3.0). 바깥 영향 없음.
-        블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_blocks 한 곳에서 한다.
+        블록 크기·잡기·받침이 잘못되면 ValueError 를 낸다. 좌표 계산은 recipe_parts 한 곳에서 한다.
         """
         self.cfg = cfg
         document = RecipeDocument(recipe, placements)
         recipe = document.geometry
         self.design_id = recipe['model']['model_id']
-        blocks = recipe_blocks(cfg, recipe)
+        blocks = recipe_parts(cfg, recipe)
         steps = sorted(recipe['steps'], key=lambda s: s['sequence'])
         if any(st['grasp'] != b['grasp'] for st, b in zip(steps, blocks)):
             raise ValueError('recipe 의 grasp 가 블록 방향 · grasp_axis 와 다르다')
         block_of = {st['instance_id']: b['part_id'] for st, b in zip(steps, blocks)}
-        self.blocks = [dict(b, supports=[block_of[i] for i in st['support_instance_ids']])
+        self.parts = [dict(b, supports=[block_of[i] for i in st['support_instance_ids']])
                        for st, b in zip(steps, blocks)]
         # 시작 때는 아무것도 본 적이 없다. 첫 진행 확인(관측) 전에 놓으면 이미 있는 블록 위에 겹쳐 놓을 수 있다.
         self.progress = {b['part_id']: {'state': 'unknown', 'dx_m': float('nan'), 'dy_m': float('nan'),
-                                         'dz_m': float('nan'), 'top_z_m': float('nan')} for b in self.blocks}
+                                         'dz_m': float('nan'), 'top_z_m': float('nan')} for b in self.parts}
         self.empty_slots = set()
 
     def update_progress(self, observed):
@@ -81,7 +81,7 @@ class TaskPlanner:
         status: FOUND(part_id · grasp · place_pose · index) · DONE · NO_SUPPORT(part_id) · UNKNOWN_BLOCK(part_id). 규칙은 next_block 과 같다.
         계산만 한다(진행표를 바꾸지 않는다).
         """
-        for index, b in enumerate(self.blocks):
+        for index, b in enumerate(self.parts):
             state = self.progress[b['part_id']]['state']
             if state == 'present':
                 continue
@@ -109,7 +109,7 @@ class TaskPlanner:
                        부르는 쪽(TaskManager)이 구분해야 한다
         공급 칸은 robot.yaml supply_slots 의 grasp 가 블록 잡기와 같은 칸(칸마다 그리퍼 방향이 고정 — 10/6 다시 교시)
         중 빔으로 적히지 않고 피할 칸도 아닌 칸을, 같은 잡기 블록 순번대로 돌려 쓴다. 고르는 규칙은 d2_motion run_recipe 와 같다.
-        place_pose 높이는 recipe_blocks 가 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
+        place_pose 높이는 recipe_parts 가 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
         robot.yaml 에 그 잡기의 공급 칸이 아예 없으면 ValueError(설정 오류).
         """
         t = self.next_target()
@@ -142,7 +142,7 @@ class TaskPlanner:
         for part_id in expect_present:
             if self.progress[part_id]['state'] == 'absent':
                 problems.append({'part_id': part_id, 'reason': 'OFFSET_OVER', 'detail': '놓은 블록이 없다'})
-        for b in self.blocks:
+        for b in self.parts:
             row = self.progress[b['part_id']]
             if row['state'] != 'present':
                 continue
@@ -163,7 +163,7 @@ class TaskPlanner:
         by 는 robot 만 쓴다(스캔 실물은 W119).
         """
         blocks = []
-        for b in self.blocks:
+        for b in self.parts:
             row = self.progress[b['part_id']]
             blocks.append({'part_id': b['part_id'], 'state': row['state'], 'by': 'robot',
                            'center_m': list(b['center']), 'quat': list(b['quat']),
@@ -173,12 +173,12 @@ class TaskPlanner:
                 'obs_stamp': obs_stamp, 'parts': blocks}
 
     def _pick_slot(self, index, avoid_slots=()):
-        """self.blocks[index] 를 집을 공급 칸 번호(1부터). 맞는 칸이 모두 비었거나 피할 칸뿐이면 None.
+        """self.parts[index] 를 집을 공급 칸 번호(1부터). 맞는 칸이 모두 비었거나 피할 칸뿐이면 None.
 
         칸에 grasp 가 없으면 같은 자세(block_up)의 칸이면 된다. 같은 잡기로 앞서 놓일 블록 수만큼 칸을 돌려 고르게 쓴다.
         avoid_slots 는 정수로 바꿔 빈 칸(empty_slots)과 함께 후보에서 뺀다.
         """
-        b = self.blocks[index]
+        b = self.parts[index]
         up = up_axis(b['rot'])
         same = [k + 1 for k, st in enumerate(self.cfg['supply_slots'])
                 if st.get('grasp', b['grasp']) == b['grasp'] and st.get('block_up', 'THICKNESS') == up]
@@ -188,5 +188,5 @@ class TaskPlanner:
         free = [s for s in same if s not in self.empty_slots and s not in avoid]
         if not free:
             return None
-        turn = sum(1 for o in self.blocks[:index] if o['grasp'] == b['grasp'])
+        turn = sum(1 for o in self.parts[:index] if o['grasp'] == b['grasp'])
         return free[turn % len(free)]

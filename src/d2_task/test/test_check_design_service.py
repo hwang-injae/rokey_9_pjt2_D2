@@ -1,32 +1,32 @@
 # -*- coding: utf-8 -*-
 """W110 연결 시험 — 실제 변환기 ①을 검사 묶음에 붙인 check_design 서비스 (ROS 없이, task_node 가 하는 연결과 같은 방식).
 
-변환기 ① 자체의 시험은 test_blocks_to_recipe.py(한세교). 여기서는 task 쪽 연결만 본다: 합격 → recipe · placements 응답,
+변환기 ① 자체의 시험은 test_parts_to_recipe.py(한세교). 여기서는 task 쪽 연결만 본다: 합격 → recipe · placements 응답,
 AI 실수(DesignRejected) → CHECK_FAILED(success true, 재생성 대상), 그 밖의 예외 → ERROR(success false).
 """
 import json
 
 import pytest
 
-from d2_task.blocks_to_recipe import BlocksToRecipe
+from d2_task.parts_to_recipe import PartsToRecipe
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from test_design_checker import CFG
-from test_recipe_to_blocks import BLOCK_MM, IDS, RECIPES
+from test_recipe_to_parts import BLOCK_MM, IDS, RECIPES
 
 
 def attached():
     """task_node 와 같은 방식으로 변환기 ①을 붙인 검사 묶음."""
     checker = DesignChecker(CFG)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, BLOCK_MM).convert
+    checker.parts_to_recipe = PartsToRecipe(checker.grasp_options, BLOCK_MM).convert
     return checker
 
 
 def blocks_of(model_id):
     doc = RecipeDocument.load(RECIPES, model_id)
     _, family, _ = IDS[model_id]
-    return doc, RecipeToBlocks(model_id, family, BLOCK_MM).convert(doc.recipe, doc.placements)     # 실제 설계의 design_id = 모델 ID(변환기 ①이 model_id 로 쓴다)
+    return doc, RecipeToParts(model_id, family, BLOCK_MM).convert(doc.recipe, doc.placements)     # 실제 설계의 design_id = 모델 ID(변환기 ①이 model_id 로 쓴다)
 
 
 @pytest.mark.parametrize('model_id', IDS)
@@ -65,6 +65,6 @@ def test_변환기가_찾은_실수가_여러_개면_한_번에_모두_errors에
 
 def test_변환기의_그_밖의_예외는_ERROR로_남는다():
     _, blocks = blocks_of('001_CHAIR_BENCH_V000')
-    checker = DesignChecker(CFG, blocks_to_recipe=lambda b: 1 / 0)
+    checker = DesignChecker(CFG, parts_to_recipe=lambda b: 1 / 0)
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (False, 'ERROR') and json.loads(text)['errors'][0]['reason'] == 'ERROR'

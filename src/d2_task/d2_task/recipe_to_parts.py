@@ -22,7 +22,7 @@ def ori_extents(block_mm):
     return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 
 
-class RecipeToBlocks:
+class RecipeToParts:
     """레시피 하나를 parts/3.0 하나로 바꾸는 변환기.
 
     입력: recipe(recipe/3.0 구조) + placements(placements/3.0 조립 방법) dict(단위 mm). 출력: parts/3.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).

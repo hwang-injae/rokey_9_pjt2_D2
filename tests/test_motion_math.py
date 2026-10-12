@@ -164,7 +164,7 @@ def test_pick_place_tcp_rejects_different_up_axis(robot_cfg):
 
 def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
-    반환: (조립 방법, 구조). recipe_blocks 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
+    반환: (조립 방법, 구조). recipe_parts 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/3.0', 'model_id': model_id,
                  'stocks': [{'stock_id': 'PART_001', 'size_mm': list(size_mm)}],
                  'parts': [{'part_name': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
@@ -186,7 +186,7 @@ def _joined(size_mm=(75, 25, 15)):
 def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
     """레시피 2블록: sequence 순서, part_id = '<model_id>_<블록 이름>', 잡기 둘 다 FLAT_SHORT(끼우는 축 y = WIDTH),
     위 블록 중심 z = 원점 z + 실측 두께 x 1.5. 설계값(15 mm 층)이 아니라 실측 두께로 쌓아 올린다 — 10/6 실기 교훈(10층에서 +1.8 mm)."""
-    blocks = mm.recipe_blocks(robot_cfg, _joined())
+    blocks = mm.recipe_parts(robot_cfg, _joined())
     assert [b['part_id'] for b in blocks] == ['001_CHAIR_BENCH_V000_SEAT_001_01', '001_CHAIR_BENCH_V000_SEAT_001_02']
     assert all(b['grasp'] == 'FLAT_SHORT' for b in blocks)
     o, t = robot_cfg['assembly_origin'], robot_cfg['block_actual_m'][2]
@@ -198,13 +198,13 @@ def test_recipe_blocks_stacks_on_actual_thickness(robot_cfg):
 def test_recipe_blocks_rejects_wrong_size(robot_cfg):
     """블록 크기가 robot.yaml block_size_m 와 다르면([70, 25, 15]) ValueError."""
     with pytest.raises(ValueError):
-        mm.recipe_blocks(robot_cfg, _joined((70, 25, 15)))
+        mm.recipe_parts(robot_cfg, _joined((70, 25, 15)))
 
 
 def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
     """옛 blocks[] 형식(구조 칸 · model 칸 없음)은 W139 뒤 읽지 않는다(W138) — KeyError."""
     with pytest.raises(KeyError):
-        mm.recipe_blocks(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'parts': []})
+        mm.recipe_parts(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'parts': []})
 
 
 CSV_COLS = ['part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
@@ -245,7 +245,7 @@ def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
     assert loaded['steps'][1]['supports'] == ['SEAT_001_01'] and loaded['steps'][0]['supports'] == []
     assert all(isinstance(st['sequence'], int) and isinstance(st['stage'], int) for st in loaded['steps'])
     assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH_V000'
-    assert mm.recipe_blocks(robot_cfg, loaded) == mm.recipe_blocks(robot_cfg, _joined())
+    assert mm.recipe_parts(robot_cfg, loaded) == mm.recipe_parts(robot_cfg, _joined())
     (tmp_path / '001_CHAIR_BENCH_V000_placements.csv').unlink()
     with pytest.raises(FileNotFoundError):
         mm.load_recipe(rp)
@@ -274,7 +274,7 @@ def test_real_recipes_read_and_hash_matches_builder(robot_cfg, model_id):
     structure = json.loads(path.read_text(encoding='utf-8'))
     assert mm.recipe_sha256(structure) == RecipeBuilder().calculate_recipe_sha256(structure)
     loaded = mm.load_recipe(str(path))
-    blocks = mm.recipe_blocks(robot_cfg, loaded)
+    blocks = mm.recipe_parts(robot_cfg, loaded)
     assert len(blocks) == len(structure['parts']) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
 
 

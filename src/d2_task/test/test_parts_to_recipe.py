@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from d2_task.blocks_to_recipe import BlocksToRecipe, DesignRejected
+from d2_task.parts_to_recipe import PartsToRecipe, DesignRejected
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 
 SRC = Path(__file__).resolve().parents[2]
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
@@ -24,13 +24,13 @@ FAMILY = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_
 
 def make_converter():
     """검사 묶음의 진짜 손가락 규칙(grasp_options)을 붙인 변환기 ①."""
-    return BlocksToRecipe(DesignChecker(CFG).grasp_options, BLOCK_MM)
+    return PartsToRecipe(DesignChecker(CFG).grasp_options, BLOCK_MM)
 
 
 def load_base(model_id):
     """기본 설계 레시피 두 파일 → (RecipeDocument, 변환기 ② 로 만든 parts/3.0)."""
     document = RecipeDocument.load(RECIPES, model_id)
-    blocks = RecipeToBlocks(model_id, FAMILY[model_id], BLOCK_MM).convert(document.recipe, document.placements)
+    blocks = RecipeToParts(model_id, FAMILY[model_id], BLOCK_MM).convert(document.recipe, document.placements)
     return document, blocks
 
 
@@ -174,7 +174,7 @@ def test_role_list_file():
 @pytest.mark.parametrize('model_id', FAMILY)
 def test_attached_to_design_checker(model_id):
     checker = DesignChecker(CFG)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, BLOCK_MM).convert
+    checker.parts_to_recipe = PartsToRecipe(checker.grasp_options, BLOCK_MM).convert
     ok, reason, text = checker.handle_json(json.dumps(load_base(model_id)[1]))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']

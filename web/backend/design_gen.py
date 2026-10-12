@@ -137,7 +137,7 @@ class DesignGenerator:
 
         on_progress(stage, info): 화면 진행 표시용 — 'reading'(참고 설계 읽음) · 'candidates'(후보 3개 — 미리보기를 바로 그림) ·
         'checked'(후보 하나 검사 끝) · 'retry'(다 떨어져 다시). 출력: {text, template, family, design_id, parent_id, reference,
-        candidates[{idea, blocks, check}], attempts, elapsed_s, log}. 실패: GenError.
+        candidates[{idea, parts, check}], attempts, elapsed_s, log}. 실패: GenError.
         """
         progress = on_progress or (lambda *_: None)
         rows = self.store.list_designs(template=template)          # E-84 ③ — 이 Template 설계만 보여 주고 읽게 한다
@@ -298,14 +298,14 @@ class DesignGenerator:
             raise GenError('GEN_FAILED', 'AI 답이 객체가 아니에요')
         return data
 
-    def _check(self, blocks):
+    def _check(self, parts):
         """check_design 한 번 → {ok, service_failed, reason, message, min_margin_mm, errors, recipe, placements}.
 
         ok = 서비스 성공 + 합격 + recipe · placements 둘 다(IRD 4.2). 서비스 실패(ERROR · TIMEOUT — 로봇 PC · 다리 · 변환기 고장)는
         AI 탓이 아니라 service_failed 로 나눠 다시 만들지 않는다. 부르는 함수가 예외를 내도 ERROR 로 바꾼다.
         """
         try:
-            res = self.check(blocks)
+            res = self.check(parts)
         except Exception as e:   # noqa: BLE001 — 검사 경로 고장도 화면에 알릴 실패로
             res = {'success': False, 'reason': 'ERROR', 'message': f'{type(e).__name__}: {e}'}
         served = res.get('success') is True
@@ -327,11 +327,11 @@ class DesignGenerator:
             if not errs:
                 continue
             lines.append(f"후보 {i}({c['idea']}):")
-            blocks = {b.get('order'): b for b in c['parts']['parts'] if isinstance(b, dict)}
+            by_order = {b.get('order'): b for b in c['parts']['parts'] if isinstance(b, dict)}
             for e in errs:
                 detail = str(e.get('detail') or e.get('reason'))
                 hint = next((h for key, h in FIX_HINTS if key in detail), '')
-                where = DesignGenerator._where(detail, blocks, extent)
+                where = DesignGenerator._where(detail, by_order, extent)
                 lines.append(f'  - {detail}{where}' + (f' → 고칠 것: {hint}' if hint else ''))
         if not lines:
             lines = ['후보가 없거나 검사 결과를 받지 못했다']
@@ -339,23 +339,23 @@ class DesignGenerator:
                 '받침이 모자라면 받침(다리 · 기둥)을 넓힌다. 규칙 · 칸은 그대로.\n' + '\n'.join(lines[:FEEDBACK_MAX]))
 
     @staticmethod
-    def _where(detail, blocks, extent):
+    def _where(detail, by_order, extent):
         """오류 글에 나온 블록의 위치 설명. '공중'이면 그 x · y 아래 블록 윗면의 가장 높은 z 도(어느 층이 비었는지). 모르면 ''."""
         nums = [int(n) for n in re.findall(r'(\d+)번', detail)]
-        if not nums or nums[0] not in blocks:
+        if not nums or nums[0] not in by_order:
             return ''
-        parts = []
+        found = []
         for n in nums[:2]:
-            b = blocks.get(n)
+            b = by_order.get(n)
             if b and b.get('ori') in extent:
-                parts.append(f"{n}번 ({b.get('x')}, {b.get('y')}, z {b.get('z')}, {b.get('ori')})")
-        text = ' [' + ' · '.join(parts) + ']' if parts else ''
+                found.append(f"{n}번 ({b.get('x')}, {b.get('y')}, z {b.get('z')}, {b.get('ori')})")
+        text = ' [' + ' · '.join(found) + ']' if found else ''
         if '공중' in detail:
-            a = blocks[nums[0]]
+            a = by_order[nums[0]]
             try:
                 ax, ay, _ = extent[a['ori']]
                 tops = []
-                for b in blocks.values():
+                for b in by_order.values():
                     bx, by, bz = extent[b['ori']]
                     if b is not a and abs(b['x'] - a['x']) < (ax + bx) / 2 and abs(b['y'] - a['y']) < (ay + by) / 2 and b['z'] + bz <= a['z']:
                         tops.append(b['z'] + bz)
@@ -380,11 +380,11 @@ class DesignGenerator:
 
     def _examples_text(self, template):
         """자동 전환 예시(E-72): 그 V000 + 최근 파생 3개의 블록 목록(도구 단계가 실패했을 때만)."""
-        parts = ['[참고 설계 — 도구 대신 코드가 넣음]']
+        lines = ['[참고 설계 — 도구 대신 코드가 넣음]']
         for e in self.store.examples_for(template, n=3):
-            parts.append(f"({e['design_id']}, 최근 조립 {e['last_build'] or '없음'})\n"
+            lines.append(f"({e['design_id']}, 최근 조립 {e['last_build'] or '없음'})\n"
                          + json.dumps(e['parts']['parts'], ensure_ascii=False, separators=(',', ':')))
-        return '\n'.join(parts)
+        return '\n'.join(lines)
 
     @staticmethod
     def _tool(allowed):
@@ -397,7 +397,7 @@ class DesignGenerator:
 
     def _candidates_format(self):
         """후보 3개 구조화 출력 형식(JSON Schema strict). role 은 역할 목록 파일의 이름만(enum — 목록 밖 이름은 변환기 ①이 어차피 거절)."""
-        block = {'type': 'object', 'additionalProperties': False,
+        part = {'type': 'object', 'additionalProperties': False,
                  'required': ['order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'],
                  'properties': {'order': {'type': 'integer'}, 'x': {'type': 'number'}, 'y': {'type': 'number'},
                                 'z': {'type': 'number'}, 'ori': {'type': 'string', 'enum': list(ORIS)},
@@ -409,7 +409,7 @@ class DesignGenerator:
                            'candidates': {'type': 'array', 'items': {
                                'type': 'object', 'additionalProperties': False, 'required': ['idea', 'plan', 'parts'],
                                'properties': {'idea': {'type': 'string'}, 'plan': {'type': 'string'},     # plan 먼저 — 층별 계산을 쓰고 블록을 쓰게
-                                              'parts': {'type': 'array', 'items': block}}}}}})
+                                              'parts': {'type': 'array', 'items': part}}}}}})
 
     @staticmethod
     def _format(name, schema):

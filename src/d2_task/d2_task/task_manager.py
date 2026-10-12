@@ -365,7 +365,7 @@ class TaskManager:
         ok, why = self._move_observe()
         if not ok:
             return self._failed(why, '관측 자세 이동')
-        if not self._observe([b['part_id'] for b in self.planner.blocks]):
+        if not self._observe([b['part_id'] for b in self.planner.parts]):
             return None
         problems = self.planner.judge()
         if problems:
@@ -389,7 +389,7 @@ class TaskManager:
             ok, why = self._move_observe()
             if not ok:
                 return self._failed(why, '웹 재연결 뒤 관측 자세 이동')
-            if not self._observe([b['part_id'] for b in self.planner.blocks]):
+            if not self._observe([b['part_id'] for b in self.planner.parts]):
                 return
             problems = self.planner.judge(expect_present=[self.placed] if self.placed else ())
             if problems:
@@ -421,7 +421,7 @@ class TaskManager:
         else:                                  # NO_SUPPORT · 재관측 뒤에도 UNKNOWN_BLOCK
             self._to_error(f'{r["part_id"]}: {status}')
 
-    def _next_goal(self, pick_message='{block} 를 집으러 갑니다'):
+    def _next_goal(self, pick_message='{part} 를 집으러 갑니다'):
         """다음 집기 목표를 공급 방식에 맞게 정한다(목표 블록은 작업 판단이, 어디서 집을지는 방식이 정한다).
 
         slots: planner.next_block() 를 그대로 돌려준다(부르는 쪽이 목표를 적용한다).
@@ -472,7 +472,7 @@ class TaskManager:
         status, part_id = result['status'], target['part_id']
         if status == 'PICK':
             self._start_goal(dict(result['request'], status='FOUND'))
-            self._set('PICK_PLACE', None, pick_message.format(block=part_id))
+            self._set('PICK_PLACE', None, pick_message.format(part=part_id))
         elif status == 'EMPTY':
             self._enter_wait_supply(part_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
         elif status == 'NO_MATCH':
@@ -495,11 +495,11 @@ class TaskManager:
         ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 흩뿌림 집기가 실패하면 _scatter_failed 가 step(접촉 전후)과 result_at(gripper 상태가 결과 이후인지)으로 재시도 여부를 정한다.
         """
         if self._scatter is not None:
-            block = self.goal['part_id']
+            part = self.goal['part_id']
             with self._lock:
-                if self._scatter_fail.get(block, 0) >= self.max_attempts:      # 복구 · 다른 실패 경로로 와도 한도를 넘는 요청은 보내지 않는다
-                    return self._to_error(f'{block}: 집기 {self.max_attempts}번 시도를 이미 했다 — 사람이 확인해 주세요')
-                self._scatter_fail[block] = self._scatter_fail.get(block, 0) + 1     # 요청을 보내기 시작할 때 센다(성공 · 실패 · 시간 초과 모두 한 번)
+                if self._scatter_fail.get(part, 0) >= self.max_attempts:      # 복구 · 다른 실패 경로로 와도 한도를 넘는 요청은 보내지 않는다
+                    return self._to_error(f'{part}: 집기 {self.max_attempts}번 시도를 이미 했다 — 사람이 확인해 주세요')
+                self._scatter_fail[part] = self._scatter_fail.get(part, 0) + 1     # 요청을 보내기 시작할 때 센다(성공 · 실패 · 시간 초과 모두 한 번)
         self._pick_seq += 1
         rid = self._pick_seq
         self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다
@@ -539,8 +539,8 @@ class TaskManager:
         ok, why = self.io.move_to('observe', self.halted)
         if not ok:
             return self._failed(why, '관측 자세 이동')
-        block = next(b for b in self.planner.blocks if b['part_id'] == self.placed)
-        if not self._observe([self.placed] + block['supports']):
+        part = next(b for b in self.planner.parts if b['part_id'] == self.placed)
+        if not self._observe([self.placed] + part['supports']):
             return None
         row = self.planner.progress[self.placed]      # 판정 전에 측정값부터 남긴다(어긋나서 ERROR 가 되어도 값은 기록)
         self.logger.record_measure(self.placed, row['dx_m'], row['dy_m'], row['dz_m'])
@@ -574,7 +574,7 @@ class TaskManager:
             self._scatter.after_wait_start()        # 흩뿌림은 다시 관측하고 조회한다. 공급 칸 표시는 건드리지 않는다
         else:
             self.planner.supply_refilled()
-        r = self._next_goal('공급을 채웠다. {block} 를 이어서 집습니다')
+        r = self._next_goal('공급을 채웠다. {part} 를 이어서 집습니다')
         if r is None:                          # 흩뿌림은 전환까지 끝냈다(다시 기다림 · 집기 · 오류)
             return None
         if r['status'] != 'FOUND':
@@ -737,7 +737,7 @@ class TaskManager:
         손에 블록이 없음(grasped False)이 확인돼야만 다시 시도한다 — 모르면 failure_action 이 RECOVER 로 보낸다.
         gripper 상태를 기다리는 동안 정지 · 상태 변화 · 새 요청이 끼면(오래된 처리) 아무것도 적용하지 않고 지금 상태를 그대로 둔다.
         """
-        block = self.goal['part_id']
+        part = self.goal['part_id']
         info = self.last_pick
         with self._lock:
             token = (self._epoch, self._stop_count)
@@ -748,17 +748,17 @@ class TaskManager:
             if self._stale(info['request_id'], token):         # 대기 뒤 적용 직전에 다시 확인 — on_failure 도 이 안에서 부른다
                 return None
             action = self._scatter.on_failure(why, contact_phase(info['step'], why), grasped, None)
-            n = self._scatter_fail.get(block, 0)
+            n = self._scatter_fail.get(part, 0)
             if action in (REPLAN_SAME, REOBSERVE):
                 if n >= self.max_attempts:
-                    return self._to_error(f'{block}: {why}(집기 {n}번 모두 실패 — 사람이 확인해 주세요)')
+                    return self._to_error(f'{part}: {why}(집기 {n}번 모두 실패 — 사람이 확인해 주세요)')
                 req = self._scatter.reusable_request() if action == REPLAN_SAME else None
                 if req is not None:
                     self._start_goal(dict(req, status='FOUND'))
-                    return self._set('PICK_PLACE', None, f'{block} 를 같은 자리로 다시 집으러 갑니다')
-                return self._set('SELECT', None, f'{block} 를 다시 보고 집으러 갑니다')
+                    return self._set('PICK_PLACE', None, f'{part} 를 같은 자리로 다시 집으러 갑니다')
+                return self._set('SELECT', None, f'{part} 를 다시 보고 집으러 갑니다')
             unknown = ' — 그리퍼 상태를 확인하지 못했다' if status == 'UNKNOWN' else ''
-            return self._to_error(f'{block}: {why}(흩뿌림 집기 실패 — {action}{unknown}, 사람이 확인해 주세요)')
+            return self._to_error(f'{part}: {why}(흩뿌림 집기 실패 — {action}{unknown}, 사람이 확인해 주세요)')
 
     def _stale(self, request_id, token):
         """(잠금 안) 대기 중에 정지 · 상태 변화 · 새 요청이 있었나. 있으면 이 실패 처리는 오래된 것이다."""
@@ -797,16 +797,16 @@ class TaskManager:
         '공급 채워 주세요'를 띄우지 않고 ERROR 로 간다(SLOT_EMPTY 의 WAIT_SUPPLY 와 섞지 않는다).
         """
         self._grasp_stage += 1
-        block = self.goal['part_id']
+        part = self.goal['part_id']
         if self._grasp_stage == 1:             # 같은 칸으로 다시(상태 그대로)
             return None
         if self._grasp_stage == 2:
             r = self.planner.next_block(avoid_slots=(self.goal['supply_slot'],))
-            if r['status'] == 'FOUND' and r['part_id'] == block:
+            if r['status'] == 'FOUND' and r['part_id'] == part:
                 self.goal = r
                 return None
-            return self._to_error(f'{block}: GRASP_FAILED(같은 칸 재시도 뒤 쓸 다른 칸이 없다)')
-        return self._to_error(f'{block}: GRASP_FAILED(다음 칸에서도 실패)')
+            return self._to_error(f'{part}: GRASP_FAILED(같은 칸 재시도 뒤 쓸 다른 칸이 없다)')
+        return self._to_error(f'{part}: GRASP_FAILED(다음 칸에서도 실패)')
 
     def _slot_empty(self):
         """SLOT_EMPTY: 그 칸을 빔으로 적고 같은 블록의 다음 칸으로. 맞는 칸이 다 비었으면 진짜 WAIT_SUPPLY 로 간다."""
@@ -964,7 +964,7 @@ class TaskManager:
             planner = TaskPlanner(self.cfg, design['recipe'], design['placements'])
         except (ValueError, KeyError, TypeError) as e:
             return None, f'레시피를 못 읽는다: {e}'
-        if not planner.blocks:
+        if not planner.parts:
             return None, '레시피에 블록이 없다'
         return planner, ''
 
@@ -1009,7 +1009,7 @@ class TaskManager:
             return self._reject(code, f'시작 점검 실패: {text}')
         self._reobserved = False
         self.placed = self.part_id = None
-        self.run_id = self.logger.start_run(self.design_id, len(self.planner.blocks))   # 실제 출발 때만 새 run_id
+        self.run_id = self.logger.start_run(self.design_id, len(self.planner.parts))   # 실제 출발 때만 새 run_id
         self._set('CHECK', None, '진행 확인을 시작합니다')
         return True, ''
 

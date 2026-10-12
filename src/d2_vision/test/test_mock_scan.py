@@ -1,7 +1,7 @@
 """MockScan 시험 (pytest, ROS · 로봇 없음) — 가짜 scan_capture · scan_infer · find_blocks 응답이 작업 관리자 검사를 통과하는 모양인지.
 
 작업 관리자(task_manager._scan_capture · _scan_infer)가 응답에서 확인하는 칸을 여기서 그대로 확인한다(d2_task 를 import 하지 않고).
-변환기 ②(d2_task RecipeToBlocks)와 같은 blocks 를 내는지는 d2_task 를 읽을 수 있을 때만 비교한다(없으면 건너뜀).
+변환기 ②(d2_task RecipeToParts)와 같은 blocks 를 내는지는 d2_task 를 읽을 수 있을 때만 비교한다(없으면 건너뜀).
 레시피는 저장소 src/recipe_manager/recipes 의 기본 설계 두 파일(E-69 _recipe.json + _placements.csv)을 읽는다. 파일은 pytest 임시 폴더에 쓴다.
 """
 import json
@@ -162,15 +162,15 @@ def test_bench_blocks_match_ird_example():
 
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
-    """변환기 ②(d2_task RecipeToBlocks)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
+    """변환기 ②(d2_task RecipeToParts)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
     변환기 ②는 parts/3.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 order · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:
-        rtb = pytest.importorskip('d2_task.recipe_to_blocks')
+        rtb = pytest.importorskip('d2_task.recipe_to_parts')
     finally:
         sys.path.remove(str(ROOT / 'src/d2_task'))
-    want = rtb.RecipeToBlocks('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
+    want = rtb.RecipeToParts('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
     got = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)
     keys = ('x', 'y', 'z', 'ori')
     assert [b['scan_num'] for b in got['blocks']] == [b['order'] for b in want['parts']]     # 가짜 스캔 번호 = 조립 순서

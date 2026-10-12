@@ -7,12 +7,12 @@
   part_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)을 그대로 맞춘다.
   설계 읽기는 wrist_block 과 같다(**task · wrist_block 과 같은 design_source 값을 준다**, W157):
     remote(기본)  `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — AI 생성 · 스캔 설계(DB에만 있음)도 같은 길.
-                  design/3.0 → block_checker.recipe_from_design → motion_math.recipe_blocks 로 블록 이름 · 윗면 높이를 만든다.
+                  design/3.0 → block_checker.recipe_from_design → motion_math.recipe_parts 로 블록 이름 · 윗면 높이를 만든다.
     local         `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 옆 `_placements.csv` 도)만(웹 없이 개발할 때 명시).
   캐시는 한 판(run) 안에서만(design_cache.RunDesignCache — wrist_block 과 같은 규칙): 요청 run_id 가 지난 요청과 다르면 설계를 다시 읽고,
   같으면(블록을 전부 묻든 몇 개 묻든) 읽어 둔 설계를 쓴다. 빈 run_id 는 판 구분 없음(CheckProgress.srv) — 빈 값끼리는 캐시, 이름 있는 판과 오가면 다시 읽는다.
   기본은 전부 present. 파라미터로 absent·occluded 블록을 고를 수 있다.
-  top_z_m = 팀 공용 `d2_motion.motion_math.recipe_blocks()` 가 계산한 블록 윗면 높이(base, m — 실측 두께로 쌓은 값). dz_m = 0.
+  top_z_m = 팀 공용 `d2_motion.motion_math.recipe_parts()` 가 계산한 블록 윗면 높이(base, m — 실측 두께로 쌓은 값). dz_m = 0.
   dx_m·dy_m 은 1차 규칙대로 늘 NaN(안 잼). absent·unknown 블록은 dz·top_z 도 NaN.
   CheckProgress.srv NaN 규칙과 다른 점(가짜라서 — 그대로 둔다, W140 질문): occluded 도 top_z NaN(가린 물체가 없어 윗면 값이 없다) ·
   '위 블록에 가려진 present' 를 구분하지 않고 present 는 모두 윗면 값(가짜는 아직 안 놓은 블록도 present 라 가려짐을 따지면 거의 다 NaN 이 된다).
@@ -68,7 +68,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress, JsonQuery
-from d2_motion.motion_math import RECIPE_SUFFIXES, half_height, load_recipe, recipe_blocks
+from d2_motion.motion_math import RECIPE_SUFFIXES, half_height, load_recipe, recipe_parts
 from d2_vision.block_checker import recipe_from_design, recipe_path
 from d2_vision.design_cache import RunDesignCache
 from d2_vision.mock_scan import MockScan
@@ -81,10 +81,10 @@ QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
 def recipe_tops(cfg, recipe):
     """레시피 dict(motion_math.load_recipe 모양, mm) → {part_id: 윗면 높이 m(base)}. 바깥 영향 없음.
 
-    recipe_blocks 가 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
+    recipe_parts 가 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
     로컬 파일(load_recipe)과 get_design 답(block_checker.recipe_from_design)이 같은 모양이라 두 길이 같은 함수를 쓴다.
-    실패: recipe_blocks 의 예외(KeyError · TypeError · ValueError · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) · recipe_sha256 다름)를 그대로 낸다."""
-    return {b['part_id']: b['center'][2] + half_height(b['rot'], cfg['block_actual_m']) for b in recipe_blocks(cfg, recipe)}
+    실패: recipe_parts 의 예외(KeyError · TypeError · ValueError · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) · recipe_sha256 다름)를 그대로 낸다."""
+    return {b['part_id']: b['center'][2] + half_height(b['rot'], cfg['block_actual_m']) for b in recipe_parts(cfg, recipe)}
 
 
 class MockWristBlock(Node):

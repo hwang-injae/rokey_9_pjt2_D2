@@ -14,7 +14,7 @@ import pytest
 
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument, recipe_sha256
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from d2_task.task_manager import TaskManager
 from d2_task.task_planner import TaskPlanner
 from test_task_manager import CFG, SAFE_OK, FakeIO, drive, picks
@@ -27,7 +27,7 @@ BASE = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DE
 def generated_design(base_id, design_id):
     """AI 생성이 내는 parts/3.0 을 흉내 낸다: 기본 설계를 변환기 ②로 바꾸고 design_id 만 새 이름(같은 Template 의 다음 번호, IRD 2장 예시 001_CHAIR_BENCH_V001 — E-84)으로."""
     doc = RecipeDocument.load(FIXTURES, base_id)
-    blocks = RecipeToBlocks(base_id, BASE[base_id], BLOCK_MM).convert(doc.recipe, doc.placements)
+    blocks = RecipeToParts(base_id, BASE[base_id], BLOCK_MM).convert(doc.recipe, doc.placements)
     return dict(blocks, design_id=design_id)
 
 
@@ -49,7 +49,7 @@ def fake_converter(base_id):
 
 def check_and_store(blocks, base_id):
     """check_design 서비스(JsonQuery 글자)를 부르고, 합격 응답의 recipe · placements 를 design/3.0 로 JSON 글자로 저장했다가 읽어 온다(저장소 + MQTT 흉내)."""
-    checker = DesignChecker(CFG, blocks_to_recipe=fake_converter(base_id))
+    checker = DesignChecker(CFG, parts_to_recipe=fake_converter(base_id))
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (True, ''), text
     result = json.loads(text)
@@ -95,14 +95,14 @@ def test_같은_설계를_두_번_저장해_읽어도_진행표가_같다():
     """저장 → 조회를 반복해도(캐시 · 새 판) 블록 이름 · 순서 · 받침이 바뀌지 않는다."""
     design = check_and_store(generated_design('001_CHAIR_BENCH_V000', 'bench_v2'), '001_CHAIR_BENCH_V000')
     a, b = (TaskPlanner(CFG, design['recipe'], design['placements']) for _ in range(2))
-    assert [(x['part_id'], x['supports'], x['grasp']) for x in a.blocks] == [(x['part_id'], x['supports'], x['grasp']) for x in b.blocks]
+    assert [(x['part_id'], x['supports'], x['grasp']) for x in a.parts] == [(x['part_id'], x['supports'], x['grasp']) for x in b.parts]
 
 
 def test_검사_불합격_설계는_저장할_레시피가_없다():
     """뜬 블록(받침 없음)은 check_design 이 CHECK_FAILED 로 막아 레시피가 안 나온다 — 로봇은 움직일 수 없다(SR-09)."""
     blocks = generated_design('001_CHAIR_BENCH_V000', 'bad_v1')
     blocks['parts'][-1]['z'] += 40.0
-    checker = DesignChecker(CFG, blocks_to_recipe=fake_converter('001_CHAIR_BENCH_V000'))
+    checker = DesignChecker(CFG, parts_to_recipe=fake_converter('001_CHAIR_BENCH_V000'))
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason) == (True, '') and not result['ok'] and 'recipe' not in result and 'placements' not in result and result['errors']
@@ -111,7 +111,7 @@ def test_검사_불합격_설계는_저장할_레시피가_없다():
 def test_AI가_칸을_빠뜨리면_CHECK_FAILED로_돌려보내고_코드가_채우지_않는다():
     blocks = generated_design('001_CHAIR_BENCH_V000', '001_CHAIR_BENCH_V001')
     del blocks['parts'][3]['role']
-    ok, reason, text = DesignChecker(CFG, blocks_to_recipe=fake_converter('001_CHAIR_BENCH_V000')).handle_json(json.dumps(blocks))
+    ok, reason, text = DesignChecker(CFG, parts_to_recipe=fake_converter('001_CHAIR_BENCH_V000')).handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason) == (True, '') and not result['ok'] and result['errors'][0]['reason'] == 'CHECK_FAILED' and 'role' in result['errors'][0]['detail']
 

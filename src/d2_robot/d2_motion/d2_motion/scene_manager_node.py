@@ -48,19 +48,19 @@ class SceneManagerNode(Node):
         with open(os.path.join(share, 'config', 'robot.yaml')) as f:
             self.cfg = yaml.safe_load(f)
         paths = [p for p in self.declare_parameter('recipe', '').value.split(',') if p.strip()]
-        self.blocks = {}
+        self.parts = {}
         if paths:
             recipes = [load_recipe(path.strip()) for path in paths]
             # 여러 레시피면 run_recipe 와 같은 세트 배치 (layout_designs 는 계산만으로 정해져 같은 자리가 나온다)
-            self.blocks = {b['part_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
-            self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
+            self.parts = {b['part_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
+            self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.parts)}개: {", ".join(paths)}')
         else:
             # 설치된 레시피를 하나씩 읽는다: part_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_V000_LEG_001_01) 한 사전에 넣어도 겹치지 않는다.
             # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
             for path in recipe_files(os.path.join(share, 'recipes')):
-                self.blocks.update({b['part_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})
+                self.parts.update({b['part_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})
                 self.get_logger().info(f'레시피: {path}')
-            if not self.blocks:
+            if not self.parts:
                 self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
         cb = ReentrantCallbackGroup()
         self.scene_cli = self.create_client(ApplyPlanningScene, 'apply_planning_scene', callback_group=cb)
@@ -167,7 +167,7 @@ class SceneManagerNode(Node):
         떼기: placed_center_m(3) · placed_quat(4)가 있으면 그 자리에, 없으면 레시피 자리에 놓인 블록을 넣는다.
         둘 다 없으면 쥔 상자만 지운다(놓인 블록은 다음 진행표 progress 가 넣는다).
         """
-        b = self.blocks.get(req.part_id)
+        b = self.parts.get(req.part_id)
         held_given = len(req.held_size_m) == 3 and len(req.held_offset_m) == 3
         placed_given = len(req.placed_center_m) == 3 and len(req.placed_quat) == 4
         if req.attach and not held_given and b is None:

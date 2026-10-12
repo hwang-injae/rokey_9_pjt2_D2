@@ -3,11 +3,11 @@
 흐름: 깊이 영상 → base 점군 → 높이 지도(5 mm 격자, 셀마다 최고 z) → 블록마다 설계 자리(ROI)의 높이 중앙값
       → 설계 윗면 높이와 비교 → state(present · absent · occluded · unknown) + top_z_m · dz_m. dx_m · dy_m 은 NaN(10/8 W100 전).
 
-입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_blocks(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-69 두 파일:
+입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_parts(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-69 두 파일:
 구조 recipe/3.0 + 조립 방법 placements/3.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(part_id · center(m, base) · rot 3x3)만 받는다.
 part_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
 (E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/3.0)을
-recipe_blocks 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
+recipe_parts 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
 단위: 이 파일 안은 모두 m · rad(레시피 dict 는 파일과 같은 mm 그대로 넘긴다). 좌표: base_link.
 높이 지도는 스캔 추론기(StructureScanner, W115)도 같은 함수를 쓴다.
@@ -105,10 +105,10 @@ def recipe_sha256(recipe):
 
 
 def recipe_from_design(design, design_id):
-    """get_design 답(design/3.0 dict) → motion_math.recipe_blocks 에 넣을 레시피 dict. 바깥 영향 없음(입력을 바꾸지 않는다).
+    """get_design 답(design/3.0 dict) → motion_math.recipe_parts 에 넣을 레시피 dict. 바깥 영향 없음(입력을 바꾸지 않는다).
 
     로컬 파일 길(motion_math.load_recipe)과 같은 모양을 만든다: 조립 방법(placements/3.0 — schema · model_id · recipe_sha256 · steps)에
-    구조(recipe/3.0)를 'structure' 칸으로 붙인다. 블록 · 크기 · 받침 내용은 여기서 다시 읽지 않는다 — recipe_blocks 가 읽고, 틀리면 예외를 낸다.
+    구조(recipe/3.0)를 'structure' 칸으로 붙인다. 블록 · 크기 · 받침 내용은 여기서 다시 읽지 않는다 — recipe_parts 가 읽고, 틀리면 예외를 낸다.
     입력: design = get_design 응답 JSON 을 읽은 dict · design_id = 요청한 설계 이름. 레시피 단위는 파일과 같은 mm.
     출력: 레시피 dict(조립 방법 얕은 복사 + 'structure' 칸).
     실패: ValueError — 봉투 검사는 작업 관리자(task_manager._planner_from)와 같다: schema design/3.0 · design_id 가 요청과 같음 ·
@@ -138,7 +138,7 @@ def recipe_from_design(design, design_id):
 class BlockChecker:
     """블록마다 설계 자리의 높이를 보고 있음 · 없음을 판정한다 (로봇 · ROS 없음).
 
-    입력: blocks = recipe_blocks() 출력 목록(dict: part_id · center (x, y, z) m base · rot 3x3 base←블록) ·
+    입력: blocks = recipe_parts() 출력 목록(dict: part_id · center (x, y, z) m base · rot 3x3 base←블록) ·
           origin_xy = 조립 원점 (x, y) m · half_m = 조립 작업공간 반폭 · size_m = 실측 블록 (길이, 폭, 두께) m (robot.yaml block_actual_m).
     check(points, part_ids) → 블록마다 dict(part_id, state, top_z_m, dz_m, dx_m, dy_m). dx · dy 는 늘 NaN(1차).
     바깥 영향 없음. 목록에 없는 part_id 는 state unknown, 높이 NaN."""
@@ -146,18 +146,18 @@ class BlockChecker:
     def __init__(self, blocks, origin_xy, half_m, size_m, cell_m=CELL_M):
         self.origin_xy, self.half_m, self.cell_m = origin_xy, half_m, cell_m
         size = np.asarray(size_m, float)
-        self.blocks = {}
+        self.parts = {}
         for b in blocks:
             rot = np.asarray(b['rot'], float)
             ext = np.abs(rot) @ size / 2.0                       # base x · y · z 축 방향 반폭 (m)
             cx, cy, cz = b['center']
-            self.blocks[b['part_id']] = {
+            self.parts[b['part_id']] = {
                 'center': np.array([cx, cy, cz]), 'rot': rot, 'half': size / 2.0, 'ext': ext,
                 'top_z': cz + ext[2], 'height': 2 * ext[2], 'above_tops': [],
             }
         # 설계상 이 블록 위에 올라가는 블록들의 윗면 높이 — 가려진 블록을 '받침 있음'으로 추정할 때 쓴다
-        for me in self.blocks.values():
-            for other in self.blocks.values():
+        for me in self.parts.values():
+            for other in self.parts.values():
                 if other is me:
                     continue
                 overlap = np.all(np.abs(other['center'][:2] - me['center'][:2]) < me['ext'][:2] + other['ext'][:2] - 1e-6)
@@ -183,7 +183,7 @@ class BlockChecker:
         grid, x0, y0 = height_map(points, self.origin_xy, self.half_m, self.cell_m)
         out = []
         for bid in part_ids:
-            blk = self.blocks.get(bid)
+            blk = self.parts.get(bid)
             if blk is None:
                 out.append(dict(part_id=bid, state='unknown', top_z_m=NAN, dz_m=NAN, dx_m=NAN, dy_m=NAN))
                 continue

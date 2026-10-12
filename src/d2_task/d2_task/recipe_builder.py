@@ -13,7 +13,7 @@ TOL = 1e-6
 
 # 블록 이름 = <역할>[_<옵션>]_<부품 3자리>_<블록 2자리> (예 LEG_001_01 · LEG_WHEEL_001_01).
 # 역할 · 옵션은 영문 대문자 한 단어씩, 옵션은 0~1개 — 밑줄 든 역할(ARM_REST)이 역할 + 옵션으로 읽히는 것을 막는다(10/8 E-68 ⑥).
-BLOCK_NAME = re.compile(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_([0-9]{2})')
+PART_NAME = re.compile(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_([0-9]{2})')
 
 # 부품 로컬 축 이름 → 회전행렬 R의 열 번호. 부품 치수는 L ≥ W ≥ T 순서다.
 AXES = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}
@@ -41,7 +41,7 @@ class RecipeBuilder:
     레시피 = 무엇을 어디에(블록 이름 · 부품 규격 · 중심 · 방향 · CAD 대응), 조립 방법 = 어떻게(순서 · 단계 · 잡기 · 받침).
     둘은 블록 이름으로 잇고, 조립 방법의 recipe_sha256 으로 '이 레시피에 대해 쓴 순서'임을 확인한다(구조만 다시 만들고 조립 방법을
     그대로 둔 경우를 읽는 쪽이 거부하게 — 10/8 PL).
-    CAD 도구(recipe_manager/main.py)와 변환기 ①(blocks_to_recipe)이 같이 쓴다 — 계산 · 검사 규칙을 한 벌로 두려고.
+    CAD 도구(recipe_manager/main.py)와 변환기 ①(parts_to_recipe)이 같이 쓴다 — 계산 · 검사 규칙을 한 벌로 두려고.
     좌표 규칙: mm, 오른손 좌표계, Z 위쪽, 책상면 Z = 0. 로봇 · 현장 값(TCP · 조립 원점 · 그리퍼 값)은 다루지 않는다.
     """
 
@@ -63,7 +63,7 @@ class RecipeBuilder:
         blocks = []
         for box in boxes:
             name = box['part_name']
-            if not BLOCK_NAME.fullmatch(name or ''):
+            if not PART_NAME.fullmatch(name or ''):
                 raise ValueError(f'{name!r}: block name must be <ROLE>[_<OPTION>]_<part 3 digits>_<block 2 digits> '
                                  f'(one word each, e.g. LEG_001_01 · LEG_WHEEL_001_01)')
             if any(b['part_name'] == name for b in blocks):
@@ -132,17 +132,17 @@ class RecipeBuilder:
         실패: 번호가 빠졌거나 위치 순서와 다르면 ValueError (어느 부품 · 블록인지 적는다).
         """
         # 부품(역할 + 부품 번호)별로 블록을 모은다. 위치 키는 (바닥 z, 중심 y, 중심 x) — 0.001 mm로 반올림해 같은 층을 묶는다.
-        part_blocks = {}
+        group_items = {}
         for block, (lo, hi) in zip(recipe['parts'], boxes_lo_hi):
-            role, part_no, block_no = BLOCK_NAME.fullmatch(block['part_name']).groups()
+            role, part_no, block_no = PART_NAME.fullmatch(block['part_name']).groups()
             center = (lo + hi) / 2
             key = (round(float(lo[2]), 3), round(float(center[1]), 3), round(float(center[0]), 3))
-            part_blocks.setdefault((role, int(part_no)), []).append((int(block_no), key, block['part_name']))
+            group_items.setdefault((role, int(part_no)), []).append((int(block_no), key, block['part_name']))
 
 
         # 부품 안 블록 번호 = 1..n, 위치 순서와 같음
         first_block = {}   # (역할, 부품 번호) → 첫 블록 위치 (y, x)
-        for part, items in part_blocks.items():
+        for part, items in group_items.items():
             items.sort()
             if [n for n, _, _ in items] != list(range(1, len(items) + 1)):
                 raise ValueError(f'{part[0]}_{part[1]:03d}: block numbers must run 01..{len(items):02d}')

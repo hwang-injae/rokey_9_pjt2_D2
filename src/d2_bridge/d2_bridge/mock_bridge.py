@@ -19,7 +19,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.srv import HmiCommand, JsonQuery, StopRequest
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
@@ -87,7 +87,7 @@ class MockBridge(Node):
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         out = doc.design(design_id)
         out.update(family=family, version='V000', parent_id=None, made_by='cad',
-                   parts=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
+                   parts=RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
         return out
 
     def _on_get_design(self, req, res):

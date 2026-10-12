@@ -33,7 +33,7 @@ class DesignRejected(ValueError):
         self.errors = errors
 
 
-class BlocksToRecipe:
+class PartsToRecipe:
     """parts/3.0 → {'recipe': recipe/3.0, 'placements': placements/3.0}.
 
     AI가 고른 값(역할 · 옵션 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로 옮기고 대신 채우지 않는다(E-69 ②).
@@ -103,13 +103,13 @@ class BlocksToRecipe:
 
         # AI 실수 검사 ① 역할 목록 ② 부품 이어짐 ③ 고른 잡기 — 셋 다 모아 한 번에 돌려준다
         boxes = {b['order']: self.calculate_box(b) for b in items}
-        errors = self.check_role_names(items) + self.check_parts_connected(items, boxes) + self.check_chosen_grasps(items)
+        errors = self.check_role_names(items) + self.check_groups_connected(items, boxes) + self.check_chosen_grasps(items)
         if errors:
             raise DesignRejected(errors)
 
 
         # 블록 이름 붙이기 → 꼭짓점 8개 → 레시피 · 조립 방법 (계산 · 받침 · 단계 규칙 검사는 CAD 도구와 같은 RecipeBuilder)
-        names = self.make_block_names(items, boxes)
+        names = self.make_part_names(items, boxes)
         vertices, hints = [], {}
         for b in items:
             lo, hi = boxes[b['order']]
@@ -161,7 +161,7 @@ class BlocksToRecipe:
                 errors.append({'part': b['order'], 'detail': f'{b["order"]}번 옵션 {option} 는 옵션 목록에 없다(있는 것: {", ".join(sorted(self.options))})'})
         return errors
 
-    def check_parts_connected(self, items, boxes):
+    def check_groups_connected(self, items, boxes):
         """② 같은 부품 그룹(역할 + group 값)의 블록이 면으로 맞닿아 한 덩어리인지 본다.
 
         맞닿음 = 한 축에서 면이 붙고(간격 0) 나머지 두 축에서 넓이가 0보다 크게 겹침 — 모서리 · 꼭짓점만 닿는 것은 아님(10/8 한세교:
@@ -226,7 +226,7 @@ class BlocksToRecipe:
             groups.setdefault((b['role'], b['group']), []).append(b['order'])
         return groups
 
-    def make_block_names(self, items, boxes):
+    def make_part_names(self, items, boxes):
         """블록 이름을 매긴다 — 작명 규칙 v3: 역할[_옵션]마다 부품 번호(첫 블록 위치 앞 −y → 뒤, 왼 −x → 오른),
         부품 안 블록 번호(아래층부터, 같은 층은 앞 → 뒤, 왼 → 오른). AI의 group 값은 묶음 표시일 뿐 번호로 쓰지 않는다.
 

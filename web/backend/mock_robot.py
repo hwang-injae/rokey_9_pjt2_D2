@@ -33,10 +33,10 @@ for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS �
 import yaml  # noqa: E402
 from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, PendingReplies, alive_payload,  # noqa: E402
                                     parse_request, req_topic, res_topic)
-from d2_task.blocks_to_recipe import BlocksToRecipe  # noqa: E402
+from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from d2_task.recipe_document import RecipeDocument  # noqa: E402
-from d2_task.recipe_to_blocks import RecipeToBlocks  # noqa: E402
+from d2_task.recipe_to_parts import RecipeToParts  # noqa: E402
 from mqtt_client import make_mqtt_client  # noqa: E402
 
 RECIPES = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
@@ -98,7 +98,7 @@ class MockRobot:
         self.block_mm = [v * 1000 for v in cfg['block_size_m']]
         self.origin = cfg['assembly_origin']   # 가짜 점군을 base_link 로 옮길 때(진짜 점군과 같은 좌표)
         self.checker = DesignChecker(cfg)      # 로봇 PC task_node 와 같은 연결(검사 묶음 + 변환기 ① — 손가락 규칙은 검사 묶음 것)
-        self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, self.block_mm).convert
+        self.checker.parts_to_recipe = PartsToRecipe(self.checker.grasp_options, self.block_mm).convert
         self.step_s = step_s
         self.service_s = float(cfg['timeout']['service_s'])   # get_design 답을 기다리는 시간(작업 관리자와 같은 값)
         self.pending = PendingReplies()
@@ -135,7 +135,7 @@ class MockRobot:
         """레시피 두 파일 → (doc, parts/3.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
         family = 'chair' if 'CHAIR' in design_id.upper() else 'desk'
         doc = RecipeDocument.load(RECIPES, design_id)
-        return doc, RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
+        return doc, RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
 
     # ---------- 방송 ----------
     def pub(self, topic, body, qos=1):

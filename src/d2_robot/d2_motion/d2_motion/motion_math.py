@@ -338,7 +338,7 @@ def recipe_sha256(recipe):
 
 def load_recipe(path):
     """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/3.0)를 읽어
-    {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_blocks 가 둘을 블록 이름으로 잇는다(E-69).
+    {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_parts 가 둘을 블록 이름으로 잇는다(E-69).
     steps 는 CSV 의 조립 방법 칸(block · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
     실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/3.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
@@ -368,7 +368,7 @@ def recipe_model_id(recipe):
     return recipe['model']['model_id'] if 'model' in recipe else recipe.get('model_id', '')
 
 
-def recipe_blocks(cfg, recipe):
+def recipe_parts(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
     레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
@@ -452,7 +452,7 @@ def layout_designs(cfg, recipes):
     의자의 앞(−y)에 책상), 세트 전체의 가운데를 조립 중심에 맞춘다. 계산만으로 정해지므로 run_recipe 와 scene_manager 가
     같은 레시피 목록이면 같은 자리를 쓴다. 조립 작업공간(중심 ± assembly_area_half_m)을 넘으면 ValueError.
     """
-    designs = [recipe_blocks(cfg, r) for r in recipes]
+    designs = [recipe_parts(cfg, r) for r in recipes]
     names = [recipe_model_id(r) or f'{k + 1}번' for k, r in enumerate(recipes)]
     fps = [footprint(cfg, b) for b in designs]
     shifts, y_top = [], None

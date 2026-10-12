@@ -16,7 +16,7 @@
   save_cloud: 합친 점군(base_link, m)을 복셀 다운샘플해 binary PLY(≤ 2 MB, IRD E-67 cloud_path)로 저장.
   match_rate: 추론 vs 정답 일치율(V-48, E-45).
 
-방향 코드(ori)는 d2_task.recipe_to_blocks.ori_extents 와 같은 표다(정답 블록 JSON 이 그 변환기에서 나온다 — 시험이 같은지 확인한다).
+방향 코드(ori)는 d2_task.recipe_to_parts.ori_extents 와 같은 표다(정답 블록 JSON 이 그 변환기에서 나온다 — 시험이 같은지 확인한다).
 d2_task 를 import 하지 않는다(CI 는 d2_vision 만 빌드 · 시험).
 단위: 이 파일 안 계산은 mm(설계 좌표계, 블록 JSON 과 같음). 입력 자세 · 출력 PLY 는 m(base_link).
 """
@@ -64,7 +64,7 @@ PREVIEW_SCHEMA = 'scan_preview/1.0'   # 스캔 중 점군 미리보기 알림(E-
 
 
 def ori_extents(block_mm):
-    """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). d2_task.recipe_to_blocks.ori_extents 와 같은 표."""
+    """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). d2_task.recipe_to_parts.ori_extents 와 같은 표."""
     L, W, T = block_mm
     return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 

@@ -8,16 +8,16 @@ import pytest
 
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from d2_task.task_planner import TaskPlanner
 from test_design_checker import CFG, DESIGNS
-from test_recipe_to_blocks import BLOCK_MM, IDS, RECIPES
+from test_recipe_to_parts import BLOCK_MM, IDS, RECIPES
 
 
 def blocks_of(model_id):
     doc = RecipeDocument.load(RECIPES, model_id)
     design_id, family, _ = IDS[model_id]
-    return doc, RecipeToBlocks(design_id, family, BLOCK_MM).convert(doc.recipe, doc.placements)
+    return doc, RecipeToParts(design_id, family, BLOCK_MM).convert(doc.recipe, doc.placements)
 
 
 @pytest.mark.parametrize('model_id', IDS)
@@ -25,8 +25,8 @@ def test_4종_읽기_진행표_검사가_이어진다(model_id):
     doc, blocks = blocks_of(model_id)
     assert doc.placements['recipe_sha256'] and doc.recipe['model_id'] == doc.placements['model_id'] == model_id
     planner = TaskPlanner(CFG, doc.recipe, doc.placements)
-    assert len(planner.blocks) == len(blocks['parts']) == IDS[model_id][2]
-    assert all(b['part_id'].startswith(model_id + '_') for b in planner.blocks)
+    assert len(planner.parts) == len(blocks['parts']) == IDS[model_id][2]
+    assert all(b['part_id'].startswith(model_id + '_') for b in planner.parts)
     result = DesignChecker(CFG).check(blocks)
     assert result['ok'] and result['errors'] == [] and result['schema'] == 'check_result/3.0'
     assert result['min_margin_mm'] == DESIGNS[model_id][2]                 # V-45: 12.5 / 12.5 / 7.5 / 12.5

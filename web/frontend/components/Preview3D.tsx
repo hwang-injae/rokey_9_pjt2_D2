@@ -17,7 +17,7 @@ export interface Item3D {
 
 type Mm3 = [number, number, number];
 
-/** 방향 코드 → 설계 x · y · z 방향 길이(IRD 2장 ori 표 — d2_task recipe_to_blocks.ori_extents 와 같은 규칙). 모르는 코드는 null */
+/** 방향 코드 → 설계 x · y · z 방향 길이(IRD 2장 ori 표 — d2_task recipe_to_parts.ori_extents 와 같은 규칙). 모르는 코드는 null */
 export function oriExtent(ori: string, [L, W, T]: Mm3): Mm3 | null {
   const table: Record<string, Mm3> = { x: [L, W, T], y: [W, L, T], xe: [L, T, W], ye: [T, L, W], zx: [T, W, L], zy: [W, T, L] };
   return table[ori] ?? null;

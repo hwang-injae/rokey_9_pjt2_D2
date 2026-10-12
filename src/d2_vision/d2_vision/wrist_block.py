@@ -36,10 +36,10 @@
   (다르면 task 는 웹 설계로 쌓는데 손목은 파일 설계로 보는 식으로 어긋난다).
   remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — 생성 · 스캔 설계도 같은 길.
                 design/3.0 의 recipe(구조) + placements(조립 방법)를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
-                팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다. 설계마다 · 판(run)마다 받아 캐시(실패는 캐시 안 함).
+                팀 공용 `d2_motion.motion_math.recipe_parts()` 로 base 블록 목록을 만든다. 설계마다 · 판(run)마다 받아 캐시(실패는 캐시 안 함).
                 제한 시간 robot.yaml timeout.service_s. 실패하면 로컬 파일로 대신하지 않고 check_progress 를 실패로 답한다(아래).
   local         파일만(웹 없이 개발할 때 명시): `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 같은 폴더 `_placements.csv` 도 읽음)을
-                `load_recipe()` · `recipe_blocks()` 로(설계마다 · 판마다 캐시).
+                `load_recipe()` · `recipe_parts()` 로(설계마다 · 판마다 캐시).
   캐시는 한 판(run) 안에서만(E-55 ① 10/7 PL — 기본 설계는 같은 design_id 로 다시 등록될 수 있다): check_progress 요청의 run_id 가
   지난 요청과 다르면 새 판으로 보고 그 설계를 다시 읽는다(E-60 ②, 10/10 W157). 같은 run_id 면 블록을 몇 개 묻든(전부를 묻는 시작 확인도)
   읽어 둔 설계를 쓴다 — '블록 전부를 묻는 요청 = 새 판'이라고 짐작하지 않는다. 다시 읽기가 실패하면 지난 판의 설계로 답하지 않는다.
@@ -121,7 +121,7 @@ from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress, JsonQuery
-from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
+from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_parts
 from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_depth_mm, recipe_from_design, recipe_path
 from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
 from d2_vision.design_cache import RunDesignCache
@@ -312,7 +312,7 @@ class WristBlock(Node):
 
     def _local_checker(self, design_id):
         """design_source:=local — `<recipe_dir>/<design_id>_recipe.json`(구조 — load_recipe 가 옆 `_placements.csv` 도 붙임)
-        → recipe_blocks(robot.yaml, 레시피) → BlockChecker. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
+        → recipe_parts(robot.yaml, 레시피) → BlockChecker. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
         출력: (BlockChecker, '') 또는 (None, 'ERROR') — 파일 없음 · 이름 문자 이상 · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) ·
         recipe_sha256 다름 · 블록 크기 다름. 바깥 영향: 파일 읽기 · 로그."""
         recipe_dir = self.get_parameter('recipe_dir').value
@@ -325,13 +325,13 @@ class WristBlock(Node):
         except (OSError, KeyError, TypeError, ValueError) as e:
             self.get_logger().error('레시피 %s 를 못 읽음(%s): %s' % (design_id, path, e))
             return None, 'ERROR'
-        self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.blocks)))
+        self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.parts)))
         return chk, ''
 
     def _make_checker(self, recipe):
-        """레시피 dict(load_recipe 모양, mm) → 팀 공용 recipe_blocks(robot.yaml) → BlockChecker. 실패는 recipe_blocks 의 예외 그대로."""
+        """레시피 dict(load_recipe 모양, mm) → 팀 공용 recipe_parts(robot.yaml) → BlockChecker. 실패는 recipe_parts 의 예외 그대로."""
         o = self.cfg['assembly_origin']
-        return BlockChecker(recipe_blocks(self.cfg, recipe), (o['x_m'], o['y_m']),
+        return BlockChecker(recipe_parts(self.cfg, recipe), (o['x_m'], o['y_m']),
                             float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
 
     def _remote_checker(self, design_id):
@@ -358,7 +358,7 @@ class WristBlock(Node):
         except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/3.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
             self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
             return None, 'ERROR'
-        self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.blocks)))
+        self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.parts)))
         return chk, ''
 
     # ---------- 카메라 ----------

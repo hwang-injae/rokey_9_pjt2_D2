@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_task', ROOT / 'src' / 'd2_bridge'):
     sys.path.insert(0, str(p))
 
-from d2_task.blocks_to_recipe import BlocksToRecipe  # noqa: E402
+from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from design_gen import MAX_REGEN, DesignGenerator, GenError  # noqa: E402
 from design_store import DesignStore  # noqa: E402
@@ -62,7 +62,7 @@ def answer(cands, out=False, reason=''):
 def real_check():
     """로봇 PC task_node 와 같은 검사 묶음(DesignChecker + 변환기 ①) — MqttClient.request 가 돌려주는 응답 꼴로."""
     checker = DesignChecker(CFG)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, [v * 1000 for v in CFG['block_size_m']]).convert
+    checker.parts_to_recipe = PartsToRecipe(checker.grasp_options, [v * 1000 for v in CFG['block_size_m']]).convert
 
     def check(blocks):
         success, reason, rj = checker.handle_json(json.dumps(blocks, ensure_ascii=False))

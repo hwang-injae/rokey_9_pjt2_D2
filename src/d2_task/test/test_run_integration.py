@@ -2,7 +2,7 @@
 """한 run 의 기록 일치 · 서로 다른 설계 두 run 의 저장 실패 보존 시험 (W122 task 쪽 준비, 로봇 · 웹 · ROS 없이).
 
 설계 수신(design/3.0) → 가상 조립 → 진행표 → CSV → build/2 → 저장 요청(BuildSender)이 한 실행 흐름에서 같은 설계 · 같은 run 을 가리키는지 본다.
-검사 묶음과 변환기 ①은 실제 DesignChecker · BlocksToRecipe 를 쓴다(task_node 와 같은 배선). 실제 TaskManager · TaskPlanner · RunLogger(파일) · BuildSender 를
+검사 묶음과 변환기 ①은 실제 DesignChecker · PartsToRecipe 를 쓴다(task_node 와 같은 배선). 실제 TaskManager · TaskPlanner · RunLogger(파일) · BuildSender 를
 쓰고, 로봇 · 원격 서비스 경계만 FakeIO · FakeFuture 로 대신한다. 내부 상태를 DONE · present 로 바꾸지 않는다(새 조립 전에 작업대를 비울 뿐 — test_build_saving.assemble 과 같음).
 
 범위 밖: 웹 · MQTT · DB · 실제 ROS 서비스 · 손목 블록 인식의 설계 캐시. check_progress 요청에 실리는 design_id · run_id 는 task 쪽 값(manager)을 기록해 볼 뿐이다.
@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from d2_task.blocks_to_recipe import BlocksToRecipe
+from d2_task.parts_to_recipe import PartsToRecipe
 from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
 from d2_task.run_logger import COLUMNS, RunLogger
@@ -33,7 +33,7 @@ def store_with_real_converter(blocks):
     실패: 합격하지 못하면 AssertionError(응답 글자 포함).
     """
     checker = DesignChecker(CFG)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, [v * 1000.0 for v in CFG['block_size_m']]).convert   # task_node 와 같은 배선
+    checker.parts_to_recipe = PartsToRecipe(checker.grasp_options, [v * 1000.0 for v in CFG['block_size_m']]).convert   # task_node 와 같은 배선
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (True, ''), text
     result = json.loads(text)

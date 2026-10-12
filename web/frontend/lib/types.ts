@@ -84,8 +84,8 @@ export interface CmdResult {
   message?: string;
 }
 
-/** parts/3.0 블록 하나(IRD 6장) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
-export interface Block2 {
+/** parts/3.0 부품 하나(IRD 6장 — 10/13 이름 규칙: 설계 안 부품 = part) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
+export interface DesignPart {
   order: number;
   x: number;
   y: number;
@@ -106,7 +106,7 @@ export interface Design {
   version: string;
   parent_id: string | null;
   made_by: string;
-  parts: { schema: string; parts: Block2[] };
+  parts: { schema: string; parts: DesignPart[] };
   placements: { steps: { part_id: string; sequence: number }[] };
 }
 
@@ -138,7 +138,7 @@ export interface GenCheck {
 /** AI 후보 하나 — 블록(3D) · 한 줄 생각 · 검사 결과(검사 전이면 없음) */
 export interface GenCandidate {
   idea: string;
-  parts: { schema: string; design_id: string; parts: Block2[] };
+  parts: { schema: string; design_id: string; parts: DesignPart[] };
   check?: GenCheck;
 }
 

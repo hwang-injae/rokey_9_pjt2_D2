@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents
+from d2_task.recipe_to_parts import RecipeToParts, ori_extents
 
 SCHEMA_DESIGN = 'design/3.0'
 SCHEMA_PARTS = 'parts/3.0'
@@ -113,7 +113,7 @@ class DesignStore:
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         design = doc.design(design_id)
         design.update(schema=SCHEMA_DESIGN, family=family, version='V000', parent_id=None, made_by='cad',
-                      parts=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements),
+                      parts=RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements),
                       created=round(time.time(), 3))
         self._write(self._design_path(design_id), design)
         return design
@@ -172,9 +172,9 @@ class DesignStore:
         for path in sorted(self.designs_dir.glob('*.json')):
             try:
                 d = self.get_design(path.stem)
-                blocks = d['parts']['parts']
+                parts = d['parts']['parts']
                 row = {k: d.get(k) for k in ('design_id', 'family', 'version', 'parent_id', 'made_by')}
-                row.update(block_count=len(blocks), size_mm=self._size_mm(blocks),
+                row.update(block_count=len(parts), size_mm=self._size_mm(parts),
                            last_build=build_summary(last[d['design_id']]) if d.get('design_id') in last else None)
             except (OSError, ValueError, KeyError, TypeError) as e:
                 log.warning('[저장소] %s 건너뜀: %s', path.name, e)
@@ -197,15 +197,15 @@ class DesignStore:
                 out.append(b)
         return out
 
-    def _size_mm(self, blocks):
+    def _size_mm(self, parts):
         """parts/3.0 블록들의 바깥 크기 [x, y, z] mm. 방향 코드를 모르면 ValueError."""
         lo, hi = [float('inf')] * 3, [float('-inf')] * 3
-        for b in blocks:
+        for b in parts:
             ex, ey, ez = self.extent[b['ori']]
             box = ((b['x'] - ex / 2, b['x'] + ex / 2), (b['y'] - ey / 2, b['y'] + ey / 2), (b['z'], b['z'] + ez))
             for i, (a, c) in enumerate(box):
                 lo[i], hi[i] = min(lo[i], a), max(hi[i], c)
-        return [round(hi[i] - lo[i], 1) for i in range(3)] if blocks else [0, 0, 0]
+        return [round(hi[i] - lo[i], 1) for i in range(3)] if parts else [0, 0, 0]
 
     # ---------- 새 설계 ----------
     def new_design_id(self, template, parent_id=None):
@@ -228,10 +228,10 @@ class DesignStore:
             raise ValueError(f'{template} 의 번호가 V999 를 넘는다')
         return f'{template}_V{n:03d}', f'V{n:03d}'
 
-    def save_design(self, blocks, recipe, placements, parent_id, made_by, prompt=None, check=None):
+    def save_design(self, parts, recipe, placements, parent_id, made_by, prompt=None, check=None):
         """검사를 통과해 사람이 고른 설계 하나를 저장한다(SDD 6.8 · IRD 8.3 ⑥ · 8.4 ⑦). 저장한 설계는 고치지 않는다(E-55 ①).
 
-        입력: blocks(parts/3.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 blocks 로 check_design 이 돌려준 것) ·
+        입력: parts(parts/3.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 parts 로 check_design 이 돌려준 것) ·
               parent_id · made_by(web · voice · scan) · prompt(요청 문장) · check(check_result/3.0 — ok · min_margin_mm · errors).
         출력: 저장한 기록 = design/3.0(version = ID 의 V 번호, family = Template 에서) + prompt · check · created(DB designs 칸, FR-D02).
         실패(ValueError — 저장하지 않음): 검사 불합격(SR-09 — AI 설계는 검사 통과 없이 로봇에 가지 않는다) · made_by · 형식 ·
@@ -242,9 +242,9 @@ class DesignStore:
             raise ValueError(f'made_by 는 {MADE_BY_NEW} 중 하나다: {made_by!r}')
         if not isinstance(check, dict) or check.get('ok') is not True:
             raise ValueError('검사에 합격한 설계만 저장한다(check.ok 가 true 가 아니다)')
-        if not isinstance(blocks, dict) or not same_major(blocks.get('schema'), SCHEMA_PARTS):
+        if not isinstance(parts, dict) or not same_major(parts.get('schema'), SCHEMA_PARTS):
             raise ValueError(f'parts 형식이 {SCHEMA_PARTS} 가 아니다')
-        design_id = blocks.get('design_id')
+        design_id = parts.get('design_id')
         template, number = split_design_id(design_id)
         if number == 0:
             raise ValueError(f'{design_id}: V000 은 기본 설계(도면) 몫이다 — new_design_id 로 다음 번호를')
@@ -259,7 +259,7 @@ class DesignStore:
             if self._template_or_none(parent_id) != template:
                 raise ValueError(f'부모 {parent_id} 는 Template {template} 이 아니다 — 같은 Template 만 부모로 둔다(E-84)')
         record = {'schema': SCHEMA_DESIGN, 'design_id': design_id, 'family': family, 'version': f'V{number:03d}',
-                  'parent_id': parent_id, 'made_by': made_by, 'recipe': recipe, 'placements': placements, 'parts': blocks,
+                  'parent_id': parent_id, 'made_by': made_by, 'recipe': recipe, 'placements': placements, 'parts': parts,
                   'prompt': prompt, 'check': {k: check.get(k) for k in ('ok', 'min_margin_mm', 'errors')},
                   'created': round(time.time(), 3)}
         path = self._design_path(design_id)

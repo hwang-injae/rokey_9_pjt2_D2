@@ -4,7 +4,7 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
 노드와 나눈 이유: ROS 없이 pytest 로 응답 모양을 시험하려고(CLAUDE.md 2장 — 계산 파일은 같은 패키지 다른 파일로).
 - scan_infer 의 blocks/2 는 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
   직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
-  d2_task 의 변환기 ②(RecipeToBlocks)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
+  d2_task 의 변환기 ②(RecipeToParts)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
   d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
   결과가 같은지는 시험(test_mock_scan.py)이 d2_task 가 있을 때 비교한다.
 - image_path · cloud_path 는 실제 파일을 쓴다(다리가 읽어 보낼 수 있게): `<임시 폴더>/d2_scan/<run_id>/color.png` · `cloud.ply`.
@@ -147,7 +147,7 @@ def _footprints(blocks, size_mm):
 def blocks_to_points(blocks, origin, size_mm, step_mm=CLOUD_STEP_MM):
     """blocks/2(mm, 설계) → 블록 윗면 점군 (N, 3) m, base_link. 바깥 영향 없음.
 
-    size_mm = 블록 크기(길이 · 폭 · 두께). origin = robot.yaml assembly_origin(x_m · y_m · z_m · yaw_deg) — 설계 원점을 base 로 옮긴다(motion_math.recipe_blocks 와 같은 뜻:
+    size_mm = 블록 크기(길이 · 폭 · 두께). origin = robot.yaml assembly_origin(x_m · y_m · z_m · yaw_deg) — 설계 원점을 base 로 옮긴다(motion_math.recipe_parts 와 같은 뜻:
     설계 좌표를 yaw 만큼 돌리고 원점만큼 민다). 위에서 보는 손목 카메라처럼 윗면만 둔다(가려진 아래 블록 윗면도 겹쳐 남는다 — 가짜라 그대로)."""
     yaw = math.radians(float(origin.get('yaw_deg', 0.0)))
     c, s = math.cos(yaw), math.sin(yaw)

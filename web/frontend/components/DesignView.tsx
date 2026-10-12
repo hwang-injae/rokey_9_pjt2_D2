@@ -6,7 +6,7 @@
 // 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = parts.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
-import type { Block2, CmdResult, Design, Rules } from '@/lib/types';
+import type { DesignPart, CmdResult, Design, Rules } from '@/lib/types';
 import type { Robot } from '@/lib/ws';
 import { MADE_KO, ROLE, designName, roleOf, stateName } from '@/lib/names';
 import DesignTree from './DesignTree';
@@ -16,8 +16,8 @@ const OTHER = '#a8a29e'; // 목록에 없는 새 역할(AI 가 지은 이름 —
 const PROG = { present: '#22c55e', current: '#facc15', unsure: '#f97316', todo: '#9ca3af' };
 
 /** 블록 → 3D 상자(역할별 색, 스캔 추정 블록은 반투명). 설계 3D · AI 후보 미리보기(GeneratePanel)가 같이 쓴다 */
-export const roleItems = (blocks: Block2[]): Item3D[] =>
-  blocks.map((b) => ({ x: b.x, y: b.y, z: b.z, ori: b.ori, color: ROLE[roleOf(b.role)]?.color ?? OTHER, opacity: b.inferred ? 0.45 : 1 }));
+export const roleItems = (parts: DesignPart[]): Item3D[] =>
+  parts.map((b) => ({ x: b.x, y: b.y, z: b.z, ori: b.ori, color: ROLE[roleOf(b.role)]?.color ?? OTHER, opacity: b.inferred ? 0.45 : 1 }));
 
 interface Props {
   robot: Robot;

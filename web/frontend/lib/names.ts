@@ -31,8 +31,8 @@ export const ROLE: Record<string, { ko: string; color: string }> = {
 };
 export const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 나누지 않음)
 
-/** '001_CHAIR_BENCH_V001_LEG_001_03' → '다리 1-3'(부품 1의 3번째 블록) */
-export function blockName(partId?: string | null, designId?: string | null): string {
+/** '001_CHAIR_BENCH_V001_LEG_001_03' → '다리 1-3'(부품 그룹 1의 3번째 부품) */
+export function partName(partId?: string | null, designId?: string | null): string {
   if (!partId) return '';
   const rest = designId && partId.startsWith(designId + '_') ? partId.slice(designId.length + 1) : partId;
   const m = /^([A-Z]+)(?:_[A-Z]+)?_(\d{3})_(\d{2})$/.exec(rest);

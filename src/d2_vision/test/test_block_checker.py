@@ -1,6 +1,6 @@
 """BlockChecker 시험 (pytest, ROS · 로봇 없음) — SDD 9장 "블록 빼기 · 더 놓기 · 어긋남" + W140(E-52 → E-69) 레시피 파일 · get_design 답 읽기.
 
-블록 목록은 recipe_blocks() 출력 형식(part_id · center m base · rot)을 여기서 직접 만든다(벤치 11개 — 001_CHAIR_BENCH_V000 와 같은 배치).
+블록 목록은 recipe_parts() 출력 형식(part_id · center m base · rot)을 여기서 직접 만든다(벤치 11개 — 001_CHAIR_BENCH_V000 와 같은 배치).
 d2_motion 을 import 하지 않는다: CI 는 d2_vision 만 빌드한다. 예외 하나 — 로컬 · get_design 두 길 비교 시험은 d2_motion · d2_task 를
 pytest.importorskip 으로 읽어, 없으면(CI) 건너뛴다.
 가짜 점군: 놓인 블록의 윗면 + 작업면만(2 mm 간격 — 손목 카메라가 위에서 볼 때 보이는 면).
@@ -29,7 +29,7 @@ def rot_z(R, yaw):
 
 
 def bench_blocks():
-    """벤치 11개를 recipe_blocks() 출력 모양으로. 벽 2열 × 4층(긴 쪽 y) + 좌판 3개(긴 쪽 x). 높이는 실측 두께로 쌓는다."""
+    """벤치 11개를 recipe_parts() 출력 모양으로. 벽 2열 × 4층(긴 쪽 y) + 좌판 3개(긴 쪽 x). 높이는 실측 두께로 쌓는다."""
     yaw = math.radians(ORIGIN['yaw_deg'])
     c, s = math.cos(yaw), math.sin(yaw)
     R_y = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
@@ -184,7 +184,7 @@ def test_new_full_names_match_and_foreign_ids_unknown():
     assert all(math.isnan(r['top_z_m']) and math.isnan(r['dz_m']) for r in res[1:3])
 
 
-# ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/3.0) → recipe_blocks 에 넣을 레시피 ----------------
+# ---------------- design_source remote (10/7 민범진 · 한석형): get_design 답(design/3.0) → recipe_parts 에 넣을 레시피 ----------------
 RECIPE = {'schema': 'recipe/3.0', 'model_id': '001_CHAIR_BENCH_V000', 'stocks': [], 'blocks': []}
 PLACEMENTS = {'schema': 'placements/3.0', 'model_id': '001_CHAIR_BENCH_V000', 'recipe_sha256': recipe_sha256(RECIPE), 'steps': []}
 
@@ -258,13 +258,13 @@ def test_local_and_get_design_paths_give_same_blocks(design_id, n):
         path = recipe_path(str(folder), design_id, mm.RECIPE_SUFFIXES)
         if path is None:
             pytest.skip(f'{folder} 에 {design_id} 레시피가 없다')
-        local = mm.recipe_blocks(cfg, mm.load_recipe(str(path)))
+        local = mm.recipe_parts(cfg, mm.load_recipe(str(path)))
         d = json.loads(json.dumps(rd.RecipeDocument.load(folder, design_id).design(design_id)))   # 서비스로 오가는 JSON 글자를 한 번 거친다
         assert recipe_sha256(d['recipe']) == mm.recipe_sha256(d['recipe']) == d['placements']['recipe_sha256'], path.name   # 세 곳 해시 식이 같다
-        remote = mm.recipe_blocks(cfg, recipe_from_design(d, design_id))
+        remote = mm.recipe_parts(cfg, recipe_from_design(d, design_id))
         names = [b['part_id'] for b in local]
         assert len(names) == len(set(names)) == n, path.name
         assert [b['part_id'] for b in remote] == names, path.name
         assert all(np.allclose(a['center'], b['center']) and np.allclose(a['rot'], b['rot']) for a, b in zip(local, remote))
         planner = tp.TaskPlanner(cfg, d['recipe'], d['placements'])
-        assert [b['part_id'] for b in planner.blocks] == names, path.name
+        assert [b['part_id'] for b in planner.parts] == names, path.name

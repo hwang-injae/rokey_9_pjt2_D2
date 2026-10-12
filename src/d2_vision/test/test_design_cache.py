@@ -181,7 +181,7 @@ class Harness:
         n.get_logger = lambda: logging.getLogger('test_design_cache')
         n._call = lambda cli, req, wait_s: cli.answer(req)
         if kind == 'wrist':
-            n._make_checker = lambda recipe: SimpleNamespace(tag=recipe['structure']['parts'][0]['tag'], blocks={'A': 1, 'B': 2})
+            n._make_checker = lambda recipe: SimpleNamespace(tag=recipe['structure']['parts'][0]['tag'], parts={'A': 1, 'B': 2})
             n.T_tcp2c = object()
             n.read_tcp = lambda: self.reached.append(1)      # 설계를 읽은 뒤 첫 단계 — None 을 돌려 TF 없음(TIMEOUT)으로 끝낸다
             n.now = lambda: 0.0
@@ -328,15 +328,15 @@ def generated_design(model_id, family, design_id, made_by):
     블록 이름은 `<design_id 대문자>_<역할>_<부품>_<번호>` 가 된다."""
     import copy
     rd = pytest.importorskip('d2_task.recipe_document')
-    rb = pytest.importorskip('d2_task.recipe_to_blocks')
-    b2r = pytest.importorskip('d2_task.blocks_to_recipe')
+    rb = pytest.importorskip('d2_task.recipe_to_parts')
+    b2r = pytest.importorskip('d2_task.parts_to_recipe')
     dc = pytest.importorskip('d2_task.design_checker')
     cfg = robot_cfg()
     block_mm = [v * 1000.0 for v in cfg['block_size_m']]
     base = rd.RecipeDocument.load(ROOT / 'src/recipe_manager/recipes', model_id)
-    blocks = copy.deepcopy(rb.RecipeToBlocks(model_id, family, block_mm).convert(base.recipe, base.placements))
+    blocks = copy.deepcopy(rb.RecipeToParts(model_id, family, block_mm).convert(base.recipe, base.placements))
     blocks['design_id'] = design_id
-    out = b2r.BlocksToRecipe(dc.DesignChecker(cfg).grasp_options, block_mm).convert(blocks)
+    out = b2r.PartsToRecipe(dc.DesignChecker(cfg).grasp_options, block_mm).convert(blocks)
     doc = rd.RecipeDocument(out['recipe'], out['placements']).design(design_id)
     return json.loads(json.dumps(dict(doc, made_by=made_by, family=family)))       # get_design 답은 DB 칸(made_by 등)이 더 붙는다 — 모르는 칸은 무시한다
 
@@ -346,7 +346,7 @@ def base_tops(model_id):
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()
     return {b['part_id']: b['center'][2] + mm.half_height(b['rot'], cfg['block_actual_m'])
-            for b in mm.recipe_blocks(cfg, mm.load_recipe(str(ROOT / 'src/recipe_manager/recipes' / f'{model_id}_recipe.json')))}
+            for b in mm.recipe_parts(cfg, mm.load_recipe(str(ROOT / 'src/recipe_manager/recipes' / f'{model_id}_recipe.json')))}
 
 
 @pytest.mark.parametrize('model_id, family, design_id, made_by', [
@@ -359,7 +359,7 @@ def test_mock이_get_design의_AI_스캔_설계로_블록_이름과_윗면_높�
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()
     doc = generated_design(model_id, family, design_id, made_by)
-    real_tops = load_function(PKG / 'mock_wrist_block.py', 'recipe_tops', {'half_height': mm.half_height, 'recipe_blocks': mm.recipe_blocks})
+    real_tops = load_function(PKG / 'mock_wrist_block.py', 'recipe_tops', {'half_height': mm.half_height, 'recipe_parts': mm.recipe_parts})
     hh = Harness('mock', tmp_path, registry={design_id: doc}, real_tops=real_tops)
     hh.node.cfg = cfg
     expected = {name.replace(model_id, design_id.upper(), 1): top for name, top in base_tops(model_id).items()}

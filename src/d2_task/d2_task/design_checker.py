@@ -9,8 +9,8 @@ import json
 import math
 import re
 
-from d2_task.recipe_to_blocks import ori_extents
-from d2_task.blocks_to_recipe import DesignRejected
+from d2_task.recipe_to_parts import ori_extents
+from d2_task.parts_to_recipe import DesignRejected
 from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
 
 SCHEMA_REQUEST = 'parts/3.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 스캔 형식 blocks/2 는 위치 · 방향만이라 거절)
@@ -26,13 +26,13 @@ class DesignChecker:
     """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/3.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
-    assembly_area_half_m · table · check.margin_mm · check.max_blocks), parts/3.0 dict. 변환기 ①(blocks_to_recipe)은 선택으로 받는다.
+    assembly_area_half_m · table · check.margin_mm · check.max_blocks), parts/3.0 dict. 변환기 ①(parts_to_recipe)은 선택으로 받는다.
     바깥 영향: 없음(계산만). 로봇 · 메시지를 건드리지 않는다.
     실패: 설계가 나쁘면 예외 없이 ok=false + errors 로 돌려준다(HMI 가 detail 을 LLM 에 되돌려 줌). cfg 에 키가 없으면 만들 때 ValueError.
     """
 
-    def __init__(self, cfg, blocks_to_recipe=None):
-        """cfg 를 mm 로 바꾼다. 변환기 ①(blocks_to_recipe)은 {recipe, placements} 를 반환한다(E-69 · #100 에서 task_node 가 연결). 안 붙이면 합격해도 레시피를 못 내 ERROR 로 답한다."""
+    def __init__(self, cfg, parts_to_recipe=None):
+        """cfg 를 mm 로 바꾼다. 변환기 ①(parts_to_recipe)은 {recipe, placements} 를 반환한다(E-69 · #100 에서 task_node 가 연결). 안 붙이면 합격해도 레시피를 못 내 ERROR 로 답한다."""
         try:
             self.block_mm = [v * 1000.0 for v in cfg['block_size_m']]
             self.extent = ori_extents(self.block_mm)
@@ -46,7 +46,7 @@ class DesignChecker:
             self.max_blocks = cfg['check']['max_blocks']
         except KeyError as e:
             raise ValueError(f'robot.yaml 에 {e.args[0]} 가 없다') from e
-        self.blocks_to_recipe = blocks_to_recipe
+        self.parts_to_recipe = parts_to_recipe
 
     # ---------------- 바깥에서 부르는 곳 ----------------
     def check(self, request):
@@ -70,9 +70,9 @@ class DesignChecker:
         if errors:
             return self._result(False, margin, errors)
         result = self._result(True, margin, [])
-        if self.blocks_to_recipe is not None:
+        if self.parts_to_recipe is not None:
             try:
-                converted = self.blocks_to_recipe(request)
+                converted = self.parts_to_recipe(request)
                 if not isinstance(converted, dict) or 'recipe' not in converted or 'placements' not in converted:
                     raise ValueError('변환기 ① 결과에 recipe · placements 가 없다')
                 document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
@@ -99,7 +99,7 @@ class DesignChecker:
                 got = request.get('schema') if isinstance(request, dict) else None
                 raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
             result = self.check(request)
-            if result['ok'] and self.blocks_to_recipe is None:
+            if result['ok'] and self.parts_to_recipe is None:
                 result = self._result(False, result['min_margin_mm'], [{'part': None, 'reason': 'ERROR',
                                       'detail': '변환기 ① 미연결 — 검사는 통과했지만 레시피를 만들 수 없다'}])
             failed = any(e['reason'] == 'ERROR' for e in result['errors'])   # ERROR 는 변환기 ① 쪽 실패뿐 — 설계 탓이 아니다

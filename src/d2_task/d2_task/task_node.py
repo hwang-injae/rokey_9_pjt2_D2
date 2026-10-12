@@ -40,7 +40,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
-from d2_task.blocks_to_recipe import BlocksToRecipe
+from d2_task.parts_to_recipe import PartsToRecipe
 from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
@@ -96,7 +96,7 @@ class TaskNode(Node):
                                    monitor_hmi=bool(self.get_parameter('monitor_hmi').value),
                                    open_width_m=0.0)       # 0 = pick_place 가 잡기마다 robot.yaml grasp_open_pick_m 을 쓴다(한 값으로 고정하면 잡기가 섞일 때 PLAN_FAILED, 10/10 W130)
         self.checker = DesignChecker(cfg)
-        self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
+        self.checker.parts_to_recipe = PartsToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
