@@ -24,6 +24,17 @@ def load(model_id):
     return copy.deepcopy(doc.recipe), copy.deepcopy(doc.placements)
 
 
+def flat_parts(recipe):
+    """recipe/3.0 template.composition 의 부품 항목을 {부품 이름(LEG_001_01): 항목}으로 편다(시험에서 값을 찾고 고치려고)."""
+    return {f'{group}_{item["part"]}': item for comp in recipe['template']['composition'].values()
+            for group, items in comp['parts'].items() for item in items}
+
+
+def first_part(recipe):
+    """부품 이름 순 첫 항목(벤치 LEG_001_01) — 시험이 값을 망가뜨릴 대상."""
+    return flat_parts(recipe)['LEG_001_01']
+
+
 def convert(model_id):
     design_id, family, _ = IDS[model_id]
     return RecipeToParts(design_id, family, BLOCK_MM).convert(*load(model_id))
@@ -132,7 +143,7 @@ def test_옛_두_파일을_서로_바꿔_넣으면_거절():
 
 def test_짝_해시가_안_맞으면_거절():
     bad(lambda r, pl: pl.update(recipe_sha256='0' * 64), reseal=False)
-    bad(lambda r, pl: r['parts'][0].update(center_mm=[-25.0, 0.0, 8.5]), reseal=False)      # 구조만 고쳐 해시가 어긋난 조립 방법
+    bad(lambda r, pl: first_part(r).update(center_mm=[-25.0, 0.0, 8.5]), reseal=False)      # 구조만 고쳐 해시가 어긋난 조립 방법
 
 
 def test_model_id가_다르면_거절():
@@ -148,8 +159,9 @@ def test_없는_block():
     bad(lambda r, pl: pl['steps'][0].update(part_name='NOPE_001_01'))
 
 
-def test_없는_part():
-    bad(lambda r, pl: r['parts'][0].update(stock_id='PART_999'))
+def test_구조에_없는_부품을_가리키면_거절():
+    """조립 방법이 가리키는 부품을 구조에서 지우면(LEG_001_01) 변환하지 않는다."""
+    bad(lambda r, pl: r['template']['composition']['LEG']['parts']['LEG_001'].pop(0))
 
 
 def test_sequence_중복():
@@ -166,15 +178,15 @@ def test_part_id가_모델ID와_블록_이름으로_만든_값과_다르면_거�
 
 def test_45도_회전은_방향_복원_불가():
     s = 0.7071
-    bad(lambda r, pl: r['parts'][0].update(R=[[s, -s, 0], [s, s, 0], [0, 0, 1]]))
+    bad(lambda r, pl: first_part(r).update(R=[[s, -s, 0], [s, s, 0], [0, 0, 1]]))
 
 
 def test_크기가_75_25_15가_아니면_방향_복원_불가():
-    bad(lambda r, pl: r['stocks'][0].update(size_mm=[80.0, 25.0, 15.0]))
+    bad(lambda r, pl: first_part(r).update(size_mm=[80.0, 25.0, 15.0]))
 
 
 def test_거울_반사_회전은_거부():
-    bad(lambda r, pl: r['parts'][0].update(R=[[0, -1, 0], [1, 0, 0], [0, 0, -1]]))
+    bad(lambda r, pl: first_part(r).update(R=[[0, -1, 0], [1, 0, 0], [0, 0, -1]]))
 
 
 def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
@@ -182,7 +194,8 @@ def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
     def rename(r, pl):
         old = 'LEG_001_01'
         new = 'LEG_ARM_WHEEL_001_01'
-        r['parts'][0]['part_name'] = new
+        comp = r['template']['composition']
+        comp['LEG_ARM_WHEEL'] = comp.pop('LEG')                       # 역할 키가 한 단어 + 옵션 0~1개를 넘는다
         pl['steps'][0].update(part_name=new, part_id=f'001_CHAIR_BENCH_V000_{new}')
         for st in pl['steps']:
             st['supports'] = [new if k == old else k for k in st['supports']]
@@ -192,7 +205,7 @@ def test_역할이_한_단어_옵션_0_1개가_아니면_거절():
 def test_좌표는_레시피_원본_값_그대로():
     r, pl = load('003_DESK_STAND_V000')
     out = RecipeToParts('desk_stand', 'desk', BLOCK_MM).convert(r, pl)
-    center = {b['part_name']: b['center_mm'] for b in r['parts']}
+    center = {name: b['center_mm'] for name, b in flat_parts(r).items()}
     for step, b in zip(sorted(pl['steps'], key=lambda s: s['sequence']), out['parts']):
         cx, cy, _ = center[step['part_name']]
         assert (b['x'], b['y']) == (cx, cy)
@@ -205,4 +218,16 @@ def test_블록_크기_두_곳은_허용_오차_없이_같다():
     assert [v * 1000.0 for v in cfg['block_size_m']] == BLOCK_MM
     for model_id in IDS:
         recipe, _ = load(model_id)
-        assert all(p['size_mm'] == BLOCK_MM for p in recipe['stocks']), model_id
+        assert all(p['size_mm'] == BLOCK_MM for p in flat_parts(recipe).values()), model_id
+
+
+def test_옛_구조_stocks_parts는_읽지_않는다():
+    """10/13 PL: 최상위 stocks · parts 는 없어졌다 — 옛 모양이 남아 있으면 이유를 적어 거절한다."""
+    r, pl = load('001_CHAIR_BENCH_V000')
+    r['stocks'] = [{'stock_id': 'PART_001', 'size_mm': BLOCK_MM}]
+    with pytest.raises(ValueError, match='stocks'):
+        RecipeToParts('bench', 'chair', BLOCK_MM).convert(r, dict(pl, recipe_sha256=recipe_sha256(r)))
+
+
+def test_count가_실제_그룹_수와_다르면_거절():
+    bad(lambda r, pl: r['template']['composition']['LEG'].update(count=3))

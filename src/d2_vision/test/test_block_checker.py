@@ -5,6 +5,7 @@ d2_motion 을 import 하지 않는다: CI 는 d2_vision 만 빌드한다. 예외
 pytest.importorskip 으로 읽어, 없으면(CI) 건너뛴다.
 가짜 점군: 놓인 블록의 윗면 + 작업면만(2 mm 간격 — 손목 카메라가 위에서 볼 때 보이는 면).
 """
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -204,7 +205,9 @@ def test_recipe_sha256_matches_team_value():
     folder = ROOT / 'src/d2_task/test/fixtures'
     recipe = json.loads((folder / '001_CHAIR_BENCH_V000_recipe.json').read_text(encoding='utf-8'))
     csv_sha = (folder / '001_CHAIR_BENCH_V000_placements.csv').read_text(encoding='utf-8').splitlines()[1].split(',')[-2]
-    assert recipe_sha256(recipe) == csv_sha == '2685767e217623bd2dcbe58d52625b1feccb32f35ab7ce1bd7a829b1b4081c76'
+    direct = hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+    # 새 구조(template.composition) 벤치 fixture 의 고정값 — 옛 구조 값 2685767e…1c76 은 폐기. hashlib 직접 계산과도 같아야 한다
+    assert recipe_sha256(recipe) == direct == csv_sha == '34e2820175f566d6d37070cc8883087261379a701e7335acfbb51ffa2c966f99'
 
 
 def test_recipe_from_design_attaches_structure():

@@ -12,13 +12,13 @@ import yaml
 
 from d2_task.parts_to_recipe import PartsToRecipe, DesignRejected
 from d2_task.design_checker import DesignChecker
-from d2_task.recipe_document import RecipeDocument
+from d2_task.recipe_document import RecipeDocument, recipe_sha256
 from d2_task.recipe_to_parts import RecipeToParts
 
 SRC = Path(__file__).resolve().parents[2]
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
-RECIPES = SRC / 'recipe_manager' / 'recipes'          # 레시피 도구가 CAD 에서 만든 기본 설계 4종(한세교 — 정답)
+RECIPES = Path(__file__).parent / 'fixtures'          # 기본 설계 4종 시험용 사본(recipe/3.0 template.composition — 레시피 도구가 새 구조를 내기 전까지 이 사본이 정답)
 FAMILY = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DESK_STAND_V000': 'desk', '004_DESK_PEDESTAL_V000': 'desk'}
 
 
@@ -47,26 +47,118 @@ def bench():
     return copy.deepcopy(load_base('001_CHAIR_BENCH_V000')[1])
 
 
-# V-45 왕복: 기본 설계 4종 레시피 → parts/3.0 → 변환기 ① 이 저장된 레시피와 같다(CAD 대응 칸 source_cad · cad.handle 만 빠짐),
-# 조립 방법은 recipe_sha256 까지 맞아 task RecipeDocument 가 받는다
+def part_names(recipe):
+    """recipe/3.0 template.composition 의 부품 이름(`<그룹>_<part>`, 예 LEG_001_01) 목록."""
+    return [f'{g}_{it["part"]}' for c in recipe['template']['composition'].values() for g, its in c['parts'].items() for it in its]
+
+
+# V-45 왕복: 기본 설계 4종 레시피 → parts/3.0 → 변환기 ① 이 저장된 레시피와 같다. 기본 설계에만 있는 칸(source_cad · template 의
+# name · description · tags · 구성요소 revision · 부품 cad)은 AI·스캔 설계에 없어 빠진다(설계 초안 6절). 조립 방법은 새 구조 recipe_sha256 까지
+# 맞아 task RecipeDocument 가 받는다
 @pytest.mark.parametrize('model_id', FAMILY)
 def test_round_trip_matches_cad_recipe(model_id):
     document, blocks = load_base(model_id)
     out = make_converter().convert(blocks)
     expected = copy.deepcopy(document.recipe)
     expected['source_cad'] = None
-    for b in expected['parts']:
-        b.pop('cad')
+    expected['template'] = {'composition': {
+        role: {'label': c['label'], 'count': c['count'],
+               'parts': {g: [{k: v for k, v in it.items() if k != 'cad'} for it in its] for g, its in c['parts'].items()}}
+        for role, c in expected['template']['composition'].items()}}
     assert out['recipe'] == expected
     assert out['placements']['steps'] == document.placements['steps']
+    assert out['placements']['recipe_sha256'] == recipe_sha256(out['recipe']) != document.placements['recipe_sha256']     # 기본 설계와 구조가 달라 해시도 다르다
     RecipeDocument(out['recipe'], out['placements'])
+
+
+# 변환기 ① 이 내는 레시피에는 옛 칸(stocks · 최상위 parts · stock_id · cad)이 없고, 구성요소는 label · count · parts 만 있다
+def test_output_has_only_composition_fields(bench):
+    out = make_converter().convert(bench)
+    recipe = out['recipe']
+    assert set(recipe) == {'schema', 'model_id', 'source_cad', 'template'} and set(recipe['template']) == {'composition'}
+    assert {r: set(c) for r, c in recipe['template']['composition'].items()} == {'LEG': {'label', 'count', 'parts'}, 'SEAT': {'label', 'count', 'parts'}}
+    assert [recipe['template']['composition'][r]['label'] for r in ('LEG', 'SEAT')] == ['다리', '좌판']
+    assert [recipe['template']['composition'][r]['count'] for r in ('LEG', 'SEAT')] == [2, 1]
+    assert all(set(it) == {'part', 'size_mm', 'center_mm', 'R'} for c in recipe['template']['composition'].values()
+               for its in c['parts'].values() for it in its)
+    assert 'stock_id' not in json.dumps(recipe) and 'cad_handle' not in json.dumps(out['placements'])
+
+
+# 새 builder(한세교가 template 구조를 직접 내는 경우)를 흉내: 옛 builder 출력을 새 구조로 바꿔 돌려주고, steps 에 옛 칸 stock_id · cad_handle 을 붙인다.
+# 변환기는 AI·스캔 계약 칸(구성요소 label · count · parts, 부품 part · size_mm · center_mm · R)만 남기고, 해시를 다시 맞추고, steps 의 옛 칸을 뗀다.
+# 기본 설계용 칸(name · description · tags · revision · cad)은 내보내지 않는다
+def test_new_builder_output_filtered_to_generated_contract(bench):
+    converter = make_converter()
+    old = converter.builder
+    seen = {}
+
+    class NewBuilder:
+        """make_recipe 가 금지 칸이 섞인 template 구조를 직접 내는 가짜 builder."""
+
+        def make_recipe(self, vertices, *args):
+            self.vertices, self.args = vertices, args
+            recipe = converter.to_template_recipe(old.make_recipe(vertices, *args))
+            template = recipe['template']
+            template.update(name='시험', description='설명', tags=['태그'])
+            for comp in template['composition'].values():
+                comp['revision'] = {'lay': 'FLAT_STACK'}
+                for items in comp['parts'].values():
+                    for item in items:
+                        item['cad'] = {'handle': '3E'}
+            seen['recipe'] = copy.deepcopy(recipe)
+            return recipe
+
+        def make_placements(self, recipe, hints):
+            placements = old.make_placements(old.make_recipe(self.vertices, *self.args), hints)
+            return dict(placements, steps=[dict(s, stock_id='PART_001', cad_handle='3E') for s in placements['steps']])
+
+    converter.builder = NewBuilder()
+    before = copy.deepcopy(bench)
+    out = converter.convert(bench)
+    assert bench == before                                                  # 요청 입력 불변
+    template = out['recipe']['template']
+    assert set(template) == {'composition'}                                 # name · description · tags 없음
+    assert all(set(c) == {'label', 'count', 'parts'} for c in template['composition'].values())       # revision 없음
+    assert all(set(it) == {'part', 'size_mm', 'center_mm', 'R'} for c in template['composition'].values()
+               for its in c['parts'].values() for it in its)               # cad 없음
+    assert 'name' in seen['recipe']['template'] and 'revision' in next(iter(seen['recipe']['template']['composition'].values()))   # 가짜 builder 가 금지 칸을 실제로 냈다
+    assert all('stock_id' not in s and 'cad_handle' not in s for s in out['placements']['steps'])
+    assert out['placements']['recipe_sha256'] == recipe_sha256(out['recipe'])
+    RecipeDocument(out['recipe'], out['placements'])
+
+
+# 새 구조 입력을 직접 걸러도 입력 객체(builder 출력)는 바뀌지 않는다
+def test_to_template_recipe_filters_new_tree_without_mutating():
+    converter = make_converter()
+    box = {'part_name': 'LEG_001_01', 'handle': None, 'vertices': [(x, y, z) for x in (0, 75) for y in (0, 25) for z in (0, 15)]}
+    built = converter.to_template_recipe(converter.builder.make_recipe([box], 'X', None, None))
+    built['template'].update(name='벤치', tags=['의자'])
+    built['template']['composition']['LEG']['revision'] = {'lay': 'FLAT_STACK'}
+    built['template']['composition']['LEG']['parts']['LEG_001'][0]['cad'] = {'handle': '3E'}
+    before = copy.deepcopy(built)
+    out = converter.to_template_recipe(built)
+    kept = {k: before['template']['composition']['LEG']['parts']['LEG_001'][0][k] for k in ('part', 'size_mm', 'center_mm', 'R')}
+    assert built == before and out is not built
+    assert out['template'] == {'composition': {'LEG': {'label': '다리', 'count': 1, 'parts': {'LEG_001': [kept]}}}}
+
+
+# to_template_recipe 는 입력(builder 출력)을 바꾸지 않는다
+def test_to_template_recipe_does_not_mutate(bench):
+    converter = make_converter()
+    document, _ = load_base('001_CHAIR_BENCH_V000')
+    built = {'schema': 'recipe/3.0', 'model_id': 'X', 'source_cad': None, 'stocks': [{'stock_id': 'PART_001', 'size_mm': BLOCK_MM}],
+             'parts': [{'part_name': 'LEG_001_01', 'stock_id': 'PART_001', 'center_mm': [0.0, 0.0, 7.5],
+                        'R': [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}]}
+    before = copy.deepcopy(built)
+    out = converter.to_template_recipe(built)
+    assert built == before and out['template']['composition']['LEG']['parts']['LEG_001'][0]['part'] == '01'
 
 
 # 블록 번호는 코드가: 벤치 → LEG_001_01~04(왼 다리) · LEG_002_01~04(오른 다리) · SEAT_001_01~03. AI 의 part 값(묶음 표시)은 번호가 아니다
 def test_bench_block_names_from_positions(bench):
     for b in bench['parts']:
         b['group'] = {1: 7, 2: 3}[b['group']] if b['role'] == 'LEG' else 5      # 묶음 값만 바꿔도 이름은 위치로 같다
-    names = [b['part_name'] for b in make_converter().convert(bench)['recipe']['parts']]
+    names = part_names(make_converter().convert(bench)['recipe'])
     assert sorted(names) == [f'LEG_001_0{k}' for k in range(1, 5)] + [f'LEG_002_0{k}' for k in range(1, 5)] + [f'SEAT_001_0{k}' for k in range(1, 4)]
 
 
@@ -108,7 +200,10 @@ def test_role_not_in_list_rejected(bench):
     assert any('ROCKER' in d for d in rejected_details(bench))
     for b in bench['parts']:
         b['role'] = 'LEG_WHEEL' if b['role'] == 'LEG_ROCKER' else b['role']
-    assert any(b['part_name'].startswith('LEG_WHEEL_002_') for b in make_converter().convert(bench)['recipe']['parts'])
+    recipe = make_converter().convert(bench)['recipe']
+    assert any(n.startswith('LEG_WHEEL_002_') for n in part_names(recipe))
+    assert recipe['template']['composition']['LEG_WHEEL']['label'] == '다리'       # 옵션 역할은 기본 역할의 화면 이름표를 쓴다
+    RecipeDocument(*[make_converter().convert(bench)[k] for k in ('recipe', 'placements')])
 
 
 # ② 떨어진 블록을 한 부품으로 묶으면 거부 — 벤치 왼 · 오른 다리를 같은 part 로
