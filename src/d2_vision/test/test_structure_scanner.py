@@ -21,7 +21,8 @@ import pytest
 import yaml
 
 from d2_vision.mock_scan import load_recipe_files
-from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extents, read_ply_header, save_capture, save_preview
+from d2_vision.structure_scanner import (FLOOR_RGB, StructureScanner, color_cloud, match_rate, ori_extents, read_ply_header,
+                                         read_ply_points, save_capture, save_preview)
 
 SRC = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC / 'd2_task'))
@@ -209,17 +210,19 @@ def test_match_rate_rules():
 
 
 def test_save_cloud_ply(tmp_path):
-    """IRD E-67 cloud_path: base_link · 복셀 3 mm · binary PLY ≤ 2 MB."""
+    """IRD E-67 cloud_path: base_link · 복셀 3 mm · binary PLY ≤ 2 MB · 점마다 색(x y z float + red green blue uchar = 15 B)."""
     sc = scan(truth('002_CHAIR_BACK_V000')['blocks'])
     path = tmp_path / 'cloud.ply'
     n = sc.save_cloud(str(path))
     fmt, count, head = read_ply_header(path)
     assert fmt == 'binary_little_endian' and count == n > 1000
-    assert path.stat().st_size <= 2_000_000 and path.stat().st_size == head + 12 * n
+    assert path.stat().st_size <= 2_000_000 and path.stat().st_size == head + 15 * n
     assert sc.cloud_voxel_m == pytest.approx(0.003)
-    pts = np.frombuffer(path.read_bytes()[head:], '<f4').reshape(-1, 3)
+    pts, rgb = read_ply_points(path)
     o = CFG['assembly_origin']
     assert abs(np.median(pts[:, 0]) - o['x_m']) < 0.2 and np.max(pts[:, 2]) < o['z_m'] + 0.3   # base_link m
+    floor = pts[:, 2] < o['z_m'] + 0.005
+    assert floor.any() and (~floor).any() and (rgb[floor] == FLOOR_RGB).all() and not (rgb[~floor] == FLOOR_RGB).all(axis=1).any()
 
 
 PREVIEW_KEYS = {'schema', 'stamp', 'run_id', 'pose_id', 'index', 'kind', 'cloud_path', 'points'}   # IRD 6장 scan_preview/1.0
@@ -257,7 +260,7 @@ def test_recapture_same_pose_replaces_and_snapshot_keeps_old(tmp_path):
     assert len(old.captures) == 1 and old.captures[0] is not sc.captures[0]
     a = save_preview(old, tmp_path, 'R1', 'observe', 1)
     b = save_preview(sc.snapshot(), tmp_path, 'R1', 'observe', 2)
-    pa, pb = (np.frombuffer(Path(m['cloud_path']).read_bytes()[read_ply_header(m['cloud_path'])[2]:], '<f4').reshape(-1, 3) for m in (a, b))
+    pa, pb = (read_ply_points(m['cloud_path'])[0] for m in (a, b))
     top = CFG['assembly_origin']['z_m'] + 0.008                             # 작업대 점은 빼고 블록 점만(작업대가 점 대부분이라 가운데값이 안 움직인다)
     shift = np.median(pb[pb[:, 2] > top, 0]) - np.median(pa[pa[:, 2] > top, 0])
     assert abs(shift - 0.023) < 0.004, shift                                # 옮긴 23 mm 만큼 블록 점이 움직였다(x 축 — 원점 yaw 0.3°)
@@ -370,3 +373,57 @@ def test_real_scan5_all_match():
         assert matched == len(tb['blocks']) == len(r['blocks']['blocks']), (design_id, detail['missed'], detail['extra'])
         total += matched
     assert total == 47
+
+
+# ---------------- 화면 점군 색 · 거르기(color_cloud — 보기 전용, 10/13 민범진) ----------------
+def flat(x0, x1, y0, y1, z, step=0.003):
+    """(x0..x1, y0..y1) 높이 z 의 평평한 점 판(m)."""
+    xs, ys = np.meshgrid(np.arange(x0, x1, step), np.arange(y0, y1, step))
+    return np.c_[xs.ravel(), ys.ravel(), np.full(xs.size, z)]
+
+
+def test_color_cloud_floor_gray_height_blue_to_red():
+    """바닥(작업면 + 5 mm 아래) = 회색, 구조물 = 높이별 파랑(아래) → 빨강(위 — 이 점군의 가장 높은 곳)."""
+    floor = flat(-0.10, 0.10, -0.10, 0.10, 0.0)
+    low = flat(-0.02, 0.02, -0.01, 0.01, 0.015)                           # 블록 한 층 윗면
+    high = flat(-0.02, 0.02, -0.01, 0.01, 0.090)                          # 맨 위
+    pts, rgb = color_cloud(np.r_[floor, low, high], 0.0)
+    f, lo, hi = (np.isclose(pts[:, 2], z) for z in (0.0, 0.015, 0.090))
+    assert (rgb[f] == FLOOR_RGB).all()
+    assert (rgb[lo][:, 2] > rgb[lo][:, 0]).all()                          # 아래층은 파란 쪽(B > R)
+    assert (rgb[hi] == (255, 0, 0)).all()                                 # 가장 높은 곳은 빨강
+
+
+def test_color_cloud_drops_specks_and_far_floor_keeps_separate_block():
+    """부스러기(블록 가장 작은 면의 반보다 작은 덩어리)는 빼고, 떨어진 블록 하나(25 × 75 mm)는 남긴다. 바닥은 남긴 덩어리 둘레 2 cm 안만."""
+    floor = flat(-0.20, 0.20, -0.20, 0.20, 0.0)
+    main = flat(-0.04, 0.04, -0.04, 0.04, 0.045)                          # 구조물
+    lone = flat(0.12, 0.195, -0.0125, 0.0125, 0.015)                      # 떨어진 블록 하나
+    speck = flat(-0.15, -0.144, 0.15, 0.156, 0.02)                        # 6 × 6 mm 부스러기
+    pts, rgb = color_cloud(np.r_[floor, main, lone, speck], 0.0)
+    obj = pts[pts[:, 2] > 0.005]
+    assert not ((obj[:, 0] < -0.1) & (obj[:, 1] > 0.1)).any()             # 부스러기 사라짐
+    assert ((obj[:, 0] > 0.1) & np.isclose(obj[:, 2], 0.015)).sum() > 100  # 떨어진 블록은 남음
+    fl = pts[pts[:, 2] < 0.005]
+    assert len(fl) and not ((fl[:, 0] < -0.1) & (fl[:, 1] < -0.1)).any()  # 먼 바닥(구석) 사라짐
+    assert (np.abs(fl[:, 0]) <= 0.04 + 0.025).sum() > 0 and fl[:, 1].max() <= 0.04 + 0.025   # 구조물 둘레 2 cm(+ 칸 5 mm) 안 바닥만
+
+
+def test_color_cloud_floor_only_and_empty():
+    """구조물이 없으면 바닥을 그대로 회색 · 빈 점군은 빈 결과."""
+    floor = flat(-0.05, 0.05, -0.05, 0.05, 0.001)
+    pts, rgb = color_cloud(floor, 0.0)
+    assert len(pts) == len(floor) and (rgb == FLOOR_RGB).all()
+    pts, rgb = color_cloud(np.zeros((0, 3)), 0.0)
+    assert pts.shape == (0, 3) and rgb.shape == (0, 3)
+
+
+def test_color_cloud_drops_clusters_outside_assembly_area():
+    """가운데가 조립 영역 밖인 큰 덩어리(받침 상자 · 로봇 쪽 물체 — 자르기 둘레에 걸쳐 들어옴)는 뺀다. 그 물체가 더 높아도 색 범위를 가져가지 않는다."""
+    floor = flat(-0.20, 0.20, -0.20, 0.20, 0.0)
+    main = flat(-0.04, 0.04, -0.04, 0.04, 0.060)                          # 조립 영역 안 구조물(맨 위 = 빨강이어야)
+    box = flat(-0.15, 0.15, -0.20, -0.17, 0.080)                          # 영역(± 0.15) 밖에 가운데가 있는 받침 상자
+    tall = flat(-0.20, -0.17, 0.10, 0.15, 0.180)                          # 영역 밖 높은 물체
+    pts, rgb = color_cloud(np.r_[floor, main, box, tall], 0.0, area=((-0.15, 0.15), (-0.15, 0.15)))
+    assert not (pts[:, 2] > 0.07).any()                                   # 상자 · 높은 물체 사라짐
+    assert (rgb[np.isclose(pts[:, 2], 0.060)] == (255, 0, 0)).all()       # 구조물 꼭대기가 빨강

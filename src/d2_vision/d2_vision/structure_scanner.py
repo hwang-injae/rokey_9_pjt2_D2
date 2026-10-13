@@ -272,7 +272,7 @@ class StructureScanner:
         """모은 점군을 base_link 좌표(m) binary PLY 로 저장한다(화면 점군 창 — IRD E-67 cloud_path).
 
         조립 영역(원점 ± half + 5 cm, 높이 −1 ~ +30 cm) 안 점만, 복셀 3 mm 평균으로 줄인다. 2 MB 를 넘으면 복셀을 1.25 배씩 키운다
-        — 쓴 복셀 크기는 self.cloud_voxel_m 에 남는다.
+        — 쓴 복셀 크기는 self.cloud_voxel_m 에 남는다. 점마다 색(바닥 회색 · 구조물 높이별 파랑 → 빨강)을 넣고 부스러기 · 먼 바닥은 뺀다(color_cloud).
         입력: path = 파일 경로. 출력: 쓴 점 수(int). 바깥 영향: 파일 쓰기. 실패: 촬영이 없으면 0 점 PLY.
         """
         if self.captures:
@@ -280,8 +280,15 @@ class StructureScanner:
         else:
             p = np.zeros((0, 3))
         n, self.cloud_voxel_m = write_voxel_ply(path, crop_area_m(p, self.origin_mm, self.half_mm), CLOUD_VOXEL_M, CLOUD_MAX_BYTES,
-                                                'd2 StructureScanner')
+                                                'd2 StructureScanner', table_z_m=self.origin_mm[2] / 1000.0,
+                                                area=assembly_area_m(self.origin_mm, self.half_mm))
         return n
+
+
+def assembly_area_m(origin_mm, half_mm):
+    """조립 영역 ((x0, x1), (y0, y1)) m = 조립 원점 ± half(robot.yaml assembly_area_half_m) — color_cloud 의 '구조물 덩어리' 기준(자르기의 + 5 cm 는 뺌)."""
+    o, h = np.asarray(origin_mm, float) / 1000.0, half_mm / 1000.0
+    return (o[0] - h, o[0] + h), (o[1] - h, o[1] + h)
 
 
 def crop_area_m(p, origin_mm, half_mm):
@@ -293,11 +300,79 @@ def crop_area_m(p, origin_mm, half_mm):
     return p[m]
 
 
-def write_voxel_ply(path, p, voxel, max_bytes, comment, atomic=False):
+FLOOR_BAND_M = 0.005          # 작업면 + 5 mm 아래 = 바닥 — 실측 작업대 0 ~ +1 mm · 깊이 오차 약 1 mm, 블록 한 층 15 mm 와 안 섞임
+COLOR_CELL_M = 0.005          # 부스러기 · 바닥 둘레를 가르는 평면 칸(점 덩어리 잇기)
+SPECK_MAX_M2 = 0.025 * 0.015 / 2   # 블록 가장 작은 면(25 × 15 mm)의 반보다 작은 덩어리 = 부스러기(반사 · 잡음) — 떨어진 블록 하나는 남는다
+FLOOR_RING_M = 0.02           # 남긴 구조물 둘레 2 cm 까지만 바닥을 남긴다(먼 바닥 · 케이블은 뺌)
+COLOR_MIN_SPAN_M = 0.03       # 높이 색 범위가 이보다 좁으면 이 값으로(블록 한두 층일 때 색이 너무 크게 바뀌지 않게)
+FLOOR_RGB = (150, 150, 150)   # 바닥 회색
+
+
+def height_rgb(t):
+    """0 ~ 1 → 파랑(0) → 하늘 → 초록 → 노랑 → 빨강(1) uint8 (N, 3). 색상(hue) 240° → 0° 를 채도 · 명도 1 로(HSV)."""
+    h = (1.0 - np.clip(np.asarray(t, dtype=np.float64), 0.0, 1.0)) * 4.0     # 0 ~ 4 = 빨강 · 노랑 · 초록 · 하늘 · 파랑 구간
+    k = np.floor(np.minimum(h, 3.999)).astype(int)
+    f = h - k
+    one, up, down, zero = np.ones_like(f), f, 1.0 - f, np.zeros_like(f)
+    table = [(one, up, zero), (down, one, zero), (zero, one, up), (zero, down, one)]   # 구간마다 (R, G, B)
+    rgb = np.zeros((len(f), 3))
+    for i, (r, g, b) in enumerate(table):
+        m = k == i
+        rgb[m] = np.stack([r[m], g[m], b[m]], axis=1)
+    return np.round(rgb * 255).astype(np.uint8)
+
+
+def color_cloud(p, table_z_m, area=None):
+    """화면 점군 색 · 거르기 — 바닥(작업면 + FLOOR_BAND_M 아래)은 회색, 그 위(구조물)는 높이별 파랑 → 빨강(이 점군의 가장 높은 곳 = 빨강).
+
+    평면 칸(COLOR_CELL_M)으로 구조물 점 덩어리를 이어, SPECK_MAX_M2 보다 작은 덩어리(부스러기)와 가운데가 조립 영역(area) 밖인 덩어리
+    (10/13 실기 점군: 받침 상자 · 로봇 쪽 물체 — 자르기 둘레 5 cm 에 걸쳐 들어옴)는 빼고 나머지 덩어리는 모두 남긴다
+    — 가장 큰 덩어리만 남기지 않는다: 떨어진 블록 · 스캔 도중 따로 보이는 다리가 화면에서 사라지면 '스캔이 맞게 봤나' 확인을 못 한다.
+    바닥은 남긴 덩어리 둘레 FLOOR_RING_M 안만 남긴다. 구조물이 없으면(바닥뿐) 바닥을 그대로 회색으로.
+    입력: p = (N, 3) base_link m · table_z_m = 작업면 높이 m · area = ((x0, x1), (y0, y1)) m 조립 영역(비우면 영역 거르기 안 함).
+    출력: (점 (M, 3) float, 색 (M, 3) uint8). 바깥 영향 없음.
+    보기 전용 — 스캔 추론(capture_pose · infer)은 이 거르기를 쓰지 않는다."""
+    p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
+    if len(p) == 0:
+        return p, np.zeros((0, 3), np.uint8)
+    floor = p[:, 2] < table_z_m + FLOOR_BAND_M
+    gray = np.tile(np.array(FLOOR_RGB, np.uint8), (len(p), 1))
+    if floor.all():
+        return p, gray
+    lo = p[:, :2].min(axis=0)
+    cell = np.floor((p[:, :2] - lo) / COLOR_CELL_M).astype(int)
+    occ = np.zeros(cell.max(axis=0) + 1, bool)
+    occ[cell[~floor, 0], cell[~floor, 1]] = True
+    lab, n = ndimage.label(occ, structure=np.ones((3, 3), bool))       # 대각선도 이음(8 이웃)
+    area_m2 = np.bincount(lab.ravel(), minlength=n + 1) * COLOR_CELL_M ** 2
+    keep_lab = area_m2 >= SPECK_MAX_M2
+    keep_lab[0] = False
+    if area is not None and n:
+        cx, cy = (np.asarray(v, float) for v in zip(*ndimage.center_of_mass(occ, lab, range(1, n + 1))))
+        cx, cy = lo[0] + (cx + 0.5) * COLOR_CELL_M, lo[1] + (cy + 0.5) * COLOR_CELL_M      # 덩어리 가운데(m)
+        (x0, x1), (y0, y1) = area
+        keep_lab[1:] &= (cx >= x0) & (cx <= x1) & (cy >= y0) & (cy <= y1)
+    kept = keep_lab[lab]
+    if not kept.any():                                                 # 부스러기뿐 — 바닥만 보여 준다
+        return p[floor], gray[floor]
+    ring = ndimage.binary_dilation(kept, structure=np.ones((3, 3), bool), iterations=int(round(FLOOR_RING_M / COLOR_CELL_M)))
+    on = kept[cell[:, 0], cell[:, 1]]
+    near = ring[cell[:, 0], cell[:, 1]]
+    obj = ~floor & on
+    sel = obj | (floor & near)
+    rgb = gray.copy()
+    zo = p[obj, 2] - table_z_m
+    span = max(float(np.percentile(zo, 98)), COLOR_MIN_SPAN_M)          # 98 % — 튀는 점 몇 개가 색 범위를 늘리지 않게
+    rgb[obj] = height_rgb(zo / span)
+    return p[sel], rgb[sel]
+
+
+def write_voxel_ply(path, p, voxel, max_bytes, comment, atomic=False, table_z_m=None, area=None):
     """점(m)을 복셀 voxel(m) 평균으로 줄여 base_link binary PLY 로 쓴다 — max_bytes 를 넘으면 복셀을 1.25 배씩 키운다.
 
     save_cloud(복셀 3 mm · ≤ 2 MB) · 실시간 미리보기(복셀 5 mm · ≤ 500 KB)가 같이 쓴다. atomic = 임시 파일(<path>.tmp)에 쓴 뒤 이름 바꾸기 —
-    읽는 쪽(다리)이 쓰는 중인 파일을 보지 않게. 출력: (점 수, 쓴 복셀 m). 바깥 영향: 파일 쓰기. 실패: 쓸 수 없으면 OSError."""
+    읽는 쪽(다리)이 쓰는 중인 파일을 보지 않게. table_z_m(작업면 높이 m)을 주면 줄인 점에 color_cloud 를 써서 점마다 색(uchar red · green · blue —
+    화면 PLYLoader 가 그대로 그린다)을 넣고 부스러기 · 조립 영역(area) 밖 덩어리 · 먼 바닥을 뺀다. 출력: (점 수, 쓴 복셀 m). 바깥 영향: 파일 쓰기. 실패: 쓸 수 없으면 OSError."""
     while True:
         if len(p):
             key = np.floor(p / voxel).astype(np.int64)
@@ -306,20 +381,42 @@ def write_voxel_ply(path, p, voxel, max_bytes, comment, atomic=False):
             pts = np.stack([np.bincount(inv, weights=p[:, k]) / cnt for k in range(3)], axis=1).astype('<f4')
         else:
             pts = np.zeros((0, 3), '<f4')
+        if table_z_m is None:
+            body, colors = pts, ''
+        else:
+            xyz, rgb = color_cloud(pts, table_z_m, area)
+            body = np.zeros(len(xyz), dtype=PLY_RGB_DTYPE)
+            body['x'], body['y'], body['z'] = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+            body['red'], body['green'], body['blue'] = rgb[:, 0], rgb[:, 1], rgb[:, 2]
+            colors = 'property uchar red\nproperty uchar green\nproperty uchar blue\n'
         header = ('ply\nformat binary_little_endian 1.0\ncomment {} base_link m voxel {:.4f}\n'
-                  'element vertex {}\nproperty float x\nproperty float y\nproperty float z\nend_header\n'
-                  ).format(comment, voxel, len(pts)).encode('ascii')
-        if len(header) + pts.nbytes <= max_bytes or len(pts) == 0:
+                  'element vertex {}\nproperty float x\nproperty float y\nproperty float z\n{}end_header\n'
+                  ).format(comment, voxel, len(body), colors).encode('ascii')
+        if len(header) + body.nbytes <= max_bytes or len(body) == 0:
             break
         voxel *= 1.25
     target = Path(path)
     tmp = target.with_name(target.name + '.tmp') if atomic else target
     with open(tmp, 'wb') as f:
         f.write(header)
-        f.write(pts.tobytes())
+        f.write(body.tobytes())
     if atomic:
         os.replace(tmp, target)
-    return int(len(pts)), voxel
+    return int(len(body)), voxel
+
+
+PLY_RGB_DTYPE = np.dtype([('x', '<f4'), ('y', '<f4'), ('z', '<f4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')])   # 색 넣은 점 한 개 15 B
+
+
+def read_ply_points(path):
+    """write_voxel_ply 가 쓴 PLY → (점 (N, 3) float32 m, 색 (N, 3) uint8 또는 None)(시험 · 확인용). 형식이 틀리면 ValueError."""
+    _, count, head = read_ply_header(path)
+    data = Path(path).read_bytes()
+    colored = b'property uchar red' in data[:head]
+    rows = np.frombuffer(data[head:], PLY_RGB_DTYPE if colored else '<f4', count=count * (1 if colored else 3))
+    if not colored:
+        return rows.reshape(-1, 3), None
+    return np.stack([rows['x'], rows['y'], rows['z']], axis=1), np.stack([rows['red'], rows['green'], rows['blue']], axis=1)
 
 
 def read_ply_header(path):

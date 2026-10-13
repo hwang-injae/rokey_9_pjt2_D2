@@ -65,7 +65,8 @@ def test_write_voxel_size_and_message(tmp_path):
     index, path, n, voxel = live.write(tmp_path / 'R1', 'R1', pts)
     fmt, count, head = read_ply_header(path)
     assert (index, path.name, fmt, count, voxel) == (1, 'live_1.ply', 'binary_little_endian', n, pytest.approx(0.005))
-    assert path.stat().st_size == head + 12 * n <= LIVE_MAX_BYTES
+    assert path.stat().st_size == head + 15 * n <= LIVE_MAX_BYTES          # x y z float + red green blue uchar(색 — color_cloud)
+    assert b'property uchar red' in path.read_bytes()[:head]
     assert b'voxel 0.0050' in path.read_bytes()[:head]
     msg = LiveCloud.message('R1', '', index, path, n, stamp=12.5)
     assert set(msg) == PREVIEW_KEYS and msg['kind'] == 'live' and msg['schema'] == 'scan_preview/1.0'
@@ -75,10 +76,10 @@ def test_write_voxel_size_and_message(tmp_path):
 
 def test_grows_voxel_when_over_limit(tmp_path):
     """크기 상한을 넘으면 복셀을 키워 맞춘다(save_cloud 와 같은 방식)."""
-    live = LiveCloud(CFG, max_bytes=8000)
+    live = LiveCloud(CFG, max_bytes=3000)                                  # 바닥은 구조물 둘레만 남아 점이 줄어 상한을 더 낮춤
     pts = live.points(synthetic_depth(), INTR, down_camera())
     _, path, _, voxel = live.write(tmp_path, 'R1', pts)
-    assert voxel > 0.005 and path.stat().st_size <= 8000
+    assert voxel > 0.005 and path.stat().st_size <= 3000
 
 
 def test_files_rotate_atomically(tmp_path):

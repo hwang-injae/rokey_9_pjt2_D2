@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from d2_vision.block_checker import depth_to_base_points
-from d2_vision.structure_scanner import PREVIEW_SCHEMA, crop_area_m, write_voxel_ply
+from d2_vision.structure_scanner import PREVIEW_SCHEMA, assembly_area_m, crop_area_m, write_voxel_ply
 
 LIVE_VOXEL_M = 0.005          # IRD 6장: live 는 복셀 5 mm · ≤ 500 KB(capture 3 mm · 2 MB 보다 작게 — 1 ~ 2 Hz 로 자주 보냄)
 LIVE_MAX_BYTES = 500_000
@@ -44,6 +44,7 @@ class LiveCloud:
         o = cfg['assembly_origin']
         self.origin_mm = np.array([o['x_m'], o['y_m'], o['z_m']], float) * 1000.0
         self.half_mm = float(cfg.get('assembly_area_half_m', 0.15)) * 1000.0
+        self.table_z_m = float(cfg.get('table_z_m', o['z_m']))   # 색 · 바닥 가르기 기준(save_cloud 는 조립 원점 z — 같은 값, E-85)
         self.voxel_m, self.max_bytes, self.keep, self.stride = float(voxel_m), int(max_bytes), max(1, int(keep)), int(stride)
         self.counts = {}                      # run_id → 지금까지 낸 수
 
@@ -60,13 +61,14 @@ class LiveCloud:
         return crop_area_m(p, self.origin_mm, self.half_mm)
 
     def write(self, out_dir, run_id, pts):
-        """점(m) → <out_dir>/live_<k>.ply(k = 순번을 keep 개로 돌림, 임시 파일 뒤 이름 바꾸기). 출력: (index, 경로, 점 수, 쓴 복셀 m).
+        """점(m) → <out_dir>/live_<k>.ply(k = 순번을 keep 개로 돌림, 임시 파일 뒤 이름 바꾸기 · 색 넣고 부스러기 뺌 — color_cloud). 출력: (index, 경로, 점 수, 쓴 복셀 m).
         index = 이 run 에서 낸 순번(1부터 — 화면은 가장 큰 것으로 덮어 그림). 바깥 영향: 폴더 만들기 · 파일 쓰기. 실패: OSError."""
         index = self.counts.get(run_id, 0) + 1
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         path = out / f'live_{(index - 1) % self.keep + 1}.ply'
-        n, voxel = write_voxel_ply(path, pts, self.voxel_m, self.max_bytes, 'd2 live', atomic=True)
+        n, voxel = write_voxel_ply(path, pts, self.voxel_m, self.max_bytes, 'd2 live', atomic=True, table_z_m=self.table_z_m,
+                                   area=assembly_area_m(self.origin_mm, self.half_mm))
         self.counts[run_id] = index
         return index, path, n, voxel
 
