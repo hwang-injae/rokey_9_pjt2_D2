@@ -39,7 +39,7 @@ def test_블록마다_잡기가_같은_칸을_준다():
     for n in range(11):
         r = planner(n).next_block()
         assert CFG['supply_slots'][int(r['supply_slot']) - 1]['grasp'] == r['grasp'], r['part_id']
-    assert [planner(n).next_block()['supply_slot'] for n in (0, 8, 9)] == ['2', '2', '1']   # FLAT_SHORT p2(앞 9개), 마지막 둘 FLAT_LONG p1
+    assert [planner(n).next_block()['supply_slot'] for n in (0, 7, 8)] == ['2', '2', '1']   # 다리 8개 FLAT_SHORT p2, 좌판 연짝 3개 FLAT_LONG p1(10/13)
 
 
 def test_높이는_실측_블록으로_쌓아_올린다():
