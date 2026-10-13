@@ -2,7 +2,7 @@
 
 브로커 없이 가짜 paho 클라이언트로 돈다. 지키는 것: 요청 = …/req + req_id, 답을 req_id 로 짝지음 · 시간 초과 TIMEOUT · 자동 재전송 없음,
 상태는 마지막 값 + 화면 이벤트, 다리 연결 신호 3초 끊김, retained 로 남은 옛 요청에는 답하지 않음, 로봇 PC 가 끊기면 출발 · 스캔을 막음,
-손목 검출 그림 · 스캔 사진 · 점군(바이트)은 마지막 하나 + 번호만 알림 · 스캔 사진 · 점군은 직전 scan_result 와 짝, 저장소는 기본 설계 4개를 design/3.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
+손목 검출 그림 · 스캔 사진 · 점군(바이트)은 마지막 하나 + 번호만 알림 · 스캔 사진 · 점군은 직전 scan_result 와 짝, 저장소는 기본 설계 4개를 design/4.0 으로 등록 · 옛 형식 거절 · 같은 run_id 는 한 번만 저장.
 """
 import json
 import os
@@ -123,12 +123,12 @@ def test_bridge_alive_and_lost_after(mc):
 
 def test_robot_request_answered_by_handler_once(mc):
     """로봇이 부른 get_design 은 등록한 함수가 답한다(req_id 그대로). 같은 req_id 두 번째 · retained 옛 요청에는 안 답한다."""
-    mc.serve('/d2/hmi/get_design', lambda b: {'success': True, 'reason': '', 'schema': 'design/3.0', 'design_id': b['design_id']})
+    mc.serve('/d2/hmi/get_design', lambda b: {'success': True, 'reason': '', 'schema': 'design/4.0', 'design_id': b['design_id']})
     req = {'req_id': 'g1', 'design_id': '001_CHAIR_BENCH_V000'}
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', req))
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', req))
     mc._on_message(mc.client, None, msg('d2/hmi/get_design/req', {'req_id': 'g2', 'design_id': 'X'}, retain=True))
-    assert mc.client.sent == [('d2/hmi/get_design/res', {'success': True, 'reason': '', 'schema': 'design/3.0',
+    assert mc.client.sent == [('d2/hmi/get_design/res', {'success': True, 'reason': '', 'schema': 'design/4.0',
                                                          'design_id': '001_CHAIR_BENCH_V000', 'req_id': 'g1'}, False)]
 
 
@@ -300,7 +300,7 @@ class FakeGen:
 
     def generate(self, text, base_id, on_progress=None):
         self.release.wait(2)
-        cand = {'idea': '안 0', 'parts': {'schema': 'parts/3.0', 'design_id': '001_CHAIR_BENCH_V001', 'parts': []},
+        cand = {'idea': '안 0', 'parts': {'schema': 'parts/4.0', 'design_id': '001_CHAIR_BENCH_V001', 'parts': []},
                 'check': {'ok': True, 'reason': '', 'min_margin_mm': 9.0, 'errors': [], 'recipe': {'big': 1}, 'placements': {'big': 1}}}
         bad = {**cand, 'check': {**cand['check'], 'ok': False, 'errors': [{'part': 9, 'reason': 'CHECK_FAILED', 'detail': '받침 없음'}]}}
         on_progress('reading', {'design_id': '001_CHAIR_BENCH_V000'})
@@ -459,13 +459,13 @@ def test_ws_sends_snapshot_first(store):
 
 # ---------- 저장소(DesignStore, W111 최소형) ----------
 def test_store_registers_four_bases_as_design_2(store):
-    """기본 설계 4개 = 레시피 두 파일 → 변환기 ② → design/3.0(v1.0 · made_by cad · 부모 없음 · recipe · placements · parts/3.0)."""
+    """기본 설계 4개 = 레시피 두 파일 → 변환기 ② → design/4.0(v1.0 · made_by cad · 부모 없음 · recipe · placements · parts/4.0)."""
     assert store.registered == BASES
     d = store.get_design('001_CHAIR_BENCH_V000')
-    assert d['schema'] == 'design/3.0' and d['family'] == 'chair' and d['version'] == 'V000'
+    assert d['schema'] == 'design/4.0' and d['family'] == 'chair' and d['version'] == 'V000'
     assert d['made_by'] == 'cad' and d['parent_id'] is None
-    assert d['recipe']['schema'] == 'recipe/3.0' and d['placements']['schema'] == 'placements/3.0'
-    assert d['parts']['schema'] == 'parts/3.0' and len(d['parts']['parts']) == 11
+    assert d['recipe']['schema'] == 'recipe/4.0' and d['placements']['schema'] == 'placements/4.0'
+    assert d['parts']['schema'] == 'parts/4.0' and len(d['parts']['parts']) == 11
     # 3D 진행도 색을 잇는 길: placements 의 sequence = blocks 의 order
     assert sorted(s['sequence'] for s in d['placements']['steps']) == sorted(b['order'] for b in d['parts']['parts'])
 
@@ -491,9 +491,9 @@ def test_store_rejects_old_schema_and_unsafe_ids(store):
 
 
 def test_get_design_answer_for_robot(store):
-    """로봇의 get_design: 있으면 success true + design/3.0 칸을 펼침, 없으면 success false · ERROR(IRD 10.1)."""
+    """로봇의 get_design: 있으면 success true + design/4.0 칸을 펼침, 없으면 success false · ERROR(IRD 10.1)."""
     ok = store.answer_get_design({'req_id': 'r1', 'design_id': '003_DESK_STAND_V000'})
-    assert ok['success'] is True and ok['reason'] == '' and ok['schema'] == 'design/3.0' and ok['design_id'] == '003_DESK_STAND_V000'
+    assert ok['success'] is True and ok['reason'] == '' and ok['schema'] == 'design/4.0' and ok['design_id'] == '003_DESK_STAND_V000'
     bad = store.answer_get_design({'req_id': 'r2', 'design_id': 'nope'})
     assert bad['success'] is False and bad['reason'] == 'ERROR'
 
@@ -526,9 +526,9 @@ def as_new(store, parent, design_id):
     """부모 레시피의 ID 만 design_id 로 바꾼 (blocks, recipe, placements) — check_design 이 주는 꼴(recipe_sha256 · part_id 다시 계산)."""
     from d2_task.recipe_document import recipe_sha256
     base = store.get_design(parent)
-    recipe = {**base['recipe'], 'model_id': design_id}
+    recipe = {**base['recipe'], 'design_id': design_id}
     steps = [{**st, 'part_id': f"{design_id}_{st['part_name']}"} for st in base['placements']['steps']]
-    placements = {**base['placements'], 'model_id': design_id, 'recipe_sha256': recipe_sha256(recipe), 'steps': steps}
+    placements = {**base['placements'], 'design_id': design_id, 'recipe_sha256': recipe_sha256(recipe), 'steps': steps}
     return {**base['parts'], 'design_id': design_id}, recipe, placements
 
 
@@ -558,14 +558,14 @@ def test_new_design_id_next_number_in_template(store):
 
 
 def test_save_design_keeps_record_and_never_overwrites(store):
-    """검사 합격한 설계만 design/3.0(version = V 번호 · family = Template 에서) + prompt · check · created 로. 같은 ID 는 다시 저장하지 않는다."""
+    """검사 합격한 설계만 design/4.0(version = V 번호 · family = Template 에서) + prompt · check · created 로. 같은 ID 는 다시 저장하지 않는다."""
     rec = derived(store)
     got = store.get_design('001_CHAIR_BENCH_V001')
     assert got == rec and got['parent_id'] == BENCH and got['made_by'] == 'web'
     assert got['version'] == 'V001' and got['family'] == 'chair'
     assert got['check'] == {'ok': True, 'min_margin_mm': 9.5, 'errors': []} and got['prompt'] == '벤치 높게'   # check 는 세 칸만
     assert [r['design_id'] for r in store.children(BENCH)] == ['001_CHAIR_BENCH_V001']
-    assert store.answer_get_design({'design_id': '001_CHAIR_BENCH_V001'})['placements']['model_id'] == '001_CHAIR_BENCH_V001'
+    assert store.answer_get_design({'design_id': '001_CHAIR_BENCH_V001'})['placements']['design_id'] == '001_CHAIR_BENCH_V001'
     with pytest.raises(ValueError):                        # 같은 ID 두 번째(다른 요청이 먼저 저장한 경우)
         store.save_design(got['parts'], got['recipe'], got['placements'], BENCH, 'web', check={'ok': True})
 
@@ -646,7 +646,7 @@ def test_template_filter_for_rag_list_and_examples(store):
         [BENCH, '001_CHAIR_BENCH_V001', '001_CHAIR_BENCH_V002']
     ex = store.examples_for('001_CHAIR_BENCH', n=1)
     assert [e['design_id'] for e in ex] == [BENCH, newer['design_id']]
-    assert all(e['parts']['schema'] == 'parts/3.0' for e in ex)
+    assert all(e['parts']['schema'] == 'parts/4.0' for e in ex)
     assert [e['design_id'] for e in store.examples_for('003_DESK_STAND')] == ['003_DESK_STAND_V000']
     with pytest.raises(ValueError):
         store.examples_for('chair')

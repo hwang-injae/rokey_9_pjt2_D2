@@ -2,8 +2,8 @@
 """DesignStore — 설계 · 조립 기록을 저장하는 한 곳 (SDD 6.8, W111 1단계 = JSON 파일 폴더 → W088 PostgreSQL). ROS 없음.
 
 하는 일:
-- 기본 설계 등록: 레시피 폴더의 <모델ID>_recipe.json + _placements.csv → 변환기 ②(d2_task, E-59) → design/3.0 → designs/<id>.json
-- 읽기: list_designs(트리 · RAG 목록 요약 + 최근 조립 결과, E-72 — Template 으로 거름) · children · get_design(design/3.0) · builds_for ·
+- 기본 설계 등록: 레시피 폴더의 <모델ID>_recipe.json + _placements.csv → 변환기 ②(d2_task, E-59) → design/4.0 → designs/<id>.json
+- 읽기: list_designs(트리 · RAG 목록 요약 + 최근 조립 결과, E-72 — Template 으로 거름) · children · get_design(design/4.0) · builds_for ·
         examples_for(RAG 자동 전환)
 - 쓰기: new_design_id(검사 전에 ID 만 정함) → save_design(검사 합격한 고른 후보 1개) · save_build(build/1, 같은 run_id 는 한 번만) ·
         save_gen_log(AI 호출 기록 — NFR-17)
@@ -22,8 +22,8 @@ from pathlib import Path
 from d2_task.recipe_document import RecipeDocument, same_major  # 형식 앞자리 비교 정본(10/14 PL C4)
 from d2_task.recipe_to_parts import RecipeToParts, ori_extents
 
-SCHEMA_DESIGN = 'design/3.0'
-SCHEMA_PARTS = 'parts/3.0'
+SCHEMA_DESIGN = 'design/4.0'
+SCHEMA_PARTS = 'parts/4.0'
 SCHEMA_BUILD = 'build/2'
 RECIPE_SUFFIX = '_recipe.json'
 MADE_BY_NEW = ('web', 'voice', 'scan')       # save_design 으로 들어오는 made_by(IRD 2장) — cad 는 register_base 만
@@ -100,7 +100,7 @@ class DesignStore:
         return done
 
     def register_base(self, design_id):
-        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/3.0(V000 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
+        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/4.0(V000 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         design = doc.design(design_id)
@@ -112,7 +112,7 @@ class DesignStore:
 
     # ---------- 읽기 ----------
     def get_design(self, design_id):
-        """design/3.0 하나. 없으면 KeyError, 저장된 형식이 design/2 가 아니면 ValueError(옛 형식은 변환하지 않고 거절, E-69)."""
+        """design/4.0 하나. 없으면 KeyError, 저장된 형식이 design/2 가 아니면 ValueError(옛 형식은 변환하지 않고 거절, E-69)."""
         path = self._design_path(design_id)
         if not path.is_file():
             raise KeyError(design_id)
@@ -143,7 +143,7 @@ class DesignStore:
     def examples_for(self, template, n=3):
         """RAG 자동 전환용 예시(E-72 — AI 가 도구 get_design 으로 못 골랐을 때): 이 Template 의 기본 설계(V000) + 최근 파생 n 개.
 
-        출력: [{요약 칸(list_designs 와 같음), 'parts': parts/3.0}] — 기본 설계 먼저, 파생은 저장 시각 최신순.
+        출력: [{요약 칸(list_designs 와 같음), 'parts': parts/4.0}] — 기본 설계 먼저, 파생은 저장 시각 최신순.
         프롬프트에는 parts 만 넣는다(recipe · placements 는 AI 가 쓰지 않음). 모르는 Template 이면 ValueError.
         """
         self._check_template(template)
@@ -221,7 +221,7 @@ class DesignStore:
         return sorted(out, key=lambda r: r['design_id'])
 
     def base_recipe(self, template):
-        """check_design 요청에 싣는 base_recipe — 그 Template 기본 설계(V000)의 레시피 통째(recipe/3.0, 10/13 PL · IRD 4.2).
+        """check_design 요청에 싣는 base_recipe — 그 Template 기본 설계(V000)의 레시피 통째(recipe/4.0, 10/13 PL · IRD 4.2).
 
         웹은 속을 읽지 않고 그대로 싣는다(21번 검사가 template.composition 의 count · revision 을 읽음). 부모가 V001 이어도 V000 것이다.
         모르는 Template 은 ValueError(요청을 만들지 않는다).
@@ -266,7 +266,7 @@ class DesignStore:
         return out
 
     def _size_mm(self, parts):
-        """parts/3.0 블록들의 바깥 크기 [x, y, z] mm. 방향 코드를 모르면 ValueError."""
+        """parts/4.0 블록들의 바깥 크기 [x, y, z] mm. 방향 코드를 모르면 ValueError."""
         lo, hi = [float('inf')] * 3, [float('-inf')] * 3
         for b in parts:
             ex, ey, ez = self.extent[b['ori']]
@@ -277,7 +277,7 @@ class DesignStore:
 
     # ---------- 새 설계 ----------
     def new_design_id(self, template, parent_id=None):
-        """새 설계의 (design_id, version) 을 정한다 — 저장하지 않는다. **검사 전에** 부른다: 변환기 ①이 이 ID 로 레시피 model_id ·
+        """새 설계의 (design_id, version) 을 정한다 — 저장하지 않는다. **검사 전에** 부른다: 변환기 ①이 이 ID 로 레시피 design_id ·
         part_id 를 만들기 때문(IRD 2장 — 블록 이름 앞에 설계 ID).
 
         규칙(10/10 E-84 · IRD 2장 · SDD 6.8): <Template ID>_V<3자리>, 번호 = 그 Template 에 저장된 가장 큰 V + 1(만든 차례 — 부모와 상관없음).
@@ -300,15 +300,15 @@ class DesignStore:
                     ai_template=None, ai_reason=None, gen_log=None):
         """검사를 통과해 사람이 고른 설계 하나를 저장한다(SDD 6.8 · IRD 8.3 ⑥ · 8.4 ⑦). 저장한 설계는 고치지 않는다(E-55 ①).
 
-        입력: parts(parts/3.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 parts 로 check_design 이 돌려준 것) ·
+        입력: parts(parts/4.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 parts 로 check_design 이 돌려준 것) ·
               parent_id · made_by(web · voice · scan) · prompt(요청 문장) · check(check_result/3.0 — ok · min_margin_mm · errors) ·
               ai_template · ai_reason(AI 판단 기록 — AI 가 고른 Template ID 또는 'NONE', 그 까닭. 비우면 빈칸) ·
               gen_log(그 생성의 AI 호출 기록 이름 — 저장하면 그 기록에 design_id 를 적음, 설계_DB #14).
-        출력: 저장한 기록 = design/3.0(version = ID 의 V 번호, family = Template 에서) + prompt · check · created ·
+        출력: 저장한 기록 = design/4.0(version = ID 의 V 번호, family = Template 에서) + prompt · check · created ·
               ai_template · ai_reason · template_changed(최종 Template ≠ AI 가 고른 것 — 'NONE' 도 다름으로 셈, ai_template 이 비면 빈칸)
               (DB designs 칸, FR-D02 · 설계_DB 1절). parts 에 base_recipe 가 붙어 와도 떼고 저장한다(검사 요청에만 싣는 것, 10/13 PL).
         실패(ValueError — 저장하지 않음): 검사 불합격(SR-09 — AI 설계는 검사 통과 없이 로봇에 가지 않는다) · made_by · 형식 ·
-              ID 꼴(E-84 — V000 은 기본 설계 몫) · 모르는 Template · family 다름 · 레시피 짝(model_id · recipe_sha256 — 로봇이 못 읽는 레시피) ·
+              ID 꼴(E-84 — V000 은 기본 설계 몫) · 모르는 Template · family 다름 · 레시피 짝(design_id · recipe_sha256 — 로봇이 못 읽는 레시피) ·
               부모 없음 · 부모가 다른 Template(마지막 방어선 — 앞에서 list_designs(template=…)로 거름) · 같은 ID 가 이미 있음 ·
               ai_template 이 Template ID 꼴도 'NONE' 도 아님.
         """
@@ -327,9 +327,9 @@ class DesignStore:
             raise ValueError(f'{design_id}: V000 은 기본 설계(도면) 몫이다 — new_design_id 로 다음 번호를')
         self._check_template(template)
         family = family_of(template)
-        RecipeDocument(recipe, placements)          # 형식 · model_id 짝 · recipe_sha256 — 로봇(작업 판단)과 같은 확인. 틀리면 ValueError
-        if recipe.get('model_id') != design_id:
-            raise ValueError(f'레시피 model_id {recipe.get("model_id")!r} 가 {design_id} 가 아니다 — 이 ID 로 다시 검사')
+        RecipeDocument(recipe, placements)          # 형식 · design_id 짝 · recipe_sha256 — 로봇(작업 판단)과 같은 확인. 틀리면 ValueError
+        if recipe.get('design_id') != design_id:
+            raise ValueError(f'레시피 design_id {recipe.get("design_id")!r} 가 {design_id} 가 아니다 — 이 ID 로 다시 검사')
         if parent_id is not None:
             if not self._design_path(parent_id).is_file():
                 raise ValueError(f'부모 {parent_id} 가 없다')
@@ -421,7 +421,7 @@ class DesignStore:
 
     # ---------- 로봇이 부름(MQTT — MqttClient.serve) ----------
     def answer_get_design(self, body):
-        """/d2/hmi/get_design 요청 {"design_id"} → 응답 dict(success · reason + design/3.0 칸). 없거나 틀리면 success false · ERROR."""
+        """/d2/hmi/get_design 요청 {"design_id"} → 응답 dict(success · reason + design/4.0 칸). 없거나 틀리면 success false · ERROR."""
         design_id = body.get('design_id')
         try:
             return {'success': True, 'reason': '', **self.get_design(design_id)}

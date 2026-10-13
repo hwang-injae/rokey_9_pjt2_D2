@@ -176,7 +176,7 @@ def test_design_gen_runs_through_bridge(tmp_path):
     f = gen.scan_fill(scan_of(bench))
     assert f['parent_id'] == BENCH and f['ai_reason'] == '같은 벤치'
     design_id, _ = store.new_design_id('001_CHAIR_BENCH', BENCH)
-    assert gen._check({'schema': 'parts/3.0', 'design_id': design_id, 'parts': f['parts']})['ok']
+    assert gen._check({'schema': 'parts/4.0', 'design_id': design_id, 'parts': f['parts']})['ok']
 
 
 # ---------- 웹 PC 준비 점검(--check, 10/13) — claude · 네트워크 · docker 는 모두 가짜 ----------

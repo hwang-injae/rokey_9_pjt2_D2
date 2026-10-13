@@ -94,8 +94,8 @@ def test_fingerprint_and_schema_compare_match_canon():
         recipe = json.loads((RECIPES / f'{model}_recipe.json').read_text(encoding='utf-8'))
         want = recipe_sha256(recipe)
         assert mm.recipe_sha256(recipe) == want == block_checker.recipe_sha256(recipe), model
-    pairs = [('recipe/3.0', 'recipe/3.0'), ('recipe/3.1', 'recipe/3.0'), ('recipe/2.0', 'recipe/3.0'), ('placements/3.0', 'recipe/3.0'),
-             ('state/2', 'state/2'), ('state/2.1', 'state/2'), (None, 'recipe/3.0'), ('recipe', 'recipe/3.0'), ('recipe/30', 'recipe/3.0')]
+    pairs = [('recipe/4.0', 'recipe/4.0'), ('recipe/4.1', 'recipe/4.0'), ('recipe/2.0', 'recipe/4.0'), ('placements/4.0', 'recipe/4.0'),
+             ('state/2', 'state/2'), ('state/2.1', 'state/2'), (None, 'recipe/4.0'), ('recipe', 'recipe/4.0'), ('recipe/30', 'recipe/4.0')]
     canon = [same_major(a, b) for a, b in pairs]
     for copy_fn in (mm.same_major, block_checker.same_major):
         assert [copy_fn(a, b) for a, b in pairs] == canon

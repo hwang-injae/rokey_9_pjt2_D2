@@ -77,7 +77,7 @@ def scan_actions(errors):
 class DesignGenerator:
     """요청 문장 + 고른 설계 → 후보 3개 · 검사 · 저장, 스캔 [저장]. 상태 없음(요청마다 새 대화) — 후보는 부르는 쪽(작업 job)이 들고 있다.
 
-    입력: store(DesignStore), check(parts/3.0 dict → check_design 응답 dict — MqttClient.request 로 만든 함수),
+    입력: store(DesignStore), check(parts/4.0 dict → check_design 응답 dict — MqttClient.request 로 만든 함수),
           rules(app.load_rules — robot.yaml 설계 규칙 E-78), client(OpenAI 클라이언트 — 시험 때 가짜, 비우면 처음 부를 때 만듦).
     바깥 영향: LLM 호출(중계 → Claude — 구독 사용량 · 시간), check_design 요청(로봇은 안 움직임), store 에 기록 · 저장. 로봇을 움직이지 않는다.
     실패: GenError(code, message) — 부르는 쪽이 화면에 그대로 알린다.
@@ -423,7 +423,7 @@ class DesignGenerator:
         E-79)이 있으면 바로 끝 · ai_fields · template 만이면 {errors, 앞 parts} 를 피드백으로 AI 다시 채우기(최대 SCAN_REFILLS 번).
         REQUEST_INVALID(웹 쪽 잘못) · 검사 서비스 실패(ERROR · TIMEOUT)는 다시 채우지 않는다.
         on_progress(stage, info): 'filled'(채움 끝 — attempt · design_id · parent_id) · 'checked'(검사 끝 — check) · 'retry'.
-        출력: 저장한 설계 기록(design/3.0, made_by scan + AI 판단 기록). 저장 뒤 hmi/command select_design 은 화면이 보낸다(IRD 8.4 ⑧).
+        출력: 저장한 설계 기록(design/4.0, made_by scan + AI 판단 기록). 저장 뒤 hmi/command select_design 은 화면이 보낸다(IRD 8.4 ⑧).
         실패: GenError(code, message, detail = 마지막 errors) — 화면 버튼은 scan_actions(detail).
         바깥 영향: OpenAI 호출(scan_fill) · check_design 요청 · 저장. 로봇은 움직이지 않는다.
         """
@@ -573,7 +573,7 @@ class DesignGenerator:
     def _check(self, parts, made_by=None):
         """check_design 한 번 → {ok, service_failed, reason, message, min_margin_mm, errors, recipe, placements}.
 
-        요청 = parts/3.0 + base_recipe(설계 ID 앞부분 Template 의 V000 레시피 통째 — 10/13 PL, IRD 4.2). parts 자체에는 붙이지 않는다
+        요청 = parts/4.0 + base_recipe(설계 ID 앞부분 Template 의 V000 레시피 통째 — 10/13 PL, IRD 4.2). parts 자체에는 붙이지 않는다
         (저장하는 설계에 섞이지 않게). made_by 를 주면 요청 선택 칸 made_by 로 싣는다 — 스캔 [저장]만 "scan"(검사기가 21번만 건너뜀,
         E-106 · 10/14 PL A1), AI 생성은 넘기지 않는다. ok = 서비스 성공 + 합격 + recipe · placements 둘 다(IRD 4.2). 서비스 실패(ERROR ·
         TIMEOUT — 로봇 PC · 다리 · 변환기 고장)는 AI 탓이 아니라 service_failed 로 나눠 다시 만들지 않는다. 부르는 함수가 예외를 내도 ERROR 로 바꾼다.
@@ -696,7 +696,7 @@ class DesignGenerator:
         """도구 get_design 정의 — design_id 는 이 Template 설계 목록 안에서만 고르게 enum 으로 묶는다(E-84 ③)."""
         return {'type': 'function', 'function': {
             'name': 'get_design', 'strict': True,
-            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(parts/3.0)과 최근 조립 결과. 2개까지 읽을 수 있다.',
+            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(parts/4.0)과 최근 조립 결과. 2개까지 읽을 수 있다.',
             'parameters': {'type': 'object', 'additionalProperties': False, 'required': ['design_id'],
                            'properties': {'design_id': {'type': 'string', 'enum': list(allowed)}}}}}
 

@@ -5,7 +5,7 @@ task 는 로봇 PC 에서 돈다. 웹 화면 · 음성은 웹 PC 에 있고 다�
 이 클래스는 MQTT 를 전혀 모른다. task 노드(task_node.py)가 콜백에서 on_* · command 를 부르고,
 작업 스레드 하나가 run_once() 를 되풀이한다.
 바깥 일(이동 · 관측 · 집기 · 방송)은 생성할 때 받은 io 객체로 한다. io 가 갖춰야 할 것(ROS 노드나 시험용 가짜):
-  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/3.0 dict). 제한 시간은 io 가 건다
+  get_design(design_id, should_abort) -> (ok, reason, design)   설계 조회(/d2/hmi/get_design, design/4.0 dict). 제한 시간은 io 가 건다
   services_ready() -> [이름]                        아직 안 떠 있는 서버 이름들(없으면 빈 목록, 기다리지 않는다)
   move_to(target, should_abort, speed_ratio=1.0) -> (ok, reason)  복구 뒤 첫 이동만 비율 지정
   check_progress(part_ids, should_abort) -> (ok, reason, rows)   rows = {part_id: {state, dx_m, dy_m, dz_m, top_z_m}}
@@ -44,9 +44,9 @@ from d2_task.task_planner import TaskPlanner
 
 PLAN_STREAK = 3                            # 받침 경유: 움직이기 전 길 계산 거절이 연달아 이만큼이면 사람(10/12 실기 — 장면에 남은 블록으로 20번 헛돎)
 
-RECIPE_SCHEMA = 'recipe/3.0'
-PLACEMENTS_SCHEMA = 'placements/3.0'
-DESIGN_SCHEMA = 'design/3.0'
+RECIPE_SCHEMA = 'recipe/4.0'
+PLACEMENTS_SCHEMA = 'placements/4.0'
+DESIGN_SCHEMA = 'design/4.0'
 
 GRIPPER_POLL_S = 0.05                          # gripper 상태 대기 간격(s) — 정지가 끼면 이 안에 알아본다
 LOG = logging.getLogger('d2_task')
@@ -1419,9 +1419,9 @@ class TaskManager:
             return self._start()
 
     def _planner_from(self, design, design_id):
-        """조회 답(design/3.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
+        """조회 답(design/4.0)을 검증해 TaskPlanner 를 만든다. 반환: (planner, 문제 글자). 문제가 없으면 문제 글자는 빈 값.
 
-        검증: 객체 · schema design/3.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/3.0 · placements/3.0 객체
+        검증: 객체 · schema design/4.0 · 요청한 design_id 와 같음 · recipe(구조)와 placements(조립 방법)가 각각 recipe/4.0 · placements/4.0 객체
         (두 문서는 block 이름과 recipe_sha256 으로 연결한다). 칸 이름이 아니라 schema 로 내용을 확인하고, 옛 형식(design/1 · cad_*)은 받은 schema 를
         적어 거절한다(변환하지 않음). 레시피 내용은 TaskPlanner 가 robot.yaml 과 맞는지 본다. 잘못된 입력은 조립하지 않고 문제 글자를 반환한다.
         """

@@ -29,7 +29,7 @@ from rclpy.action import ActionClient
 
 from d2_motion.executor import make_pose
 from d2_motion.motion_math import (close_angle_deg, column, layout_designs, load_recipe, pick_place_tcp, quat_from_axes,
-                                   recipe_files, recipe_model_id, recipe_name, slot_block_pose, up_axis)
+                                   recipe_files, recipe_design_id, recipe_name, slot_block_pose, up_axis)
 from d2_safety.safe_stop import init_ros
 
 HOME_TIMEOUT_S = 120.0
@@ -278,13 +278,13 @@ def main():
             wait(gh.cancel_goal_async(), 3.0)
     finally:
         if rows:
-            model_id = '_'.join(recipe_model_id(r) for r in recipes) or 'GRASP_TEST'
+            design_id = '_'.join(recipe_design_id(r) for r in recipes) or 'GRASP_TEST'
             # 실기 기록은 원본 자료라 저장소 밖에 둔다(팀 규칙 6 — 예전엔 실행한 폴더에 남아 저장소에 쌓였다, 10/7)
             out = '(안 남김)'
             if args.log_dir:
                 folder = os.path.expanduser(args.log_dir)
                 os.makedirs(folder, exist_ok=True)
-                out = os.path.join(folder, f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv')
+                out = os.path.join(folder, f'run_{design_id}_{time.strftime("%m%d%H%M")}.csv')
                 with open(out, 'w', newline='') as f:
                     w = csv.writer(f)
                     w.writerow(['part_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])

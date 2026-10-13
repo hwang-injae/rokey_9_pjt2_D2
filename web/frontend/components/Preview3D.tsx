@@ -1,5 +1,5 @@
 'use client';
-// 설계 3D 보기(E-40 — 미리보기는 three.js 하나). parts/3.0 · blocks/2 의 x · y · z · ori 를 그대로 상자로 그린다(계산 · 판정 없음).
+// 설계 3D 보기(E-40 — 미리보기는 three.js 하나). parts/4.0 · blocks/2 의 x · y · z · ori 를 그대로 상자로 그린다(계산 · 판정 없음).
 // 좌표: 설계(mm, x 오른쪽 · y 뒤 · z 위 = 아랫면) → three.js(y 가 위): (x, z, −y). 블록 크기는 backend 가 robot.yaml 에서 준 값(한 곳).
 // 같은 부품을 후보 3개(W112) · 스캔 비교(W116)에도 쓴다 — 색 · 투명도는 부르는 쪽이 정한다.
 import { useEffect, useRef, useState } from 'react';

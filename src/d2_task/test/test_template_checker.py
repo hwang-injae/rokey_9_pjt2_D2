@@ -36,7 +36,7 @@ def revision(req, role):
 # ---------------- 기본 4종 ----------------
 @pytest.mark.parametrize('model_id', DESIGNS)
 def test_새_fixture_4종은_schema_검사를_통과하고_규칙으로_읽힌다(model_id):
-    document = RecipeDocument.load(FIXTURES, model_id)                 # recipe/3.0 · placements/3.0 · 짝 해시
+    document = RecipeDocument.load(FIXTURES, model_id)                 # recipe/4.0 · placements/4.0 · 짝 해시
     rules = TemplateChecker(ori_extents(BLOCK_MM)).read_base(dict(base_design(model_id)))
     composition = document.recipe['template']['composition']
     assert set(rules) == set(composition)
@@ -98,9 +98,9 @@ def parent_mismatch(req):
     lambda r: r['base_recipe'].update(schema='recipe/2.0'),
     lambda r: r['base_recipe'].update(schema='blocks/2'),
     lambda r: r['base_recipe'].pop('schema'),
-    lambda r: r['base_recipe'].update(model_id='001_CHAIR_BENCH_V001'),
-    lambda r: r['base_recipe'].update(model_id=None),
-    lambda r: r['base_recipe'].update(model_id='_V000'),
+    lambda r: r['base_recipe'].update(design_id='001_CHAIR_BENCH_V001'),
+    lambda r: r['base_recipe'].update(design_id=None),
+    lambda r: r['base_recipe'].update(design_id='_V000'),
     parent_mismatch,
     lambda r: r.update(design_id='001_CHAIR_BENCH'),
     lambda r: r.update(design_id='001_CHAIR_BENCH_V01'),
@@ -238,9 +238,9 @@ def test_계산되지_않는_식은_AI_탓이_아니라_잘못된_규칙_REQUEST
 
 
 def test_모르는_선택_칸은_무시하고_아는_칸_검사는_그대로():
-    """형식 버전 규칙: recipe/3.1 + 모르는 선택 칸(note 등)은 호환 변경. 새 검사로 해석하지 않는다."""
+    """형식 버전 규칙: recipe/4.1 + 모르는 선택 칸(note 등)은 호환 변경. 새 검사로 해석하지 않는다."""
     req = base_design(BENCH)
-    req['base_recipe']['schema'] = 'recipe/3.1'
+    req['base_recipe']['schema'] = 'recipe/4.1'
     revision(req, 'LEG')['note'] = 'optional'
     revision(req, 'LEG')['speed'] = 1
     revision(req, 'SEAT')['future'] = {'a': [1, 2]}
@@ -486,7 +486,7 @@ def test_서비스_21번_합격_응답은_recipe_placements를_담고_base_recip
 # ---------------- TemplateChecker 직접: 작은 설계 ----------------
 def rig(composition, design_id='X_V001'):
     """composition(역할 → {count, revision, label?}) 으로 만든 규칙."""
-    base = {'schema': 'recipe/3.0', 'model_id': 'X_V000', 'template': {'composition': composition}}
+    base = {'schema': 'recipe/4.0', 'design_id': 'X_V000', 'template': {'composition': composition}}
     return TemplateChecker(ori_extents(BLOCK_MM)).read_base({'design_id': design_id, 'base_recipe': base})
 
 
@@ -784,7 +784,7 @@ def test_스캔이어도_물리_불합격은_그대로_거절():
 
 
 @pytest.mark.parametrize('mutate', [lambda r: r.pop('base_recipe'),
-                                    lambda r: r['base_recipe'].update(model_id='002_CHAIR_BACK_V000'),
+                                    lambda r: r['base_recipe'].update(design_id='002_CHAIR_BACK_V000'),
                                     lambda r: r.update(design_id='bench_scan_1')])
 def test_스캔이어도_요청_확인은_공통으로_REQUEST_INVALID(mutate):
     """base_recipe 있음 · Template 일치 · design_id 모양(<Template>_V3자리)은 스캔에도 그대로 본다(요청 계약)."""

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""검사 묶음 DesignChecker — 블록 JSON(parts/3.0)이 쌓을 만한 설계인지 본다 (ROS 없이 동작, W109, SDD 6.7).
+"""검사 묶음 DesignChecker — 블록 JSON(parts/4.0)이 쌓을 만한 설계인지 본다 (ROS 없이 동작, W109, SDD 6.7).
 
 `/d2/task/check_design`(JsonQuery) 서비스 뒤에서 task 노드가 부른다. ROS 없이 시험할 수 있게 노드와 나눴다(팀 규칙 ②).
 10/3 jenga_check.py(안정성 계산)를 가져와 내민 구조 버그를 고치고, 받침 · 손가락 틈 · 작업영역을 더했다.
@@ -14,7 +14,7 @@ from d2_task.parts_to_recipe import DesignRejected
 from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
 from d2_task.template_checker import RequestInvalid, TemplateChecker
 
-SCHEMA_REQUEST = 'parts/3.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 스캔 형식 blocks/2 는 위치 · 방향만이라 거절)
+SCHEMA_REQUEST = 'parts/4.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 스캔 형식 blocks/2 는 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/3.0'
 ROLE_RE = re.compile(r'[A-Z]+(?:_[A-Z]+)?')     # 역할 한 단어 + 옵션 0~1개 한 단어(영문 대문자, 작명 규칙 v3)
 PENETRATION_MM = 0.000001     # 세 방향 모두 이 값보다 깊게 겹치면 파고듦. 면이 닿기만 하면 허용 — 레시피 도구 · 변환기(TOL 1e-6)와 같은 기준(E-84, 10/11 PL). 0 이 아닌 이유: 부동소수 계산 오차로 정상 면접촉이 거절되지 않게 (SDD 6.7 검사 2)
@@ -24,7 +24,7 @@ STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy':
 
 
 class DesignChecker:
-    """요청(parts/3.0 + base_recipe) 하나를 요청 확인 → 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 → Template(21번) 순으로 검사해 check_result/3.0 을 만든다.
+    """요청(parts/4.0 + base_recipe) 하나를 요청 확인 → 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 → Template(21번) 순으로 검사해 check_result/3.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
     assembly_area_half_m · table · check.margin_mm · check.max_blocks), 요청 dict. 변환기 ①(parts_to_recipe)은 선택으로 받는다.
@@ -56,7 +56,7 @@ class DesignChecker:
 
     # ---------------- 바깥에서 부르는 곳 ----------------
     def check(self, request):
-        """요청(parts/3.0 + base_recipe) → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail · kind] · recipe + placements(ok 일 때 둘 다).
+        """요청(parts/4.0 + base_recipe) → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail · kind] · recipe + placements(ok 일 때 둘 다).
 
         요청이 틀리면(base_recipe 없음 · Template 이 design_id 와 다름 · revision 모양 틀림 …) 바로 REQUEST_INVALID 한 줄로 돌려준다(kind 없음, 재생성 안 함).
         그 뒤 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
@@ -110,7 +110,7 @@ class DesignChecker:
     def handle_json(self, request_json):
         """`check_design`(JsonQuery) 한 번을 처리한다. 반환: (success, reason, response_json 글자).
 
-        요청은 parts/3.0 객체 + base_recipe 글자 그대로. 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
+        요청은 parts/4.0 객체 + base_recipe 글자 그대로. 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
         설계 불합격은 (True, '', ok:false + errors).
         봉투(envelope)가 틀린 요청 — JSON 구문 · 객체 아님 · schema 다름(스캔 형식 blocks/2 포함, 받은 schema 를 적음) · NaN · Infinity · 1e999 · design_id · parts 목록 없음/타입/빔 ·
         base_recipe 오류 · 규칙(revision) 오류 — 은 웹 쪽 잘못이지만 서비스는 처리했으므로 (True, '', ok:false + REQUEST_INVALID, kind 없음, 재생성하지 않는다).
@@ -173,7 +173,7 @@ class DesignChecker:
     def grasp_options(self, parts):
         """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {order: [잡기 이름…]}.
 
-        blocks: 형식이 맞는 parts/3.0 의 parts 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
+        blocks: 형식이 맞는 parts/4.0 의 parts 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
         """
         boxes = [self._box(b) for b in sorted(parts, key=lambda b: b['order'])]
         return {bx['order']: self._grasps(bx, boxes[:i]) for i, bx in enumerate(boxes)}

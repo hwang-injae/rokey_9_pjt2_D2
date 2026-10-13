@@ -33,13 +33,13 @@ def blocks_of(model_id):
 
 @pytest.mark.parametrize('model_id', IDS)
 def test_변환기2의_출력이_check_design을_거쳐_레시피_파일과_같은_recipe_placements로_돌아온다(model_id):
-    """V-45 왕복: 레시피 → parts/3.0(②) → check_design(검사 + 변환기 ①) → 처음과 같은 블록 이름 · 중심 · 회전 · 조립 방법이 돌아온다."""
+    """V-45 왕복: 레시피 → parts/4.0(②) → check_design(검사 + 변환기 ①) → 처음과 같은 블록 이름 · 중심 · 회전 · 조립 방법이 돌아온다."""
     doc, blocks = blocks_of(model_id)
     ok, reason, text = attached().handle_json(json.dumps(blocks))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
     assert result['schema'] == 'check_result/3.0'
-    # CAD 에서만 오는 칸(cad.handle · source_cad)과 그 위에 계산한 recipe_sha256 은 parts/3.0 에 없으므로 비교에서 뺀다
+    # CAD 에서만 오는 칸(cad.handle · source_cad)과 그 위에 계산한 recipe_sha256 은 parts/4.0 에 없으므로 비교에서 뺀다
     keep = lambda r: sorted((f'{g}_{x["part"]}', next(stock['size_mm'] for stock in r['stocks'] if stock['stock_id'] == x['stock_id']), x['center_mm'], x['R'])
                             for c in r['template']['composition'].values() for g, xs in c['parts'].items() for x in xs)
     assert keep(result['recipe']) == keep(doc.recipe)

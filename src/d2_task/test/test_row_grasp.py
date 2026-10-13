@@ -19,18 +19,18 @@ ROWS = {'001_CHAIR_BENCH_V000': {'SEAT_001_01', 'SEAT_001_02', 'SEAT_001_03'},
 
 
 def part(order, x, y, z, ori='x', grasp='FLAT_SHORT'):
-    """parts/3.0 블록 하나(mm, 설계 좌표)."""
+    """parts/4.0 블록 하나(mm, 설계 좌표)."""
     return {'order': order, 'x': x, 'y': y, 'z': z, 'ori': ori, 'role': 'TOP', 'group': 1, 'stage': 1, 'grasp': grasp}
 
 
 def base_parts(model_id):
-    """기본 설계 레시피 두 파일 → parts/3.0 parts 와 order → 블록 이름."""
+    """기본 설계 레시피 두 파일 → parts/4.0 parts 와 order → 블록 이름."""
     recipe = json.loads((RECIPES / f'{model_id}_recipe.json').read_text(encoding='utf-8'))
     with open(RECIPES / f'{model_id}_placements.csv', encoding='utf-8', newline='') as f:
         rows = list(csv.DictReader(f))
     steps = [{'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
               'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]} for r in rows]
-    placements = {'schema': 'placements/3.0', 'model_id': model_id, 'recipe_sha256': rows[0]['recipe_sha256'], 'steps': steps}
+    placements = {'schema': 'placements/4.0', 'design_id': model_id, 'recipe_sha256': rows[0]['recipe_sha256'], 'steps': steps}
     parts = RecipeToParts(model_id, 'test', BLOCK_MM).convert(recipe, placements)['parts']
     return parts, {s['sequence']: s['part_name'] for s in steps}
 

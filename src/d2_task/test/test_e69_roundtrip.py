@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""E-69 새 레시피 4종 왕복 시험(task 쪽, ROS 없이): 두 문서 읽기 → 진행표 → 변환기 ② parts/3.0 → 검사 묶음 → 작명 규칙 v3 일치.
+"""E-69 새 레시피 4종 왕복 시험(task 쪽, ROS 없이): 두 문서 읽기 → 진행표 → 변환기 ② parts/4.0 → 검사 묶음 → 작명 규칙 v3 일치.
 
-변환기 ①(W110, 한세교, 10/10 오전)은 아직 없어서 '다시 레시피로' 방향은 이름 · 번호가 같아지는지로 확인한다: parts/3.0 의 role · part 와 위치 순서로
+변환기 ①(W110, 한세교, 10/10 오전)은 아직 없어서 '다시 레시피로' 방향은 이름 · 번호가 같아지는지로 확인한다: parts/4.0 의 role · part 와 위치 순서로
 작명 규칙 v3 이 부품 번호 · 블록 번호를 다시 매기면 레시피의 블록 이름과 같아야 한다(V-45 왕복의 task 쪽 절반).
 """
 import pytest
@@ -23,7 +23,7 @@ def blocks_of(model_id):
 @pytest.mark.parametrize('model_id', IDS)
 def test_4종_읽기_진행표_검사가_이어진다(model_id):
     doc, blocks = blocks_of(model_id)
-    assert doc.placements['recipe_sha256'] and doc.recipe['model_id'] == doc.placements['model_id'] == model_id
+    assert doc.placements['recipe_sha256'] and doc.recipe['design_id'] == doc.placements['design_id'] == model_id
     planner = TaskPlanner(CFG, doc.recipe, doc.placements)
     assert len(planner.parts) == len(blocks['parts']) == IDS[model_id][2]
     assert all(b['part_id'].startswith(model_id + '_') for b in planner.parts)
@@ -34,7 +34,7 @@ def test_4종_읽기_진행표_검사가_이어진다(model_id):
 
 @pytest.mark.parametrize('model_id', IDS)
 def test_blocks_2_0의_role_part로_번호를_다시_매기면_레시피_블록_이름과_같다(model_id):
-    """작명 규칙 v3: 부품 번호 = parts/3.0 의 part 묶음, 블록 번호 = 그 부품 안에서 아래층부터 · 앞→뒤 · 왼→오른. 코드(변환기 ①)가 하는 일의 task 쪽 확인."""
+    """작명 규칙 v3: 부품 번호 = parts/4.0 의 part 묶음, 블록 번호 = 그 부품 안에서 아래층부터 · 앞→뒤 · 왼→오른. 코드(변환기 ①)가 하는 일의 task 쪽 확인."""
     doc, blocks = blocks_of(model_id)
     name_of = {s['sequence']: s['part_name'] for s in doc.placements['steps']}
     groups = {}
@@ -57,7 +57,7 @@ def test_같은_역할의_부품_번호는_1부터_빈틈없이_이어진다(mod
 
 @pytest.mark.parametrize('model_id', IDS)
 def test_blocks_2_0_왕복으로_같은_구조가_다시_나온다(model_id):
-    """parts/3.0 → (이름 · 위치 규칙으로 되돌린 구조) → 변환기 ② 가 같은 parts/3.0 을 다시 낸다 — 위치 · 방향 계산이 흔들리지 않는다."""
+    """parts/4.0 → (이름 · 위치 규칙으로 되돌린 구조) → 변환기 ② 가 같은 parts/4.0 을 다시 낸다 — 위치 · 방향 계산이 흔들리지 않는다."""
     doc, blocks = blocks_of(model_id)
     _, again = blocks_of(model_id)
     assert blocks == again

@@ -6,8 +6,8 @@
   설계는 요청 design_id 칸으로만 고른다(E-52 ④ — 블록 이름에서 잘라 내지 않는다). 비었으면 success=false, reason ERROR(wrist_block 과 같음).
   part_ids 는 전체 블록 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)을 그대로 맞춘다.
   설계 읽기는 wrist_block 과 같다(**task · wrist_block 과 같은 design_source 값을 준다**, W157):
-    remote(기본)  `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — AI 생성 · 스캔 설계(DB에만 있음)도 같은 길.
-                  design/3.0 → block_checker.recipe_from_design → motion_math.recipe_parts 로 블록 이름 · 윗면 높이를 만든다.
+    remote(기본)  `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/4.0)으로 받는다 — AI 생성 · 스캔 설계(DB에만 있음)도 같은 길.
+                  design/4.0 → block_checker.recipe_from_design → motion_math.recipe_parts 로 블록 이름 · 윗면 높이를 만든다.
     local         `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 옆 `_placements.csv` 도)만(웹 없이 개발할 때 명시).
   캐시는 한 판(run) 안에서만(design_cache.RunDesignCache — wrist_block 과 같은 규칙): 요청 run_id 가 지난 요청과 다르면 설계를 다시 읽고,
   같으면(블록을 전부 묻든 몇 개 묻든) 읽어 둔 설계를 쓴다. 빈 run_id 는 판 구분 없음(CheckProgress.srv) — 빈 값끼리는 캐시, 이름 있는 판과 오가면 다시 읽는다.
@@ -84,7 +84,7 @@ QOS_STATUS = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1,
 def recipe_tops(cfg, recipe):
     """레시피 dict(motion_math.load_recipe 모양, mm) → {part_id: 윗면 높이 m(base)}. 바깥 영향 없음.
 
-    recipe_parts 가 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
+    recipe_parts 가 읽고 실측 두께(robot.yaml block_actual_m)로 쌓는다. part_id 는 조립 방법의 part_id 칸('<design_id 대문자>_<부품 이름>').
     로컬 파일(load_recipe)과 get_design 답(block_checker.recipe_from_design)이 같은 모양이라 두 길이 같은 함수를 쓴다.
     실패: recipe_parts 의 예외(KeyError · TypeError · ValueError · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) · recipe_sha256 다름)를 그대로 낸다."""
     return {b['part_id']: b['center'][2] + half_height(b['rot'], cfg['block_actual_m']) for b in recipe_parts(cfg, recipe)}
@@ -186,8 +186,8 @@ class MockWristBlock(Node):
         return tops, ''
 
     def _remote_tops(self, design_id):
-        """/d2/hmi/get_design 으로 design/3.0 을 받아 윗면 높이를 만든다. 출력: (tops, '') 또는 (None, 코드) — wrist_block._remote_checker 와 같은 코드:
-        서버 없음 → ERROR · timeout.service_s 안에 답 없음 → TIMEOUT · success=false → ERROR · JSON · design/3.0 형식(옛 design/1 은 거절) · 짝 해시 ·
+        """/d2/hmi/get_design 으로 design/4.0 을 받아 윗면 높이를 만든다. 출력: (tops, '') 또는 (None, 코드) — wrist_block._remote_checker 와 같은 코드:
+        서버 없음 → ERROR · timeout.service_s 안에 답 없음 → TIMEOUT · success=false → ERROR · JSON · design/4.0 형식(옛 design/1 은 거절) · 짝 해시 ·
         레시피 내용 오류 → ERROR. 로컬 파일로 몰래 대신하지 않는다. 바깥 영향: get_design 요청 하나 · 로그."""
         if not self.cli_design.service_is_ready():
             self.get_logger().error('get_design 서버가 없다(다리 · 웹?) — 설계 %s 를 못 받음 → ERROR' % design_id)
@@ -203,7 +203,7 @@ class MockWristBlock(Node):
             return None, 'ERROR'
         try:
             tops = recipe_tops(self.cfg, recipe_from_design(json.loads(res.response_json), design_id))
-        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/3.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡는다
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/4.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡는다
             self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
             return None, 'ERROR'
         self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(tops)))

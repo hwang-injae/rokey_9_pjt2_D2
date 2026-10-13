@@ -542,8 +542,8 @@ def held_block_pose(tcp_xyz, tcp_q, held):
 # ---------------- 설계도(레시피) ----------------
 RECIPE_SUFFIXES = ('_recipe.json',)    # 레시피 = 구조 파일 <모델ID>_recipe.json (E-69 — 옛 이름 .recipe.json 은 W139 뒤 뺌)
 PLACEMENTS_SUFFIX = '_placements.csv'  # 조립 방법 원본 — 구조 파일과 같은 폴더 · 같은 모델 ID (E-69)
-RECIPE_SCHEMA = 'recipe/3.0'          # 10/13 PLM: 자재 stocks + template.composition[역할].parts[그룹] 트리
-PLACEMENTS_SCHEMA = 'placements/3.0'
+RECIPE_SCHEMA = 'recipe/4.0'          # 10/13 PLM: 자재 stocks + template.composition[역할].parts[그룹] 트리
+PLACEMENTS_SCHEMA = 'placements/4.0'
 
 
 def same_major(got, expected):
@@ -582,18 +582,18 @@ def recipe_sha256(recipe):
 
 
 def load_recipe(path):
-    """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/3.0)를 읽어
-    {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_parts 가 둘을 블록 이름으로 잇는다(E-69).
+    """레시피 파일 <모델ID>_recipe.json(구조, recipe/4.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/4.0)를 읽어
+    {'schema', 'design_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_parts 가 둘을 블록 이름으로 잇는다(E-69).
     steps 는 CSV 의 조립 방법 칸(part_name · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
-    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/3.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
+    실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/4.0 · placements/4.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
     recipe_sha256 이 구조와 다르면 ValueError — 구조가 바뀌었는데 옛 조립 방법으로 쌓으면 받침 · 잡기가 어긋난다."""
     with open(path) as f:
         recipe = json.load(f)
     if not same_major(recipe.get('schema'), RECIPE_SCHEMA):
         raise ValueError(f'{os.path.basename(path)}: 형식 {recipe.get("schema")!r} 는 읽지 않는다 ({RECIPE_SCHEMA} 앞자리만)')
     want = recipe_sha256(recipe)
-    pp = os.path.join(os.path.dirname(path), recipe['model_id'] + PLACEMENTS_SUFFIX)
+    pp = os.path.join(os.path.dirname(path), recipe['design_id'] + PLACEMENTS_SUFFIX)
     with open(pp, newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
     steps = []
@@ -604,25 +604,25 @@ def load_recipe(path):
             raise ValueError(f'{os.path.basename(pp)} 의 recipe_sha256 이 {os.path.basename(path)} 와 다르다 (구조가 바뀜 — 레시피 도구로 다시 만든다)')
         steps.append({'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
                       'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [k for k in r['supports'].split(';') if k]})
-    return {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'], 'recipe_sha256': want, 'steps': steps, 'structure': recipe}
+    return {'schema': PLACEMENTS_SCHEMA, 'design_id': recipe['design_id'], 'recipe_sha256': want, 'steps': steps, 'structure': recipe}
 
 
-def recipe_model_id(recipe):
+def recipe_design_id(recipe):
     """레시피의 모델 ID (= 기본 설계 design_id). 설계 이름은 블록 이름에서 잘라 내지 않는다(E-52 ④ — BACK · BEAM 에도 _B 가 있다).
     모델 ID 칸이 없으면 빈 글자."""
-    return recipe['model']['model_id'] if 'model' in recipe else recipe.get('model_id', '')
+    return recipe['model']['design_id'] if 'model' in recipe else recipe.get('design_id', '')
 
 
 def recipe_parts(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](part_name · part_id · sequence · stage · grasp_axis · supports — 부품 이름)
-    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks[](stock_id · size_mm) +
+    레시피 = E-69 두 파일: 조립 방법 placements/4.0 steps[](part_name · part_id · sequence · stage · grasp_axis · supports — 부품 이름)
+    + 구조 recipe/4.0 (load_recipe 가 'structure' 칸에 붙임: stocks[](stock_id · size_mm) +
     template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
     블록 이름 = '<그룹>_<part>' 예 LEG_001_01 — 사람 칸 label · revision 은 읽지 않는다).
-    part_id = 조립 방법의 part_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
+    part_id = 조립 방법의 part_id 칸, 없으면 '<design_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
-    (steps[].part_id), task 시험 예시는 이 꼴 파일이다(part_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
+    (steps[].part_id), task 시험 예시는 이 꼴 파일이다(part_id 가 없으면 '<design_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
     옛 blocks[] 형식 · 로봇 쪽 옛 파일 이름 .recipe.json 은 W139 뒤 뺐다(W138).
     조립 원점은 robot.yaml assembly_origin 하나만 쓴다 (레시피 T_base_from_cad 는 null — 10/4 합의).
     가로 위치는 설계 그대로, 높이는 받침의 실제 윗면 위에 실측 블록(block_actual_m)으로 쌓아 올린 값이다.
@@ -659,7 +659,7 @@ def recipe_parts(cfg, recipe):
         sizes = {p['stock_id']: p['size_mm'] for p in model['stocks']}
         inst = {i['instance_id']: i for i in model['instances']}
         # 순서표에 part_id 가 없을 때만 정본 규칙(<설계 ID 대문자>_<부품 이름>)으로 — 옛 _B### 꼴은 없앰(10/14 PL C3, tests/test_shared_tables.py)
-        bid = {st['instance_id']: st.get('part_id') or f'{model["model_id"].upper()}_{st["instance_id"]}' for st in recipe['steps']}
+        bid = {st['instance_id']: st.get('part_id') or f'{model["design_id"].upper()}_{st["instance_id"]}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
             out.append(part(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
@@ -669,7 +669,7 @@ def recipe_parts(cfg, recipe):
     sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
     geo = {f'{group}_{item["part"]}': item for comp in struct['template']['composition'].values()
            for group, items in comp['parts'].items() for item in items}
-    full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"].upper()}_{st["part_name"]}' for st in recipe['steps']}
+    full = {st['part_name']: st.get('part_id') or f'{recipe["design_id"].upper()}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]
         out.append(part(full[st['part_name']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],
@@ -702,7 +702,7 @@ def layout_designs(cfg, recipes):
     같은 레시피 목록이면 같은 자리를 쓴다. 조립 작업공간(중심 ± assembly_area_half_m)을 넘으면 ValueError.
     """
     designs = [recipe_parts(cfg, r) for r in recipes]
-    names = [recipe_model_id(r) or f'{k + 1}번' for k, r in enumerate(recipes)]
+    names = [recipe_design_id(r) or f'{k + 1}번' for k, r in enumerate(recipes)]
     fps = [footprint(cfg, b) for b in designs]
     shifts, y_top = [], None
     for fp in fps:                           # 앞 설계의 −y 끝에서 SET_GAP_M 띄워 다음 설계의 +y 끝을 둔다

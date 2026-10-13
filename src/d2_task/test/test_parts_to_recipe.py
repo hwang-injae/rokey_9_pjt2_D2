@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""변환기 ① 시험 (W110, E-69) — parts/3.0 → recipe/3.0 + placements/3.0.
+"""변환기 ① 시험 (W110, E-69) — parts/4.0 → recipe/4.0 + placements/4.0.
 
-기본 설계 4종 왕복(V-45: 레시피 → 변환기 ② → parts/3.0 → 변환기 ① → 같은 레시피), 블록 번호 매기기,
+기본 설계 4종 왕복(V-45: 레시피 → 변환기 ② → parts/4.0 → 변환기 ① → 같은 레시피), 블록 번호 매기기,
 AI 실수 세 가지(역할 목록 · 부품 면 맞닿음 · 고른 잡기) 거부, AI 값을 대신 채우지 않음을 본다. ROS · 로봇 없이 돈다."""
 import copy
 import json
@@ -18,7 +18,7 @@ from d2_task.recipe_to_parts import RecipeToParts
 SRC = Path(__file__).resolve().parents[2]
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 BLOCK_MM = [v * 1000.0 for v in CFG['block_size_m']]
-RECIPES = Path(__file__).parent / 'fixtures'          # 기본 설계 4종 시험용 사본(recipe/3.0 template.composition — 레시피 도구가 새 구조를 내기 전까지 이 사본이 정답)
+RECIPES = Path(__file__).parent / 'fixtures'          # 기본 설계 4종 시험용 사본(recipe/4.0 template.composition — 레시피 도구가 새 구조를 내기 전까지 이 사본이 정답)
 FAMILY = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DESK_STAND_V000': 'desk', '004_DESK_PEDESTAL_V000': 'desk'}
 
 
@@ -28,7 +28,7 @@ def make_converter():
 
 
 def load_base(model_id):
-    """기본 설계 레시피 두 파일 → (RecipeDocument, 변환기 ② 로 만든 parts/3.0)."""
+    """기본 설계 레시피 두 파일 → (RecipeDocument, 변환기 ② 로 만든 parts/4.0)."""
     document = RecipeDocument.load(RECIPES, model_id)
     blocks = RecipeToParts(model_id, FAMILY[model_id], BLOCK_MM).convert(document.recipe, document.placements)
     return document, blocks
@@ -43,16 +43,16 @@ def rejected_details(request):
 
 @pytest.fixture
 def bench():
-    """벤치(001) parts/3.0 — 고치며 시험할 복사본."""
+    """벤치(001) parts/4.0 — 고치며 시험할 복사본."""
     return copy.deepcopy(load_base('001_CHAIR_BENCH_V000')[1])
 
 
 def part_names(recipe):
-    """recipe/3.0 template.composition 의 부품 이름(`<그룹>_<part>`, 예 LEG_001_01) 목록."""
+    """recipe/4.0 template.composition 의 부품 이름(`<그룹>_<part>`, 예 LEG_001_01) 목록."""
     return [f'{g}_{it["part"]}' for c in recipe['template']['composition'].values() for g, its in c['parts'].items() for it in its]
 
 
-# V-45 왕복: 기본 설계 4종 레시피 → parts/3.0 → 변환기 ① 이 저장된 레시피와 같다. 기본 설계에만 있는 칸(source_cad · template 의
+# V-45 왕복: 기본 설계 4종 레시피 → parts/4.0 → 변환기 ① 이 저장된 레시피와 같다. 기본 설계에만 있는 칸(source_cad · template 의
 # name · description · tags · 구성요소 revision · 부품 cad)은 AI·스캔 설계에 없어 빠진다(설계 초안 6절). 조립 방법은 새 구조 recipe_sha256 까지
 # 맞아 task RecipeDocument 가 받는다
 @pytest.mark.parametrize('model_id', FAMILY)
@@ -75,7 +75,7 @@ def test_round_trip_matches_cad_recipe(model_id):
 def test_output_has_only_composition_fields(bench):
     out = make_converter().convert(bench)
     recipe = out['recipe']
-    assert set(recipe) == {'schema', 'model_id', 'source_cad', 'stocks', 'template'} and set(recipe['template']) == {'composition'}
+    assert set(recipe) == {'schema', 'design_id', 'source_cad', 'stocks', 'template'} and set(recipe['template']) == {'composition'}
     assert {r: set(c) for r, c in recipe['template']['composition'].items()} == {'LEG': {'label', 'count', 'parts'}, 'SEAT': {'label', 'count', 'parts'}}
     assert [recipe['template']['composition'][r]['label'] for r in ('LEG', 'SEAT')] == ['다리', '좌판']
     assert [recipe['template']['composition'][r]['count'] for r in ('LEG', 'SEAT')] == [2, 1]
@@ -152,7 +152,7 @@ def test_to_template_recipe_completes_optional_label(role, label, expected):
     comp = {'count': 0, 'parts': {}}
     if label is not None:
         comp['label'] = label
-    built = {'schema': 'recipe/3.0', 'model_id': 'X', 'source_cad': None,
+    built = {'schema': 'recipe/4.0', 'design_id': 'X', 'source_cad': None,
              'template': {'composition': {role: comp}}}
     before = copy.deepcopy(built)
     out = make_converter().to_template_recipe(built)
@@ -164,7 +164,7 @@ def test_to_template_recipe_completes_optional_label(role, label, expected):
 def test_to_template_recipe_does_not_mutate(bench):
     converter = make_converter()
     document, _ = load_base('001_CHAIR_BENCH_V000')
-    built = {'schema': 'recipe/3.0', 'model_id': 'X', 'source_cad': None, 'stocks': [{'stock_id': 'PART_001', 'size_mm': BLOCK_MM}],
+    built = {'schema': 'recipe/4.0', 'design_id': 'X', 'source_cad': None, 'stocks': [{'stock_id': 'PART_001', 'size_mm': BLOCK_MM}],
              'parts': [{'part_name': 'LEG_001_01', 'stock_id': 'PART_001', 'center_mm': [0.0, 0.0, 7.5],
                         'R': [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]}]}
     before = copy.deepcopy(built)
@@ -184,7 +184,7 @@ def test_bench_block_names_from_positions(bench):
 def test_generated_design_id_part_id_upper(bench):
     bench['design_id'] = '001_CHAIR_BENCH_V001'
     out = make_converter().convert(bench)
-    assert out['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
+    assert out['recipe']['design_id'] == '001_CHAIR_BENCH_V001'
     assert out['placements']['steps'][0]['part_id'].startswith('001_CHAIR_BENCH_V001_LEG_')
     RecipeDocument(out['recipe'], out['placements'])
 
@@ -292,4 +292,4 @@ def test_attached_to_design_checker(model_id):
     ok, reason, text = checker.handle_json(json.dumps(dict(blocks, base_recipe=document.recipe)))
     result = json.loads(text)
     assert (ok, reason, result['ok']) == (True, '', True), result['errors']
-    assert result['recipe']['schema'] == 'recipe/3.0' and result['placements']['schema'] == 'placements/3.0'
+    assert result['recipe']['schema'] == 'recipe/4.0' and result['placements']['schema'] == 'placements/4.0'

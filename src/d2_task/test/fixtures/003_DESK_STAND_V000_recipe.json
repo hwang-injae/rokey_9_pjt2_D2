@@ -1,6 +1,6 @@
 {
-  "schema": "recipe/3.0",
-  "model_id": "003_DESK_STAND_V000",
+  "schema": "recipe/4.0",
+  "design_id": "003_DESK_STAND_V000",
   "source_cad": {
     "filename": "003_desk_stand_v000.dxf",
     "sha256": "aa97c8b0518fe47f802addc4964323a47cb2bc5eeb540946470b2a64e120e193"

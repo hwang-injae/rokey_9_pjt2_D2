@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② — 레시피 두 파일(recipe/3.0 구조 + placements/3.0 조립 방법)을 블록 JSON(parts/3.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
+"""변환기 ② — 레시피 두 파일(recipe/4.0 구조 + placements/4.0 조립 방법)을 블록 JSON(parts/4.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
 
 기본 설계(벤치 · 의자 · 책상)를 DB와 AI 생성의 예시로 넘길 때, 그리고 검사 묶음이 같은 형식으로 시험할 때 쓴다.
 검사 묶음 · HMI 가 부른다. 레시피를 읽기만 하고 파일 · 로봇 · 메시지에는 손대지 않는다.
@@ -9,7 +9,7 @@ import re
 
 from d2_task.recipe_document import RecipeDocument
 
-SCHEMA_OUT = 'parts/3.0'              # IRD 6장 parts/3.0 (E-69)
+SCHEMA_OUT = 'parts/4.0'              # IRD 6장 parts/4.0 (E-69)
 
 
 
@@ -26,9 +26,9 @@ def ori_extents(block_mm):
 
 
 class RecipeToParts:
-    """레시피 하나를 parts/3.0 하나로 바꾸는 변환기.
+    """레시피 하나를 parts/4.0 하나로 바꾸는 변환기.
 
-    입력: recipe(recipe/3.0 구조) + placements(placements/3.0 조립 방법) dict(단위 mm). 출력: parts/3.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
+    입력: recipe(recipe/4.0 구조) + placements(placements/4.0 조립 방법) dict(단위 mm). 출력: parts/4.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
     위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · group 은 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
@@ -49,7 +49,7 @@ class RecipeToParts:
         self.extent = ori_extents(block_mm)
 
     def convert(self, recipe, placements):
-        """recipe(구조) + placements(조립 방법)를 parts/3.0 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
+        """recipe(구조) + placements(조립 방법)를 parts/4.0 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
 
         order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
 

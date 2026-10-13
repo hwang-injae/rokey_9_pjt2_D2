@@ -3,7 +3,7 @@
 
 다리와 같은 ROS 이름 · 형식을 쓴다 — 작업 관리자 · 정지 노드는 진짜 다리와 구별하지 못한다.
 - /d2/hmi/alive 를 alive_s 마다 낸다 → 작업 관리자가 웹이 붙은 것으로 본다(monitor_hmi 를 끄지 않아도 출발 · 스캔이 된다)
-- /d2/hmi/get_design: recipe_dir 의 레시피 두 파일(<id>_recipe.json + _placements.csv) → design/3.0(recipe · placements · parts)
+- /d2/hmi/get_design: recipe_dir 의 레시피 두 파일(<id>_recipe.json + _placements.csv) → design/4.0(recipe · placements · parts)
 - /d2/hmi/save_build: 받은 build/2 을 로그로 찍고 ok true(DB 없음)
 - 터미널 명령으로 화면 버튼 · 음성 흉내(help 로 목록)
 로봇을 직접 움직이지 않는다 — 출발 · 정지는 작업 관리자 · 정지 노드에 요청만 한다.
@@ -82,7 +82,7 @@ class MockBridge(Node):
 
     # ---------- 웹 backend 흉내 ----------
     def design(self, design_id):
-        """레시피 두 파일 → design/3.0 dict(웹 backend design_store 의 기본 설계와 같은 칸). 실패는 OSError · ValueError."""
+        """레시피 두 파일 → design/4.0 dict(웹 backend design_store 의 기본 설계와 같은 칸). 실패는 OSError · ValueError."""
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         out = doc.design(design_id)
@@ -91,7 +91,7 @@ class MockBridge(Node):
         return out
 
     def _on_get_design(self, req, res):
-        """/d2/hmi/get_design — {"design_id"} → design/3.0. 못 찾거나 틀리면 success false · ERROR."""
+        """/d2/hmi/get_design — {"design_id"} → design/4.0. 못 찾거나 틀리면 success false · ERROR."""
         try:
             design_id = json.loads(req.request_json)['design_id']
             res.response_json = json.dumps(self.design(design_id), ensure_ascii=False)

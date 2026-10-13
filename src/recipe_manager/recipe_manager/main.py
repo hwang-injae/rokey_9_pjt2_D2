@@ -1,4 +1,4 @@
-"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/3.0 + 조립 방법 placements/3.0).
+"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/4.0 + 조립 방법 placements/4.0).
 build: cads/<모델ID 소문자>.dxf → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)."""
 import argparse
 import csv
@@ -57,12 +57,12 @@ class RecipeManager:
         """
         # DXF → 레시피 → 사람 칸 옮기기 → 조립 방법(recipe_sha256 = 사람 칸까지 넣은 레시피 객체의 해시)
         cad_path = Path(cad_path)
-        model_id = cad_path.stem.upper()
-        recipe, hints = self.load_recipe(cad_path, model_id)
-        recipe = self.copy_human_fields(recipe, self.recipe_dir / f'{model_id}_recipe.json')
+        design_id = cad_path.stem.upper()
+        recipe, hints = self.load_recipe(cad_path, design_id)
+        recipe = self.copy_human_fields(recipe, self.recipe_dir / f'{design_id}_recipe.json')
         placements = self.builder.make_placements(recipe, hints)
         rows = self.builder.make_placement_rows(recipe, placements)
-        print(f'검증 완료: {model_id}, {len(placements["steps"])}개 배치\n')
+        print(f'검증 완료: {design_id}, {len(placements["steps"])}개 배치\n')
 
 
         # 배치표 터미널 출력. 한글은 화면에서 두 칸을 차지해 머리글 공백은 직접 맞췄다.
@@ -86,21 +86,21 @@ class RecipeManager:
 
 
         # 레시피 · 조립 방법 저장
-        self.save_file(self.recipe_dir / f'{model_id}_recipe.json', self.builder.make_json_text(recipe))
-        self.save_file(self.recipe_dir / f'{model_id}_placements.csv', buffer.getvalue())
+        self.save_file(self.recipe_dir / f'{design_id}_recipe.json', self.builder.make_json_text(recipe))
+        self.save_file(self.recipe_dir / f'{design_id}_placements.csv', buffer.getvalue())
 
-    def load_recipe(self, cad_path, model_id):
+    def load_recipe(self, cad_path, design_id):
         """DXF를 읽어 레시피와 블록마다의 CAD 속성(순서 · 단계 · 잡기)을 만든다.
 
         입력:
             cad_path: DXF 파일 경로
-            model_id: 모델 ID
+            design_id: 모델 ID
         출력: (레시피 dict, {블록 이름: {'SEQ': ..., 'STAGE': ..., 'GRASP': ...}})
         실패: CadReader · RecipeBuilder.make_recipe 의 ValueError · ImportError 그대로.
         """
         boxes = self.reader.read_dxf(cad_path)
         sha256 = hashlib.sha256(Path(cad_path).read_bytes()).hexdigest()
-        recipe = self.builder.make_recipe(boxes, model_id, Path(cad_path).name, sha256)
+        recipe = self.builder.make_recipe(boxes, design_id, Path(cad_path).name, sha256)
         return recipe, {box['part_name']: box['hints'] for box in boxes}
 
     def copy_human_fields(self, recipe, saved_path):

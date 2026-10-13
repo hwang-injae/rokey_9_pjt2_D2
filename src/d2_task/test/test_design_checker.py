@@ -25,7 +25,7 @@ CONVERTED = {'recipe': _DOC.recipe, 'placements': _DOC.placements}      # 변환
 
 
 def base_design(model_id):
-    """레시피 두 파일(시험용 사본)을 읽어 실제 check_design 요청(parts/3.0 + base_recipe = 그 Template 의 V000 레시피 통째)으로 바꾼다. 읽기 실패는 시험에 알린다."""
+    """레시피 두 파일(시험용 사본)을 읽어 실제 check_design 요청(parts/4.0 + base_recipe = 그 Template 의 V000 레시피 통째)으로 바꾼다. 읽기 실패는 시험에 알린다."""
     _, family, _ = DESIGNS[model_id]
     document = RecipeDocument.load(FIXTURES, model_id)
     request = RecipeToParts(model_id, family, BLOCK_MM).convert(document.recipe, document.placements)
@@ -33,8 +33,8 @@ def base_design(model_id):
 
 
 def design(*items):
-    """(x, y, z, ori) 들 → order 1.. 의 parts/3.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT). base_recipe 는 없다 — NO_TEMPLATE 과 같이 쓴다."""
-    return {'schema': 'parts/3.0', 'design_id': 't', 'family': 'test',
+    """(x, y, z, ori) 들 → order 1.. 의 parts/4.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT). base_recipe 는 없다 — NO_TEMPLATE 과 같이 쓴다."""
+    return {'schema': 'parts/4.0', 'design_id': 't', 'family': 'test',
             'parts': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
                        for i, (x, y, z, o) in enumerate(items, 1)]}
 
@@ -320,9 +320,9 @@ def test_변환기가_옛_한_파일만_돌려주면_ERROR():
     assert not res['ok'] and res['errors'][0]['reason'] == 'ERROR'
 
 
-# ---------- parts/3.0 의 AI 칸(role · part · stage · grasp) 형식 검사 (E-69) ----------
+# ---------- parts/4.0 의 AI 칸(role · part · stage · grasp) 형식 검사 (E-69) ----------
 def ai_blocks(n=3):
-    """쌓인 블록 n개(아랫면 0, 15, 30)의 정상 parts/3.0."""
+    """쌓인 블록 n개(아랫면 0, 15, 30)의 정상 parts/4.0."""
     return design(*[(0, 0, 15 * i, 'x') for i in range(n)])
 
 

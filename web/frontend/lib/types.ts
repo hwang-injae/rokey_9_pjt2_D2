@@ -128,7 +128,7 @@ export interface CmdResult {
   message?: string;
 }
 
-/** parts/3.0 부품 하나(IRD 6장 — 10/13 이름 규칙: 설계 안 부품 = part) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
+/** parts/4.0 부품 하나(IRD 6장 — 10/13 이름 규칙: 설계 안 부품 = part) — mm · 설계 좌표계(바닥 외곽 가운데 = (0,0), x 오른쪽 · y 뒤 · z 위 = 아랫면 높이) */
 export interface DesignPart {
   order: number;
   x: number;
@@ -142,7 +142,7 @@ export interface DesignPart {
   inferred?: boolean; // 스캔 설계만
 }
 
-/** design/3.0 — 화면이 쓰는 칸만(recipe 는 그리지 않는다). placements.steps 로 블록 이름 ↔ order(= sequence) 를 잇는다 */
+/** design/4.0 — 화면이 쓰는 칸만(recipe 는 그리지 않는다). placements.steps 로 블록 이름 ↔ order(= sequence) 를 잇는다 */
 export interface Design {
   schema: string;
   design_id: string;

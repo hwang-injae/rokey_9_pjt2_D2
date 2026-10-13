@@ -126,7 +126,7 @@ class MockRobot:
 
     # ---------- 설계 ----------
     def design(self, design_id):
-        """설계 → (doc, parts/3.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
+        """설계 → (doc, parts/4.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
         body = self.fetch_design(design_id)
         if body is not None:
             return RecipeDocument(body['recipe'], body['placements']), body['parts']
@@ -141,7 +141,7 @@ class MockRobot:
         return body if body and body.get('success') is True else None
 
     def local_design(self, design_id):
-        """레시피 두 파일 → (doc, parts/3.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
+        """레시피 두 파일 → (doc, parts/4.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
         family = 'chair' if 'CHAIR' in design_id.upper() else 'desk'
         doc = RecipeDocument.load(RECIPES, design_id)
         return doc, RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)

@@ -251,7 +251,7 @@ def templates(request: Request):
 
 @router.get('/{design_id}')
 def get_design(design_id: str, request: Request):
-    """design/3.0 하나. 없으면 404, 저장된 형식이 다르면 409(옛 형식은 변환하지 않는다 — E-69)."""
+    """design/4.0 하나. 없으면 404, 저장된 형식이 다르면 409(옛 형식은 변환하지 않는다 — E-69)."""
     try:
         return request.app.state.store.get_design(design_id)
     except KeyError:

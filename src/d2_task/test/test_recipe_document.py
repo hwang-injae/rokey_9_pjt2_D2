@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """W141 회귀 시험(E-69): 두 파일 참조 · schema 거절 · 짝 해시 · 역할 이름 · 파일 읽기 · 검사 응답 · 작업 시작. ROS 없이 실제 계산 클래스를 검증한다.
 
-레시피 두 파일 = 구조 `<모델ID>_recipe.json`(recipe/3.0 — 10/11 parts → stocks) + 조립 방법 `<모델ID>_placements.csv`(placements/3.0). 옛 `_structure.json`(cad_structure/1.0) ·
+레시피 두 파일 = 구조 `<모델ID>_recipe.json`(recipe/4.0 — 10/11 parts → stocks) + 조립 방법 `<모델ID>_placements.csv`(placements/4.0). 옛 `_structure.json`(cad_structure/1.0) ·
 `cad_recipe/1.0` · `assembly.recipe/1.0` 은 schema 를 보고 거절한다(변환하지 않음).
 """
 import ast
@@ -55,7 +55,7 @@ def copy_pair(folder):
 
 
 def comps(recipe):
-    """recipe/3.0 의 template.composition(역할 → 구성요소)."""
+    """recipe/4.0 의 template.composition(역할 → 구성요소)."""
     return recipe['template']['composition']
 
 
@@ -82,7 +82,7 @@ def test_시험용_파일은_레시피_도구의_실제_벤치_파일과_같다(
     """fixtures 가 레시피 도구 출력(src/recipe_manager/recipes)과 어긋나면(한쪽만 고침) 여기서 걸린다."""
     real = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
     tool = json.loads((real / f'{MODEL}_recipe.json').read_text(encoding='utf-8'))
-    if tool.get('schema') != 'recipe/3.0' or 'template' not in tool:
+    if tool.get('schema') != 'recipe/4.0' or 'template' not in tool:
         pytest.skip('레시피 도구의 recipes/ 가 아직 template.composition 구조가 아니다(한세교 도구 수정 전) — 바뀌면 이 시험이 켜진다')
     for suffix in ('_recipe.json', '_placements.csv'):
         assert (FIXTURES / f'{MODEL}{suffix}').read_bytes() == (real / f'{MODEL}{suffix}').read_bytes()
@@ -115,8 +115,8 @@ def test_입력문서는_변경하지_않는다(pair):
 
 
 @pytest.mark.parametrize('mutate, seal', [
-    (lambda r, p: r.update(model_id='OTHER'), True),
-    (lambda r, p: p.update(model_id='OTHER'), True),
+    (lambda r, p: r.update(design_id='OTHER'), True),
+    (lambda r, p: p.update(design_id='OTHER'), True),
     (lambda r, p: p.update(recipe_sha256='bad'), False),
     (lambda r, p: p.update(recipe_sha256='0' * 64), False),
     (lambda r, p: items(r)[0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
@@ -154,10 +154,10 @@ def test_두파일_손상은_조립전_거절한다(pair, mutate, seal):
         TaskPlanner(CFG, r, p)
 
 
-@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/2.0', 'recipe/4.0', 'placements/3.0', None])
+@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'assembly.recipe/1.0', 'recipe/1.0', 'recipe/2.0', 'recipe/5.0', 'placements/4.0', None])
 def test_구조_schema가_recipe_3이_아니면_받은_schema를_적어_거절(pair, schema):
     r, p = pair
-    if schema == 'placements/3.0':           # 두 문서를 바꿔 넣은 경우
+    if schema == 'placements/4.0':           # 두 문서를 바꿔 넣은 경우
         r, p = p, r
     else:
         r = dict(r, schema=schema)
@@ -165,7 +165,7 @@ def test_구조_schema가_recipe_3이_아니면_받은_schema를_적어_거절(p
         RecipeDocument(r, p)
 
 
-@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'placements/1.0', 'placements/2.0', 'recipe/3.0', None])
+@pytest.mark.parametrize('schema', ['cad_structure/1.0', 'cad_recipe/1.0', 'placements/1.0', 'placements/2.0', 'recipe/4.0', None])
 def test_조립_방법_schema가_placements_3_0이_아니면_거절(pair, schema):
     r, p = pair
     with pytest.raises(ValueError, match='schema'):
@@ -295,7 +295,7 @@ def test_옛_이름_structure로_돌려주면_ERROR(pair):
 
 
 def test_작업관리자는_원격_두문서로_조립한다(pair):
-    """선택·출발 조회에서 받은 design/3.0 의 두 문서로 같은 run을 DONE까지 진행한다. 가짜 로봇만 사용한다."""
+    """선택·출발 조회에서 받은 design/4.0 의 두 문서로 같은 run을 DONE까지 진행한다. 가짜 로봇만 사용한다."""
     io = FakeIO()
     io.get_design = lambda design_id, abort: (True, '', RecipeDocument(*pair).design(design_id))
     m = TaskManager(CFG, io, RunLogger(''))
@@ -310,12 +310,12 @@ def test_작업관리자는_원격_두문서로_조립한다(pair):
 
 
 def test_노드_로컬조회는_두문서를_반환한다(node, tmp_path):
-    """실제 TaskNode 로컬 메서드가 새 파일 이름으로 design/3.0 로컬 모양(design_id · recipe · placements)을 만든다."""
+    """실제 TaskNode 로컬 메서드가 새 파일 이름으로 design/4.0 로컬 모양(design_id · recipe · placements)을 만든다."""
     copy_pair(tmp_path)
     node.get_parameter = lambda name: SimpleNamespace(value=str(tmp_path))
     ok, reason, design = node._local_design(MODEL)
-    assert ok and reason == '' and design['schema'] == 'design/3.0' and design['design_id'] == MODEL
-    assert design['recipe']['schema'] == 'recipe/3.0' and design['placements']['schema'] == 'placements/3.0'
+    assert ok and reason == '' and design['schema'] == 'design/4.0' and design['design_id'] == MODEL
+    assert design['recipe']['schema'] == 'recipe/4.0' and design['placements']['schema'] == 'placements/4.0'
     (tmp_path / f'{MODEL}_recipe.json').write_text('{}')
     assert node._local_design(MODEL) == (False, '', None)
 
@@ -350,10 +350,10 @@ def test_웹이_import하는_두_파일은_ROS를_가져오지_않는다(name):
 
 
 def test_CSV_schema_칸이_옛_형식이면_받은_schema를_적어_거절(tmp_path):
-    """한세교 E-69 PR: CSV 에 schema 칸(모든 줄 placements/3.0)을 더했다 — 읽는 쪽이 앞자리 확인으로 거절할 수 있게."""
+    """한세교 E-69 PR: CSV 에 schema 칸(모든 줄 placements/4.0)을 더했다 — 읽는 쪽이 앞자리 확인으로 거절할 수 있게."""
     copy_pair(tmp_path)
     text = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8')
-    (tmp_path / f'{MODEL}_placements.csv').write_text(text.replace('placements/3.0', 'cad_recipe/1.0'), encoding='utf-8')
+    (tmp_path / f'{MODEL}_placements.csv').write_text(text.replace('placements/4.0', 'cad_recipe/1.0'), encoding='utf-8')
     with pytest.raises(ValueError, match='cad_recipe/1.0'):
         RecipeDocument.load(tmp_path, MODEL)
 
@@ -361,7 +361,7 @@ def test_CSV_schema_칸이_옛_형식이면_받은_schema를_적어_거절(tmp_p
 def test_CSV_schema_칸이_줄마다_다르면_거절(tmp_path):
     copy_pair(tmp_path)
     lines = (tmp_path / f'{MODEL}_placements.csv').read_text(encoding='utf-8').splitlines()
-    lines[-1] = lines[-1].replace('placements/3.0', 'placements/2.0')
+    lines[-1] = lines[-1].replace('placements/4.0', 'placements/2.0')
     (tmp_path / f'{MODEL}_placements.csv').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     with pytest.raises(ValueError, match='schema'):
         RecipeDocument.load(tmp_path, MODEL)
@@ -378,7 +378,7 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     assert direct == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
         # 새 구조(template.composition) 벤치 fixture 에 고정한 값 — 구조·키 이름이 바뀌면 여기서 걸린다(옛 구조 값 2685767e…1c76 은 폐기)
-        assert doc.placements['recipe_sha256'] == '861f9d1604d0b2e2e29789a7ec12aba7b5e1d622c33c1cab8767fe02b564d652'
+        assert doc.placements['recipe_sha256'] == '63b1a5389e133f79af0396784ac2ceade86464da5d9071e71b27feda04eed2b2'
 
 
 @pytest.mark.parametrize('mutate', [

@@ -45,8 +45,8 @@
 
 설계 읽기 — task 와 같은 파라미터 design_source (10/7 민범진 · 한석형 합의). **task 와 손목에 같은 design_source 값을 준다**
   (다르면 task 는 웹 설계로 쌓는데 손목은 파일 설계로 보는 식으로 어긋난다).
-  remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — 생성 · 스캔 설계도 같은 길.
-                design/3.0 의 recipe(구조) + placements(조립 방법)를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
+  remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/4.0)으로 받는다 — 생성 · 스캔 설계도 같은 길.
+                design/4.0 의 recipe(구조) + placements(조립 방법)를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
                 팀 공용 `d2_motion.motion_math.recipe_parts()` 로 base 블록 목록을 만든다. 설계마다 · 판(run)마다 받아 캐시(실패는 캐시 안 함).
                 제한 시간 robot.yaml timeout.service_s. 실패하면 로컬 파일로 대신하지 않고 check_progress 를 실패로 답한다(아래).
   local         파일만(웹 없이 개발할 때 명시): `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 같은 폴더 `_placements.csv` 도 읽음)을
@@ -325,7 +325,7 @@ class WristBlock(Node):
 
     def _local_checker(self, design_id):
         """design_source:=local — `<recipe_dir>/<design_id>_recipe.json`(구조 — load_recipe 가 옆 `_placements.csv` 도 붙임)
-        → recipe_parts(robot.yaml, 레시피) → BlockChecker. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
+        → recipe_parts(robot.yaml, 레시피) → BlockChecker. part_id 는 조립 방법의 part_id 칸('<design_id 대문자>_<부품 이름>').
         출력: (BlockChecker, '') 또는 (None, 'ERROR') — 파일 없음 · 이름 문자 이상 · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) ·
         recipe_sha256 다름 · 블록 크기 다름. 바깥 영향: 파일 읽기 · 로그."""
         recipe_dir = self.get_parameter('recipe_dir').value
@@ -348,11 +348,11 @@ class WristBlock(Node):
                             float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
 
     def _remote_checker(self, design_id):
-        """/d2/hmi/get_design 으로 design/3.0 을 받아 BlockChecker 를 만든다. 출력: (BlockChecker, '') 또는 (None, 코드).
+        """/d2/hmi/get_design 으로 design/4.0 을 받아 BlockChecker 를 만든다. 출력: (BlockChecker, '') 또는 (None, 코드).
 
         요청 {"design_id"} → 최대 timeout.service_s 기다림(서비스 콜백 안이라 _call — 멀티스레드 실행기 + 재진입 그룹).
         실패 코드는 task_node.get_design 과 맞춘다: 서버 없음(지금 안 보임) → ERROR · 시간 초과(요청을 치움) → TIMEOUT ·
-        success=false → ERROR(서버 이유는 로그에만 — 10/7 합의) · JSON · design/3.0 형식(옛 design/1 은 거절) · 짝 해시 · 레시피 내용 오류 → ERROR.
+        success=false → ERROR(서버 이유는 로그에만 — 10/7 합의) · JSON · design/4.0 형식(옛 design/1 은 거절) · 짝 해시 · 레시피 내용 오류 → ERROR.
         로컬 파일로 몰래 대신하지 않는다. 바깥 영향: get_design 요청 하나 · 로그."""
         if not self.cli_design.service_is_ready():
             self.get_logger().error('get_design 서버가 없다(다리 · 웹?) — 설계 %s 를 못 받음 → ERROR' % design_id)
@@ -368,7 +368,7 @@ class WristBlock(Node):
             return None, 'ERROR'
         try:
             chk = self._make_checker(recipe_from_design(json.loads(res.response_json), design_id))
-        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/3.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/4.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
             self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
             return None, 'ERROR'
         self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.parts)))

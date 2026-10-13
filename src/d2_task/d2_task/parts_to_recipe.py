@@ -1,4 +1,4 @@
-"""변환기 ① — AI가 쓴 설계도(parts/3.0)를 레시피(recipe/3.0 — template.composition) + 조립 방법(placements/3.0)으로 바꾼다 (W110, E-69, PLM 1단계).
+"""변환기 ① — AI가 쓴 설계도(parts/4.0)를 레시피(recipe/4.0 — template.composition) + 조립 방법(placements/4.0)으로 바꾼다 (W110, E-69, PLM 1단계).
 
 검사 묶음(DesignChecker)이 설계를 통과시킨 뒤 부른다. ROS · 파일 쓰기 · 로봇 · 메시지 영향 없음(계산만).
 """
@@ -12,7 +12,7 @@ from d2_task.recipe_builder import RecipeBuilder
 from d2_task.recipe_document import recipe_sha256, same_major
 from d2_task.recipe_to_parts import ori_extents
 
-SCHEMA_REQUEST = 'parts/3.0'
+SCHEMA_REQUEST = 'parts/4.0'
 
 # 부품 이름 `<역할>[_<옵션>]_<그룹 3자리>_<부품 2자리>` → (역할[_옵션], 그룹, 부품). RecipeBuilder.PART_NAME 과 같은 꼴
 PART_NAME_RE = re.compile(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_([0-9]{2})')
@@ -25,7 +25,7 @@ ROLES_PATH = Path(__file__).with_name('roles.json')
 # 역할[_옵션] — 영문 대문자 한 단어씩, 옵션 0~1개 (작명 규칙 v3 2장)
 ROLE_RE = re.compile(r'([A-Z]+)(?:_([A-Z]+))?')
 
-# 같은 높이 · 같은 면으로 볼 허용오차(mm). parts/3.0 좌표는 JSON 숫자 그대로라 부동소수 오차만 흡수한다.
+# 같은 높이 · 같은 면으로 볼 허용오차(mm). parts/4.0 좌표는 JSON 숫자 그대로라 부동소수 오차만 흡수한다.
 TOL = 1e-6
 
 
@@ -42,7 +42,7 @@ class DesignRejected(ValueError):
 
 
 class PartsToRecipe:
-    """parts/3.0 → {'recipe': recipe/3.0, 'placements': placements/3.0}.
+    """parts/4.0 → {'recipe': recipe/4.0, 'placements': placements/4.0}.
 
     AI가 고른 값(역할 · 옵션 · 부품 묶음 · 순서 · 단계 · 잡기)은 그대로 옮기고 대신 채우지 않는다(E-69 ②).
     코드가 정하는 것은 블록 번호 · 중심 · 회전 R · 받침 · 닫힘 축 · recipe_sha256 뿐이다(RecipeBuilder — CAD 도구와 같은 규칙).
@@ -80,11 +80,11 @@ class PartsToRecipe:
         return set(roles), set(options)
 
     def convert(self, request):
-        """parts/3.0 하나를 레시피 + 조립 방법으로 바꾼다. 입력을 바꾸지 않는다.
+        """parts/4.0 하나를 레시피 + 조립 방법으로 바꾼다. 입력을 바꾸지 않는다.
 
         입력:
-            request: parts/3.0 dict — design_id, parts[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
-        출력: {'recipe': recipe/3.0(model_id = design_id, source_cad = None), 'placements': placements/3.0}
+            request: parts/4.0 dict — design_id, parts[{order, x, y, z(아랫면), ori, role, group, stage, grasp}] (mm, 설계 좌표계)
+        출력: {'recipe': recipe/4.0(design_id = design_id, source_cad = None), 'placements': placements/4.0}
         실패: AI가 쓴 값이 틀리면 DesignRejected(errors — part = order). grasp_options 자체의 예외는 그대로 올린다(프로그램 고장).
         """
         # 형식: 검사 묶음이 먼저 보지만, 따로 불려도 빈 칸을 대신 채우지 않게 다시 확인한다
@@ -131,16 +131,16 @@ class PartsToRecipe:
             raise DesignRejected([{'part': None, 'detail': f'레시피 검사: {e}'}]) from e
         recipe = self.to_template_recipe(built)
         # 짝 확인 해시는 우리가 내보내는 구조 기준으로 다시 맞춘다(옛 builder 가 계산한 값은 옛 구조 기준이라 맞지 않는다).
-        # placements/3.0 에는 stock_id · cad_handle 이 없다 — builder 가 (옛 버전이) 넣어 줬다면 뗀다.
+        # placements/4.0 에는 stock_id · cad_handle 이 없다 — builder 가 (옛 버전이) 넣어 줬다면 뗀다.
         steps = [{k: v for k, v in step.items() if k not in ('stock_id', 'cad_handle')} for step in placements['steps']]
         placements = dict(placements, steps=steps, recipe_sha256=recipe_sha256(recipe))
         return {'recipe': recipe, 'placements': placements}
 
     def to_template_recipe(self, built):
-        """RecipeBuilder 가 만든 레시피(최상위 stocks · parts)를 AI·스캔 설계용 recipe/3.0(template.composition)으로 바꾼다.
+        """RecipeBuilder 가 만든 레시피(최상위 stocks · parts)를 AI·스캔 설계용 recipe/4.0(template.composition)으로 바꾼다.
 
         입력: built = RecipeBuilder.make_recipe 출력(mm). 이미 template 이 있는 새 builder 출력이면 허용 칸만 남긴 복사본을 돌려준다
-        (옛 builder 의 stocks · parts 를 바꾸는 이 어댑터는 현재 builder 와의 호환용이며, 외부의 옛 레시피를 읽는 길이 아니다). 출력: {schema, model_id, source_cad, stocks, template:{composition:{역할:
+        (옛 builder 의 stocks · parts 를 바꾸는 이 어댑터는 현재 builder 와의 호환용이며, 외부의 옛 레시피를 읽는 길이 아니다). 출력: {schema, design_id, source_cad, stocks, template:{composition:{역할:
         {label, count, parts:{그룹:[{part, stock_id, center_mm, R}]}}}}} — 구성요소는 label · count · parts 만 두고
         revision · name · description · tags · cad 는 없다(기본 설계 V000 에만 있다). 입력을 바꾸지 않는다. 바깥 영향 없음.
         label 은 기존 값이 있으면 보존하고, 없거나 빈 값이면 ROLE_LABELS(화면 이름표)로 보완한다. 목록에 없는 역할은 역할 이름 그대로 쓴다. 옵션 역할(LEG_WHEEL)은 기본 역할 label 을 쓴다.
@@ -165,14 +165,14 @@ class PartsToRecipe:
             groups.setdefault(f'{role}_{group_no}', []).append(
                 {'part': part_no, 'stock_id': item['stock_id'], 'center_mm': list(item['center_mm']),
                  'R': [list(row) for row in item['R']]})
-        return {'schema': built['schema'], 'model_id': built['model_id'], 'source_cad': built['source_cad'],
+        return {'schema': built['schema'], 'design_id': built['design_id'], 'source_cad': built['source_cad'],
                 'stocks': copy.deepcopy(built['stocks']), 'template': {'composition': composition}}
 
     def calculate_box(self, part):
         """블록 하나가 차지하는 축 정렬 상자.
 
         입력:
-            block: parts/3.0 블록 (x · y = 중심, z = 아랫면, mm)
+            block: parts/4.0 블록 (x · y = 중심, z = 아랫면, mm)
         출력: (lo, hi) — 각각 (x, y, z) 튜플 mm
         """
         dx, dy, dz = self.extent[part['ori']]

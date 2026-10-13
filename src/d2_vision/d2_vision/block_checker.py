@@ -4,9 +4,9 @@
       → 설계 윗면 높이와 비교 → state(present · absent · occluded · unknown) + top_z_m · dz_m. dx_m · dy_m 은 NaN(10/8 W100 전).
 
 입력 블록 목록은 **팀 공용 `d2_motion.motion_math.recipe_parts(cfg, recipe)` 의 출력 형식**이다 — 레시피 형식(E-69 두 파일:
-구조 recipe/3.0 + 조립 방법 placements/3.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(part_id · center(m, base) · rot 3x3)만 받는다.
+구조 recipe/4.0 + 조립 방법 placements/4.0)과 조립 원점·실측 높이 쌓기는 거기서 한 번만 계산한다. 이 파일은 그 결과(part_id · center(m, base) · rot 3x3)만 받는다.
 part_id 는 레시피가 만든 전체 이름(예 001_CHAIR_BENCH_V000_LEG_001_01)과 글자 그대로 맞춘다. 설계는 요청의 design_id 칸으로만 고른다
-(E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/3.0)을
+(E-52 ④ — 블록 이름에서 설계 이름을 잘라 내지 않는다). 그 설계의 레시피 파일을 찾는 것(recipe_path)과 get_design 답(design/4.0)을
 recipe_parts 에 넣을 레시피로 바꾸는 것(recipe_from_design)도 여기 둔다 — wrist_block · mock_wrist_block 이
 같이 쓰고, ROS · d2_motion 없이 시험하려고(CI 는 d2_vision 만 빌드한다).
 단위: 이 파일 안은 모두 m · rad(레시피 dict 는 파일과 같은 mm 그대로 넘긴다). 좌표: base_link.
@@ -20,9 +20,9 @@ import numpy as np
 
 NAN = float('nan')
 # 형식 이름(IRD 6장, E-69) — task_manager · motion_math 와 같은 값. d2_task · d2_motion 을 import 하지 않으려고 여기 적는다
-DESIGN_SCHEMA = 'design/3.0'
-RECIPE_SCHEMA = 'recipe/3.0'            # 구조(무엇을 어디에) — 10/11 E-84 parts → stocks
-PLACEMENTS_SCHEMA = 'placements/3.0'    # 조립 방법(순서 · 잡기 · 받침)
+DESIGN_SCHEMA = 'design/4.0'
+RECIPE_SCHEMA = 'recipe/4.0'            # 구조(무엇을 어디에) — 10/11 E-84 parts → stocks
+PLACEMENTS_SCHEMA = 'placements/4.0'    # 조립 방법(순서 · 잡기 · 받침)
 CELL_M = 0.005          # 높이 지도 셀 (SDD §6.9 ②: 5 mm)
 ROI_SHRINK_M = 0.004    # 블록 자리를 사방 4 mm 줄여서 본다 — 가장자리 깊이 튐 · 1~3 mm 어긋남을 피한다
 MIN_CELLS = 6           # 이보다 적은 셀이면 unknown (가려짐 · 깊이 구멍)
@@ -98,22 +98,22 @@ def recipe_path(recipe_dir, design_id, suffixes):
 
 
 def recipe_sha256(recipe):
-    """구조(recipe/3.0) 객체의 짝 확인 해시 — 키 정렬 · 공백 없는 JSON(한글 그대로, UTF-8)의 sha256 16진수 64자(IRD 6장, 한세교 정함).
+    """구조(recipe/4.0) 객체의 짝 확인 해시 — 키 정렬 · 공백 없는 JSON(한글 그대로, UTF-8)의 sha256 16진수 64자(IRD 6장, 한세교 정함).
     motion_math.recipe_sha256 · d2_task recipe_document.recipe_sha256 과 같은 식이다(같은 값인지는 시험이 본다). 바깥 영향 없음."""
     text = json.dumps(recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
 def recipe_from_design(design, design_id):
-    """get_design 답(design/3.0 dict) → motion_math.recipe_parts 에 넣을 레시피 dict. 바깥 영향 없음(입력을 바꾸지 않는다).
+    """get_design 답(design/4.0 dict) → motion_math.recipe_parts 에 넣을 레시피 dict. 바깥 영향 없음(입력을 바꾸지 않는다).
 
-    로컬 파일 길(motion_math.load_recipe)과 같은 모양을 만든다: 조립 방법(placements/3.0 — schema · model_id · recipe_sha256 · steps)에
-    구조(recipe/3.0)를 'structure' 칸으로 붙인다. 블록 · 크기 · 받침 내용은 여기서 다시 읽지 않는다 — recipe_parts 가 읽고, 틀리면 예외를 낸다.
+    로컬 파일 길(motion_math.load_recipe)과 같은 모양을 만든다: 조립 방법(placements/4.0 — schema · design_id · recipe_sha256 · steps)에
+    구조(recipe/4.0)를 'structure' 칸으로 붙인다. 블록 · 크기 · 받침 내용은 여기서 다시 읽지 않는다 — recipe_parts 가 읽고, 틀리면 예외를 낸다.
     입력: design = get_design 응답 JSON 을 읽은 dict · design_id = 요청한 설계 이름. 레시피 단위는 파일과 같은 mm.
     출력: 레시피 dict(조립 방법 얕은 복사 + 'structure' 칸).
-    실패: ValueError — 봉투 검사는 작업 관리자(task_manager._planner_from)와 같다: schema design/3.0 · design_id 가 요청과 같음 ·
-      recipe 가 recipe/3.0 객체 · placements 가 placements/3.0 객체. 칸 이름이 아니라 schema 로 보고, 옛 형식(design/1 · cad_* ·
-      assembly.recipe)은 받은 schema 를 적어 거절한다(변환하지 않음, E-69). 더해 두 문서의 model_id 가 다르거나 placements 의
+    실패: ValueError — 봉투 검사는 작업 관리자(task_manager._planner_from)와 같다: schema design/4.0 · design_id 가 요청과 같음 ·
+      recipe 가 recipe/4.0 객체 · placements 가 placements/4.0 객체. 칸 이름이 아니라 schema 로 보고, 옛 형식(design/1 · cad_* ·
+      assembly.recipe)은 받은 schema 를 적어 거절한다(변환하지 않음, E-69). 더해 두 문서의 design_id 가 다르거나 placements 의
       recipe_sha256 이 구조와 맞지 않을 때(load_recipe · task RecipeDocument 와 같은 거절 — 다른 구조에 대해 쓴 조립 방법으로 보면 받침 · 자리가 어긋난다).
     """
     got = design.get('schema') if isinstance(design, dict) else None
@@ -126,8 +126,8 @@ def recipe_from_design(design, design_id):
         if not same_major(got, schema):
             raise ValueError(f'get_design 답의 {key} 가 {schema} 객체가 아니다(받은 schema: {got!r})')
     recipe, placements = design['recipe'], design['placements']
-    if placements.get('model_id') != recipe.get('model_id'):
-        raise ValueError('recipe 와 placements 의 model_id 가 다르다')
+    if placements.get('design_id') != recipe.get('design_id'):
+        raise ValueError('recipe 와 placements 의 design_id 가 다르다')
     if placements.get('recipe_sha256') != recipe_sha256(recipe):
         raise ValueError('placements 의 recipe_sha256 이 recipe(구조)와 맞지 않는다')
     out = dict(placements)

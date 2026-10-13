@@ -5,7 +5,7 @@
   ① RunDesignCache 규칙 자체(같은 판 · 새 판 · 빈 run_id · 다시 읽다 실패).
   ② wrist_block · mock_wrist_block **실제 메서드**(checker_for · tops_for · _remote_* · _local_* · on_check)를 소스에서 꺼내(ast)
      가짜 get_design 과 붙여 같은 규칙으로 도는지 — 두 노드가 같은 시험을 통과한다. rclpy 를 import 하지 않는다(CI 는 d2_vision 만 본다).
-  ③ mock 이 get_design 의 AI 생성 · 스캔 설계(design/3.0)를 읽어 블록 이름 · 윗면 높이를 내는지 — d2_motion · d2_task 가 없으면(CI) 건너뛴다.
+  ③ mock 이 get_design 의 AI 생성 · 스캔 설계(design/4.0)를 읽어 블록 이름 · 윗면 높이를 내는지 — d2_motion · d2_task 가 없으면(CI) 건너뛴다.
 """
 import ast
 import json
@@ -118,13 +118,13 @@ def load_function(path, name, scope):
 
 
 def versioned_design(design_id, n):
-    """읽을 때마다 내용이 다른 design/3.0 — 구조의 parts 에 n 을 적는다(짝 해시도 맞춘다). 어느 판에서 읽은 것인지 알아보려고."""
-    recipe = dict(RECIPE, model_id=design_id, parts=[{'tag': n}])
-    return design(recipe, dict(PLACEMENTS, model_id=design_id, recipe_sha256=recipe_sha256(recipe)), design_id=design_id)
+    """읽을 때마다 내용이 다른 design/4.0 — 구조의 parts 에 n 을 적는다(짝 해시도 맞춘다). 어느 판에서 읽은 것인지 알아보려고."""
+    recipe = dict(RECIPE, design_id=design_id, parts=[{'tag': n}])
+    return design(recipe, dict(PLACEMENTS, design_id=design_id, recipe_sha256=recipe_sha256(recipe)), design_id=design_id)
 
 
 class FakeDesigns:
-    """/d2/hmi/get_design 가짜. mode: ok · timeout(답 없음) · fail(success=false) · bad(design/3.0 아님) · down(서버 없음).
+    """/d2/hmi/get_design 가짜. mode: ok · timeout(답 없음) · fail(success=false) · bad(design/4.0 아님) · down(서버 없음).
     ok 일 때 registry 에 있는 설계를 그대로, 없으면 읽을 때마다 번호가 오르는 versioned_design 을 답한다. requests 는 받은 design_id 목록."""
 
     def __init__(self, registry=None):
@@ -324,7 +324,7 @@ def robot_cfg():
 
 
 def generated_design(model_id, family, design_id, made_by):
-    """기본 설계(model_id)의 블록 JSON 을 design_id 설계로 바꿔 변환기 ① 에 통과시킨 design/3.0 — AI 생성 · 스캔 저장 설계 모양(DB 에만 있음).
+    """기본 설계(model_id)의 블록 JSON 을 design_id 설계로 바꿔 변환기 ① 에 통과시킨 design/4.0 — AI 생성 · 스캔 저장 설계 모양(DB 에만 있음).
     블록 이름은 `<design_id 대문자>_<역할>_<부품>_<번호>` 가 된다."""
     import copy
     rd = pytest.importorskip('d2_task.recipe_document')
@@ -354,7 +354,7 @@ def base_tops(model_id):
     ('004_DESK_PEDESTAL_V000', 'desk', 'scan_desk_0001', 'scan'),
 ])
 def test_mock이_get_design의_AI_스캔_설계로_블록_이름과_윗면_높이를_낸다(tmp_path, model_id, family, design_id, made_by):
-    """recipe_dir 에는 이 설계가 없다 — 오직 get_design(design/3.0) 으로만 알 수 있다. 블록 이름은 설계 이름 대문자 + 역할 · 부품 · 번호,
+    """recipe_dir 에는 이 설계가 없다 — 오직 get_design(design/4.0) 으로만 알 수 있다. 블록 이름은 설계 이름 대문자 + 역할 · 부품 · 번호,
     높이는 같은 모양의 기본 설계와 같다(같은 블록을 같은 실측 두께로 쌓으니까). 다른 설계의 이름은 unknown."""
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()

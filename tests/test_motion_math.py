@@ -171,15 +171,15 @@ def test_pick_place_tcp_rejects_different_up_axis(robot_cfg):
         mm.pick_place_tcp(robot_cfg, center, rot, _place_center(robot_cfg, IDENTITY), IDENTITY, 'EDGE_LONG', slot=3)
 
 
-def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
+def _recipe(size_mm=(75, 25, 15), design_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
     반환: (조립 방법, 구조). recipe_parts 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
-    structure = {'schema': 'recipe/3.0', 'model_id': model_id,
+    structure = {'schema': 'recipe/4.0', 'design_id': design_id,
                  'stocks': [{'stock_id': 'STOCK_001', 'size_mm': list(size_mm)}],
                  'template': {'composition': {'SEAT': {'count': 1, 'parts': {'SEAT_001': [
                      {'part': '01', 'stock_id': 'STOCK_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
                      {'part': '02', 'stock_id': 'STOCK_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}}}}}
-    recipe = {'schema': 'placements/3.0', 'model_id': model_id,
+    recipe = {'schema': 'placements/4.0', 'design_id': design_id,
               'steps': [{'part_name': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': ['SEAT_001_01']},
                         {'part_name': 'SEAT_001_01', 'sequence': 1, 'stage': 1, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
@@ -227,10 +227,10 @@ def _tree_parts(structure):
             for group, items in comp['parts'].items() for item in items}
 
 
-def _write_files(folder, recipe, structure, sha=None, schema='placements/3.0'):
-    """_recipe() 를 E-69 파일 두 개로 쓴다: <모델ID>_recipe.json(구조) + <모델ID>_placements.csv(18칸 — placements/3.0, supports 는 ';').
+def _write_files(folder, recipe, structure, sha=None, schema='placements/4.0'):
+    """_recipe() 를 E-69 파일 두 개로 쓴다: <모델ID>_recipe.json(구조) + <모델ID>_placements.csv(18칸 — placements/4.0, supports 는 ';').
     sha · schema 를 주면 그 값으로 바꿔 써서 거절 시험에 쓴다. 반환: 구조 파일 경로(글자)."""
-    rp = folder / f"{structure['model_id']}_recipe.json"
+    rp = folder / f"{structure['design_id']}_recipe.json"
     rp.write_text(json.dumps(structure, indent=2, ensure_ascii=False), encoding='utf-8')
     geo = _tree_parts(structure)
     buf = io.StringIO()
@@ -238,18 +238,18 @@ def _write_files(folder, recipe, structure, sha=None, schema='placements/3.0'):
     w.writeheader()
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]
-        w.writerow({'part_id': f"{recipe['model_id']}_{st['part_name']}", 'part_name': st['part_name'], 'sequence': st['sequence'],
+        w.writerow({'part_id': f"{recipe['design_id']}_{st['part_name']}", 'part_name': st['part_name'], 'sequence': st['sequence'],
                     'stage': st['stage'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
                     'center_x_mm': g['center_mm'][0], 'center_y_mm': g['center_mm'][1], 'center_z_mm': g['center_mm'][2],
                     'axis_L': '+X', 'axis_W': '+Y', 'axis_T': '+Z', 'grasp': st['grasp'], 'grasp_axis': st['grasp_axis'],
                     'supports': ';'.join(st['supports']), 'recipe_sha256': sha or mm.recipe_sha256(structure),
                     'schema': schema})
-    (folder / f"{structure['model_id']}_placements.csv").write_text(buf.getvalue(), encoding='utf-8')
+    (folder / f"{structure['design_id']}_placements.csv").write_text(buf.getvalue(), encoding='utf-8')
     return str(rp)
 
 
 def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
-    """load_recipe: 구조 _recipe.json(recipe/3.0) + 옆 _placements.csv 를 지금 모양(steps + 'structure')으로 붙인다 — sequence · stage 는 정수,
+    """load_recipe: 구조 _recipe.json(recipe/4.0) + 옆 _placements.csv 를 지금 모양(steps + 'structure')으로 붙인다 — sequence · stage 는 정수,
     supports 는 목록, part_id 는 CSV 값. CSV 가 없으면 FileNotFoundError. recipe_files 는 _recipe.json 만(CSV · 옛 .recipe.json 은 안 넣음)."""
     recipe, structure = _recipe()
     rp = _write_files(tmp_path, recipe, structure)
@@ -257,10 +257,10 @@ def test_load_recipe_reads_placements_next_to_it(tmp_path, robot_cfg):
     files = mm.recipe_files(str(tmp_path))
     assert [mm.recipe_name(f) for f in files] == ['001_CHAIR_BENCH_V000']
     loaded = mm.load_recipe(rp)
-    assert loaded['schema'] == 'placements/3.0' and loaded['structure'] == structure
+    assert loaded['schema'] == 'placements/4.0' and loaded['structure'] == structure
     assert loaded['steps'][1]['supports'] == ['SEAT_001_01'] and loaded['steps'][0]['supports'] == []
     assert all(isinstance(st['sequence'], int) and isinstance(st['stage'], int) for st in loaded['steps'])
-    assert mm.recipe_model_id(loaded) == '001_CHAIR_BENCH_V000'
+    assert mm.recipe_design_id(loaded) == '001_CHAIR_BENCH_V000'
     assert mm.recipe_parts(robot_cfg, loaded) == mm.recipe_parts(robot_cfg, _joined())
     (tmp_path / '001_CHAIR_BENCH_V000_placements.csv').unlink()
     with pytest.raises(FileNotFoundError):

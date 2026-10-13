@@ -8,8 +8,8 @@ import numpy as np
 from d2_task.recipe_document import GRASPS, part_id, part_name
 
 # 형식 이름 = <이름>/<앞>.<뒤>. 레시피(구조)와 조립 방법은 짝이라 숫자를 같이 올린다 (10/8 한세교, E-52 의 cad_structure/1.0 · cad_recipe/1.0 다음).
-RECIPE_SCHEMA = 'recipe/3.0'
-PLACEMENTS_SCHEMA = 'placements/3.0'
+RECIPE_SCHEMA = 'recipe/4.0'
+PLACEMENTS_SCHEMA = 'placements/4.0'
 
 # 좌표 비교 허용오차(mm). CAD 좌표의 부동소수 오차를 흡수한다.
 TOL = 1e-6
@@ -32,14 +32,14 @@ VERTICAL_AXIS = {'FLAT': 2, 'EDGE': 1, 'STAND': 0}
 LEGACY_GRASP = {'END_75': 'LENGTH', 'SIDE_25': 'WIDTH', 'THICKNESS_15': 'THICKNESS'}
 
 # 조립 방법 CSV 칸 — (가) 조립 방법 · (나) 표시 칸(레시피 값을 읽기 좋게 옮김) · 짝 확인 해시 · 형식 이름. 모든 줄의 recipe_sha256 · schema 는 같다.
-# 자재 번호 stock_id · cad_handle 은 placements/3.0 에서 뺐다(10/13 PLM — 자재 목록이 없어졌고 handle 은 레시피 부품 항목에만).
+# 자재 번호 stock_id · cad_handle 은 placements/4.0 에서 뺐다(10/13 PLM — 자재 목록이 없어졌고 handle 은 레시피 부품 항목에만).
 PLACEMENT_COLUMNS = ('part_id', 'part_name', 'sequence', 'stage', 'size_L_mm', 'size_W_mm', 'size_T_mm',
                      'center_x_mm', 'center_y_mm', 'center_z_mm', 'axis_L', 'axis_W', 'axis_T',
                      'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema')
 
 
 class RecipeBuilder:
-    """블록 목록 → 레시피(recipe/3.0, 구조) → 조립 방법(placements/3.0) · 배치표 줄. ROS · 파일 없이 dict만 다룬다.
+    """블록 목록 → 레시피(recipe/4.0, 구조) → 조립 방법(placements/4.0) · 배치표 줄. ROS · 파일 없이 dict만 다룬다.
 
     레시피 = 무엇을 어디에(자재 stocks + template.composition[역할].parts[그룹] — 부품마다 자재 참조 · 중심 · 방향 · CAD 대응),
     조립 방법 = 어떻게(순서 · 단계 · 잡기 · 받침).
@@ -51,15 +51,15 @@ class RecipeBuilder:
     좌표 규칙: mm, 오른손 좌표계, Z 위쪽, 책상면 Z = 0. 로봇 · 현장 값(TCP · 조립 원점 · 그리퍼 값)은 다루지 않는다.
     """
 
-    def make_recipe(self, boxes, model_id, source_filename, source_sha256):
+    def make_recipe(self, boxes, design_id, source_filename, source_sha256):
         """블록 목록으로 레시피를 만든다: 꼭짓점 → 치수 · 중심 · 회전, 같은 치수는 같은 부품 규격, 이름 · 배치 검사.
 
         입력:
             boxes: [{'part_name': 'LEG_001_01', 'handle': '3E', 'vertices': [(x, y, z), ...] (mm)}] — CadReader.read_dxf 출력.
                    CAD가 없는 설계(변환기 ①)는 handle = None
-            model_id: 모델 ID (예 001_CHAIR_BENCH_V000)
+            design_id: 모델 ID (예 001_CHAIR_BENCH_V000)
             source_filename, source_sha256: 원본 CAD 파일 이름과 해시. CAD가 없으면 None
-        출력: 레시피 dict (schema recipe/3.0 — model_id · source_cad · stocks[{stock_id, size_mm}] ·
+        출력: 레시피 dict (schema recipe/4.0 — design_id · source_cad · stocks[{stock_id, size_mm}] ·
               template.composition{역할: {count, parts{그룹: [{part, stock_id, center_mm, R, cad{handle}}]}}}).
               자재(stocks) = 부품을 만드는 기본 단위(젠가 블록). 부품은 stock_id 로 자재를 참조해 치수를 쓴다(10/13 한세교).
               역할 키는 역할[_옵션](LEG · LEG_WHEEL), 그룹 키는 LEG_001, part 는 그룹 안 2자리 번호. 부품 항목은 번호 순.
@@ -141,14 +141,14 @@ class RecipeBuilder:
             for items in comp['parts'].values():
                 items.sort(key=lambda item: item['part'])
         source_cad = {'filename': source_filename, 'sha256': source_sha256} if source_filename else None
-        return {'schema': RECIPE_SCHEMA, 'model_id': model_id, 'source_cad': source_cad,
+        return {'schema': RECIPE_SCHEMA, 'design_id': design_id, 'source_cad': source_cad,
                 'stocks': list(stocks.values()), 'template': {'composition': composition}}
 
     def list_parts(self, recipe):
         """레시피 트리(template.composition)를 펼쳐 부품 목록으로 만든다 — 받침 · 잡기 계산이 부품 하나씩 보려고.
 
         입력:
-            recipe: 레시피 dict (recipe/3.0 트리)
+            recipe: 레시피 dict (recipe/4.0 트리)
         출력: [{'part_name': 'LEG_001_01', 'size_mm', 'center_mm', 'R'}] (mm) — size_mm 은 부품이 참조하는 자재(stocks)의 치수.
               사람이 쓰는 칸(label · revision)은 읽지 않는다.
         실패: 없는 stock_id 를 참조하면 KeyError.
@@ -210,7 +210,7 @@ class RecipeBuilder:
         입력:
             recipe: make_recipe 출력
             hints: {블록 이름: {'SEQ': '1', 'STAGE': '1', 'GRASP': 'FLAT_SHORT' 또는 옛 이름 SIDE_25 등}} — 정수는 글자 · 정수 둘 다
-        출력: 조립 방법 dict (schema placements/3.0 — model_id · recipe_sha256 · steps[part_name · part_id · sequence · stage ·
+        출력: 조립 방법 dict (schema placements/4.0 — design_id · recipe_sha256 · steps[part_name · part_id · sequence · stage ·
               grasp · grasp_axis · supports], steps는 sequence 순서)
         실패: 속성이 빠졌거나 정수가 아니거나 검사 항목을 어기면 블록 이름을 담은 ValueError.
         """
@@ -265,12 +265,12 @@ class RecipeBuilder:
                 if not supports:
                     raise ValueError(f'{part["part_name"]}: nothing placed beneath it yet; it would float at this point in the sequence')
             # part_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 001_CHAIR_BENCH_V001 → 001_CHAIR_BENCH_V001_LEG_001_01, task RecipeDocument 와 같음)
-            steps.append({'part_name': part['part_name'], 'part_id': part_id(recipe['model_id'], part['part_name']),
+            steps.append({'part_name': part['part_name'], 'part_id': part_id(recipe['design_id'], part['part_name']),
                           'sequence': sequence, 'stage': stage, 'grasp': grasp,
                           'grasp_axis': next(name for name, k in AXES.items() if k == closing_axis),
                           'supports': supports})
             placed.append((part['part_name'], lo, hi))
-        return {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'],
+        return {'schema': PLACEMENTS_SCHEMA, 'design_id': recipe['design_id'],
                 'recipe_sha256': self.calculate_recipe_sha256(recipe), 'steps': steps}
 
     def calculate_recipe_sha256(self, recipe):

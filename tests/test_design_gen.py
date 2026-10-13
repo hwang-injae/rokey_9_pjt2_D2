@@ -138,7 +138,7 @@ def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
     assert second['messages'][-1]['role'] == 'tool' and '"parts"' in second['messages'][-1]['content']
     rec = gen.save(r, 0)
     assert rec['design_id'] == '001_CHAIR_BENCH_V002' and rec['parent_id'] == BENCH and rec['made_by'] == 'web'
-    assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['model_id'] == '001_CHAIR_BENCH_V002'
+    assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['design_id'] == '001_CHAIR_BENCH_V002'
     assert (rec.get('ai_template'), rec.get('ai_reason'), rec.get('template_changed')) == (None, None, None)
     assert 'base_recipe' not in rec['parts'] and 'revision' not in json.dumps(rec['recipe'])   # AI 레시피 = composition 만(레시피 초안 6절)
     with pytest.raises(ValueError):
@@ -420,7 +420,7 @@ def test_four_bases_pass_real_check_with_their_base_recipe(store):
         design_id, _ = store.new_design_id(t, f'{t}_V000')
         parts = {**store.get_design(f'{t}_V000')['parts'], 'design_id': design_id}
         chk = gen._check(parts)
-        assert chk['ok'] and chk['recipe']['model_id'] == design_id and 'revision' not in json.dumps(chk['recipe']), (t, chk['errors'])
+        assert chk['ok'] and chk['recipe']['design_id'] == design_id and 'revision' not in json.dumps(chk['recipe']), (t, chk['errors'])
     wrong = real_check()({**parts, 'base_recipe': store.base_recipe('001_CHAIR_BENCH')})
     assert wrong['ok'] is False and [e['reason'] for e in wrong['errors']] == ['REQUEST_INVALID']
 
@@ -444,7 +444,7 @@ def test_scan_fill_keeps_scan_shape_and_passes_check(store, good):
         [{k: p[k] for k in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in good]
     assert all('inferred' not in p for p in r['parts'])                     # 스캔에 없는 칸은 만들지 않음
     design_id, _ = store.new_design_id(TEMPLATE, r['parent_id'])
-    chk = gen._check({'schema': 'parts/3.0', 'design_id': design_id, 'parts': r['parts']})
+    chk = gen._check({'schema': 'parts/4.0', 'design_id': design_id, 'parts': r['parts']})
     assert chk['ok'], chk['errors']
     first = client.calls[0]
     assert first['tool_choice'] == 'required' and first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == \

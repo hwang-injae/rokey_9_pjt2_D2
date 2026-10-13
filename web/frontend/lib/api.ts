@@ -66,7 +66,7 @@ async function getJson<T>(path: string): Promise<T | null> {
 
 /** 설계 요약 목록(트리용). 못 받으면 null — 화면이 '못 받음'을 보여 준다 */
 export const listDesigns = () => getJson<DesignSummary[]>('/api/designs');
-/** design/3.0 하나(3D 보기용). 없으면 null */
+/** design/4.0 하나(3D 보기용). 없으면 null */
 export const getDesign = (id: string) => getJson<Design>('/api/designs/' + encodeURIComponent(id));
 /** 설계 규칙 숫자 — 3D 블록 크기(robot.yaml block_size_m 한 곳, 10/9 PL E-78) */
 export const getRules = () => getJson<Rules>('/api/designs/rules');

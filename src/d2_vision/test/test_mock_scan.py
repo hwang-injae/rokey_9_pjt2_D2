@@ -164,7 +164,7 @@ def test_bench_blocks_match_ird_example():
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
     """변환기 ②(d2_task RecipeToParts)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
-    변환기 ②는 parts/3.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 order · x · y · z · ori 만 비교한다."""
+    변환기 ②는 parts/4.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 order · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""W122 생성 흐름 통합 시험(task 쪽, 로봇 · 웹 없이, E-69): 생성된 parts/3.0 → 검사(check_design) + 변환기 ①(가짜) → recipe + placements 두 문서 →
-저장(design/3.0 를 JSON 으로 오가며) → 설계 선택 → 출발 → 진행표 → 끝까지 가상 로봇 조립.
+"""W122 생성 흐름 통합 시험(task 쪽, 로봇 · 웹 없이, E-69): 생성된 parts/4.0 → 검사(check_design) + 변환기 ①(가짜) → recipe + placements 두 문서 →
+저장(design/4.0 를 JSON 으로 오가며) → 설계 선택 → 출발 → 진행표 → 끝까지 가상 로봇 조립.
 
 웹 backend(AI 생성 · DesignStore)와 다리(d2_bridge)는 이 저장소에 아직 없고, 변환기 ① 본체(W110 한세교, 10/10 오전)도 아직 없다.
 여기서는 그 둘이 하는 일을 함수 몇 개로 흉내 낸다 — 블록 JSON 은 기본 설계 레시피를 변환기 ②로 바꿔 쓰고, 가짜 변환기 ①은 그 반대로
@@ -25,21 +25,21 @@ BASE = {'001_CHAIR_BENCH_V000': 'chair', '002_CHAIR_BACK_V000': 'chair', '003_DE
 
 
 def generated_design(base_id, design_id):
-    """AI 생성이 내는 parts/3.0 을 흉내 낸다: 기본 설계를 변환기 ②로 바꾸고 design_id 만 새 이름(같은 Template 의 다음 번호, IRD 2장 예시 001_CHAIR_BENCH_V001 — E-84)으로."""
+    """AI 생성이 내는 parts/4.0 을 흉내 낸다: 기본 설계를 변환기 ②로 바꾸고 design_id 만 새 이름(같은 Template 의 다음 번호, IRD 2장 예시 001_CHAIR_BENCH_V001 — E-84)으로."""
     doc = RecipeDocument.load(FIXTURES, base_id)
     blocks = RecipeToParts(base_id, BASE[base_id], BLOCK_MM).convert(doc.recipe, doc.placements)
     return dict(blocks, design_id=design_id, base_recipe=copy.deepcopy(doc.recipe))       # 실제 요청처럼 그 Template 의 V000 레시피를 통째로 싣는다
 
 
 def fake_converter(base_id):
-    """변환기 ①(W110) 자리: parts/3.0 요청을 받아 같은 기하의 {recipe, placements} 를 요청의 design_id 를 모델 ID 로 해서 돌려준다."""
+    """변환기 ①(W110) 자리: parts/4.0 요청을 받아 같은 기하의 {recipe, placements} 를 요청의 design_id 를 모델 ID 로 해서 돌려준다."""
     doc = RecipeDocument.load(FIXTURES, base_id)
 
     def convert(request):
         model_id = request['design_id']
-        recipe = dict(copy.deepcopy(doc.recipe), model_id=model_id)
+        recipe = dict(copy.deepcopy(doc.recipe), design_id=model_id)
         placements = copy.deepcopy(doc.placements)
-        placements['model_id'] = model_id
+        placements['design_id'] = model_id
         placements['recipe_sha256'] = recipe_sha256(recipe)
         for st in placements['steps']:
             st['part_id'] = f'{model_id.upper()}_{st["part_name"]}'
@@ -48,18 +48,18 @@ def fake_converter(base_id):
 
 
 def check_and_store(blocks, base_id):
-    """check_design 서비스(JsonQuery 글자)를 부르고, 합격 응답의 recipe · placements 를 design/3.0 로 JSON 글자로 저장했다가 읽어 온다(저장소 + MQTT 흉내)."""
+    """check_design 서비스(JsonQuery 글자)를 부르고, 합격 응답의 recipe · placements 를 design/4.0 로 JSON 글자로 저장했다가 읽어 온다(저장소 + MQTT 흉내)."""
     checker = DesignChecker(CFG, parts_to_recipe=fake_converter(base_id))
     ok, reason, text = checker.handle_json(json.dumps(blocks))
     assert (ok, reason) == (True, ''), text
     result = json.loads(text)
     assert result['ok'] and result['errors'] == [] and result['min_margin_mm'] is not None and result['schema'] == 'check_result/3.0'
-    stored = json.dumps({'schema': 'design/3.0', 'design_id': blocks['design_id'], 'recipe': result['recipe'], 'placements': result['placements']})
+    stored = json.dumps({'schema': 'design/4.0', 'design_id': blocks['design_id'], 'recipe': result['recipe'], 'placements': result['placements']})
     return json.loads(stored)
 
 
 class StoreIO(FakeIO):
-    """get_design 이 저장소에서 꺼낸 design/3.0 을 돌려주는 가짜 입출력 — 조회한 design_id 도 기록한다."""
+    """get_design 이 저장소에서 꺼낸 design/4.0 을 돌려주는 가짜 입출력 — 조회한 design_id 도 기록한다."""
 
     def __init__(self, design):
         super().__init__()

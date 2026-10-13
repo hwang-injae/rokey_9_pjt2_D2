@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """한 run 의 기록 일치 · 서로 다른 설계 두 run 의 저장 실패 보존 시험 (W122 task 쪽 준비, 로봇 · 웹 · ROS 없이).
 
-설계 수신(design/3.0) → 가상 조립 → 진행표 → CSV → build/2 → 저장 요청(BuildSender)이 한 실행 흐름에서 같은 설계 · 같은 run 을 가리키는지 본다.
+설계 수신(design/4.0) → 가상 조립 → 진행표 → CSV → build/2 → 저장 요청(BuildSender)이 한 실행 흐름에서 같은 설계 · 같은 run 을 가리키는지 본다.
 검사 묶음과 변환기 ①은 실제 DesignChecker · PartsToRecipe 를 쓴다(task_node 와 같은 배선). 실제 TaskManager · TaskPlanner · RunLogger(파일) · BuildSender 를
 쓰고, 로봇 · 원격 서비스 경계만 FakeIO · FakeFuture 로 대신한다. 내부 상태를 DONE · present 로 바꾸지 않는다(새 조립 전에 작업대를 비울 뿐 — test_build_saving.assemble 과 같음).
 
@@ -27,9 +27,9 @@ A_ID, B_ID = '001_CHAIR_BENCH_V001', '003_DESK_STAND_V001'     # 블록 수가 �
 
 
 def store_with_real_converter(blocks):
-    """parts/3.0 을 실제 검사 묶음 + 변환기 ①에 통과시키고, 합격 응답의 recipe · placements 를 design/3.0 글자로 저장했다 읽어 온다.
+    """parts/4.0 을 실제 검사 묶음 + 변환기 ①에 통과시키고, 합격 응답의 recipe · placements 를 design/4.0 글자로 저장했다 읽어 온다.
 
-    입력: parts/3.0 dict. 출력: design/3.0 dict. 바깥 영향 없음(저장소 · MQTT 는 JSON 글자 왕복으로 흉내).
+    입력: parts/4.0 dict. 출력: design/4.0 dict. 바깥 영향 없음(저장소 · MQTT 는 JSON 글자 왕복으로 흉내).
     실패: 합격하지 못하면 AssertionError(응답 글자 포함).
     """
     checker = DesignChecker(CFG)
@@ -38,19 +38,19 @@ def store_with_real_converter(blocks):
     assert (ok, reason) == (True, ''), text
     result = json.loads(text)
     assert result['ok'], result['errors']
-    return json.loads(json.dumps({'schema': 'design/3.0', 'design_id': blocks['design_id'],
+    return json.loads(json.dumps({'schema': 'design/4.0', 'design_id': blocks['design_id'],
                                   'recipe': result['recipe'], 'placements': result['placements']}))
 
 
 @pytest.fixture(scope='module')
 def designs():
-    """실제 변환기를 거친 design/3.0 두 개: 001_CHAIR_BENCH_V001(V000 기하) · 003_DESK_STAND_V001(V000 기하)."""
+    """실제 변환기를 거친 design/4.0 두 개: 001_CHAIR_BENCH_V001(V000 기하) · 003_DESK_STAND_V001(V000 기하)."""
     return {A_ID: store_with_real_converter(generated_design('001_CHAIR_BENCH_V000', A_ID)),
             B_ID: store_with_real_converter(generated_design('003_DESK_STAND_V000', B_ID))}
 
 
 class MultiIO(FakeIO):
-    """get_design 이 저장소(설계 이름 → design/3.0)에서 꺼내 주는 가짜. check_progress 에 실리는 design_id · run_id 도 기록한다."""
+    """get_design 이 저장소(설계 이름 → design/4.0)에서 꺼내 주는 가짜. check_progress 에 실리는 design_id · run_id 도 기록한다."""
 
     def __init__(self, designs):
         """설계 저장소를 받는다. check_requests 는 (design_id, run_id 또는 빈 글자, part_ids) 목록."""

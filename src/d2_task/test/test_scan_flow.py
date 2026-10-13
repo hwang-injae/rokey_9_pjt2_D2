@@ -168,7 +168,7 @@ def test_잘못된_점군응답은_다음_자세로_넘어가지_않는다(point
     lambda b: b.update(ok='true'),
     lambda b: b.update(blocks=[]),
     lambda b: b['blocks'].update(schema='other/1'),
-    lambda b: b['blocks'].update(schema='parts/3.0'),        # 스캔 추론기는 위치 · 방향만(blocks/2) — AI 칸이 든 parts/3.0 은 scan_infer 응답이 아니다(E-69)
+    lambda b: b['blocks'].update(schema='parts/4.0'),        # 스캔 추론기는 위치 · 방향만(blocks/2) — AI 칸이 든 parts/4.0 은 scan_infer 응답이 아니다(E-69)
     lambda b: b['blocks'].update(blocks=[]),
     lambda b: b['blocks']['blocks'][0].update(x=float('inf')),
     lambda b: b['blocks']['blocks'][0].update(ori='other'),

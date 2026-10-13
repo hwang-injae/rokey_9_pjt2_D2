@@ -2,7 +2,7 @@
 """Template 검사(21번) — AI·스캔 설계가 그 Template(기본 설계 V000)의 모양 규칙 안에 있는지 본다 (ROS 없이 동작, W162).
 
 DesignChecker 가 1~20번(형식·파고듦·받침·안정성·잡기·작업영역) 다음에 부른다. 규칙은 요청의 `base_recipe`(그 Template 의 V000 레시피 통째,
-`recipe/3.0`)에서 `template.composition[역할]` 의 `count` · `revision` 만 읽는다(보여 줄 이름표 `label` 만 더 읽는다).
+`recipe/4.0`)에서 `template.composition[역할]` 의 `count` · `revision` 만 읽는다(보여 줄 이름표 `label` 만 더 읽는다).
 설계의 모양은 요청 `parts` 에서 직접 잰다 — 레시피를 믿지 않고 좌표를 잰다. 단위 mm, 설계 좌표계(앞 = -y, 뒤 = +y, 가구는 돌리지 않는다).
 실패 코드: 요청이 틀림 = REQUEST_INVALID(웹 쪽 잘못, 다시 만들지 않음) · 역할·개수·놓는 방향·받침·상대 방향 = TEMPLATE_SHAPE ·
 범위·같음·대칭·붙는 자리 = TEMPLATE_RANGE (설계 탓이라 AI 가 다시 만든다).
@@ -13,7 +13,7 @@ import re
 
 from d2_task.recipe_document import same_major
 
-BASE_SCHEMA = 'recipe/3.0'
+BASE_SCHEMA = 'recipe/4.0'
 TOL_MM = 0.000001            # 같다고 볼 오차 — 레시피 도구 · 변환기 TOL, 검사 묶음 PENETRATION_MM 과 같은 기준
 MAX_EXPR_LEN = 200           # 범위 식 길이 상한(깊게 겹친 괄호로 파서가 느려지는 것을 막는다)
 DESIGN_ID_RE = re.compile(r'(.+)_V\d{3}')
@@ -71,7 +71,7 @@ class TemplateChecker:
     def read_base(self, request):
         """요청의 base_recipe 를 확인해 규칙 {역할: {label, count, lay, long_edge, support, attach, dims, same_size, mirror}} 를 돌려준다.
 
-        먼저 본다: base_recipe 있음 · 객체 · schema 앞자리 recipe/3 · model_id 가 _V000 으로 끝남 · 요청 design_id(_V3자리 앞부분)와 model_id 앞부분이 같음 ·
+        먼저 본다: base_recipe 있음 · 객체 · schema 앞자리 recipe/4 · design_id 가 _V000 으로 끝남 · 요청 design_id(_V3자리 앞부분)와 model_id 앞부분이 같음 ·
         template.composition 있음. 그 뒤 revision 모양(키·값·식)도 틀리면 RequestInvalid(이유를 적음). 요청 안 `template` 칸은 읽지 않는다.
         """
         if not isinstance(request, dict):
@@ -83,15 +83,15 @@ class TemplateChecker:
             raise RequestInvalid('base_recipe 가 객체가 아니다')
         if not same_major(base.get('schema'), BASE_SCHEMA):
             raise RequestInvalid(f'base_recipe 의 schema 가 {BASE_SCHEMA} 와 앞자리가 다르다(받은 schema: {base.get("schema")!r})')
-        model_id = base.get('model_id')
-        if not isinstance(model_id, str) or not model_id.endswith('_V000') or len(model_id) == len('_V000'):
-            raise RequestInvalid(f'base_recipe 의 model_id {model_id!r} 가 기본 설계(…_V000)가 아니다')
+        base_id = base.get('design_id')
+        if not isinstance(base_id, str) or not base_id.endswith('_V000') or len(base_id) == len('_V000'):
+            raise RequestInvalid(f'base_recipe 의 design_id {base_id!r} 가 기본 설계(…_V000)가 아니다')
         design_id = request.get('design_id')
         found = DESIGN_ID_RE.fullmatch(design_id) if isinstance(design_id, str) else None
         if not found:
             raise RequestInvalid(f'design_id {design_id!r} 가 <Template ID>_V<3자리> 모양이 아니다')
-        if found.group(1) != model_id[:-len('_V000')]:
-            raise RequestInvalid(f'design_id {design_id} 의 Template({found.group(1)})가 base_recipe 의 Template({model_id[:-len("_V000")]})와 다르다')
+        if found.group(1) != base_id[:-len('_V000')]:
+            raise RequestInvalid(f'design_id {design_id} 의 Template({found.group(1)})가 base_recipe 의 Template({base_id[:-len("_V000")]})와 다르다')
         template = base.get('template')
         composition = template.get('composition') if isinstance(template, dict) else None
         if not isinstance(composition, dict) or not composition:
@@ -255,7 +255,7 @@ class TemplateChecker:
 
     # ---------------- 2. 설계 재기 ----------------
     def check(self, rules, parts):
-        """설계(parts: 형식이 맞는 parts/3.0 의 parts 목록 — order · x · y · z · ori · role · group)를 규칙에 맞춰 잰다.
+        """설계(parts: 형식이 맞는 parts/4.0 의 parts 목록 — order · x · y · z · ori · role · group)를 규칙에 맞춰 잰다.
 
         반환: errors 목록 [{part: None, reason: TEMPLATE_SHAPE | TEMPLATE_RANGE, detail, kind: 'template'}] — 모양(SHAPE)을 먼저, 같음 · 범위 · 대칭(RANGE)을 뒤에.
         한 줄에 한 가지 실패를 적고, 앞선 실패로 잴 수 없는 값은 같은 이유로 또 알리지 않는다.
@@ -299,7 +299,7 @@ class _Measure:
     def __init__(self, checker, rules, parts):
         """부품을 (전체 역할, 번호) 묶음으로 모아 묶음 상자(mm)를 잰다.
 
-        입력: checker = TemplateChecker(방향별 길이 표), rules = read_base 결과, parts = 형식이 맞는 parts/3.0 의 parts 목록(mm).
+        입력: checker = TemplateChecker(방향별 길이 표), rules = read_base 결과, parts = 형식이 맞는 parts/4.0 의 parts 목록(mm).
         바깥 영향 없음. 실패: parts 에 형식이 틀린 항목이 있으면 KeyError 등 프로그램 예외(검사 묶음이 형식을 먼저 확인한다).
         """
         self.checker, self.rules = checker, rules

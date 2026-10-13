@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② 시험 (W117, E-69) — 기본 설계 4종(001 벤치 · 002 의자 · 003 책상 세운 다리 · 004 가운데 기둥)의 레시피 두 파일(recipe/3.0 구조 + placements/3.0 조립 방법)을
-parts/3.0 으로 바꿔 본다. 위치 · 방향 계산은 E-52 때와 같고, role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 나온다."""
+"""변환기 ② 시험 (W117, E-69) — 기본 설계 4종(001 벤치 · 002 의자 · 003 책상 세운 다리 · 004 가운데 기둥)의 레시피 두 파일(recipe/4.0 구조 + placements/4.0 조립 방법)을
+parts/4.0 으로 바꿔 본다. 위치 · 방향 계산은 E-52 때와 같고, role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 나온다."""
 import copy
 import json
 import re
@@ -25,7 +25,7 @@ def load(model_id):
 
 
 def flat_parts(recipe):
-    """recipe/3.0 template.composition 의 부품 항목을 {부품 이름(LEG_001_01): 항목}으로 편다(시험에서 값을 찾고 고치려고)."""
+    """recipe/4.0 template.composition 의 부품 항목을 {부품 이름(LEG_001_01): 항목}으로 편다(시험에서 값을 찾고 고치려고)."""
     return {f'{group}_{item["part"]}': item for comp in recipe['template']['composition'].values()
             for group, items in comp['parts'].items() for item in items}
 
@@ -44,7 +44,7 @@ def convert(model_id):
 def test_4종_블록_수와_머리말(model_id):
     out = convert(model_id)
     design_id, family, n = IDS[model_id]
-    assert (out['schema'], out['design_id']) == ('parts/3.0', design_id) and 'family' not in out    # family 는 설계 이름에서 계산(10/13 PL)
+    assert (out['schema'], out['design_id']) == ('parts/4.0', design_id) and 'family' not in out    # family 는 설계 이름에서 계산(10/13 PL)
     assert [b['order'] for b in out['parts']] == list(range(1, n + 1))
     assert all(b['ori'] in ori_extents(BLOCK_MM) and 'inferred' not in b for b in out['parts'])      # inferred 는 스캔 설계만
 
@@ -147,7 +147,7 @@ def test_짝_해시가_안_맞으면_거절():
 
 
 def test_model_id가_다르면_거절():
-    bad(lambda r, pl: pl.update(model_id='OTHER'))
+    bad(lambda r, pl: pl.update(design_id='OTHER'))
 
 
 def test_잘못된_schema():

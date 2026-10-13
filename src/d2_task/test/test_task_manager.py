@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/3.0 구조 + placements/3.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/4.0 구조 + placements/4.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -22,8 +22,8 @@ ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 CFG['supply_mode'] = 'slots'     # 이 파일은 공급 칸 경로 시험 — robot.yaml 기본은 10/13 PL 부터 scatter(칸 코드 경로는 남김)
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
-RECIPE = _DOC.recipe              # 구조(recipe/3.0)
-PLACEMENTS = _DOC.placements      # 조립 방법(placements/3.0)
+RECIPE = _DOC.recipe              # 구조(recipe/4.0)
+PLACEMENTS = _DOC.placements      # 조립 방법(placements/4.0)
 IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
@@ -57,11 +57,11 @@ class FakeIO:
         return [e[1:] for e in self.events if e[0] == 'call']
 
     def get_design(self, design_id, should_abort):
-        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/3.0 dict."""
+        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/4.0 dict."""
         self.events.append(('call', 'load', design_id))
         if design_id != 'bench':
             return False, '', None
-        return True, '', {'schema': 'design/3.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
+        return True, '', {'schema': 'design/4.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
 
     def services_ready(self):
         return list(self.missing)

@@ -15,7 +15,7 @@ SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
-RECIPE, PLACEMENTS = _DOC.recipe, _DOC.placements       # 구조(recipe/3.0) · 조립 방법(placements/3.0)
+RECIPE, PLACEMENTS = _DOC.recipe, _DOC.placements       # 구조(recipe/4.0) · 조립 방법(placements/4.0)
 IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
