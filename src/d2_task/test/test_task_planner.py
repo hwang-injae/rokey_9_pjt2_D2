@@ -39,7 +39,7 @@ def test_블록마다_잡기가_같은_칸을_준다():
     for n in range(11):
         r = planner(n).next_block()
         assert CFG['supply_slots'][int(r['supply_slot']) - 1]['grasp'] == r['grasp'], r['part_id']
-    assert [planner(n).next_block()['supply_slot'] for n in (0, 8, 9)] == ['2', '2', '1']   # FLAT_SHORT p2(앞 9개), 마지막 둘 FLAT_LONG p1
+    assert [planner(n).next_block()['supply_slot'] for n in (0, 7, 8)] == ['2', '2', '1']   # 다리 8개 FLAT_SHORT p2, 좌판 연짝 3개 FLAT_LONG p1(10/13)
 
 
 def test_높이는_실측_블록으로_쌓아_올린다():
@@ -225,3 +225,20 @@ def test_next_target은_진행표를_바꾸지_않고_DONE_UNKNOWN_NO_SUPPORT도
     before = copy.deepcopy(p.progress)
     p.next_target()
     assert p.progress == before
+
+
+def test_연짝_눕힌_블록은_모두_FLAT_LONG():
+    """10/13 박진용: 같은 층에 긴 면을 맞대고 나란히 놓는 눕힌 블록(벤치 좌판 3개)은 첫 블록도 FLAT_LONG — 레시피가 FLAT_SHORT 여도 바꾼다.
+    다리(연짝 아님)는 레시피 잡기 그대로."""
+    p = planner(0)
+    seat = [b for b in p.parts if '_SEAT_' in b['part_id']]
+    assert len(seat) == 3 and all(b['grasp'] == 'FLAT_LONG' for b in seat)
+    assert all(b['grasp'] == 'FLAT_SHORT' for b in p.parts if '_LEG_' in b['part_id'])
+    short = copy.deepcopy(PLACEMENTS)
+    for st in short['steps']:
+        if st['part_name'] == 'SEAT_001_01':
+            assert st['grasp'] in ('FLAT_SHORT', 'FLAT_LONG')
+            st['grasp'], st['grasp_axis'] = 'FLAT_SHORT', 'WIDTH'
+    q = TaskPlanner(CFG, RECIPE, short)
+    assert q.row_long == ['001_CHAIR_BENCH_V000_SEAT_001_01']
+    assert [b['grasp'] for b in q.parts if '_SEAT_' in b['part_id']] == ['FLAT_LONG'] * 3

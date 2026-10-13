@@ -99,4 +99,4 @@ def test_수집만_하고_slots_동작은_그대로다():
     """같은 시나리오(GRASP_FAILED 다음 칸 재시도)가 수집 유무와 상관없이 기존과 같은 칸 순서로 간다."""
     m, io = go()
     drive(m, 'DONE')
-    assert [p[1] for p in picks(io)] == ['2'] * 9 + ['1'] * 2
+    assert [p[1] for p in picks(io)] == ['2'] * 8 + ['1'] * 3      # 좌판 연짝 3개는 FLAT_LONG 칸 1(10/13 연짝 규칙)

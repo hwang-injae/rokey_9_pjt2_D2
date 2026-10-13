@@ -176,7 +176,7 @@ def test_벤치_11개_정상_흐름():
     m, io = go()
     drive(m, 'DONE')
     assert io.world == set(IDS)
-    assert picks(io) == [(b, '2') for b in IDS[:9]] + [(b, '1') for b in IDS[9:]]      # FLAT_SHORT 칸 2(짧은 쪽 우선, E-52 W139), 마지막 좌판 둘 FLAT_LONG 칸 1
+    assert picks(io) == [(b, '2') for b in IDS[:8]] + [(b, '1') for b in IDS[8:]]      # 다리 8개 FLAT_SHORT 칸 2, 좌판 연짝 3개 FLAT_LONG 칸 1(10/13 연짝 규칙)
     assert io.calls[:6] == [('load', 'bench'), ('move_to', 'observe'), ('check', tuple(IDS)),     # 선택 때 한 번 조회(출발은 받아 둔 설계)
                             ('pick', IDS[0], '2'), ('move_to', 'observe'), ('check', (IDS[0],))]
     assert ('check', (IDS[2], IDS[0])) in io.calls                                   # 3번째: 놓은 블록 + 받침
