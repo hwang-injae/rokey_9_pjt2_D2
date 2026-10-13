@@ -668,7 +668,7 @@ class TaskManager:
         elif status == 'SPARE_BLOCKED':            # 받침 둘레 손가락 자리에 뭔가 있다(깊이) — 사람이 비우고 [계속]이면 다시 잼(one_pick p1_to_recipe)
             self._hold(part_id, f'받침 둘레 손가락 자리에 물건이 있어요({result["message"]}) — 받침 둘레를 비우고 [계속]을 누르세요')
         elif status == 'STAND_NOT_READY':
-            self._to_error(f'{part_id}: 세움 · 옆세움 레시피 블록은 받침에서 세우는 동작이 정식 흐름에 아직 없다(세우기 W131) — 사람이 확인해 주세요')
+            self._to_error(f'{part_id}: 이 자세(세움 · 옆세움)로 세우는 교시 동작이 robot.yaml standup_taught 에 없다(세우기 W131) — 사람이 확인해 주세요')
         elif status == 'SPARE_NOT_FLAT':
             self._to_error(f'{part_id}: 받침 위 블록 자세를 모른다({result["block"].get("up")}) — 받침 위 블록을 확인해 주세요')
         elif status == 'REORIENT':                 # 맞는 자세가 없어 눕힌 블록을 빈 자리에 세운다 — 보내는 순간 1회로 센다(실패해도 다시 세우지 않음)
@@ -779,7 +779,16 @@ class TaskManager:
             if not ok:
                 self.logger.log('spare', part, '받침 맞추기 길이 안 나와 건너뜀')
             self._start_goal(dict(goal['then'], status='FOUND', from_spare=True))
+            if goal['then'].get('spare_stand'):     # 세움 · 옆세움 레시피: 맞춘 뒤 교시 동작으로 세운다(조립은 다시 잰 뒤)
+                return self._set('PICK_PLACE', None, f'{part} 에 쓸 받침 위 블록을 세웁니다')
             return self._set('PICK_PLACE', None, f'{part} 를 받침에서 다시 집어 조립합니다')
+        if ok and goal.get('spare_stand'):         # 받침 위 블록을 세움(W131 교시 동작) — 조립이 아니다. 다음 SELECT 가 받침을 다시 재서 레시피 잡기로 집는다
+            self._plan_streak = 0
+            self.logger.log('spare', part, '받침 위 블록을 세움')
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
+            return self._set('SELECT', None, f'{part} 에 쓸 받침 위 블록을 세웠다. 다시 잽니다')
         if ok and goal.get('spare_tip'):           # 받침 위 블록을 눕힘 — 조립이 아니다. 다음 SELECT 가 받침을 다시 잰다
             self._plan_streak = 0
             self.logger.log('spare', part, '받침 위 블록을 눕힘')
@@ -872,6 +881,7 @@ class TaskManager:
         """지금 목표가 받침 경유의 어느 단계인가 — 공급→받침 · 받침 눕히기 · 받침 맞추기 · 받침→조립 · 바로 조립 · 세우기."""
         g = self.goal
         return ('to_spare' if g.get('via_spare') else 'spare_tip' if g.get('spare_tip') else 'spare_center' if g.get('spare_center')
+                else 'spare_stand' if g.get('spare_stand')
                 else 'from_spare' if g.get('from_spare') else 'reorient' if g.get('reorient') else 'direct')
 
     def _w144_before_pick(self):

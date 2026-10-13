@@ -442,6 +442,103 @@ def tip_place_tcp(cfg, pick_center, pick_rot, land_center, flip):
             'phi_deg': math.degrees(phi), 'd': d}, ''
 
 
+# ---------------- 세우기 교시 동작 (W131 — 한세교 교시, 10/13 박진용 옮김) ----------------
+# robot.yaml standup_taught.<case> 의 교시 자세 칸 = 펜던트로 교시한 순서
+STANDUP_ORDER = ('entry', 'pick', 'lift_up', 'rotate', 'place')
+# 잡기 이름 -> 교시 동작 (IRD 2장, 10/13): 세움(LENGTH 위) = high · 옆세움(WIDTH 위) = side
+STANDUP_GRASPS = {'STANDUP_HIGH': 'high', 'STANDUP_SIDE': 'side'}
+STANDUP_UP = {'high': 'LENGTH', 'side': 'WIDTH'}
+# 쥔 블록 상자를 축마다 줄이는 길이 (면마다 0.5 mm, 놓인 블록과 같음) — 받침 윗면에 딱 붙어 있어 그대로면 붙이자마자 겹쳐 보인다
+STANDUP_HELD_SHRINK_M = 0.001
+
+
+def zyz_matrix(a_deg, b_deg, c_deg):
+    """두산 펜던트 회전 A · B · C (도, ZYZ 오일러 = Rz(A) · Ry(B) · Rz(C)) -> 3x3 행렬 (열 = 돌린 축)."""
+    def rz(t):
+        """z 축 회전 행렬 (rad)."""
+        return [[math.cos(t), -math.sin(t), 0.0], [math.sin(t), math.cos(t), 0.0], [0.0, 0.0, 1.0]]
+
+    def ry(t):
+        """y 축 회전 행렬 (rad)."""
+        return [[math.cos(t), 0.0, math.sin(t)], [0.0, 1.0, 0.0], [-math.sin(t), 0.0, math.cos(t)]]
+
+    return _mul(_mul(rz(math.radians(a_deg)), ry(math.radians(b_deg))), rz(math.radians(c_deg)))
+
+
+def posx_to_rg2tcp(task):
+    """펜던트 posx [x, y, z mm, A, B, C 도] (BASE · 활성 TCP GripperDA_v1) -> rg2_tcp 목표 (위치 m, 쿼터니언 x y z w).
+
+    위치는 같은 점이고 방향은 R_rg2tcp = R_posx · Rz(-90°): x_rg2 = -y_posx, y_rg2 = +x_posx, z 같음(한세교 가상 세움 표로 확인).
+    값이 6개가 아니면 ValueError.
+    """
+    if len(task) != 6:
+        raise ValueError(f'posx 는 6개여야 한다: {task}')
+    r = zyz_matrix(*task[3:])
+    x, y, z = (column(r, i) for i in range(3))
+    return tuple(v / 1000.0 for v in task[:3]), quat_from_axes([-v for v in y], x, z)
+
+
+def standup_case(cfg, pick_center, pick_rot, place_center, place_rot, grasp):
+    """세우기 요청을 확인하고 교시 동작 이름을 낸다. 잡기 이름(STANDUP_HIGH · STANDUP_SIDE)이 동작을 정한다.
+
+    입력: 블록 중심 (m) · 회전 (집기 · 놓기), 잡기 이름. robot.yaml standup_taught · spare_spots 첫 자리를 읽는다.
+    반환: 'high' | 'side'. 눕힌 블록이 아니거나, 놓을 자세의 위 축이 잡기와 다르거나, 집기 · 놓기 블록 중심이 받침 자리에서
+    spot_tolerance_m 넘게 떨어지면 ValueError — 교시 좌표는 그 자리 하나에서만 맞다. 바깥 영향 없음.
+    """
+    case = STANDUP_GRASPS.get(grasp)
+    if case is None:
+        raise ValueError(f'세우기 잡기가 아니다: {grasp}')
+    if up_axis(pick_rot) != 'THICKNESS':
+        raise ValueError(f'세우기는 눕힌 블록에서만 — 집을 블록은 {up_axis(pick_rot)} 가 위')
+    if up_axis(place_rot) != STANDUP_UP[case]:
+        raise ValueError(f'{grasp} 는 {STANDUP_UP[case]} 를 위로 세운다 — 놓을 자세는 {up_axis(place_rot)} 가 위')
+    spot, tol = cfg['spare_spots'][0], cfg['standup_taught']['spot_tolerance_m']
+    for name, c in (('집기', pick_center), ('놓기', place_center)):
+        d = math.hypot(c[0] - spot['x_m'], c[1] - spot['y_m'])
+        if d > tol:
+            raise ValueError(f'{name} 블록 중심이 받침 자리에서 {d * 1000:.1f} mm 떨어짐 (허용 {tol * 1000:.0f} mm)')
+    return case
+
+
+def standup_targets(cfg, case):
+    """교시 동작 case('high' · 'side')의 MoveL 목표 (rg2_tcp, 위치 m · 쿼터니언) 를 순서대로 만든다.
+
+    반환: {이름: (xyz, quat)} — STANDUP_ORDER 다섯 자세 + 'release_up'(놓기 자세에서 Z+ 로 lift_after_place_m,
+    방향 그대로 — 연 손가락을 세운 블록에서 위로 빼는 자리. 교시에 없어 이것만 계산한다, 10/13 한세교).
+    교시 칸이 없으면 KeyError.
+    """
+    taught = cfg['standup_taught']
+    out = {name: posx_to_rg2tcp(taught[case][name]) for name in STANDUP_ORDER}
+    (x, y, z), q = out['place']
+    out['release_up'] = ((x, y, z + taught['lift_after_place_m']), q)
+    return out
+
+
+def standup_held_box(cfg, pick_center, pick_rot, tcp_xyz, tcp_q):
+    """교시 파지 자세에서 쥔 블록 상자 (SceneAttach held — 크기 m · TCP 기준 블록 중심 m · TCP 기준 방향 쿼터니언 'quat').
+
+    기울여 잡아 블록 축이 TCP 축과 어긋나므로 방향(held_quat)을 같이 보낸다 — 장면에 실제 블록 모양 그대로 붙는다.
+    크기 = 블록 실측에서 축마다 STANDUP_HELD_SHRINK_M 뺀 값. 블록 중심 = 요청 pick_pose 중심 그대로. 바깥 영향 없음.
+    """
+    axes = quat_axes(tcp_q)
+    d = [c - p for c, p in zip(pick_center, tcp_xyz)]
+    rel = [[sum(axes[i][k] * pick_rot[k][j] for k in range(3)) for j in range(3)] for i in range(3)]   # R_tcpᵀ · R_block
+    return {'size_m': [v - STANDUP_HELD_SHRINK_M for v in cfg['block_actual_m']],
+            'offset_m': [sum(a * b for a, b in zip(t, d)) for t in axes],
+            'quat': quat_from_axes(*(column(rel, i) for i in range(3)))}
+
+
+def held_block_pose(tcp_xyz, tcp_q, held):
+    """TCP 자세 (m · 쿼터니언) 에서 쥔 블록 상자 held(standup_held_box)의 base 자세 -> (중심 m, 쿼터니언).
+
+    놓는 순간 손에 붙은 블록이 실제로 있는 자리 — 떼기(SceneAttach 놓은 자리)에 쓰면 장면 블록이 열린 손가락과 같은 자리라
+    목표 자세(place_pose)와의 몇 mm 차이로 손가락과 겹쳐 보이지 않는다.
+    """
+    r_tcp, r_rel = matrix_from_quat(tcp_q), matrix_from_quat(held['quat'])
+    center = tuple(tcp_xyz[i] + sum(r_tcp[i][k] * held['offset_m'][k] for k in range(3)) for i in range(3))
+    return center, quat_from_axes(*(column(_mul(r_tcp, r_rel), i) for i in range(3)))
+
+
 # ---------------- 설계도(레시피) ----------------
 RECIPE_SUFFIXES = ('_recipe.json',)    # 레시피 = 구조 파일 <모델ID>_recipe.json (E-69 — 옛 이름 .recipe.json 은 W139 뒤 뺌)
 PLACEMENTS_SUFFIX = '_placements.csv'  # 조립 방법 원본 — 구조 파일과 같은 폴더 · 같은 모델 ID (E-69)

@@ -20,9 +20,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 
 from d2_motion.executor import MoveItExecutor
-from d2_motion.motion_math import (CENTER_PREFIX, GRASP_AXIS, TILT, TILT_AS, TILT_LESS_DEG, TIP, TIP_GRASP, TIP_LIFT_M, flip_about_z,
-                                   held_finger_angle, matrix_from_quat, move_speed_scale, open_finger_angle, pick_open_width, pick_place_tcp,
-                                   scan_structure_box, tcp_target, tilt_pick_place_tcp, tip_place_tcp, up_axis)
+from d2_motion.motion_math import (CENTER_PREFIX, GRASP_AXIS, STANDUP_GRASPS, TILT, TILT_AS, TILT_LESS_DEG, TIP, TIP_GRASP, TIP_LIFT_M,
+                                   flip_about_z, held_block_pose, held_finger_angle, matrix_from_quat, move_speed_scale, open_finger_angle,
+                                   pick_open_width, pick_place_tcp, scan_structure_box, standup_case, standup_held_box, standup_targets,
+                                   tcp_target, tilt_pick_place_tcp, tip_place_tcp, up_axis)
 from d2_safety.safe_stop import SafeStop, init_ros
 
 PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리는 길), 실패하면 RRTConnect. 경로는 MoveIt 계획 그대로 쓴다
@@ -559,6 +560,132 @@ class PickPlaceNode(Node):
         why = grip_failure(self.grip(OPEN_FULL_M))
         return finish(not why, why or '', width)
 
+    # ---------- 세우기 (W131 — 한세교 교시 동작, 10/13 박진용 옮김) ----------
+    def _standup(self, g, gh, finish):
+        """잡기 STANDUP_HIGH · STANDUP_SIDE: 받침 자리의 눕힌 블록을 교시 동작으로 세운다(standup_case 가 자리 · 자세를 확인).
+
+        자리 · 자세가 교시와 다르면 움직이기 전에 PLAN_FAILED, 바쁘면 BUSY. 반환: finish(...) 결과.
+        """
+        def pose(p):
+            """geometry_msgs/Pose -> (위치 m, 3x3 회전)."""
+            return (p.position.x, p.position.y, p.position.z), matrix_from_quat((p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w))
+        (pc, pr), (lc, lr) = pose(g.pick_pose), pose(g.place_pose)
+        try:
+            case = standup_case(self.cfg, pc, pr, lc, lr, g.grasp)
+        except (ValueError, KeyError, IndexError) as e:
+            self.get_logger().error(f'{g.part_id}: 세우기 못 함 — {e}')
+            return finish(False, 'PLAN_FAILED')
+        if not self.busy.acquire(blocking=False):
+            return finish(False, 'BUSY')
+        try:
+            return finish(*self.follow_standup(case, g, gh, pc, pr))
+        finally:
+            self.busy.release()
+
+    def _standup_line(self, xyz, quat, halted):
+        """세우기 교시 MoveL 하나 — TCP 를 지금 자세에서 xyz · quat 까지 Pilz LIN 으로 계획하고, 촘촘히 나눠(dense) 지금 장면
+        (붙인 쥔 상자 포함)과 충돌을 본 뒤 실행한다. 반환: (성공, 실패 이유) — 계획 · 충돌이면 움직이지 않고 PLAN_FAILED."""
+        jt, err = self.exe.plan_line(xyz, quat, self.cfg['speed_scale'] * LINE_SCALE)
+        if jt is None:
+            self.get_logger().error(f'세우기 직선을 못 만든다 (Pilz LIN): {err}')
+            return False, 'PLAN_FAILED'
+        for k, q in enumerate(self.dense(self.exe.positions(jt))):
+            ok, hits = self.exe.valid(q)
+            if not ok:
+                self.get_logger().error(f'세우기 직선 충돌 (검사 {k}번째 자세): {", ".join(hits)} — 움직이지 않는다')
+                return False, 'PLAN_FAILED'
+        return self.exe.execute(jt, halted)
+
+    def follow_standup(self, case, g, gh, pick_center, pick_rot):
+        """세우기 교시 동작 하나를 끝까지 따라간다(robot.yaml standup_taught.<case>, 10/13 한세교 교시 · 실물 확인).
+
+        진입(공중 이동) → 집는 폭 열기 → 파지(MoveL) → 닫기 · 잡힘 확인 → 쥔 블록 붙이기(held_quat — 기울여 잡은 방향 그대로)
+        → 리프트업 → 회전 → 내려놓기 → 놓는 폭 열기 → 놓인 블록으로 떼기 → Z+ 상승 → 진입 → 활짝. 진입 뒤 이동은 모두 MoveL.
+        입력: case = 'high' | 'side', g = PickPlace 목표, gh = 목표 핸들, pick_center · pick_rot = 받침 위 눕힌 블록(m · 3x3).
+        폭 · 닫기 · 놓기 값은 교시 잡기(high = FLAT_SHORT · side = FLAT_LONG) 것.
+        바깥 영향: 로봇 팔 · 그리퍼가 움직이고 장면 관리에 쥔 블록 붙이기 · 떼기를 부탁한다.
+        실패: 길 · 충돌이면 그 구간을 움직이기 전에 PLAN_FAILED, 정지 · 취소면 CANCELED(세운 뒤), 그리퍼 이유는 그대로(E-74),
+        헛잡음은 열고 진입으로 올라와 GRASP_FAILED(블록은 받침 위 그대로), 쥔 블록을 못 붙이면 열고 진입으로 빠져 ERROR.
+        반환: (성공, 이유 코드, 잡은 폭 m — 잡기 전이면 NaN).
+        """
+        t = standup_targets(self.cfg, case)
+        gk = self.cfg['standup_taught'][case]['grasp']
+        halted = lambda: self._halted(gh)       # noqa: E731
+        width = float('nan')
+
+        def step(name):
+            """중간 보고(step — PickPlace 의 6가지 이름)를 보내고 로그에 남긴다."""
+            gh.publish_feedback(PickPlace.Feedback(step=name))
+            self.get_logger().info(f'{g.part_id}: 세우기 {case} {name}')
+
+        def line(name):
+            """교시 자세 name 으로 MoveL. 반환: (성공, 실패 이유)."""
+            return self._standup_line(*t[name], halted)
+
+        # 진입(파지 바로 위, 툴 수직)까지는 공중 이동 — 앞 자세(받침 촬영 등)에서 직선으로 가면 막힐 수 있다. 진입에서 집는 폭으로 연다
+        step('approach')
+        q_entry = self._ik_exact(t['entry'][0], t['entry'][1], self.exe.current())
+        if q_entry is None:
+            self.get_logger().error(f'{g.part_id}: 세우기 진입 자세 IK 가 안 풀린다')
+            return False, 'PLAN_FAILED', width
+        ok, why = self.go_free(self._unwrap(q_entry, self.exe.current()), halted)
+        if not ok:
+            return False, why, width
+        open_pick = pick_open_width(self.cfg, gk, g.open_width_m)
+        if open_pick is None:
+            return False, 'PLAN_FAILED', width
+        why = grip_failure(self.grip(open_pick))
+        if why:
+            return False, why, width
+
+        # 기울여 파지 자세로 내려가 닫고, 잡힌 폭이 이 잡기의 블록 폭과 맞는지 본다
+        step('grasp')
+        ok, why = line('pick')
+        if not ok:
+            return False, why, width
+        r = self.grip(self.cfg['grasp_close_m'][gk])
+        why = grip_failure(r)
+        if why:
+            return False, why, width
+        width = r.width_m
+        expect, tol = self.cfg['grasp_width_m'][gk], self.cfg['gripper']['check_tolerance_m']
+        if not r.grasped or (not math.isnan(width) and abs(width - expect) > tol):
+            self.get_logger().error(f'{g.part_id}: 세우기 잡힘 실패 (폭 {width * 1000:.1f} mm, 기대 {expect * 1000:.1f})')
+            self.grip(open_pick)
+            line('entry')
+            return False, 'GRASP_FAILED', width
+
+        # 쥔 블록을 장면에 붙인다(held_quat) — 못 붙이면 운반 중 충돌을 못 보므로 그 자리에서 열고 진입으로 빠져 멈춘다
+        held = standup_held_box(self.cfg, pick_center, pick_rot, *t['pick'])
+        if not self.scene_attach(g.part_id, True, held=held):
+            self.get_logger().error(f'{g.part_id}: 장면에 쥔 블록을 못 붙였다 — 내려놓고 진입으로 빠져 멈춘다')
+            self.grip(open_pick)
+            line('entry')
+            return False, 'ERROR', width
+
+        # 리프트업 → 회전(닫힘 축 둘레, 교시 그대로) → 내려놓기
+        for name, fb in (('lift_up', 'lift'), ('rotate', 'move'), ('place', 'place')):
+            step(fb)
+            ok, why = line(name)
+            if not ok:
+                return False, why, width
+
+        # 열고 떼고 Z+ 로 빼서 진입으로 — 기운 툴을 블록 옆에서 바로 세우면 열린 손가락이 세운 블록을 칠 수 있다(10/13 한세교).
+        # 놓인 블록은 놓는 순간 손에 붙어 있던 자세로 넣는다(held_block_pose) — 목표 place_pose 로 넣으면 몇 mm 차이로 열린 손가락과
+        # 겹쳐 보여 상승이 막힌다
+        why = grip_failure(self.grip(self.cfg['grasp_open_place_m'][gk]))
+        if why:
+            return False, why, width
+        if not self.scene_attach(g.part_id, False, placed=held_block_pose(*t['place'], held)):
+            self.get_logger().warn(f'{g.part_id}: 장면에서 쥔 블록을 못 뗐다')
+        step('retreat')
+        for name in ('release_up', 'entry'):
+            ok, why = line(name)
+            if not ok:
+                return False, why, width
+        why = grip_failure(self.grip(OPEN_FULL_M))
+        return not why, why or '', width
+
     def _execute(self, gh):
         """PickPlace 목표 1개: 집기 위 -> 집는 폭 -> 하강 -> 닫기·잡힘 확인 -> 상승 -> 놓기 위 -> 하강 -> 열기 -> 상승 -> 활짝.
 
@@ -601,6 +728,8 @@ class PickPlaceNode(Node):
             # 블록을 쥔 채 출발하면 다른 칸으로 들고 가거나, 집는 폭 '열기' 가 오히려 조이는 명령이 된다 (10/6 실기)
             self.get_logger().error(f'{g.part_id}: 그리퍼가 블록을 쥐고 있다 — 사람이 블록을 빼고 연 뒤 다시')
             return finish(False, 'ERROR')   # IRD 7장: 먼저 세움 → 사람 호출. 자세한 이유는 위 로그
+        if g.grasp in STANDUP_GRASPS:
+            return self._standup(g, gh, finish)
         center = g.grasp.startswith(CENTER_PREFIX) and g.grasp[len(CENTER_PREFIX):] in ('FLAT_SHORT', 'FLAT_LONG')
         if g.grasp not in GRASP_AXIS and g.grasp not in (TILT, TIP) and not center:
             return finish(False, 'PLAN_FAILED')

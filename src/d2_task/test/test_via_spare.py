@@ -186,10 +186,52 @@ def test_세운_블록은_넘어지는_쪽이_받침_긴_변이_되게_놓는다
     assert all(abs(a - b) < 1e-9 for a, b in zip(r['request']['place_pose'][1], want[1]))
 
 
-def test_세움_레시피는_받침에서_세우기가_없어_사람을_부른다():
-    m, io = make()
+def test_세움_레시피는_세우기_교시가_없으면_사람을_부른다():
+    cfg = copy.deepcopy(SPARE_CFG)
+    cfg.pop('standup_taught')
+    m = TaskManager(cfg, SpareIO(), open_width_m=0.0)
     target = {'part_id': IDS[0], 'grasp': 'STAND_SHORT', 'place_pose': ((0.4, -0.07, 0.04), (0, 0, 0, 1))}
     assert m._scatter.prepare_from_spare(target, on_spare())['status'] == 'STAND_NOT_READY'
+    assert m._scatter.prepare_spare(target, supply())['status'] == 'STAND_NOT_READY'
+
+
+def test_세움_레시피는_받침_가운데로_맞춘_뒤_교시_동작으로_세운다():
+    """W131(10/13): 받침 위 눕힌 블록 → CENTER_FLAT_LONG 으로 받침 자리 가운데에 맞춤 → then = STANDUP_HIGH(받침 자리 눕힘 → 세움).
+    옆세움(EDGE)은 CENTER_FLAT_SHORT → STANDUP_SIDE. 공급에서 받침으로 옮기는 1단계도 막지 않는다."""
+    from d2_motion.motion_math import matrix_from_quat, up_axis
+    m, io = make()
+    for grasp, center, stand, up in (('STAND_SHORT', 'CENTER_FLAT_LONG', 'STANDUP_HIGH', 'LENGTH'),
+                                     ('EDGE_SHORT', 'CENTER_FLAT_SHORT', 'STANDUP_SIDE', 'WIDTH')):
+        target = {'part_id': IDS[0], 'grasp': grasp, 'place_pose': ((0.4, -0.07, 0.04), (0, 0, 0, 1))}
+        assert m._scatter.prepare_spare(target, supply())['status'] == 'SPARE'
+        r = m._scatter.prepare_from_spare(target, on_spare())
+        assert r['status'] == 'SPARE_CENTER'
+        c, t = r['request'], r['request']['then']
+        assert c['grasp'] == center and c.get('spare_center') and not c.get('spare_stand')
+        assert t['grasp'] == stand and t.get('spare_stand') and not t.get('spare_center')
+        for pose in (c['pick_pose'], t['pick_pose'], t['place_pose']):                # 잰 중심이 아니라 받침 자리(교시 좌표)
+            assert abs(pose[0][0] - SPOT['x_m']) < 1e-9 and abs(pose[0][1] - SPOT['y_m']) < 1e-9
+        assert up_axis(matrix_from_quat(t['pick_pose'][1])) == 'THICKNESS' and up_axis(matrix_from_quat(t['place_pose'][1])) == up
+        assert abs(t['place_pose'][0][2] - (SPOT['z_m'] + {'LENGTH': L, 'WIDTH': W}[up] / 2)) < 1e-9
+
+
+def test_받침에_레시피_자세로_선_블록은_눕히지_않고_바로_집는다():
+    m, io = make()
+    target = {'part_id': IDS[0], 'grasp': 'STAND_SHORT', 'place_pose': ((0.4, -0.07, 0.04), (0, 0, 0, 1))}
+    r = m._scatter.prepare_from_spare(target, on_spare('LENGTH'))
+    assert r['status'] == 'PICK' and r['request']['grasp'] == 'STAND_SHORT'
+    assert abs(r['request']['pick_pose'][0][2] - (SPOT['z_m'] + L / 2)) < 1e-9
+    assert m._scatter.prepare_from_spare(target, on_spare('WIDTH'))['status'] == 'SPARE_TIP'     # 다른 자세로 선 블록은 그대로 눕힌다
+
+
+def test_세우기가_끝나면_조립으로_세지_않고_받침을_다시_잰다():
+    m, io = make()
+    m.goal = {'part_id': IDS[0], 'grasp': 'STANDUP_HIGH', 'spare_stand': True, 'from_spare': True}
+    m.last_pick = {'step': 'retreat'}
+    m._spare_on = IDS[0]
+    m.placed = None
+    assert m._via_spare_result(True, '') is not False                        # False = 평소 성공 처리(놓음 · VERIFY)로 넘김 — 세우기는 아님
+    assert m.state == 'SELECT' and m._spare_on == IDS[0] and m.placed is None   # 받침 기록 그대로 → 다음 SELECT 가 받침을 잰다
 
 
 def test_맞추기_길이_안_나오면_맞추기_없이_다시_집는다():
