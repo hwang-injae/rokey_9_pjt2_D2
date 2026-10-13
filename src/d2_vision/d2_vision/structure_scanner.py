@@ -422,9 +422,10 @@ def scan_response(result, image_path, cloud_path):
     """infer() 결과 → scan_infer 응답 (success, reason, 응답 dict) — 노드가 JsonQuery 응답 세 칸에 그대로 넣는다(IRD 4.2).
 
     입력: result = StructureScanner.infer() 출력 · image_path = 컬러 사진 경로(없으면 '') · cloud_path = PLY 경로(저장 실패면 None).
-    출력: ok → (True, '', {"ok":true,"blocks":blocks/1,"inferred_count","image_path"[,"cloud_path"]}),
+    출력: ok → (True, '', {"ok":true,"blocks":blocks/1,"inferred_count","image_path"[,"cloud_path"][,"nearest_base"]}),
           신뢰도 미달 → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail":이유}) — 답은 냈지만 결과가 나쁨(mock_scan 과 같은 두 층).
-    cloud_path 가 None 이면 그 칸을 뺀다(PLY 저장 실패 — IRD 4.2 선택 칸, 10/8 PL: 없으면 화면 점군 창만 안 뜬다). 블록 좌표는 소수 1자리 mm 로 반올림. 바깥 영향 없음."""
+    cloud_path 가 None 이면 그 칸을 뺀다(PLY 저장 실패 — IRD 4.2 선택 칸, 10/8 PL: 없으면 화면 점군 창만 안 뜬다). 블록 좌표는 소수 1자리 mm 로 반올림.
+    nearest_base(IRD 4.2 선택 칸, E-79)는 추론기가 기본 설계를 골랐을 때만 넣는다 — 못 골랐으면(None · 빈 글자) 뺀다. 바깥 영향 없음."""
     if not result.get('ok'):
         return True, '', {'ok': False, 'reason': 'SCAN_FAILED', 'detail': str(result.get('reason', ''))}
     blocks = json_ready(result['blocks'])
@@ -436,5 +437,8 @@ def scan_response(result, image_path, cloud_path):
             'image_path': str(image_path or '')}
     if cloud_path is not None:
         body['cloud_path'] = str(cloud_path)
+    nearest = result.get('nearest_base')
+    if nearest:                                   # infer() 는 계산해 두는데 응답에서 빠져 화면 · GPT 힌트까지 안 가던 것(10/13 W177)
+        body['nearest_base'] = str(nearest)
     return True, '', body
 
