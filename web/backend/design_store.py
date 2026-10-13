@@ -162,6 +162,56 @@ class DesignStore:
                          key=lambda rd: rd[1].get('created') or 0, reverse=True)[:max(0, n)]
         return bases + [{**row, 'parts': d['parts']} for row, d in derived]
 
+    def match_scan(self, blocks, top=3):
+        """스캔 블록과 저장된 설계 전부의 일치율 — 스캔 화면 '추천 설계'(10/13 플랜 B 1단계). 바깥 영향 없음(읽기만).
+
+        입력: blocks = 스캔 blocks/2 의 블록 목록[{scan_num, x, y, z, ori, …}](mm, 설계 좌표) · top = 돌려줄 개수.
+        맞음 = 비전 structure_scanner.match_rate(V-48 · E-45)와 같은 식 — 같은 ori + 두 쪽을 각자 '바닥 외곽 가운데'로 옮긴 뒤
+               x · y 차 < 12.5 mm(25 mm 격자 한 칸) · z(아랫면) 차 < 7.5 mm(반 층), 한 부품은 한 번만(가까운 쌍부터).
+        출력: [{design_id, family, made_by, matched, scan_count, part_count, rate}] — rate = matched ÷ max(스캔 수, 부품 수).
+              일치율 높은 순(같으면 부품 수 차가 작은 것 → 기본 설계 → ID 순)으로 앞 top 개. 스캔이 비면 빈 목록.
+        실패: 읽을 수 없는 설계는 건너뛴다(_rows 와 같음). 스캔 블록 칸이 틀리면 KeyError · TypeError(부르는 쪽이 409).
+        """
+        scan = [b for b in blocks if b['ori'] in self.extent]
+        if not scan:
+            return []
+        sx, sy = self._bottom_center(scan)
+        out = []
+        for row, d in self._rows():
+            parts = [p for p in d['parts']['parts'] if p.get('ori') in self.extent]
+            if not parts:
+                continue
+            px, py = self._bottom_center(parts)
+            pairs = []
+            for i, p in enumerate(parts):
+                for j, b in enumerate(scan):
+                    if b['ori'] != p['ori']:
+                        continue
+                    dx, dy, dz = (b['x'] - sx) - (p['x'] - px), (b['y'] - sy) - (p['y'] - py), b['z'] - p['z']
+                    if abs(dx) < 12.5 and abs(dy) < 12.5 and abs(dz) < 7.5:
+                        pairs.append((dx * dx + dy * dy + dz * dz, i, j))
+            used_p, used_s = set(), set()
+            for _, i, j in sorted(pairs):
+                if i not in used_p and j not in used_s:
+                    used_p.add(i)
+                    used_s.add(j)
+            out.append({'design_id': row['design_id'], 'family': row['family'], 'made_by': row['made_by'],
+                        'matched': len(used_p), 'scan_count': len(scan), 'part_count': len(parts),
+                        'rate': round(len(used_p) / max(len(scan), len(parts)), 3)})
+        out.sort(key=lambda m: (-m['rate'], abs(m['part_count'] - m['scan_count']), m['made_by'] != 'cad', m['design_id']))
+        return out[:max(0, top)]
+
+    def _bottom_center(self, items):
+        """블록 · 부품 목록의 바닥 외곽 가운데(x, y, mm) — 가장 낮은 층(최저 z + 7.5 mm 안)의 외곽 사각형 가운데(match_rate 와 같음)."""
+        zmin = min(b['z'] for b in items)
+        xs, ys = [], []
+        for b in items:
+            if b['z'] <= zmin + 7.5:
+                ex, ey, _ = self.extent[b['ori']]
+                xs += [b['x'] - ex / 2, b['x'] + ex / 2]
+                ys += [b['y'] - ey / 2, b['y'] + ey / 2]
+        return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+
     def templates(self):
         """Template 목록 — 기본 설계(V000)마다 하나(DB 보기 templates 와 같은 뜻, 설계_DB 5절).
 

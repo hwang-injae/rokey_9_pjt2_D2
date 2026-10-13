@@ -10,6 +10,7 @@ import GeneratePanel from '@/components/GeneratePanel';
 import ProgressTop from '@/components/ProgressTop';
 import RobotPanel from '@/components/RobotPanel';
 import ScanReview from '@/components/ScanReview';
+import ScanRecommend from '@/components/ScanRecommend';
 import ThemeToggle from '@/components/ThemeToggle';
 import WristCamera from '@/components/WristCamera';
 import * as api from '@/lib/api';
@@ -65,7 +66,13 @@ export default function Home() {
         </div>
 
         {robot.state?.state === 'SCAN_REVIEW' && robot.scan && (
-          <ScanReview robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
+          <>
+            <ScanReview robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
+            <section className="panel">
+              <h2>추천 설계</h2>
+              <ScanRecommend robot={robot} onView={setPicked} onLog={addLog} />
+            </section>
+          </>
         )}
 
         <details className="panel log-panel">

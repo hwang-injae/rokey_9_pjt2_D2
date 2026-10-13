@@ -325,6 +325,25 @@ def test_voice_listen_route(store):
     assert fake.calls == [('listen', None)]
 
 
+def test_scan_recommend_route(store):
+    """스캔 '추천 설계'(10/13 플랜 B 1단계): 마지막 scan_result 의 run_id 가 맞아야 답(옛 스캔 막음) · 저장된 설계 일치율 높은 순 3개 ·
+    기본 설계를 그대로 스캔하면 그 설계가 1등(다 맞음) · 스캔 모양이 틀리면 409. 읽기만 — 로봇 요청 없음."""
+    client, fake = make_client(store)
+    run = 'R20261013_100000_a1b2'
+    assert client.get('/api/designs/scan/recommend', params={'run_id': run}).status_code == 409        # 스캔 결과 없음
+    parts = store.get_design('002_CHAIR_BACK_V000')['parts']['parts']
+    blocks = [{'scan_num': i + 1, **{k: p[k] for k in ('x', 'y', 'z', 'ori')}} for i, p in enumerate(reversed(parts))]
+    fake.scan = {'schema': 'scan_result/2.0', 'run_id': run, 'blocks': {'schema': 'blocks/2', 'blocks': blocks}}
+    assert client.get('/api/designs/scan/recommend', params={'run_id': 'R20261013_090000_0000'}).status_code == 409   # 다른 스캔
+    got = client.get('/api/designs/scan/recommend', params={'run_id': run}).json()
+    assert got['run_id'] == run and len(got['candidates']) == 3
+    assert got['candidates'][0] == {'design_id': '002_CHAIR_BACK_V000', 'family': 'chair', 'made_by': 'cad', 'matched': 16,
+                                    'scan_count': 16, 'part_count': 16, 'rate': 1.0}
+    fake.scan = {'schema': 'scan_result/2.0', 'run_id': run, 'blocks': {'schema': 'blocks/2'}}
+    assert client.get('/api/designs/scan/recommend', params={'run_id': run}).status_code == 409        # 모양 틀림
+    assert fake.calls == []
+
+
 def test_scan_save_route_job(store):
     """스캔 [그대로 저장](IRD 8.4 ⑦): 마지막 scan_result 의 run_id 가 맞아야 시작(옛 스캔 저장 막음) · 생성과 한 번에 하나 ·
     결과는 job — 저장한 설계 또는 실패 code · message · 화면 버튼(scope = [취소]만)."""

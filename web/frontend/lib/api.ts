@@ -1,6 +1,6 @@
 // REST 한 곳(SDD 3.3 — 화면은 backend 의 REST · /ws 만 쓴다, E-41).
 // 운영: backend 가 이 화면을 같은 주소에서 내려 주므로 BASE 는 빈 글자. 개발(next dev :3000): NEXT_PUBLIC_BACKEND=http://localhost:8000
-import type { Cmd, CmdResult, Design, DesignSummary, GenJob, Rules, ScanSaveJob } from './types';
+import type { Cmd, CmdResult, Design, DesignSummary, GenJob, Rules, ScanMatch, ScanSaveJob } from './types';
 
 export const BASE = process.env.NEXT_PUBLIC_BACKEND ?? '';
 // 버튼 답을 기다리는 시간 = backend 의 req_timeout_s(robot.yaml 한 곳 — /ws 가 붙을 때 timing 으로 알려 줌) + 여유.
@@ -60,6 +60,9 @@ export const listDesigns = () => getJson<DesignSummary[]>('/api/designs');
 export const getDesign = (id: string) => getJson<Design>('/api/designs/' + encodeURIComponent(id));
 /** 설계 규칙 숫자 — 3D 블록 크기(robot.yaml block_size_m 한 곳, 10/9 PL E-78) */
 export const getRules = () => getJson<Rules>('/api/designs/rules');
+/** 스캔 '추천 설계' — 지금 스캔(run_id)과 저장된 설계 전부의 일치율 높은 순 3개. 옛 스캔 · 못 받음은 null */
+export const getScanRecommend = (runId: string) =>
+  getJson<{ run_id: string; candidates: ScanMatch[] }>('/api/designs/scan/recommend?run_id=' + encodeURIComponent(runId));
 /** 손목 검출 그림 주소 — seq 가 바뀔 때마다 새로 받는다(브라우저가 옛 그림을 다시 쓰지 않게) */
 export const wristUrl = (seq: number) => `${BASE}/api/robot/wrist.jpg?seq=${seq}`;
 /** 마지막 스캔 사진(JPEG) · 점군(PLY) 주소 — seq 가 바뀔 때마다 새로 받는다 */

@@ -54,6 +54,17 @@ export interface ScanResult {
   poses_used?: string[];
 }
 
+/** 스캔 '추천 설계' 한 줄(GET /api/designs/scan/recommend — 10/13 플랜 B 1단계). rate = matched ÷ max(scan_count, part_count) */
+export interface ScanMatch {
+  design_id: string;
+  family: string;
+  made_by: string;
+  matched: number;
+  scan_count: number;
+  part_count: number;
+  rate: number;
+}
+
 /** intent/1 — 음성 의도 */
 export interface Intent {
   schema: string;

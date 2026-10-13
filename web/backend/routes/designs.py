@@ -213,6 +213,21 @@ def scan_save_state(job_id: str, request: Request):
         raise HTTPException(404, '그 저장 작업이 없어요(재시작 · 오래됨)') from None
 
 
+@router.get('/scan/recommend')
+def scan_recommend(run_id: str, request: Request):
+    """스캔 '추천 설계'(10/13 플랜 B 1단계) → {run_id, candidates[{design_id, family, made_by, matched, scan_count, part_count, rate}]}.
+    마지막 scan_result 와 저장된 설계 전부의 일치율(비전 match_rate 와 같은 식) 높은 순 3개. 화면이 고르면 그 ID 로 select_design 을
+    보낸다 — 이미 검사를 통과한 저장 설계라 GPT · 새 검사 · 새 저장이 없다. 읽기만 한다.
+    마지막 scan_result 가 없거나 run_id 가 다르면 409(옛 스캔으로 추천하지 않게), 스캔 블록 모양이 틀려도 409."""
+    scan = request.app.state.mqtt.snapshot().get('scan_result')
+    if not isinstance(scan, dict) or scan.get('run_id') != run_id:
+        raise HTTPException(409, '추천할 스캔 결과가 없거나 지금 스캔과 달라요 — 다시 스캔해 주세요')
+    try:
+        return {'run_id': run_id, 'candidates': request.app.state.store.match_scan(scan['blocks']['blocks'])}
+    except (KeyError, TypeError) as e:
+        raise HTTPException(409, f'스캔 결과 모양이 틀렸어요({type(e).__name__})') from None
+
+
 @router.get('')
 def list_designs(request: Request, family: str | None = None):
     """설계 요약 목록 [{design_id, family, version, parent_id, made_by, block_count, size_mm, last_build}]. family 로 거를 수 있다."""
