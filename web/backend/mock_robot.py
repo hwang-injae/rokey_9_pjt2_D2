@@ -4,11 +4,14 @@
 - d2/bridge/alive 를 1초마다(LWT alive false), 처음 상태를 retained 로(task/state IDLE · safety/state · gripper/state)
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
   hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/2.0) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/2.0 · cancel
+  (STOPPED 에서도 받음 = 화면 [초기화] — 작업 관리자 W183 흉내: 이번 조립을 버리고, [다시 시작]이 잠금을 풀면 IDLE) ·
+  gripper_open(STOPPED 일 때만 그리퍼를 엶 = 화면 [그리퍼 열기] — 여는 동안 message_id gripper_opening, 끝나면 gripper_done). 집고 놓는 중에는 그리퍼가 블록을 쥔 것으로(grasped true)
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결,
   ROS 없는 파일이라 웹 PC 에서도 돎) — AI 생성(W108) 을 로봇 PC 없이 실제 검사 결과로 시험한다
   safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
   조립 중이 아니었으면 IDLE(설계 다시 고름) — task_manager._recover · 복구 절차 문서 5장
 - 가짜 조립 중 블록마다 가짜 손목 검출 그림(d2/vision/wrist_image, 640×480 JPEG — 진짜는 find_blocks 때 손목 비전이 그림). PIL 이 없으면 그림만 안 보냄
+- 스캔 중 자세마다 점군 미리보기(d2/vision/scan_preview JSON + scan_preview_cloud PLY — 이동 중 live · 촬영 때 capture 누적본, E-82).
 - 스캔 끝에 scan_result 바로 뒤 가짜 스캔 사진 · 점군(d2/vision/scan_image JPEG · scan_cloud PLY — 진짜는 다리가 파일을 읽어 보냄, IRD 10.5).
   그림 · 점은 비전 가짜 스캔(d2_vision mock_scan)과 같다. numpy · PIL 이 없으면 사진 · 점군만 안 보냄
 - 설계는 진짜 작업 관리자처럼 웹 저장소에 get_design 을 MQTT 로 묻는다(AI · 스캔 설계도 — 레시피 파일에 없음).
@@ -32,7 +35,8 @@ for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS �
     sys.path.insert(0, str(REPO / 'src' / _pkg))
 
 import yaml  # noqa: E402
-from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, PendingReplies, alive_payload,  # noqa: E402
+from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, SCAN_PREVIEW_CLOUD_TOPIC, SCAN_PREVIEW_TOPIC,  # noqa: E402
+                                    PendingReplies, alive_payload,
                                     parse_request, req_topic, res_topic)
 from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
@@ -107,6 +111,7 @@ class MockRobot:
         self.st = dict(state='IDLE', run_id=None, design_id=None, part_id=None, message_id=None, message='대기')
         self.locked = False
         self.assembling = False       # 멈췄을 때 조립 중이었나 — 다시 시작 뒤 이어 갈지 정한다(진짜 작업 관리자와 같음)
+        self.opening = False          # 그리퍼 여는 중 — 그동안 state/2 message_id 는 gripper_opening 그대로(10/13 18시 PL)
         self.placed = []              # 이번 조립(run)에서 놓은 블록 이름 — 다시 시작 뒤 건너뛴다
         self.worker = None
         self.abort = threading.Event()
@@ -146,10 +151,23 @@ class MockRobot:
     def set_state(self, state, message='', message_id=None, **kw):
         """작업 관리자 상태를 바꾸고 state/2 을 보낸다."""
         with self.lock:
+            if self.opening:     # 여는 동안 다른 알림으로 덮지 않는다(진짜 작업 관리자와 같게 — 화면이 이 값으로 버튼을 막음)
+                message_id = 'gripper_opening'
             self.st.update(state=state, message=message, message_id=message_id, **kw)
             body = dict(schema='state/2', mode='auto', **self.st)
         self.pub('d2/task/state', body)
         print(f'[가짜 로봇] {state} {message}')
+
+    def set_gripper(self, grasped, width_m=None):
+        """가짜 그리퍼 상태 gripper_state/1 — 집고 놓는 중(PICK_PLACE)에는 블록을 쥔 것으로(화면 [그리퍼 열기] 시험용)."""
+        self.pub('d2/gripper/state', {'schema': 'gripper_state/1', 'width_m': width_m, 'grasped': grasped}, qos=0)
+
+    def _open_gripper(self):
+        """가짜 그리퍼 열기 — 1.5초 뒤 빈 손(0.0865 m)으로 바꾸고 message_id gripper_done(처리 끝 — 성공 여부는 gripper/state)."""
+        time.sleep(1.5)
+        self.set_gripper(False, 0.0865)
+        self.opening = False
+        self.set_state(self.st['state'], '그리퍼 열기를 마쳤어요', 'gripper_done')
 
     def set_safety(self, locked, reason=''):
         """정지 상태를 바꾸고 safety_state/1 을 보낸다."""
@@ -179,6 +197,7 @@ class MockRobot:
                 self.c.publish('d2/vision/wrist_image', jpeg, qos=0)   # 진짜와 같이 retained 아님(IRD 10.1)
             for state in ('PICK_PLACE', 'VERIFY'):
                 self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', part_id=bid)
+                self.set_gripper(state == 'PICK_PLACE', 0.025 if state == 'PICK_PLACE' else 0.0865)   # 놓은 뒤(VERIFY)엔 빈 손
                 if self.abort.wait(self.step_s):
                     return
             placed.append(bid)
@@ -189,18 +208,31 @@ class MockRobot:
         self.set_state('DONE', '완성했어요', 'done', part_id=None)
 
     def _scan(self, run_id):
-        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/2, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
-        for pose in ('observe', 'observe_front', 'observe_side'):
-            for state in ('SCAN_MOVE', 'SCAN_CAPTURE'):
-                self.set_state(state, f'스캔 중 — {pose}', 'scan_running')
-                if self.abort.wait(self.step_s):
-                    return
-        self.set_state('SCAN_INFER', '스캔 결과 계산 중', 'scan_running')
-        if self.abort.wait(self.step_s):
-            return
+        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/2, 추정 2개) + 사진 · 점군 → SCAN_REVIEW.
+
+        스캔 중 화면 실시간 창(E-82)을 시험하려고 자세마다: 이동 중 live 미리보기 2번(지금 보이는 블록만) · 촬영 때 capture 미리보기
+        (지금까지 모은 누적본, index 1 · 2 · 3) — 다리가 보내는 것과 같은 토픽 · 순서(JSON 바로 뒤 PLY). 손목 RGB 는 화면에 안 씀(10/13 PL).
+        """
         _, design = self.local_design(BENCH)
         items = [{'scan_num': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
                  for i, b in enumerate(design['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
+        poses = ('observe', 'observe_front', 'observe_side')
+        live = 0
+        for i, pose in enumerate(poses, 1):
+            seen = {'schema': 'blocks/2', 'blocks': items[:max(1, len(items) * i // len(poses))]}   # 자세마다 더 많이 보임(누적)
+            self.set_state('SCAN_MOVE', f'스캔 중 — {pose}로 이동', 'scan_running')
+            for _ in range(2):
+                live += 1
+                self._preview(run_id, pose, live, 'live', {'schema': 'blocks/2', 'blocks': seen['blocks'][-4:]})
+                if self.abort.wait(self.step_s / 2):
+                    return
+            self.set_state('SCAN_CAPTURE', f'스캔 중 — {pose} 촬영', 'scan_running')
+            self._preview(run_id, pose, i, 'capture', seen)
+            if self.abort.wait(self.step_s):
+                return
+        self.set_state('SCAN_INFER', '스캔 결과 계산 중', 'scan_running')
+        if self.abort.wait(self.step_s * 2):
+            return
         scan = {'schema': 'blocks/2', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
         jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
         result = {'schema': 'scan_result/2.0', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
@@ -213,6 +245,17 @@ class MockRobot:
             if data:
                 self.c.publish(topic, data, qos=1)
         self.set_state('SCAN_REVIEW', '스캔 결과를 확인하고 [저장] · [다시 스캔] · [취소]', 'scan_review')
+
+    def _preview(self, run_id, pose_id, index, kind, blocks):
+        """점군 미리보기 한 번(E-82): scan_preview/1.0 JSON → 바로 뒤 PLY 바이트(다리와 같은 순서 · QoS — capture 1 · live 0)."""
+        _, ply = fake_scan_media(blocks, self.origin, self.block_mm)
+        if not ply:
+            return
+        body = {'schema': 'scan_preview/1.0', 'stamp': round(time.time(), 3), 'run_id': run_id, 'pose_id': pose_id, 'index': index,
+                'kind': kind, 'cloud_path': f'/mock/scan/{run_id}/preview_{kind}_{index}.ply', 'points': ply.count(b'\n')}
+        qos = 1 if kind == 'capture' else 0
+        self.c.publish(SCAN_PREVIEW_TOPIC, json.dumps(body), qos=1)
+        self.c.publish(SCAN_PREVIEW_CLOUD_TOPIC, ply, qos=qos)
 
     def _run(self, target, *args):
         """가짜 흐름 스레드를 하나만 돌린다(앞 흐름은 멈춘 뒤)."""
@@ -227,6 +270,20 @@ class MockRobot:
     def command(self, b):
         """hmi/command 처리 → (success, reason). 실제 작업 관리자 규칙을 간단히 흉내(잠금 · 상태 · 설계)."""
         cmd, design_id, state = b.get('cmd'), b.get('design_id') or '', self.st['state']
+        if cmd == 'gripper_open':
+            # [그리퍼 열기](W183 · 10/13 PL): 작업 관리자가 STOPPED(잠김)일 때만 /d2/gripper/command(0.0865 m · 10 N) — 그 밖엔 거절
+            if state != 'STOPPED' or self.opening:
+                return False, 'BUSY'
+            self.opening = True
+            self.set_state(state, '그리퍼를 여는 중이에요', 'gripper_opening')
+            threading.Thread(target=self._open_gripper, daemon=True).start()   # 답은 바로, 열림 완료는 state/2 로(진짜와 같게)
+            return True, ''
+        if cmd == 'cancel' and state == 'STOPPED':
+            # [초기화](W183 · W184): 정지 뒤 이번 조립을 버린다 — 잠금은 그대로, [다시 시작]이 풀면 이어 가지 않고 IDLE(작업 관리자
+            # RECOVER 의 '조립 중이 아니었으면 IDLE' 규칙과 같게). 로봇은 움직이지 않는다
+            self.assembling, self.placed = False, []
+            self.set_state('STOPPED', '이번 조립을 버렸어요 — 잠금을 풀면 대기로 가요', 'stopped', part_id=None)
+            return True, ''
         if self.locked:
             return False, 'STOPPED'
         if cmd == 'select_design':
@@ -289,7 +346,7 @@ class MockRobot:
         client.subscribe([(req_topic(n), 1) for n in SERVICES] + [(res_topic(GET_DESIGN), 1)])
         self.set_safety(self.locked)
         self.set_state(self.st['state'], self.st['message'], self.st['message_id'])
-        self.pub('d2/gripper/state', {'schema': 'gripper_state/1', 'width_m': None, 'grasped': False}, qos=0)
+        self.set_gripper(False)
 
     def _on_message(self, client, _u, msg):
         """요청 하나에 답한다. retained 로 남은 옛 요청 · 깨진 요청은 버린다(다리와 같은 규칙)."""

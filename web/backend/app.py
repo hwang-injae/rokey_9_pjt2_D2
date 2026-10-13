@@ -41,6 +41,20 @@ RECIPE_DIR = Path(os.environ.get('RECIPE_DIR') or REPO / 'src' / 'd2_robot' / 'd
 log = logging.getLogger('web')
 
 
+class FrontendFiles(StaticFiles):
+    """frontend/out 정적 서빙 — 페이지 · 그 밖 파일에 Cache-Control: no-cache(매번 ETag 로 바뀌었나만 확인)를 붙인다.
+
+    헤더가 없으면 브라우저가 옛 index.html 을 추측으로 다시 써서, 새 빌드를 올려도 옛 화면(옛 버튼 동작)이 보였다(10/13 확인).
+    이름에 해시가 붙은 _next/static 파일은 내용이 바뀌면 이름도 바뀌므로 그대로 둔다(캐시해도 됨).
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        resp = super().file_response(full_path, stat_result, scope, status_code)
+        if '/_next/static/' not in Path(full_path).as_posix():
+            resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+
 def load_rules(path=ROBOT_YAML):
     """robot.yaml 에서 웹이 쓰는 키만 읽는다(10/9 PL E-78 — 측정값 · 자세 · 원점은 안 읽음).
 
@@ -102,7 +116,7 @@ def create_app(mqtt=None, rules=None, store=None, gen=None):
     app.include_router(voice.router)
     app.include_router(ws.router)
     if FRONTEND_OUT.is_dir():
-        app.mount('/', StaticFiles(directory=FRONTEND_OUT, html=True), name='frontend')   # 마지막에 — /api · /ws 보다 뒤
+        app.mount('/', FrontendFiles(directory=FRONTEND_OUT, html=True), name='frontend')   # 마지막에 — /api · /ws 보다 뒤
     return app
 
 

@@ -295,7 +295,8 @@ def test_CtrlC는_정지요청_뒤에만_기록을_마무리한다():
     task = SimpleNamespace(manager=manager, get_logger=lambda: logger,
                            cancel_active=lambda: events.append('cancel'),
                            request_stop=lambda _why: (events.append('stop') or True, ''),
-                           destroy_node=lambda: events.append('destroy'))
+                           destroy_node=lambda: events.append('destroy'),
+                           w144_finish=lambda _done: events.append('w144 finish'))
     executor = SimpleNamespace(add_node=lambda _n: None, spin=lambda: None,
                                shutdown=lambda **_kw: events.append('executor shutdown'))
     scope = dict(logging=logging, init_ros=lambda: None, TaskNode=lambda: task,
@@ -304,7 +305,8 @@ def test_CtrlC는_정지요청_뒤에만_기록을_마무리한다():
                  time=time, LOOP_S=0, LOG_FLUSH_S=0)
     exec(compile(ast.Module(body=[main], type_ignores=[]), str(path), 'exec'), scope)
     scope['main']()
-    assert events == ['shutdown', 'cancel', 'stop', 'finalize', 'executor shutdown', 'destroy', 'ros shutdown']
+    # 세우기가 목표 취소보다 먼저(one_pick), W144 녹화는 기록 마무리 뒤 · executor 끄기 전에 닫는다(bag 정상 종료 · ZIP)
+    assert events == ['shutdown', 'stop', 'cancel', 'finalize', 'w144 finish', 'executor shutdown', 'destroy', 'ros shutdown']
 
 
 def test_목표에_obstacles가_있으면_그대로_싣고_없으면_빈_목록(node):
@@ -366,7 +368,7 @@ def test_거절_시간초과_우리쪽_취소는_결과_수신_시각이_없다(
     at = []
     rejected = Handle(); rejected.accepted = False
     node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(rejected))
-    assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'ERROR')           # 거절
+    assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'BUSY')            # 거절 = 집기 노드가 다른 목표 중(쉬었다 다시)
     h = Handle()                                                                                      # 결과가 안 옴 → 시간 초과
     node.pick_cli = SimpleNamespace(send_goal_async=lambda _g: completed(h))
     assert node.pick_place(goal(), lambda: False, on_result=at.append) == (False, 'TIMEOUT')

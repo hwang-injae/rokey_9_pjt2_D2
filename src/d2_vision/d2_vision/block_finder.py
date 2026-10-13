@@ -21,6 +21,8 @@
   - overlap: none · top(다른 블록 위에 올라앉음 · 걸침) · under(다른 블록에 덮임 — 보이는 면이 작거나 위에 걸친 블록이 맞닿음,
     또는 모양이 블록 하나와 안 맞는 덩어리 — 어느 쪽이든 집지 않고 틈 · 장애물로만 쓴다).
   - tilted: 윗면 평면의 양 끝 높이 차 ≥ TILT_MM(5 mm, E-43).
+  - tilted 가 true 인 블록에만 두 칸을 더한다(10/13): center_top_z_m = 윗면 가운데 평면 높이(m) · normal = 윗면 단위 법선 [nx, ny, nz]
+    (위쪽, 평면 맞춤에서). 기울지 않은 블록은 위 칸 그대로.
 단위: 이 파일 안 좌표는 m(base_link), 치수 · 틈 · 높이 비교는 mm. 높이 지도는 block_checker.height_map(스캔 추론기와 같은 함수)을 쓴다.
 cv2 는 예비 마스크(masks_from_edges)에서만 쓴다 — 뒷단은 numpy 만 써서 CI(cv2 없음)에서도 시험한다.
 """
@@ -81,7 +83,7 @@ def finder_cfg(robot):
 
     입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m ·
     supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} — 흩뿌린 공급 영역(빨간 테이프) 안쪽 직사각형 m, 10/11 박진용 교시 · 민범진 확인).
-    출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m}.
+    출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m, 'clip_margin_m': 잘린 윤곽 판정 영역 여유 m(손가락 여유, 키가 없으면 0)}.
     실패: 키가 없으면 KeyError, supply_area_m 의 x_m · y_m 이 두 수가 아니거나 최소 ≥ 최대면 ValueError (설정 오류 — 노드가 시작할 때 드러나게).
     """
     size = robot.get('block_actual_m') or robot['block_size_m']    # 실측 치수가 있으면 그것(쌓는 높이 · 장면 상자와 같은 값)
@@ -92,6 +94,10 @@ def finder_cfg(robot):
         'grasp_depth_m': float(robot['grasp_depth_m']),
         'finger_width_m': float(robot['finger']['width_m']),
         'area_m': _area_rect(robot['supply_area_m']),
+        # 잘린 윤곽 판정(_clipped)만 영역을 손가락 여유(가장 넓게 연 폭/2 + 손가락 두께)만큼 넓혀 본다 — 10/13 004 실기: 윤곽이 다 보이는
+        # 블록이 귀퉁이 3 mm 가 테이프 안쪽 직사각형 밖이라 '잘림 → 덮임'으로 빠져 공급 대기. 높이 지도(height_grid.supply_map_area)와 같은 여유
+        'clip_margin_m': max(float(v) for v in robot['grasp_open_pick_m'].values()) / 2 + float(robot['finger']['thickness_m'])
+        if 'grasp_open_pick_m' in robot and 'finger' in robot and 'thickness_m' in robot['finger'] else 0.0,
     }
 
 
@@ -309,7 +315,7 @@ def _refine_top(blk, cfg):
 
 
 def _clipped(mask, P, h_mm, h_c, cfg):
-    """윤곽이 잘렸나(bool): 영상 테두리 BORDER_PX 안에 닿음 · 마스크 픽셀이 흩뿌릴 영역 밖(CLIP_OUT_FRAC 넘게) ·
+    """윤곽이 잘렸나(bool): 영상 테두리 BORDER_PX 안에 닿음 · 마스크 픽셀이 흩뿌릴 영역(손가락 여유 clip_margin_m 만큼 넓힌 것) 밖(CLIP_OUT_FRAC 넘게) ·
     마스크 바로 바깥(CLIP_RING_PX)에 영역 밖이면서 내 높이 h_c(mm)의 CLIP_H_FRAC 이상인 픽셀이 있음(블록이 영역 밖으로 이어짐 —
     예비 마스크는 영역 안에서만 만들어져 경계에서 잘려 나온다)."""
     b = BORDER_PX
@@ -321,7 +327,9 @@ def _clipped(mask, P, h_mm, h_c, cfg):
     v0, v1, u0, u1 = win
     m = mask[v0:v1, u0:u1]
     Pw = P[v0:v1, u0:u1]
-    inside = _in_area(Pw, cfg)
+    mg = float(cfg.get('clip_margin_m') or 0.0)
+    (x0, x1), (y0, y1) = cfg['area_m']
+    inside = _in_area(Pw, dict(cfg, area_m=((x0 - mg, x1 + mg), (y0 - mg, y1 + mg))))
     known = np.isfinite(Pw[..., 0])
     if (m & known & ~inside).sum() > CLIP_OUT_FRAC * max(m.sum(), 1):
         return True
@@ -405,6 +413,44 @@ def _gaps(blk, P, h_mm, valid, slope, others, cfg):
     return out
 
 
+TILT_FIT_MIN_PTS = 50       # 기울어진 블록 윗면을 다시 맞출 점이 이보다 적으면 평면 칸을 안 낸다(one_pick tilt_pose 와 같은 50 — 그 블록은 기울여 집기 후보에서 빠진다)
+TILT_FIT_RESID_M = 0.003    # 다시 맞출 때 평면에서 이보다 먼 점은 빼고 한 번 더(one_pick fit_plane 3 mm, 두 번)
+TILT_FIT_INSET_M = (0.008, 0.004)   # 블록 사각형 안쪽만 — 길이 방향 8 mm · 폭 방향 4 mm 안으로(옆면 · 걸친 블록 점 빼기, one_pick 과 같음)
+
+
+def _tilt_keys(b, P, table_z, cfg):
+    """기울어진 블록(tilted)에만 더하는 칸 — 작업 관리자가 기울여 집기 자세(윗면 법선 · 가운데 높이)를 알게.
+
+    10/13 실기에서 확인한 시험 도구(one_pick tilt_pose)와 같은 방법으로 윗면 평면을 다시 맞춘다: 응답 블록 b 의 중심 · yaw 로 만든 사각형 안쪽
+    (길이 L/2 − 8 mm · 폭 W/2 − 4 mm) 점 중 작업면 + 4 mm ~ top_z_m + 5 mm 인 점에 z = a·x + b·y + c 를 맞추고(3 mm 넘게 먼 점 빼고 한 번 더),
+    윗면 가운데 높이 = 블록 중심 (x, y) 에서의 평면 높이. 마스크 깎기로 맞춘 평면(_measure)은 쓰지 않는다(b1 one_pick 대조 #5).
+    입력: b = 응답 블록 dict(x_m · y_m · yaw_deg · top_z_m) · P = base 점 (H, W, 3) m · table_z = 작업면 높이 m · cfg = finder_cfg(size_m).
+    출력: {"center_top_z_m": 윗면 가운데 평면 높이 m(소수 4자리), "normal": 윗면 단위 법선 [nx, ny, nz](nz > 0, 소수 4자리)}
+    또는 {}(점이 TILT_FIT_MIN_PTS 보다 적음 — 칸을 안 내면 그 블록은 기울여 집기 후보가 아니다). 바깥 영향 없음."""
+    L, W = cfg['size_m'][0], cfg['size_m'][1]
+    pts = np.asarray(P, float).reshape(-1, 3)
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    c, s = math.cos(math.radians(b['yaw_deg'])), math.sin(math.radians(b['yaw_deg']))
+    dx, dy = pts[:, 0] - b['x_m'], pts[:, 1] - b['y_m']
+    along, across = dx * c + dy * s, -dx * s + dy * c
+    sel = pts[(np.abs(along) < L / 2 - TILT_FIT_INSET_M[0]) & (np.abs(across) < W / 2 - TILT_FIT_INSET_M[1])
+              & (pts[:, 2] > table_z + 0.004) & (pts[:, 2] < b['top_z_m'] + 0.005)]
+    if len(sel) < TILT_FIT_MIN_PTS:
+        return {}
+    A = np.c_[sel[:, 0], sel[:, 1], np.ones(len(sel))]
+    z = sel[:, 2]
+    for _ in range(2):
+        coef = np.linalg.lstsq(A, z, rcond=None)[0]
+        keep = np.abs(A @ coef - z) < TILT_FIT_RESID_M
+        if keep.sum() < 3:
+            return {}
+        A, z = A[keep], z[keep]
+    n = np.array([-coef[0], -coef[1], 1.0])          # z = a·x + b·y + c 의 위쪽 법선
+    n /= np.linalg.norm(n)
+    top = float(coef[0] * b['x_m'] + coef[1] * b['y_m'] + coef[2])
+    return {'center_top_z_m': round(top, 4), 'normal': [round(float(v), 4) for v in n]}
+
+
 def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=None):
     """블록 마스크 목록 → find_blocks 응답의 blocks 목록 (공용 뒷단 — YOLO seg 마스크든 예비 마스크든 같다).
 
@@ -468,6 +514,8 @@ def blocks_from_masks(masks, depth_m, intr, T_base2cam, cfg, scores=None, info=N
             'tilted': bool(blk['tilted']),
             'confidence': round(blk['confidence'], 2),
         }))
+        if blk['tilted']:
+            out[-1][1].update(_tilt_keys(out[-1][1], P, table_z, cfg))
     out.sort(key=lambda t: -t[1]['top_z_m'])
     if info is not None:
         info['table_z_m'] = table_z

@@ -1,6 +1,6 @@
 // 화면이 받는 JSON 꼴 — IRD 6장 칸 그대로(정본은 IRD). backend 는 MQTT 로 받은 JSON 을 고치지 않고 넘긴다.
 
-export type Cmd = 'select_design' | 'start' | 'scan' | 'cancel';
+export type Cmd = 'select_design' | 'start' | 'scan' | 'cancel' | 'gripper_open';
 
 /** state/2 — 작업 관리자 상태(IRD 2장 state · message_id) */
 export interface TaskState {
@@ -86,6 +86,7 @@ export type WsEvent =
   | { type: 'broker'; data: { connected: boolean } }
   | { type: 'wrist_image'; data: { seq: number; stamp: number } }
   | { type: 'scan_image' | 'scan_cloud'; data: BlobInfo }
+  | { type: 'scan_preview'; data: ScanPreview }
   | { type: 'timing'; data: { req_timeout_s: number } }
   | { type: 'gen'; data: GenEvent }
   | { type: 'scan_save'; data: ScanSaveJob & { stage: string } };
@@ -96,6 +97,16 @@ export interface BlobInfo {
   stamp: number;
   bytes: number;
   run_id?: string;
+}
+
+/** /ws {type: scan_preview} — 스캔 중 점군 미리보기 하나(E-82, IRD 6장 scan_preview/1.0). PLY 는 /api/robot/scan_preview.ply?kind=…
+ *  capture = 자세마다 지금까지 모은 누적본(최신 index 로 바꿔 그림) · live = 지금 카메라가 보는 것(1 ~ 2 Hz, 덮어씀) */
+export interface ScanPreview extends BlobInfo {
+  run_id: string;
+  index: number;
+  kind: 'capture' | 'live';
+  pose_id?: string | null;
+  points?: number | null;
 }
 
 /** 스캔 [그대로 저장] 작업(IRD 8.4 ⑦ — GET /api/designs/scan/save/{job_id}). 실패면 actions = 남길 버튼(scope = 취소만) */

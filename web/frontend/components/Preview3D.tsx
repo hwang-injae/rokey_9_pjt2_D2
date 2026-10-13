@@ -149,7 +149,7 @@ export default function Preview3D({ items, blockMm, frameKey, dark }: { items: I
       clear(blocks);
       clear(floor);
       renderer.dispose();
-      el.removeChild(renderer.domElement);
+      renderer.domElement.remove(); // 부모가 먼저 지워졌어도 예외 없이(화면 전체가 죽지 않게)
       s3.current = null;
       framed.current = '';
     };

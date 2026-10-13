@@ -78,6 +78,8 @@ export const wristUrl = (seq: number) => `${BASE}/api/robot/wrist.jpg?seq=${seq}
 /** 마지막 스캔 사진(JPEG) · 점군(PLY) 주소 — seq 가 바뀔 때마다 새로 받는다 */
 export const scanImageUrl = (seq: number) => `${BASE}/api/robot/scan.jpg?seq=${seq}`;
 export const scanCloudUrl = (seq: number) => `${BASE}/api/robot/scan_cloud.ply?seq=${seq}`;
+/** 스캔 중 점군 미리보기(PLY — E-82). kind 별 마지막 하나 */
+export const scanPreviewUrl = (kind: 'capture' | 'live', seq: number) => `${BASE}/api/robot/scan_preview.ply?kind=${kind}&seq=${seq}`;
 
 // ---------- AI 생성(W108 · W112) ----------
 const AI_TIMEOUT_MS = 15000; // 생성 시작 · 저장 요청 기본 기다림(생성 자체는 뒤에서 돌고 진행은 /ws 로 온다)

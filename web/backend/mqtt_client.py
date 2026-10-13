@@ -10,7 +10,8 @@ import time
 import uuid
 
 import paho.mqtt.client as mqtt
-from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, PendingReplies, SeenIds, alive_payload,
+from d2_bridge.bridge_codec import (PREVIEW_KINDS, SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, SCAN_PREVIEW_CLOUD_TOPIC, SCAN_PREVIEW_TOPIC,
+                                    PendingReplies, SeenIds, alive_payload,
                                     parse_request, req_topic, res_topic)
 
 STATE_TOPICS = {            # MQTT 상태 토픽(retained) → /ws 이벤트 type
@@ -66,6 +67,9 @@ class MqttClient:
         self.state = {}                  # /ws type → 마지막 상태 dict
         self._blobs, self._blob_seq = {}, {}   # 바이트 토픽 type → 마지막 바이트 · 받은 번호(화면이 새 것인지 아는 데 씀)
         self._scan_run = None            # 마지막 scan_result 의 run_id — 스캔 사진 · 점군을 이 스캔의 것으로 짝짓는다
+        self._preview_run = None         # 점군 미리보기(E-82)의 run_id — 새 스캔이면 앞 미리보기를 지운다
+        self._preview_wait = None        # PLY 를 기다리는 미리보기 JSON(다리가 JSON 바로 뒤에 PLY 를 보냄 — IRD 10.5)
+        self._preview_last = {}          # kind → 이 run 에서 마지막으로 그린 index(늦게 온 옛 미리보기를 버림)
         self._bridge_alive, self._bridge_seen_at = False, None
         self._stop = threading.Event()
         self.client = client or make_mqtt_client(CLIENT_ID)
@@ -123,7 +127,7 @@ class MqttClient:
         """(paho 스레드) 붙으면 상태 · 다리 연결 신호 · 의도 · 응답 · 로봇 요청 토픽을 구독한다."""
         if rc != 0:
             return
-        topics = list(STATE_TOPICS) + [BRIDGE_ALIVE_TOPIC, INTENT_TOPIC] + \
+        topics = list(STATE_TOPICS) + [BRIDGE_ALIVE_TOPIC, INTENT_TOPIC, SCAN_PREVIEW_TOPIC, SCAN_PREVIEW_CLOUD_TOPIC] + \
             [res_topic(n) for n in WEB_CALLS] + [req_topic(n) for n in ROBOT_CALLS]
         client.subscribe([(t, 1) for t in topics] + [(t, qos) for t, (_kind, qos) in BLOB_TOPICS.items()])
         self._emit('broker', {'connected': True})
@@ -186,6 +190,9 @@ class MqttClient:
         if msg.topic in BLOB_TOPICS:           # 그림 · 점군은 JSON 이 아니라 따로 — 들고만 있고 화면에는 번호만 알린다
             self._on_blob(BLOB_TOPICS[msg.topic][0], bytes(msg.payload))
             return
+        if msg.topic == SCAN_PREVIEW_CLOUD_TOPIC:
+            self._on_preview_cloud(bytes(msg.payload))
+            return
         try:
             if msg.topic in STATE_TOPICS:
                 self._on_state(STATE_TOPICS[msg.topic], json.loads(msg.payload))
@@ -193,6 +200,8 @@ class MqttClient:
                 self._on_bridge_alive(json.loads(msg.payload))
             elif msg.topic == INTENT_TOPIC:
                 self._emit('intent', json.loads(msg.payload))
+            elif msg.topic == SCAN_PREVIEW_TOPIC:
+                self._on_preview(json.loads(msg.payload))
             elif msg.topic.endswith('/res'):
                 body = parse_request(msg.payload)
                 self.pending.resolve(body['req_id'], body)
@@ -228,6 +237,39 @@ class MqttClient:
                 info['run_id'] = self._scan_run
             self.state[kind] = info
         self._emit(kind, info)
+
+    def _on_preview(self, data):
+        """스캔 중 점군 미리보기 JSON(scan_preview/1.0, E-82)을 PLY 를 기다리는 자리에 둔다. 새 run_id 면 앞 미리보기를 지운다.
+        같은 kind 에서 이미 받은 index 보다 작거나 같으면(늦게 온 옛 것) 버린다 — 화면은 최신 index 로만 바꿔 그린다(IRD 10.5).
+        모양이 틀리면(객체 아님 · 모르는 kind · run_id 글자 아님 · index 정수 아님) 버린다(판단 · 고치기 없음)."""
+        if not isinstance(data, dict) or data.get('kind') not in PREVIEW_KINDS or not isinstance(data.get('run_id'), str) \
+                or not isinstance(data.get('index'), int) or isinstance(data.get('index'), bool):
+            return
+        with self._lock:
+            if data['run_id'] != self._preview_run:
+                self._preview_run = data['run_id']
+                for kind in PREVIEW_KINDS:
+                    self._blobs.pop(f'scan_preview_{kind}', None)
+                self._preview_last = {}
+                self.state.pop('scan_preview', None)
+            last = self._preview_last.get(data['kind'], 0)
+            self._preview_wait = data if data['index'] > last else None
+
+    def _on_preview_cloud(self, data):
+        """미리보기 PLY 바이트 — 바로 앞 JSON 과 짝지어 kind 별 마지막 하나만 들고 {seq, stamp, bytes, run_id, index, kind, pose_id, points}
+        를 /ws {type: scan_preview} 로 알린다(내용은 GET /api/robot/scan_preview.ply?kind=…). 짝이 없으면(JSON 을 못 받음) 버린다."""
+        with self._lock:
+            meta, self._preview_wait = self._preview_wait, None
+            if meta is None:
+                return
+            key = f"scan_preview_{meta['kind']}"
+            seq = self._blob_seq.get(key, 0) + 1
+            self._blob_seq[key], self._blobs[key] = seq, data
+            self._preview_last[meta['kind']] = meta['index']
+            info = {'seq': seq, 'stamp': round(time.time(), 3), 'bytes': len(data),
+                    **{k: meta.get(k) for k in ('run_id', 'index', 'kind', 'pose_id', 'points')}}
+            self.state['scan_preview'] = info       # 화면이 새로 붙으면 마지막 미리보기 하나를 먼저 받는다
+        self._emit('scan_preview', info)
 
     def _on_bridge_alive(self, data):
         """다리 연결 신호. alive 가 정확히 true 일 때만 수신 시각을 갱신(받은 시각 기준 — 두 PC 시계를 맞추지 않는다)."""

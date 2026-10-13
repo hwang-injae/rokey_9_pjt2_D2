@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BASE, setReqTimeout } from './api';
 import { stateName, stopReasonKo } from './names';
-import type { BlobInfo, GenEvent, GripperState, Intent, Progress, SafetyState, ScanResult, ScanSaveJob, TaskState, WsEvent } from './types';
+import type { BlobInfo, GenEvent, GripperState, Intent, Progress, SafetyState, ScanPreview, ScanResult, ScanSaveJob, TaskState, WsEvent } from './types';
 
 const RETRY_MS = 2000;
 const LOG_MAX = 100; // 화면 로그 줄 수(오래된 것부터 지움)
@@ -28,14 +28,20 @@ export interface Robot {
   gen: GenEvent | null; // 마지막 AI 생성 알림 — 생성 패널이 받으면 job 을 다시 받는다(W112)
   scanImage: BlobInfo | null; // 마지막 스캔 사진 번호 · run_id(그림은 /api/robot/scan.jpg)
   scanCloud: BlobInfo | null; // 마지막 스캔 점군 번호 · run_id(PLY 는 /api/robot/scan_cloud.ply)
+  scanPreview: { run_id: string; capture?: ScanPreview; live?: ScanPreview } | null; // 스캔 중 점군 미리보기(E-82) — kind 별 마지막 하나
   scanSave: (ScanSaveJob & { stage: string }) | null; // 마지막 스캔 [저장] 알림 — 비교 화면이 받으면 job 을 다시 받는다
   log: LogLine[];
 }
 
 const EMPTY: Robot = {
   ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null,
-  wrist: null, gen: null, scanImage: null, scanCloud: null, scanSave: null, log: [],
+  wrist: null, gen: null, scanImage: null, scanCloud: null, scanPreview: null, scanSave: null, log: [],
 };
+
+/** 작업 관리자가 그리퍼를 여는 중인가(state/2 message_id gripper_opening — 10/13 18시 PL, W183 · W184). 이 동안 화면은 조립 · 스캔 ·
+ *  다시 열기를 막는다. retained 마지막 state/2 로 판정하므로 새로고침 · 다시 붙어도 그대로이고, gripper_done 이나 그 뒤 다른 값이
+ *  오면 풀린다(완료 알림을 놓쳐도). message_id 로만 가르고 문구는 비교하지 않는다. 열렸는지는 gripper/state(잡힘 · 폭)로 따로 본다 */
+export const gripperOpening = (r: Robot) => r.state?.message_id === 'gripper_opening';
 
 function wsUrl(): string {
   const base = BASE || window.location.origin;
@@ -86,7 +92,8 @@ export function useRobot(): [Robot, (kind: string, text: string) => void] {
 
 /** 이벤트 하나를 상태에 반영하고, 사람이 볼 만한 변화만 로그에 남긴다(같은 상태 · 같은 글이면 안 남김) */
 function apply(r: Robot, e: WsEvent): Robot {
-  const log = (text: string) => [{ t: Date.now(), kind: e.type, text }, ...r.log].slice(0, LOG_MAX);
+  // kind = 기록 글 색(globals.css .log-<kind>). 연결됨 · 정지 풀림 같은 좋은 소식은 'ok' 로 — 빨강은 끊김 · 정지에만
+  const log = (text: string, kind: string = e.type) => [{ t: Date.now(), kind, text }, ...r.log].slice(0, LOG_MAX);
   switch (e.type) {
     case 'state': {
       const s = e.data;
@@ -96,7 +103,7 @@ function apply(r: Robot, e: WsEvent): Robot {
     case 'safety': {
       const s = e.data;
       const same = r.safety && r.safety.locked === s.locked && r.safety.reason === s.reason;
-      return { ...r, safety: s, log: same ? r.log : log(s.locked ? stopReasonKo(s.reason) : '정지 풀림') };
+      return { ...r, safety: s, log: same ? r.log : s.locked ? log(stopReasonKo(s.reason)) : log('정지 풀림', 'ok') };
     }
     case 'progress':
       return { ...r, progress: e.data };
@@ -107,7 +114,7 @@ function apply(r: Robot, e: WsEvent): Robot {
     case 'intent':
       return { ...r, intent: e.data, log: log(`음성 ${e.data.intent}${e.data.text ? ' — ' + e.data.text : ''}`) };
     case 'bridge_alive':
-      return { ...r, bridge: e.data.alive, log: r.bridge === e.data.alive ? r.log : log(e.data.alive ? '로봇 PC 연결됨' : '로봇 PC 연결 끊김') };
+      return { ...r, bridge: e.data.alive, log: r.bridge === e.data.alive ? r.log : e.data.alive ? log('로봇 PC 연결됨', 'ok') : log('로봇 PC 연결 끊김') };
     case 'broker':
       return { ...r, broker: e.data.connected };
     case 'wrist_image': // 그림 자체는 /api/robot/wrist.jpg 로 받는다 — 로그에는 남기지 않음(검출 때마다 와서)
@@ -116,6 +123,13 @@ function apply(r: Robot, e: WsEvent): Robot {
       return { ...r, scanImage: e.data };
     case 'scan_cloud':
       return { ...r, scanCloud: e.data };
+    case 'scan_preview': {
+      // 새 스캔(run_id)이면 앞 미리보기를 버린다. 같은 kind 는 최신 index 로만 바꾼다(backend 도 거르지만 붙을 때 다시 오는 것까지)
+      const p = e.data;
+      const cur = r.scanPreview?.run_id === p.run_id ? r.scanPreview : { run_id: p.run_id };
+      if ((cur[p.kind]?.index ?? 0) > p.index) return r;
+      return { ...r, scanPreview: { ...cur, [p.kind]: p } };
+    }
     case 'scan_save': {
       const j = e.data;
       const text = j.stage === 'saved' ? '스캔 설계 저장됨' : j.stage === 'failed' ? `스캔 저장 실패 — ${j.message ?? ''}` : '';

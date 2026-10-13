@@ -14,7 +14,8 @@ import numpy as np
 import pytest
 import yaml
 
-from d2_vision.mock_scan import DEFAULT_FIND_BLOCK, MAX_RUNS, MockScan, blocks_to_points, load_recipe_files, structure_to_blocks
+from d2_vision.mock_scan import (DEFAULT_FIND_BLOCK, MAX_RUNS, MockScan, blocks_to_points, find_options, load_recipe_files,
+                                  structure_to_blocks)
 
 ROOT = Path(__file__).resolve().parents[3]
 RECIPES = ROOT / 'src/recipe_manager/recipes'
@@ -193,7 +194,8 @@ def test_find_default_is_ird_example(tmp_path):
     b = body['blocks'][0]
     assert b['clear'] == {'LENGTH': True, 'WIDTH': False}
     keys = ('x_m', 'y_m', 'top_z_m', 'yaw_deg', 'up', 'clear', 'gap_mm', 'overlap', 'tilted', 'confidence')
-    assert set(b) == set(keys)
+    assert set(b) == set(keys) | ({'center_top_z_m', 'normal'} if b['tilted'] else set())   # 기울어진 블록에만 두 칸(10/13)
+    assert set(body) == {'ok', 'blocks'}                                          # 선택 칸이 없으면 height_map 도 없다
     assert 'clear' not in DEFAULT_FIND_BLOCK                                       # 기본값을 바꾸지 않는다
 
 
@@ -218,3 +220,67 @@ def test_find_bad_param_is_error(tmp_path, param):
 def test_find_bad_request(tmp_path):
     ok, reason, _ = scanner(tmp_path).find('{"pose_id": "x"}')
     assert not ok and reason == 'SCAN_FAILED'
+
+
+# ---------------- find_blocks 선택 칸 (10/13: height_map · area spare) ----------------
+def robot_scanner(tmp_path):
+    """robot.yaml 을 넘긴 MockScan — 가짜 노드와 같은 설정(선택 칸 답에 table_z_m · supply_area_m · spare_spots · block_actual_m)."""
+    return MockScan(ORIGIN, BLOCK_MM, MIN_GAP, out_root=tmp_path, robot=CFG)
+
+
+def test_find_options_defaults_and_values():
+    """칸이 없으면 (false, supply) — 지금까지와 같은 답. 값이 틀리면 ValueError(노드가 SCAN_FAILED)."""
+    assert find_options({'run_id': 'R1'}) == (False, 'supply')
+    assert find_options({'run_id': 'R1', 'height_map': True, 'area': 'spare'}) == (True, 'spare')
+    for bad in ({'height_map': 1}, {'height_map': 'true'}, {'area': 'slots'}, {'area': None}):
+        with pytest.raises(ValueError):
+            find_options(dict(bad, run_id='R1'))
+
+
+def test_find_height_map_is_flat_table(tmp_path):
+    """height_map true → 공급 영역을 손가락 여유(가장 넓게 연 폭/2 + 손가락 두께)만큼 넓힌 영역 전체가 table_z_m 인 지도, 셀 2 mm,
+    z_m 길이 = nx · ny. 블록 답은 그대로."""
+    ok, _, body = robot_scanner(tmp_path).find('{"run_id": "R1", "height_map": true}')
+    assert ok and set(body) == {'ok', 'blocks', 'height_map'} and len(body['blocks']) == 1
+    hm = body['height_map']
+    area = CFG['supply_area_m']
+    m = max(CFG['grasp_open_pick_m'].values()) / 2 + CFG['finger']['thickness_m']
+    assert set(hm) == {'x0_m', 'y0_m', 'res_m', 'nx', 'ny', 'z_m'}
+    assert (hm['x0_m'], hm['y0_m'], hm['res_m']) == pytest.approx((area['x_m'][0] - m, area['y_m'][0] - m, 0.002))
+    assert hm['nx'] * hm['res_m'] >= area['x_m'][1] - area['x_m'][0] + 2 * m - 1e-9
+    assert hm['ny'] * hm['res_m'] >= area['y_m'][1] - area['y_m'][0] + 2 * m - 1e-9
+    assert len(hm['z_m']) == hm['nx'] * hm['ny'] and set(hm['z_m']) == {round(CFG['table_z_m'], 4)}
+    json.dumps(body, allow_nan=False)
+    assert 'height_map' not in robot_scanner(tmp_path).find('{"run_id": "R1", "height_map": false}')[2]
+
+
+def test_find_spare_default_and_param(tmp_path):
+    """area spare → 기본 = 받침 가운데 눕힌 블록 하나(받침 yaw 90 → −90, base_z_m = 받침 윗면), "[]" → 빈 받침.
+    height_map true 면 받침 둘레(받침 가운데 ± 블록 길이/2 + 손가락 여유)가 받침 윗면 높이인 지도를 붙인다(다시 잡기 전 손가락 자리 확인)."""
+    m = robot_scanner(tmp_path)
+    ok, _, body = m.find('{"run_id": "R1", "area": "spare", "height_map": true}')
+    assert ok and set(body) == {'ok', 'blocks', 'height_map'}
+    sp0 = CFG['spare_spots'][0]
+    r = CFG['block_actual_m'][0] / 2 + max(CFG['grasp_open_pick_m'].values()) / 2 + CFG['finger']['thickness_m']
+    hm = body['height_map']
+    assert (hm['x0_m'], hm['y0_m']) == pytest.approx((sp0['x_m'] - r, sp0['y_m'] - r))
+    assert set(hm['z_m']) == {round(sp0['z_m'], 4)}
+    assert 'height_map' not in m.find('{"run_id": "R1", "area": "spare"}')[2]
+    b, = body['blocks']
+    spot, T = CFG['spare_spots'][0], CFG['block_actual_m'][2]
+    # 받침 재기 값은 0.1 mm 로 반올림한다(spare_measure) — robot.yaml 받침 자리는 0.01 mm 까지 적혀 있다(10/13 한세교 교시 값)
+    assert (b['x_m'], b['y_m'], b['up'], b['base_z_m']) == (round(spot['x_m'], 4), round(spot['y_m'], 4), 'THICKNESS', round(spot['z_m'], 4))
+    assert b['top_z_m'] == round(spot['z_m'] + T, 4) and -90.0 <= b['yaw_deg'] < 90.0
+    assert b['gap_mm'] == {'LENGTH': 99.0, 'WIDTH': 99.0} and b['clear'] == {'LENGTH': True, 'WIDTH': True}
+    assert (b['overlap'], b['tilted'], b['confidence']) == ('none', False, 1.0)
+    assert m.find('{"run_id": "R1", "area": "spare"}', spare_json='[]')[2] == {'ok': True, 'blocks': []}
+    assert m.find('{"run_id": "R1"}')[2]['blocks'][0]['x_m'] == DEFAULT_FIND_BLOCK['x_m']   # area 없음 = 공급 영역 답 그대로
+
+
+def test_find_options_bad_request_and_missing_robot(tmp_path):
+    """선택 칸 값이 틀리면 SCAN_FAILED. robot 설정 없이 선택 칸을 쓰면 ERROR(둘 다 success=false)."""
+    ok, reason, _ = robot_scanner(tmp_path).find('{"run_id": "R1", "area": "table"}')
+    assert not ok and reason == 'SCAN_FAILED'
+    for req in ('{"run_id": "R1", "height_map": true}', '{"run_id": "R1", "area": "spare"}'):
+        ok, reason, body = scanner(tmp_path).find(req)
+        assert not ok and reason == 'ERROR' and body['ok'] is False

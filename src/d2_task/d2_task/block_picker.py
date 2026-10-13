@@ -52,14 +52,36 @@ def _num(v):
 class BlockPicker:
     """find_blocks 의 blocks 목록에서 집을 후보를 고른다.
 
-    입력: min_gap_mm(robot.yaml find.min_gap_mm — 집을 틈 기준, mm). 입력 blocks 는 바꾸지 않는다.
+    입력: min_gap_mm(robot.yaml find.min_gap_mm — 집을 틈 기준, mm), cfg(robot.yaml dict — rank 를 쓸 때만). 입력 blocks 는 바꾸지 않는다.
+    pick = 레시피 자세 · 잡기 축에 맞는 블록 하나(W130), rank = 흩뿌린 블록 집기 순서 후보 목록(10/13 확정안 — pick_rank.PickRanker).
     """
 
-    def __init__(self, min_gap_mm):
-        """기준 틈을 받는다. 유한한 양수가 아니면 ValueError(설정 오류)."""
+    def __init__(self, min_gap_mm, cfg=None):
+        """기준 틈과 (rank 용) robot.yaml dict 를 받는다. 기준 틈이 유한한 양수가 아니면 ValueError(설정 오류)."""
         if not _num(min_gap_mm) or min_gap_mm <= 0:
             raise ValueError(f'find.min_gap_mm 이 양수가 아니다: {min_gap_mm!r}')
         self.min_gap_mm = min_gap_mm
+        self._ranker = None
+        if cfg is not None:
+            from d2_task.pick_rank import PickRanker      # pick_rank 가 이 파일의 grasp_target · is_valid 를 쓴다(서로 부르기라 여기서 불러옴)
+            self._ranker = PickRanker(cfg)
+
+    def rank(self, blocks, failed=(), pts=None):
+        """흩뿌린 블록 집기 시도 후보를 해 볼 순서대로 돌려준다(10/13 박진용 확정안, 자세한 규칙은 pick_rank.PickRanker.rank).
+
+        입력: blocks = find_blocks 블록 목록(기울어진 블록은 center_top_z_m · tilt_tip_z_m 을 붙여야 후보), failed = 실패한 시도
+        [(x_m, y_m, 잡기, 각도 °, 옮김 m)], pts = 이번 관측의 깊이 점 (N, 3) m 또는 None(깊이 미리 거르기 안 함).
+        반환: ([(번호, 잡기, 각도 °, 옮김 m, 꼬리표)], {'깊이': 깊이로 거른 후보 수, '블록': {번호(1부터)}}).
+        cfg 없이 만들었으면 ValueError(부르는 쪽 실수)."""
+        if self._ranker is None:
+            raise ValueError('BlockPicker(min_gap_mm, cfg) 로 만들어야 rank 를 쓸 수 있다')
+        return self._ranker.rank(blocks, failed, pts)
+
+    def top_of(self, b):
+        """집을 블록 윗면 높이 (m) — 층 높이로 맞춘 값(pick_rank.PickRanker.top_of). cfg 없이 만들었으면 ValueError."""
+        if self._ranker is None:
+            raise ValueError('BlockPicker(min_gap_mm, cfg) 로 만들어야 top_of 를 쓸 수 있다')
+        return self._ranker.top_of(b)
 
     def pick(self, blocks, up, axis):
         """집을 블록을 고른다. up = 목표 자세(THICKNESS · WIDTH · LENGTH), axis = 잡는 축(LENGTH · WIDTH · THICKNESS, up 과 달라야 한다).

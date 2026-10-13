@@ -3,6 +3,7 @@
 
 메시지는 모두 {"type", "data"} 한 겹: state · progress · scan_result · safety · gripper · bridge_alive · broker · intent · wrist_image ·
 scan_image · scan_cloud(번호 · 크기 · run_id — 내용은 /api/robot/scan.jpg · scan_cloud.ply) ·
+scan_preview(스캔 중 점군 미리보기 — 번호 · run_id · index · kind, 내용은 /api/robot/scan_preview.ply?kind=…, E-82) ·
 timing(붙을 때 한 번 — 요청 시간 제한) (+ 생성 gen, W112).
 화면이 붙으면 들고 있는 마지막 값을 먼저 다 보내고(MQTT retained 자리), 그 뒤 바뀔 때마다 보낸다.
 """

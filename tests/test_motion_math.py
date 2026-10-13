@@ -115,6 +115,15 @@ def test_rg2_tip_height_monotonic():
     assert abs(drop_mm - 16.8) < 0.1, drop_mm
 
 
+@pytest.mark.parametrize('grasp', ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG'))
+def test_held_finger_angle_inside_urdf_limits(robot_cfg, grasp):
+    """블록을 문 손가락 각은 URDF rg2_finger_joint 범위(−0.5585 ~ 0.7854 rad) 안이고, 폭이 넓을수록 각이 작다(드라이버 식과 같음).
+    쥔 상태로 미리 계획해 볼 때 이 각을 MoveIt 에 넣으므로 범위 밖이면 계획이 엉뚱한 손가락으로 된다."""
+    a = mm.held_finger_angle(robot_cfg, grasp)
+    assert -0.5585 <= a <= 0.7854, a
+    assert mm.rg2_finger_angle(0.110) < mm.rg2_finger_angle(0.034) < mm.rg2_finger_angle(0.009)
+
+
 def _place_center(cfg, rot):
     """조립 원점 위에 rot 자세로 놓인 블록의 중심 (m) — 원점 z + 실측 블록 반높이."""
     o = cfg['assembly_origin']
@@ -337,3 +346,77 @@ def test_scan_structure_box(robot_cfg):
     assert mm.scan_structure_box(robot_cfg, 'home', far) is None
     cfg = dict(robot_cfg, scan={'poses': poses})                         # 상자 크기가 없으면 안 둔다
     assert mm.scan_structure_box(cfg, later[0], home) is None
+
+
+def _tilted(robot_cfg, deg, yaw=0.0):
+    """폭 축(블록 y) 둘레로 deg 만큼 들린 눕힌 블록 — 중심 (m) · 회전."""
+    rot = mm.rpy_matrix(math.radians(deg), 0.0, yaw)
+    return (0.45, 0.22, robot_cfg['table_z_m'] + 0.03), rot
+
+
+@pytest.mark.parametrize('deg', (15.3, 30.0, 45.0))
+def test_tilt_grip_is_normal_to_top_face(robot_cfg, deg):
+    """기울여 집기(TILT): less 0 이면 공구 z(접근 반대) = −윗면 법선, 닫는 축 = 블록 폭 축 ±, 손가락 끝 = 윗면 가운데 − 법선 × grasp_depth (W180)."""
+    c, rot = _tilted(robot_cfg, deg)
+    place = _place_center(robot_cfg, mm.rpy_matrix(0, 0, 0))
+    grips, _, _, held = mm.tilt_pick_place_tcp(robot_cfg, c, rot, place, mm.rpy_matrix(0, 0, 0), 0)
+    n, w = mm.column(rot, 2), mm.column(rot, 1)
+    T = robot_cfg['block_actual_m'][2]
+    for xyz, q, axis in grips:
+        x, y, z = mm.quat_axes(q)
+        assert close(z, [-v for v in n], 1e-6) and close(axis, n, 1e-6)
+        assert abs(abs(sum(a * b for a, b in zip(y, w))) - 1.0) < 1e-6
+        tip = [p - a * mm._tcp_z_for_tip(robot_cfg, 0.0, 'FLAT_SHORT') for p, a in zip(xyz, axis)]
+        expect = [cc + v * (T / 2 - robot_cfg['grasp_depth_m']) for cc, v in zip(c, n)]
+        assert close(tip, expect, 1e-9)
+    assert close(held['size_m'], [robot_cfg['block_actual_m'][0], robot_cfg['block_actual_m'][1], T], 1e-12)
+
+
+def test_tilt_less_leaves_tilt_in_hand_and_raises_place(robot_cfg):
+    """덜 기울여 집으면(less 10°) 손 안에 10° 가 남아 쥔 상자가 커지고, 놓는 TCP 는 낮은 끝만큼 올라간다. less 가 기울기보다 크면 None."""
+    c, rot = _tilted(robot_cfg, 30.0)
+    flat = mm.rpy_matrix(0, 0, 0)
+    place = _place_center(robot_cfg, flat)
+    _, p0, _, h0 = mm.tilt_pick_place_tcp(robot_cfg, c, rot, place, flat, 0)
+    _, p10, _, h10 = mm.tilt_pick_place_tcp(robot_cfg, c, rot, place, flat, 10)
+    L, _, T = robot_cfg['block_actual_m']
+    d = math.radians(10)
+    assert abs((p10[2] - p0[2]) - (L / 2 * math.sin(d) + T / 2 * (math.cos(d) - 1))) < 1e-9
+    assert h10['size_m'][2] > h0['size_m'][2]
+    assert mm.tilt_pick_place_tcp(robot_cfg, c, mm.rpy_matrix(math.radians(4.0), 0, 0), place, flat, 5) is None
+
+
+@pytest.mark.parametrize('deg', (1.0, 50.0))
+def test_tilt_rejects_out_of_range(robot_cfg, deg):
+    """윗면 기울기가 TILT_DEG(3 ~ 45°) 밖이면 ValueError — 움직이기 전에 거절."""
+    c, rot = _tilted(robot_cfg, deg)
+    flat = mm.rpy_matrix(0, 0, 0)
+    with pytest.raises(ValueError):
+        mm.tilt_pick_place_tcp(robot_cfg, c, rot, _place_center(robot_cfg, flat), flat, 0)
+
+
+@pytest.mark.parametrize('up, axis, deg', (('WIDTH', 0, 35.0), ('LENGTH', 1, 20.0)))
+def test_tip_lowest_edge_lands_beside_spot_and_falls_away_from_robot(robot_cfg, up, axis, deg):
+    """받침 눕히기(TIP): 블록을 TIP_DEG 만큼 기울여 놓으면 가장 낮은 모서리가 받침 + place_up 에 오고, 넘어지는 쪽이 로봇 반대(base → 받침)이며
+    두 손목 방향(flip) 결과가 같은 자리 · 같은 기울기다(one_pick tip_plan 과 같은 식 — 10/13 실기 옆으로 섬 3번 · 섬 1번)."""
+    L, W, T = robot_cfg['block_actual_m']
+    H = {'WIDTH': W, 'LENGTH': L}[up]
+    land = (0.3675, -0.285, 0.080 + T / 2)
+    # 받침 위 선 블록: 위 축(up)이 z, 긴 축이 y(옆으로 섬 yaw 90) — 섬은 넘어질 쪽(블록 길이 축)이 받침 긴 변 x
+    rot = mm.rpy_matrix(math.radians(90), 0, math.radians(90)) if up == 'WIDTH' else mm.rpy_matrix(0, math.radians(-90), 0)
+    assert mm.up_axis(rot) == up
+    center = (land[0], land[1], 0.080 + H / 2)
+    out = []
+    for flip in (False, True):
+        r, why = mm.tip_place_tcp(robot_cfg, center, rot, land, flip)
+        assert r is not None, why
+        assert r['grasp'] == mm.TIP_GRASP[up] and abs(abs(r['phi_deg']) - deg) < 1e-9
+        assert r['d'][0] * land[0] + r['d'][1] * land[1] > 0                    # 로봇 반대쪽으로 넘어짐
+        out.append(r['tcp1'])
+    assert max(abs(a - b) for a, b in zip(*out)) < 1e-9
+
+
+def test_tip_rejects_lying_block(robot_cfg):
+    """눕힌 블록은 눕히기(TIP) 대상이 아니다 — ValueError."""
+    with pytest.raises(ValueError):
+        mm.tip_place_tcp(robot_cfg, (0.37, -0.285, 0.0874), mm.rpy_matrix(0, 0, 0), (0.37, -0.285, 0.0874), False)

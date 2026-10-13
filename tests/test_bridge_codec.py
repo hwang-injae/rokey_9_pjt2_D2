@@ -146,6 +146,26 @@ def test_scan_files_rejects_bad(payload):
         bc.scan_files(payload)
 
 
+def test_preview_file_kind_limits_and_qos():
+    """scan_preview(E-82) → (run_id, kind, index, cloud_path, PLY 상한, QoS): capture = 2 MB · QoS 1, live = 500 KB · QoS 0(IRD 10.1)."""
+    body = {'schema': 'scan_preview/1.0', 'run_id': 'R1', 'pose_id': 'observe_front', 'index': 2, 'kind': 'capture',
+            'cloud_path': '/d/R1/preview_2.ply', 'points': 48211}
+    assert bc.preview_file(json.dumps(body)) == ('R1', 'capture', 2, '/d/R1/preview_2.ply', 2_000_000, 1)
+    assert bc.preview_file(json.dumps({**body, 'kind': 'live', 'index': 7}))[1:] == ('live', 7, '/d/R1/preview_2.ply', 500_000, 0)
+    assert bc.SCAN_PREVIEW_TOPIC == bc.mqtt_topic('/d2/vision/scan_preview') and bc.SCAN_PREVIEW_CLOUD_TOPIC == 'd2/vision/scan_preview_cloud'
+
+
+@pytest.mark.parametrize('change', [{'kind': 'full'}, {'kind': None}, {'cloud_path': ''}, {'cloud_path': None}, {'run_id': 3},
+                                    {'index': '2'}, {'index': True}])
+def test_preview_file_rejects_bad(change):
+    """모르는 kind · 경로 없음 · run_id 글자 아님 · index 정수 아님은 ValueError(다리는 JSON 만 옮기고 PLY 는 안 보냄)."""
+    body = {'run_id': 'R1', 'index': 1, 'kind': 'capture', 'cloud_path': '/d/p.ply', **change}
+    with pytest.raises(ValueError):
+        bc.preview_file(json.dumps(body))
+    with pytest.raises(ValueError):
+        bc.preview_file('[1, 2]')
+
+
 def test_fit_jpeg_shrinks_in_order_and_gives_up():
     """(배율, 품질)을 순서대로 해 보고 상한 안 첫 것을 쓴다. 끝까지 크거나 못 만들면 None."""
     tried = []

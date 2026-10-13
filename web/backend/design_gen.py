@@ -31,7 +31,8 @@ from design_store import AI_NONE, SCHEMA_PARTS, build_summary, family_of, split_
 LLM_URL = os.environ.get('D2_LLM_URL') or 'http://127.0.0.1:8790/v1'   # 중계 claude_bridge(컨테이너에서는 compose 가 호스트 주소로 줌)
 MODEL = os.environ.get('D2_LLM_MODEL') or 'opus'   # 설계 작성 · 스캔 채우기 — claude 별칭(opus · sonnet). 10/13 시험: 둘 다 벤치 · 책상 3/3 합격,
 #                                                     sonnet 은 책상 후보에 블록 35 ~ 54개(조립이 너무 김) — opus 는 16 ~ 18개라 기본
-CALL_TIMEOUT_S = 240             # 호출당 시간 제한 — 10/13 시험 후보 작성 한 번 31 ~ 165초(책상이 김)라 30초(TR-12)에서 늘림
+CALL_TIMEOUT_S = 260             # 호출당 시간 제한 — 10/13 시험 후보 작성 한 번 31 ~ 165초(책상이 김)라 30초(TR-12)에서 늘림.
+#                                  중계 RUN_TIMEOUT_S(240)보다 20초 길게(10/13 17시 PL) — 중계가 먼저 끊어야 claude 가 혼자 남지 않고 504 로 까닭이 온다
 CALL_RETRIES = 0                 # 다시 안 함 — 한 번이 1 ~ 2분이라 다시 하면 화면이 너무 오래 멈춘다. 실패는 화면에 알리고 사람이 다시 누른다
 MAX_READS = 2                    # 도구 get_design 최대 횟수(E-72)
 MAX_REGEN = 2                    # 통과 후보가 3개 안 될 때 모자란 만큼 더 만드는 횟수(처음 + 2번 — 10/11 PL N3 · A5)
@@ -60,10 +61,11 @@ MADE_KO = {'cad': '도면', 'web': '웹 글', 'voice': '음성', 'scan': '스캔
 class GenError(Exception):
     """생성이 끝까지 못 간 이유. code = OUT_OF_SCOPE · GEN_FAILED(IRD 7장) · ERROR · TIMEOUT(검사 서비스). 화면은 message 를 보여 준다."""
 
-    def __init__(self, code, message, detail=None):
-        """code · 사람에게 보일 한 줄 · detail(마지막 검사 errors 등 목록)."""
+    def __init__(self, code, message, detail=None, final=False):
+        """code · 사람에게 보일 한 줄 · detail(마지막 검사 errors 등 목록) ·
+        final(다시 불러도 안 풀리는 호출 실패 — 중계 꺼짐 · 시간 초과 · 사용 한도. 예시를 넣어 한 번 더도 하지 않는다)."""
         super().__init__(message)
-        self.code, self.message, self.detail = code, message, detail or []
+        self.code, self.message, self.detail, self.final = code, message, detail or [], final
 
 
 def scan_actions(errors):
@@ -181,8 +183,11 @@ class DesignGenerator:
             else:
                 try:
                     msg = self._read_and_answer(log, messages, allowed, read, progress, first='auto')
-                except GenError:
-                    # 도구 단계가 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환)
+                except GenError as e:
+                    # 도구 단계가 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환). 시간 초과 · 중계 꺼짐 · 한도는
+                    # 다시 불러도 같아 화면만 두 배로 멈추므로(한 번에 최대 4분씩 두 번) 바로 알린다
+                    if e.final:
+                        raise
                     log['fallback'] = True
                     read.clear()
                     messages[1:] = [{'role': 'user', 'content': request + '\n\n' + self._examples_text(template, base_id)}]
@@ -367,7 +372,10 @@ class DesignGenerator:
             try:
                 msg = self._read_and_answer(log, messages, allowed, read, lambda *_: None, fmt)
             except GenError as e:
-                # 도구 단계가 실패하면 대신할 부모의 블록 목록을 코드가 넣어 칸만 채우게 한 번 더(E-72 자동 전환과 같은 방식)
+                # 도구 단계가 실패하면 대신할 부모의 블록 목록을 코드가 넣어 칸만 채우게 한 번 더(E-72 자동 전환과 같은 방식).
+                # 시간 초과 · 중계 꺼짐 · 한도는 generate 와 같이 다시 부르지 않는다
+                if e.final:
+                    raise
                 fail_code = e.code
                 log['fallback'] = True
                 read.clear()
@@ -514,7 +522,9 @@ class DesignGenerator:
     def _chat(self, log, model, messages, response_format, **kw):
         """LLM 을 한 번 부르고 메시지를 돌려준다(temperature 0 — 중계는 무시). 응답 원문 · 걸린 시간 · 토큰 수를 log['calls'] 에 남긴다.
 
-        실패(중계 꺼짐 · 시간 초과 · 구독 한도 · 거절)는 GenError(GEN_FAILED). 다시 하지 않는다(CALL_RETRIES 0).
+        실패(중계 꺼짐 · 시간 초과 · 구독 한도 · 거절)는 GenError(GEN_FAILED). 다시 하지 않는다(CALL_RETRIES 0). 시간 초과(이쪽
+        CALL_TIMEOUT_S 또는 중계 504) · 중계 꺼짐 · 한도(중계 429 또는 글에 limit)는 final — 예시 넣어 한 번 더도 안 한다. 그 밖에 중계가
+        이유를 보냈으면({'error': {'message'}} — OpenAI 오류 모양) 그 글을 화면에 그대로(라이브러리 예외 이름만으로는 까닭을 모른다).
         응답 모양이 다르면(choices 없음 · 메시지가 글자뿐 등 — 10/13 민범진 보고 AttributeError) 그것도 GEN_FAILED 로(화면이 '오류'에 머물지 않게).
         """
         t0 = self.clock()
@@ -525,11 +535,15 @@ class DesignGenerator:
             raise
         except Exception as e:   # noqa: BLE001 — 어떤 실패든 화면에는 '생성 실패' 한 줄로
             log['calls'].append({'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'error': f'{type(e).__name__}: {e}'})
-            if type(e).__name__ == 'APIConnectionError':   # 중계가 안 떠 있음 — 기다려도 안 풀린다
-                raise GenError('GEN_FAILED', '설계 AI 중계(claude_bridge)가 꺼져 있어요 — 웹 PC 에서 켜 주세요') from e
-            if 'limit' in str(e).lower():                    # Claude 구독 사용 한도 — 몇 시간 뒤 풀린다
-                raise GenError('GEN_FAILED', 'Claude 사용 한도에 걸렸어요 — 기본 설계를 고르거나 나중에 다시') from e
-            raise GenError('GEN_FAILED', f'AI 호출 실패({type(e).__name__}) — 잠시 뒤 다시') from e
+            name, status, body = type(e).__name__, getattr(e, 'status_code', None), getattr(e, 'body', None)
+            if name == 'APITimeoutError' or status == 504:   # 한 번이 1 ~ 3분이라 다시 불러도 같은 길이로 멈춘다
+                raise GenError('GEN_FAILED', '설계 AI 가 시간 안에 답하지 않았어요 — 요청을 짧게 해서 다시', final=True) from e
+            if name == 'APIConnectionError':   # 중계가 안 떠 있음 — 기다려도 안 풀린다
+                raise GenError('GEN_FAILED', '설계 AI 중계(claude_bridge)가 꺼져 있어요 — 웹 PC 에서 켜 주세요', final=True) from e
+            if status == 429 or 'limit' in str(e).lower():   # Claude 구독 사용 한도 — 몇 시간 뒤 풀린다
+                raise GenError('GEN_FAILED', 'Claude 사용 한도에 걸렸어요 — 기본 설계를 고르거나 나중에 다시', final=True) from e
+            why = str(body.get('message') or '')[:200] if isinstance(body, dict) else ''
+            raise GenError('GEN_FAILED', f'설계 AI 실패 — {why}' if why else f'AI 호출 실패({name}) — 잠시 뒤 다시') from e
         try:
             msg = resp.choices[0].message
             call = {'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'content': msg.content,

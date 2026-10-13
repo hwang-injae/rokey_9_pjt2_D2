@@ -34,6 +34,7 @@ T_B2C = np.array([[0.999833, 0.018095, -0.002353, 0.389811],
                   [0.0, 0.0, 0.0, 1.0]])
 H, W = 480, 640
 POS_TOL_MM, YAW_TOL_DEG = 3.0, 3.0
+TILT_KEYS = {'center_top_z_m', 'normal'}   # tilted 블록에만 더하는 칸(10/13)
 TILT_TOP_TOL_MM = 3.0     # 기울어진 블록 윗면 가장 높은 점: 평면의 98 % 높이 · 가장자리 EDGE_PX 깎기만큼 정답(모서리)보다 조금 낮다
 
 
@@ -133,11 +134,15 @@ def check_pose(b, x_mm, y_mm, yaw_deg, up):
 
 
 def check_schema(blocks):
-    """IRD find_blocks 칸 그대로 · JSON 직렬화 가능(NaN 없음) · 윗면 높이 순 · 틈 키 = 수평 두 축."""
+    """IRD find_blocks 칸 그대로 · JSON 직렬화 가능(NaN 없음) · 윗면 높이 순 · 틈 키 = 수평 두 축.
+    tilted 블록에만 center_top_z_m · normal(단위 길이, 위쪽) 두 칸이 더 있다 — 기울지 않은 블록은 정확히 원래 칸."""
     json.dumps(blocks, allow_nan=False)
     want = {'x_m', 'y_m', 'top_z_m', 'yaw_deg', 'up', 'clear', 'gap_mm', 'overlap', 'tilted', 'confidence'}
     for b in blocks:
-        assert set(b) == want
+        assert set(b) == (want | TILT_KEYS if b['tilted'] else want)
+        if b['tilted']:
+            n = b['normal']
+            assert len(n) == 3 and abs(math.hypot(*n) - 1.0) < 1e-3 and n[2] > 0
         axes = {'THICKNESS': {'LENGTH', 'WIDTH'}, 'WIDTH': {'LENGTH', 'THICKNESS'}, 'LENGTH': {'WIDTH', 'THICKNESS'}}[b['up']]
         assert set(b['gap_mm']) == axes and set(b['clear']) == axes
         assert b['overlap'] in ('none', 'top', 'under') and isinstance(b['tilted'], bool)
@@ -254,6 +259,9 @@ def test_tilted_on_other_block():
     top_hi = top_c + (L / 2) * math.sin(th)          # 윗면 높은 끝(A 위로 올라간 쪽)
     got = (b['top_z_m'] - TABLE) * 1000
     assert abs(got - top_hi) <= TILT_TOP_TOL_MM and got > top_c + 5.0, (got, top_c, top_hi)
+    # center_top_z_m = 윗면 가운데 평면 높이 · normal = 윗면 법선 — B 는 길이 축이 +x 로 θ 올라가 법선이 (−sin θ, 0, cos θ)
+    assert abs((b['center_top_z_m'] - TABLE) * 1000 - top_c) <= TILT_TOP_TOL_MM, (b['center_top_z_m'], top_c)
+    assert np.allclose(b['normal'], [-math.sin(th), 0.0, math.cos(th)], atol=0.03), (b['normal'], math.degrees(th))
     a = by[0]
     assert a['overlap'] == 'under' and not a['tilted'] and a['up'] == 'THICKNESS', (a, info['detail'])
 
@@ -276,14 +284,18 @@ def test_stacked_cross():
 
 
 def test_clipped_at_tape_edge():
-    """테이프(supply_area_m) 위 변(y 312.3 mm)을 걸친 눕힌 블록(y 297.5 ~ 322.5) → 영역 밖으로 이어지니 under(집지 않음, 10/11).
-    같은 블록을 테이프 안(y 280)으로 옮기면 none. 영역을 끄면(area_m None) 걸친 블록도 none — 영상 테두리 탓이 아님을 본다."""
+    """테이프(supply_area_m) 위 변(y 312.3 mm)을 걸친 눕힌 블록(y 297.5 ~ 322.5): 잘림 판정 영역은 손가락 여유(clip_margin_m)만큼 넓어
+    none(10/13 004 실기 — 윤곽이 다 보이는데 귀퉁이 3 mm 가 테이프 밖이라 빠져 공급 대기). 여유를 0 으로 두면 예전처럼(10/11) 영역 밖으로
+    이어지니 under(집지 않음). 테이프 안(y 280)은 none, 영역을 끄면(area_m None) 걸친 블록도 none — 영상 테두리 탓이 아님을 본다."""
     depth, idx = render([block(383, 310, 0)])
+    assert CFG['clip_margin_m'] > 0.0125
     on_edge = blocks_from_masks([idx == 0], depth, INTR, T_B2C, CFG)
+    no_margin = blocks_from_masks([idx == 0], depth, INTR, T_B2C, {**CFG, 'clip_margin_m': 0.0})
     no_area = blocks_from_masks([idx == 0], depth, INTR, T_B2C, {**CFG, 'area_m': None})
     depth2, idx2 = render([block(383, 280, 0)])
     inside = blocks_from_masks([idx2 == 0], depth2, INTR, T_B2C, CFG)
-    assert on_edge[0]['overlap'] == 'under' and on_edge[0]['confidence'] <= 0.2, on_edge
+    assert on_edge[0]['overlap'] == 'none', on_edge
+    assert no_margin[0]['overlap'] == 'under' and no_margin[0]['confidence'] <= 0.2, no_margin
     assert no_area[0]['overlap'] == 'none', no_area
     assert inside[0]['overlap'] == 'none', inside
 
@@ -416,3 +428,18 @@ def test_real_separated_blocks_have_clear_axis():
     free = [b for b in blocks if b['overlap'] == 'none' and not b['tilted']]
     assert len(free) == 7, blocks
     assert sum(any(b['clear'].values()) for b in free) >= 6, [b['gap_mm'] for b in free]
+
+
+def test_기울어진_블록_평면은_사각형_안쪽_점으로_다시_맞추고_점이_모자라면_칸이_없다():
+    """_tilt_keys = one_pick tilt_pose 방법(블록 사각형 안쪽 · 작업면 + 4 mm ~ top + 5 mm 점, 3 mm 잔차 두 번, 50점 미만이면 칸 없음 — 10/13 b1 대조 #5)."""
+    from d2_vision.block_finder import _tilt_keys
+    th = math.radians(10.0)
+    xs, ys = np.meshgrid(np.linspace(-0.03, 0.03, 30), np.linspace(-0.008, 0.008, 9))
+    z = 0.02 + np.tan(th) * xs                                  # 길이 축(+x)으로 10° 올라간 윗면, 가운데 20 mm
+    P = np.stack([0.4 + xs, 0.2 + ys, z], axis=-1)
+    cfg = {'size_m': (0.07445, 0.0248, 0.0148)}
+    b = {'x_m': 0.4, 'y_m': 0.2, 'yaw_deg': 0.0, 'top_z_m': float(z.max())}
+    k = _tilt_keys(b, P, 0.0, cfg)
+    assert k['center_top_z_m'] == pytest.approx(0.02, abs=1e-4)
+    assert np.allclose(k['normal'], [-math.sin(th), 0.0, math.cos(th)], atol=1e-3)
+    assert _tilt_keys(b, P[:2, :5], 0.0, cfg) == {}              # 10점 — 50점 미만

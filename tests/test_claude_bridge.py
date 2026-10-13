@@ -4,7 +4,12 @@
 진짜 design_gen 생성기를 중계 앞에 붙여(HTTP 없이) 도구 읽기 → 후보 → 검사가 끝까지 도는지도 본다.
 """
 import json
+import subprocess
 import sys
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT / 'web', ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_task', ROOT / 'src' / 'd2_bridge'):
     sys.path.insert(0, str(p))
 
-from claude_bridge import BridgeError, ClaudeBridge  # noqa: E402
+from claude_bridge import BridgeError, ClaudeBridge, make_handler  # noqa: E402
 
 TOOL = {'type': 'function', 'function': {'name': 'get_design', 'strict': True, 'description': '설계 읽기',
         'parameters': {'type': 'object', 'additionalProperties': False, 'required': ['design_id'],
@@ -85,16 +90,55 @@ def test_model_alias_or_default():
     assert b.model_of('opus') == 'opus' and b.model_of('claude-opus-5-5') == 'claude-opus-5-5'
 
 
-@pytest.mark.parametrize('reply, words', [
-    ({'is_error': True, 'result': "You've hit your usage limit"}, 'limit'),
-    ({'is_error': False, 'result': '형식 없이 글만', 'structured_output': None}, '형식'),
+@pytest.mark.parametrize('reply, status, words', [
+    ({'is_error': True, 'result': "You've hit your usage limit"}, 429, 'limit'),
+    ({'is_error': True, 'result': 'API Error: overloaded'}, 502, 'overloaded'),
+    ({'is_error': False, 'result': '형식 없이 글만', 'structured_output': None}, 502, '형식'),
 ])
-def test_claude_failure_is_502(reply, words):
-    """claude 오류(사용 한도 등) · 형식 없는 답 → 502 + 이유 그대로(design_gen 이 화면에 알림)."""
+def test_claude_failure_status(reply, status, words):
+    """사용 한도(글에 limit — --check ③과 같은 판단) → 429, 그 밖 claude 오류 · 형식 없는 답 → 502. 이유는 그대로(화면이 보여 줌)."""
     run, _ = fake(reply)
     with pytest.raises(BridgeError) as e:
         ClaudeBridge('claude', 'sonnet', run).complete({'response_format': FMT, 'messages': [{'role': 'user', 'content': 'x'}]})
-    assert e.value.status == 502 and words in e.value.message
+    assert e.value.status == status and words in e.value.message
+
+
+def test_claude_timeout_is_504(monkeypatch):
+    """claude 가 제한 시간(기본 240초 — design_gen 260초보다 짧게) 안에 답하지 않으면 504 — 웹이 다시 부르지 않는 코드."""
+    def slow(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, kw['timeout'])
+    monkeypatch.setattr(subprocess, 'run', slow)
+    with pytest.raises(BridgeError) as e:
+        ClaudeBridge('claude', 'sonnet').complete({'messages': [{'role': 'user', 'content': 'x'}]})
+    assert e.value.status == 504 and '240초' in e.value.message
+
+
+def post(bridge, body):
+    """진짜 HTTP 처리기를 빈 포트에 띄워 POST /v1/chat/completions 한 번 → (상태 코드, JSON 몸)."""
+    server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(bridge))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    req = urllib.request.Request(f'http://127.0.0.1:{server.server_port}/v1/chat/completions',
+                                 data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read())
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_http_codes_reach_client():
+    """처리기가 BridgeError 코드를 그대로(한도 429), 예상 밖 예외는 끊지 않고 502 + '중계 안 오류: <이름>: <글>'로 답한다."""
+    run, _ = fake({'is_error': True, 'result': 'usage limit reached'})
+    code, body = post(ClaudeBridge('claude', 'sonnet', run), {'messages': [{'role': 'user', 'content': 'x'}]})
+    assert code == 429 and body['error']['type'] == 'claude_bridge' and 'limit' in body['error']['message']
+
+    def boom(argv, prompt):
+        raise RuntimeError('뜻밖')
+    code, body = post(ClaudeBridge('claude', 'sonnet', boom), {'messages': [{'role': 'user', 'content': 'x'}]})
+    assert code == 502 and body['error'] == {'message': '중계 안 오류: RuntimeError: 뜻밖', 'type': 'claude_bridge'}
 
 
 def test_design_gen_runs_through_bridge(tmp_path):
@@ -151,6 +195,8 @@ def fake_cmd(help_text=HELP_ALL, container='web-web-1', seen_from_container=True
             return 0, help_text
         if argv[:2] == ['docker', 'ps']:
             return 0, container + '\n' if container else ''
+        if argv[:3] == ['docker', 'network', 'inspect']:
+            return 0, '172.18.0.0/16\n'
         if argv[:2] == ['docker', 'exec']:
             return (0, '{"ok": true}') if seen_from_container else (1, 'URLError: timed out')
         raise AssertionError(argv)
@@ -208,7 +254,8 @@ def test_check_bridge_off_and_no_container():
 
 
 def test_check_container_cannot_see_bridge():
-    """웹 컨테이너에서 안 보이면 ⑥ ❌ + 방화벽 · extra_hosts 확인."""
+    """웹 컨테이너에서 안 보이면 ⑥ ❌ + 방화벽(웹 컨테이너 대역 = web_default 서브넷, docker0 아님) · extra_hosts 확인."""
     r = check(cmd=fake_cmd(seen_from_container=False)).run()
     assert r[5][0] == 'fail' and 'ufw' in r[5][3] and 'extra_hosts' in r[5][3] and 'timed out' in r[5][2]
+    assert '172.18.0.0/16' in r[5][3] and '172.17.0.0/16' not in r[5][3]
     assert '❌ 1개' in SetupCheck.report(r)

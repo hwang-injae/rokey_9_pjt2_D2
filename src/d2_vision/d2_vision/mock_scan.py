@@ -11,6 +11,8 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
   PNG 는 표준 라이브러리(zlib)로, PLY 는 글자(ASCII)로 쓴다 — cv2 · open3d 없이(CI 에 없음, 가짜라 가볍게).
 - 스캔 중 점군 미리보기(10/10 E-82): preview() 가 `<임시 폴더>/d2_scan/<run_id>/preview_<index>.ply` 와 scan_preview/1.0 dict 를 만든다
   (wrist_block 과 같은 칸). 가짜 점군 = scan_design_id 설계 블록 윗면을 찍은 자세 수만큼 늘려 보인다(1곳 1/3 · 2곳 2/3 · 3곳 이상 전부).
+- find_blocks 선택 칸(10/13, find_options — wrist_block 과 같은 검사): "height_map": true → 평평한 작업대 높이 지도 ·
+  "area": "spare" → 받침 위 블록 하나(기본 = 받침 가운데 눕힘, ideal_spare_block). 칸이 없으면 지금까지와 같은 답.
 단위: blocks/2 는 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
 바깥 영향: infer 가 임시 폴더에 파일 두 개를 쓴다. 그 밖에는 계산만.
 실패: 잘못된 요청 → (False, 코드, {"ok":false,"reason","detail"}) — 서비스 success=false 로 답한다.
@@ -31,6 +33,9 @@ from pathlib import Path
 import numpy as np
 
 from d2_vision.block_checker import PLACEMENTS_SCHEMA, RECIPE_SCHEMA, recipe_path, recipe_sha256, same_major
+from d2_vision.block_finder import _area_rect          # 노드(finder_cfg)와 같은 supply_area_m 읽기 · 형식 검사
+from d2_vision.height_grid import flat_grid, spare_map_area, supply_map_area
+from d2_vision.spare_measure import ideal_spare_block
 
 MOCK_POINTS = 180000            # scan_capture 가 답하는 '모은 점 수'(가짜 — IRD 예시와 비슷한 크기)
 MAX_RUNS = 20                   # 기억하는 run_id 수(오래된 것부터 지운다 — 노드를 오래 띄워도 메모리가 늘지 않게)
@@ -69,6 +74,24 @@ def parse_request(text, keys):
     if not RUN_ID_RE.match(body['run_id']):
         raise ValueError('run_id 에 폴더 이름으로 쓸 수 없는 글자가 있다')
     return body
+
+
+FIND_AREAS = ('supply', 'spare')   # find_blocks 요청 area 칸 값 — 없으면 supply(흩뿌린 공급 영역, 지금까지와 같음)
+
+
+def find_options(body):
+    """find_blocks 요청 dict(parse_request 출력) → 선택 칸 (height_map bool, area 'supply' · 'spare'). wrist_block 과 가짜 노드가 같이 쓴다.
+
+    height_map: 없으면 false · true 면 응답에 공급 영역 높이 지도(height_grid) 칸을 더한다.
+    area: 없으면 'supply'(지금까지와 같음) · 'spare' 면 YOLO 없이 받침 위 블록 하나를 깊이로 잰다(spare_measure).
+    실패: height_map 이 true · false 가 아니거나 area 가 FIND_AREAS 밖이면 ValueError(부르는 쪽이 SCAN_FAILED 로 답한다)."""
+    hm = body.get('height_map', False)
+    if not isinstance(hm, bool):
+        raise ValueError('height_map 칸은 true 또는 false 여야 한다')
+    area = body.get('area', 'supply')
+    if area not in FIND_AREAS:
+        raise ValueError(f'area 칸은 {" · ".join(FIND_AREAS)} 중 하나여야 한다: {area!r}')
+    return hm, area
 
 
 def ori_table(size_mm):
@@ -207,11 +230,15 @@ class MockScan:
     """scan_capture · scan_infer · find_blocks 가짜 응답을 만든다. run_id 마다 촬영한 자세를 기억한다. ROS 없음.
 
     입력: origin = robot.yaml assembly_origin · block_mm = robot.yaml block_size_m × 1000(길이 · 폭 · 두께) ·
-          min_gap_mm = robot.yaml find.min_gap_mm · out_root = 파일 폴더(기본 <임시>/d2_scan).
+          min_gap_mm = robot.yaml find.min_gap_mm · out_root = 파일 폴더(기본 <임시>/d2_scan) ·
+          robot = robot.yaml dict(find_blocks 의 height_map · area spare 답에 table_z_m · supply_area_m · spare_spots · block_actual_m ·
+          grasp_open_pick_m · finger 를 읽음 —
+          없으면 그 두 선택만 ERROR).
     각 메서드 출력: (success, reason, 응답 dict) — 노드가 JsonQuery 응답 세 칸에 그대로 넣는다."""
 
-    def __init__(self, origin, block_mm, min_gap_mm, out_root=None):
+    def __init__(self, origin, block_mm, min_gap_mm, out_root=None, robot=None):
         """설정만 담는다. 파일은 infer 때 쓴다."""
+        self.robot = robot
         self.origin = origin
         self.block_mm = [float(v) for v in block_mm]
         self.min_gap_mm = float(min_gap_mm)
@@ -283,18 +310,27 @@ class MockScan:
         return {'schema': 'scan_preview/1.0', 'stamp': round(time.time() if stamp is None else float(stamp), 3), 'run_id': str(run_id),
                 'pose_id': str(pose_id), 'index': int(index), 'kind': 'capture', 'cloud_path': str(path), 'points': int(len(pts))}
 
-    def find(self, text, blocks_json=''):
-        """find_blocks: {"run_id"} → {"ok":true,"blocks":[…]}(IRD 4.2 칸, base_link m, 윗면 높이 높은 순).
+    def find(self, text, blocks_json='', spare_json=''):
+        """find_blocks: {"run_id"[, "height_map": true][, "area": "spare"]} → {"ok":true,"blocks":[…][, "height_map":{…}]}
+        (IRD 4.2 칸, base_link m, 윗면 높이 높은 순).
 
         blocks_json = 파라미터 find_blocks_json — 빈 글자면 DEFAULT_FIND_BLOCK 하나, "[]" 면 빈 목록(WAIT_SUPPLY 시험).
+        area spare 면 spare_json(파라미터 find_spare_json)을 쓴다 — 빈 글자면 받침(spare_spots[0]) 가운데에 받침 yaw 로 눕힌 블록 하나
+        (ideal_spare_block), "[]" 면 빈 받침. height_map 이 true 면 평평한 지도 — 공급은 supply_map_area 전체가 작업대 높이(table_z_m),
+        받침은 spare_map_area 전체가 받침 윗면 높이(spare_spots[0] z_m).
         clear 는 늘 gap_mm ≥ min_gap_mm 로 다시 계산한다(IRD — clear 와 gap_mm 이 어긋나지 않게).
-        실패: 요청이 틀리면 SCAN_FAILED, 파라미터가 블록 목록 JSON 이 아니면 ERROR(둘 다 success=false)."""
+        실패: 요청이 틀리면(선택 칸 값 포함) SCAN_FAILED, 파라미터가 블록 목록 JSON 이 아니거나 선택에 쓸 robot 설정이 없으면 ERROR
+        (둘 다 success=false)."""
         try:
-            parse_request(text, ('run_id',))
+            hm, area = find_options(parse_request(text, ('run_id',)))
         except ValueError as e:
             return _fail('SCAN_FAILED', str(e))
         try:
-            rows = json.loads(blocks_json) if blocks_json.strip() else [DEFAULT_FIND_BLOCK]
+            if area == 'spare':
+                rows = (json.loads(spare_json) if spare_json.strip()
+                        else [ideal_spare_block(self.robot['spare_spots'][0], self.robot['block_actual_m'])])
+            else:
+                rows = json.loads(blocks_json) if blocks_json.strip() else [DEFAULT_FIND_BLOCK]
             if not isinstance(rows, list) or any(not isinstance(b, dict) or not isinstance(b.get('gap_mm'), dict) for b in rows):
                 raise ValueError('블록 dict(gap_mm 칸 포함)의 목록이 아니다')
             out = []
@@ -303,6 +339,12 @@ class MockScan:
                 b['clear'] = {k: float(v) >= self.min_gap_mm for k, v in b['gap_mm'].items()}
                 out.append(b)
             out.sort(key=lambda b: -float(b.get('top_z_m', 0.0)))
-        except (TypeError, ValueError) as e:
-            return _fail('ERROR', f'find_blocks_json 파라미터가 잘못됐다: {e}')
-        return True, '', {'ok': True, 'blocks': out}
+            body = {'ok': True, 'blocks': out}
+            if hm and area == 'spare':                      # 받침 둘레 — 받침 윗면 높이로 평평(블록 자리는 비움 없이 평평 = 손가락 자리 안 막힘)
+                sp = self.robot['spare_spots'][0]
+                body['height_map'] = flat_grid(spare_map_area(self.robot), float(sp.get('z_m', self.robot['table_z_m'])))
+            elif hm:
+                body['height_map'] = flat_grid(supply_map_area(_area_rect(self.robot['supply_area_m']), self.robot), float(self.robot['table_z_m']))
+        except (TypeError, ValueError, KeyError, IndexError) as e:
+            return _fail('ERROR', f'find_blocks_json · find_spare_json 파라미터 또는 robot 설정이 잘못됐다: {e!r}')
+        return True, '', body

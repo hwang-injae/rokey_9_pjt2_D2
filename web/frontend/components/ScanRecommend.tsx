@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import * as api from '@/lib/api';
 import { designName } from '@/lib/names';
 import type { CmdResult, ScanMatch } from '@/lib/types';
-import type { Robot } from '@/lib/ws';
+import { gripperOpening, type Robot } from '@/lib/ws';
 
 const GOOD_RATE = 0.9; // V-48 기준(일치율 ≥ 90 %) — 이보다 낮으면 '많이 달라요'를 띄운다(막지는 않음, 사람이 정함)
 
@@ -43,7 +43,7 @@ export default function ScanRecommend({ robot, onView, onLog }: Props) {
   const best = list[0];
   const st = robot.state;
   const ready = st?.state === 'READY' && st.design_id === best.design_id; // 앞에서 설계 선택만 되고 출발이 거절된 경우
-  const canSend = !sending && !robot.safety?.locked && robot.bridge && (st?.state === 'SCAN_REVIEW' || ready);
+  const canSend = !sending && !robot.safety?.locked && !gripperOpening(robot) && robot.bridge && (st?.state === 'SCAN_REVIEW' || ready);
   const line = (m: ScanMatch) => `부품 ${m.matched}/${Math.max(m.scan_count, m.part_count)} 같음 (${Math.round(m.rate * 100)} %)`;
 
   async function assemble() {
@@ -52,13 +52,15 @@ export default function ScanRecommend({ robot, onView, onLog }: Props) {
     const { step, r } = await api.assemble(best.design_id, ready);
     setSending(false);
     setSent(r);
+    // 출발하면 스캔 칸은 닫힌다(SCAN_REVIEW 를 벗어남) — 진행 색이 보이는 설계 3D 로 화면을 옮겨 '사라졌다'고 느끼지 않게(10/13 황인재)
+    if (r.success) document.querySelector('.view-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     onLog('button', `추천 설계로 조립(${best.design_id}) → ${r.success ? '출발' : `${step} 거절`}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
   }
 
   return (
     <div className="scan-recommend">
       <div className="kv">
-        <span className="muted">추천 설계</span>
+        <span className="muted">가장 비슷한 저장 설계</span>
         <strong>{designName(best.design_id)}</strong>
       </div>
       <p className={best.rate >= GOOD_RATE ? 'hint' : 'result bad'}>

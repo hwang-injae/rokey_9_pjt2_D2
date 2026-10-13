@@ -513,3 +513,41 @@ def test_weird_response_shape_is_gen_failed(store, weird):
     assert e.value.code == 'GEN_FAILED' and '모양' in e.value.message
     log = json.loads(next(store.gen_logs_dir.glob('*_generate.json')).read_text(encoding='utf-8'))
     assert 'raw' in log['calls'][0]
+
+
+class RelayError(Exception):
+    """openai 의 상태 코드 예외 흉내 — 중계가 보낸 HTTP 코드(status_code)와 {'error': {...}} 안쪽(body)."""
+
+    def __init__(self, status, message):
+        super().__init__(f'Error code: {status}')
+        self.status_code, self.body = status, {'message': message, 'type': 'claude_bridge'}
+
+
+class APITimeoutError(Exception):   # openai 의 같은 이름 예외 흉내(이쪽 CALL_TIMEOUT_S 초과) — 이름으로 가른다
+    pass
+
+
+@pytest.mark.parametrize('err, words', [
+    (APITimeoutError('Request timed out.'), '시간 안에'),
+    (RelayError(504, 'claude 가 220초 안에 답하지 않았다'), '시간 안에'),
+    (RelayError(429, 'claude 실패: 사용 한도'), '사용 한도'),
+])
+def test_timeout_and_limit_skip_example_fallback(store, good, err, words):
+    """시간 초과 · 한도는 도구 단계에서 나도 예시를 넣어 한 번 더 부르지 않는다(다시 불러도 같아 화면만 두 배로 멈춤) — 생성 · 스캔 채우기 둘 다."""
+    v1 = derive(store)
+    gen, client = make(store, [err, answer([good] * 3)])
+    with pytest.raises(GenError) as e:
+        gen.generate('벤치', v1)
+    assert e.value.code == 'GEN_FAILED' and words in e.value.message and len(client.calls) == 1
+    gen, client = make(store, [err, scan_answer(good, BENCH)])
+    with pytest.raises(GenError):
+        gen.scan_fill(scan_of(good))
+    assert len(client.calls) == 1
+
+
+def test_relay_reason_is_shown(store):
+    """중계가 실패 까닭을 보냈으면(502 {'error': {'message'}}) 라이브러리 예외 이름 대신 그 글을 화면에 — 그 밖 실패라 final 은 아님."""
+    gen, _ = make(store, [RelayError(502, 'claude 가 정해진 형식으로 답하지 않았다: 블록 3개')])
+    with pytest.raises(GenError) as e:
+        gen.generate('벤치', BENCH)
+    assert e.value.message == '설계 AI 실패 — claude 가 정해진 형식으로 답하지 않았다: 블록 3개' and not e.value.final
