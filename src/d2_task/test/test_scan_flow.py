@@ -273,3 +273,49 @@ def test_화면_cancel은_READY_ERROR_SCAN_REVIEW에서_받고_운전_중에는_
     assert m.command('scan')[0] and m.state == 'SCAN_MOVE'            # 운전 중
     assert m.command('cancel') == (False, 'BUSY') and m.state == 'SCAN_MOVE'
     m.finalize()
+
+
+def test_W182_촬영_ok_false_는_스캔_실패_detail():
+    """success=true + scan_capture ok:false(민범진 계약) → '스캔 실패\\n{detail}', ERROR, 다음 자세로 안 감."""
+    m, io = make()
+    io.capture = {'ok': False, 'reason': 'SCAN_FAILED', 'detail': '점군을 못 만듦: 점 0개'}
+    assert m.command('scan') == (True, '')
+    drive(m, 'ERROR')
+    assert io.states[-1]['message'] == '스캔 실패\n점군을 못 만듦: 점 0개'
+    assert len(io.captures) == 1 and not io.infers and not io.results
+
+
+def test_W182_추론_ok_false_는_다시_스캔하세요_detail():
+    """success=true + scan_infer ok:false → '다시 스캔하세요\\n{detail}', ERROR, 결과 방송 없음."""
+    m, io = make()
+    io.inference = {'ok': False, 'reason': 'SCAN_FAILED', 'detail': '가려진 블록이 절반을 넘음'}
+    assert m.command('scan') == (True, '')
+    drive(m, 'ERROR')
+    assert io.states[-1]['message'] == '다시 스캔하세요\n가려진 블록이 절반을 넘음' and not io.results
+
+
+@pytest.mark.parametrize('body', [{'ok': False}, {'ok': False, 'detail': 3}, {'ok': 'no', 'detail': 'x'}, {'ok': True}])
+def test_W182_깨진_추론_응답은_기존_잘못된_응답_처리(body):
+    """detail 이 글자가 아니거나 ok 가 false 가 아니면 정상 실패로 보지 않는다 — 기존 'SCAN_FAILED: 추론 응답이 잘못됐다'."""
+    m, io = make()
+    io.inference = body
+    assert m.command('scan') == (True, '')
+    drive(m, 'ERROR')
+    assert io.states[-1]['message'].startswith('SCAN_FAILED: 추론 응답이 잘못됐다') and not io.results
+
+
+def test_W182_success_false_는_이유_표시와_기존_처리_TIMEOUT_은_정지_요청():
+    """success=false 는 기존 _failed 그대로: 일반 실패는 이유를 적은 ERROR, TIMEOUT 은 정지 요청(request_stop)."""
+    m, io = make()
+    io.capture = lambda: (False, 'ERROR', None)
+    assert m.command('scan') == (True, '')
+    drive(m, 'ERROR')
+    assert 'ERROR' in io.states[-1]['message'] and '스캔 실패\n' not in io.states[-1]['message']
+    m2, io2 = make()
+    io2.capture = lambda: (False, 'TIMEOUT', None)
+    assert m2.command('scan') == (True, '')
+    for _ in range(20):
+        m2.run_once()
+        if ('call', 'stop', 'TIMEOUT') in [e[:3] for e in io2.events]:
+            break
+    assert ('stop', 'TIMEOUT') in io2.calls
