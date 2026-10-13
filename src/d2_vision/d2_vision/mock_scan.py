@@ -112,15 +112,19 @@ def load_recipe_files(recipe_dir, design_id):
 def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
     """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/3.0, load_recipe_files 출력) → blocks/2 dict(mm, 설계 좌표계). 바깥 영향 없음.
 
+    구조 = 맨 위 자재 stocks[](stock_id · size_mm) + template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
+    부품 이름 = '<그룹>_<part>' 예 LEG_001_01(10/13 PL — stocks 되살림, motion_math.recipe_parts 와 같은 읽기).
     order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
-    parts = {p['stock_id']: [float(v) for v in p['size_mm']] for p in recipe['stocks']}
-    by_name = {b['part_name']: b for b in recipe['parts']}
+    sizes = {s['stock_id']: [float(v) for v in s['size_mm']] for s in recipe['stocks']}
+    by_name = {f'{group}_{item["part"]}': item
+               for comp in recipe['template']['composition'].values()
+               for group, items in comp['parts'].items() for item in items}
     rows = []
     for st in sorted(placements['steps'], key=lambda s: s['sequence']):
         b = by_name[st['part_name']]
-        size = parts[b['stock_id']]
+        size = sizes[b['stock_id']]
         ext = tuple(sum(abs(b['R'][i][k]) * size[k] for k in range(3)) for i in range(3))
         hits = [o for o, e in ori_table(size).items() if e == ext]
         if len(hits) != 1:
