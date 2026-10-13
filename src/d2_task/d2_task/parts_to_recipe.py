@@ -140,22 +140,21 @@ class PartsToRecipe:
         """RecipeBuilder 가 만든 레시피(최상위 stocks · parts)를 AI·스캔 설계용 recipe/3.0(template.composition)으로 바꾼다.
 
         입력: built = RecipeBuilder.make_recipe 출력(mm). 이미 template 이 있는 새 builder 출력이면 허용 칸만 남긴 복사본을 돌려준다
-        (옛 builder 의 stocks · parts 를 바꾸는 이 어댑터는 현재 builder 와의 호환용이며, 외부의 옛 레시피를 읽는 길이 아니다). 출력: {schema, model_id, source_cad, template:{composition:{역할:
-        {label, count, parts:{그룹:[{part, size_mm, center_mm, R}]}}}}} — 구성요소는 label · count · parts 만 두고
+        (옛 builder 의 stocks · parts 를 바꾸는 이 어댑터는 현재 builder 와의 호환용이며, 외부의 옛 레시피를 읽는 길이 아니다). 출력: {schema, model_id, source_cad, stocks, template:{composition:{역할:
+        {label, count, parts:{그룹:[{part, stock_id, center_mm, R}]}}}}} — 구성요소는 label · count · parts 만 두고
         revision · name · description · tags · cad 는 없다(기본 설계 V000 에만 있다). 입력을 바꾸지 않는다. 바깥 영향 없음.
         label 은 기존 값이 있으면 보존하고, 없거나 빈 값이면 ROLE_LABELS(화면 이름표)로 보완한다. 목록에 없는 역할은 역할 이름 그대로 쓴다. 옵션 역할(LEG_WHEEL)은 기본 역할 label 을 쓴다.
         실패: 부품 이름이 규칙과 다르면 AttributeError(RecipeBuilder 가 이미 거른 이름이라 일어나지 않는다).
         """
         if 'template' in built:
-            # 새 builder 출력이 와도 AI·스캔 설계 계약(구성요소 label · count · parts, 부품 part · size_mm · center_mm · R)만 남긴다.
+            # 새 builder 출력이 와도 AI·스캔 설계 계약(구성요소 label · count · parts, 부품 part · stock_id · center_mm · R)만 남긴다.
             # name · description · tags · revision · cad 는 기본 설계 V000 에만 있다. 입력은 깊은 복사 뒤에 걸러 바꾸지 않는다.
             new = copy.deepcopy(built)
             composition = {role: {'label': comp.get('label') or ROLE_LABELS.get(role.split('_')[0], role), 'count': comp['count'],
-                                  'parts': {group: [{k: item[k] for k in ('part', 'size_mm', 'center_mm', 'R')} for item in items]
+                                  'parts': {group: [{k: item[k] for k in ('part', 'stock_id', 'center_mm', 'R')} for item in items]
                                             for group, items in comp['parts'].items()}}
                            for role, comp in new['template']['composition'].items()}
             return dict(new, template={'composition': composition})
-        sizes = {s['stock_id']: s['size_mm'] for s in built['stocks']}
         composition = {}
         for item in sorted(built['parts'], key=lambda p: p['part_name']):
             role, group_no, part_no = PART_NAME_RE.fullmatch(item['part_name']).groups()
@@ -164,10 +163,10 @@ class PartsToRecipe:
             if f'{role}_{group_no}' not in groups:
                 comp['count'] += 1
             groups.setdefault(f'{role}_{group_no}', []).append(
-                {'part': part_no, 'size_mm': list(sizes[item['stock_id']]), 'center_mm': list(item['center_mm']),
+                {'part': part_no, 'stock_id': item['stock_id'], 'center_mm': list(item['center_mm']),
                  'R': [list(row) for row in item['R']]})
         return {'schema': built['schema'], 'model_id': built['model_id'], 'source_cad': built['source_cad'],
-                'template': {'composition': composition}}
+                'stocks': copy.deepcopy(built['stocks']), 'template': {'composition': composition}}
 
     def calculate_box(self, part):
         """블록 하나가 차지하는 축 정렬 상자.

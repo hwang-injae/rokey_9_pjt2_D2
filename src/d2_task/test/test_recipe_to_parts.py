@@ -182,7 +182,7 @@ def test_45도_회전은_방향_복원_불가():
 
 
 def test_크기가_75_25_15가_아니면_방향_복원_불가():
-    bad(lambda r, pl: first_part(r).update(size_mm=[80.0, 25.0, 15.0]))
+    bad(lambda r, pl: r['stocks'][0].update(size_mm=[80.0, 25.0, 15.0]))
 
 
 def test_거울_반사_회전은_거부():
@@ -212,17 +212,17 @@ def test_좌표는_레시피_원본_값_그대로():
 
 
 def test_블록_크기_두_곳은_허용_오차_없이_같다():
-    """방향 계산(레시피 parts[].size_mm)과 방향 표(robot.yaml block_size_m × 1000)가 같아야 방향이 정해진다(한세교 W117 확인 요청)."""
+    """방향 계산(레시피 stocks[].size_mm)과 방향 표(robot.yaml block_size_m × 1000)가 같아야 방향이 정해진다(한세교 W117 확인 요청)."""
     root = Path(__file__).resolve().parents[2]
     cfg = yaml.safe_load(next(root.glob('d2_robot/d2_bringup/config/robot.yaml')).read_text(encoding='utf-8'))
     assert [v * 1000.0 for v in cfg['block_size_m']] == BLOCK_MM
     for model_id in IDS:
         recipe, _ = load(model_id)
-        assert all(p['size_mm'] == BLOCK_MM for p in flat_parts(recipe).values()), model_id
+        assert all(stock['size_mm'] == BLOCK_MM for stock in recipe['stocks']), model_id
 
 
-def test_옛_구조_stocks_parts는_읽지_않는다():
-    """10/13 PL: 최상위 stocks · parts 는 없어졌다 — 옛 모양이 남아 있으면 이유를 적어 거절한다."""
+def test_부품이_참조하는_자재가_없으면_거절한다():
+    """stocks를 다른 번호로 바꿔 부품 참조가 끊기면 변환을 거절한다. 바깥 영향 없음."""
     r, pl = load('001_CHAIR_BENCH_V000')
     r['stocks'] = [{'stock_id': 'PART_001', 'size_mm': BLOCK_MM}]
     with pytest.raises(ValueError, match='stocks'):

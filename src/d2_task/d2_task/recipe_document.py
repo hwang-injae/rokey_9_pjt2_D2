@@ -13,7 +13,7 @@ import math
 import re
 from pathlib import Path
 
-RECIPE_SCHEMA = 'recipe/3.0'          # 10/13 PLM: stocks · 최상위 parts 없애고 template.composition[역할].parts[그룹] 로(같은 3.0 안에서 바뀐 구조 — PL 결정)
+RECIPE_SCHEMA = 'recipe/3.0'          # 10/13 PLM: stocks 자재 참조와 template 트리 사용, 최상위 parts 없애고 template.composition[역할].parts[그룹] 로(같은 3.0 안에서 바뀐 구조 — PL 결정)
 PLACEMENTS_SCHEMA = 'placements/3.0'
 GRASPS = ('FLAT_LONG', 'FLAT_SHORT', 'EDGE_LONG', 'EDGE_SHORT', 'STAND_LONG', 'STAND_SHORT')
 
@@ -129,20 +129,32 @@ class RecipeDocument:
     def _read_composition(self, s):
         """구조(recipe/3.0)의 template.composition[역할].parts[그룹] 부품 항목을 읽어 (stocks, instances) 를 만든다.
 
-        입력: s = recipe/3.0 dict. 역할 키 `LEG`, 그룹 키 `LEG_001`, 부품 항목 {part: '01', size_mm, center_mm, R, cad?}(mm).
+        입력: s = recipe/3.0 dict. 역할 키 `LEG`, 그룹 키 `LEG_001`, 부품 항목 {part: '01', stock_id, center_mm, R, cad?}(mm).
         부품 이름 = `<그룹>_<part>` (예 LEG_001_01). 구성요소는 label(글자) · count(그룹 수와 같은 정수) · parts 가 있어야 한다.
         출력: stocks = [{stock_id, size_mm}] 와 instances = {부품 이름: {instance_id, stock_id, center_mm, R}} — 기존 motion_math 가 읽는
-        내부 표현이다. stock_id 는 레시피에 없고(10/13 PL: stocks 없앰) 같은 크기끼리 묶으려고 여기서만 붙인 내부 이름이다.
+        내부 표현이다. stock_id 는 최상위 stocks의 자재를 참조한다. 중복 번호·없는 참조·유한하지 않거나 양수가 아닌 크기는 거절한다.
         `revision` · `name` · `description` · `tags` · `cad` 는 읽지 않는다(검사 21번 · 사람이 보는 칸).
-        실패: 옛 구조(최상위 stocks · parts)이거나 칸이 빠지거나 값이 틀리면 ValueError.
+        실패: 옛 구조(최상위 parts)이거나 칸이 빠지거나 값이 틀리면 ValueError.
         """
-        if 'stocks' in s or 'parts' in s:
-            raise ValueError('옛 구조(최상위 stocks · parts)는 읽지 않는다 — template.composition[역할].parts 로 바꿔야 한다')
+        if 'parts' in s:
+            raise ValueError('옛 구조(최상위 parts)는 읽지 않는다 — template.composition[역할].parts 로 바꿔야 한다')
         template = s.get('template')
         composition = template.get('composition') if isinstance(template, dict) else None
         if not isinstance(composition, dict) or not composition:
             raise ValueError('template.composition 은 비어 있지 않은 객체여야 한다')
-        sizes, instances = {}, {}                   # 크기(튜플) → 내부 stock_id, 부품 이름 → instance
+        stock_list = s.get('stocks')
+        if not isinstance(stock_list, list) or not stock_list:
+            raise ValueError('stocks 는 비어 있지 않은 자재 목록이어야 한다')
+        stocks_by_id = {}
+        for stock in stock_list:
+            stock_id = stock.get('stock_id') if isinstance(stock, dict) else None
+            if not isinstance(stock_id, str) or not stock_id or stock_id in stocks_by_id:
+                raise ValueError('stock_id 는 비어 있지 않고 중복되지 않는 글자여야 한다')
+            self._vector(stock.get('size_mm'), 3, f'{stock_id} size_mm')
+            if any(v <= 0 for v in stock['size_mm']):
+                raise ValueError(f'{stock_id}: size_mm 은 양수여야 한다')
+            stocks_by_id[stock_id] = stock['size_mm']
+        instances = {}                   # 부품 이름 → 검증된 자재 참조·위치·회전
         for role, comp in composition.items():
             if not isinstance(role, str) or not re.fullmatch(r'[A-Z]+(?:_[A-Z]+)?', role):
                 raise ValueError(f'composition 키 {role!r} 가 역할[_옵션] 형식이 아니다')
@@ -164,9 +176,9 @@ class RecipeDocument:
                     name = f'{group}_{item["part"]}'
                     if name in instances:
                         raise ValueError(f'{name}: 부품 이름이 중복이다')
-                    self._vector(item.get('size_mm'), 3, f'{name} size_mm')
-                    if any(v <= 0 for v in item['size_mm']):
-                        raise ValueError(f'{name}: size_mm 은 양수여야 한다')
+                    stock_id = item.get('stock_id')
+                    if not isinstance(stock_id, str) or stock_id not in stocks_by_id:
+                        raise ValueError(f'{name}: stock_id 가 stocks 에 없다')
                     self._vector(item.get('center_mm'), 3, f'{name} center_mm')
                     R = item.get('R')
                     if not isinstance(R, list) or len(R) != 3:
@@ -179,9 +191,8 @@ class RecipeDocument:
                                         R[1][(i + 2) % 3] * R[2][(i + 1) % 3]) for i in range(3))
                     if det != 1:
                         raise ValueError('R 은 거울 반사가 아닌 회전이어야 한다')
-                    stock_id = sizes.setdefault(tuple(item['size_mm']), f'PART_{len(sizes) + 1:03d}')
                     instances[name] = dict(instance_id=name, stock_id=stock_id, center_mm=item['center_mm'], R=R)
-        stocks = [{'stock_id': stock_id, 'size_mm': list(size)} for size, stock_id in sizes.items()]
+        stocks = copy.deepcopy(stock_list)
         return stocks, dict(sorted(instances.items()))        # 이름순 — DB(JSONB)가 키 순서를 바꿔도 같은 결과
 
     def _join(self):

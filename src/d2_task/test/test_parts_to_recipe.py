@@ -71,21 +71,21 @@ def test_round_trip_matches_cad_recipe(model_id):
     RecipeDocument(out['recipe'], out['placements'])
 
 
-# 변환기 ① 이 내는 레시피에는 옛 칸(stocks · 최상위 parts · stock_id · cad)이 없고, 구성요소는 label · count · parts 만 있다
+# 변환기 ① 이 내는 레시피에는 기본 설계 전용 칸(최상위 parts · cad)이 없고, 구성요소는 label · count · parts 만 있다
 def test_output_has_only_composition_fields(bench):
     out = make_converter().convert(bench)
     recipe = out['recipe']
-    assert set(recipe) == {'schema', 'model_id', 'source_cad', 'template'} and set(recipe['template']) == {'composition'}
+    assert set(recipe) == {'schema', 'model_id', 'source_cad', 'stocks', 'template'} and set(recipe['template']) == {'composition'}
     assert {r: set(c) for r, c in recipe['template']['composition'].items()} == {'LEG': {'label', 'count', 'parts'}, 'SEAT': {'label', 'count', 'parts'}}
     assert [recipe['template']['composition'][r]['label'] for r in ('LEG', 'SEAT')] == ['다리', '좌판']
     assert [recipe['template']['composition'][r]['count'] for r in ('LEG', 'SEAT')] == [2, 1]
-    assert all(set(it) == {'part', 'size_mm', 'center_mm', 'R'} for c in recipe['template']['composition'].values()
+    assert all(set(it) == {'part', 'stock_id', 'center_mm', 'R'} for c in recipe['template']['composition'].values()
                for its in c['parts'].values() for it in its)
-    assert 'stock_id' not in json.dumps(recipe) and 'cad_handle' not in json.dumps(out['placements'])
+    assert 'size_mm' not in json.dumps(recipe['template']) and 'cad_handle' not in json.dumps(out['placements'])
 
 
 # 새 builder(한세교가 template 구조를 직접 내는 경우)를 흉내: 옛 builder 출력을 새 구조로 바꿔 돌려주고, steps 에 옛 칸 stock_id · cad_handle 을 붙인다.
-# 변환기는 AI·스캔 계약 칸(구성요소 label · count · parts, 부품 part · size_mm · center_mm · R)만 남기고, 해시를 다시 맞추고, steps 의 옛 칸을 뗀다.
+# 변환기는 AI·스캔 계약 칸(구성요소 label · count · parts, 부품 part · stock_id · center_mm · R)만 남기고, 해시를 다시 맞추고, steps 의 옛 칸을 뗀다.
 # 기본 설계용 칸(name · description · tags · revision · cad)은 내보내지 않는다
 def test_new_builder_output_filtered_to_generated_contract(bench):
     converter = make_converter()
@@ -119,7 +119,7 @@ def test_new_builder_output_filtered_to_generated_contract(bench):
     template = out['recipe']['template']
     assert set(template) == {'composition'}                                 # name · description · tags 없음
     assert all(set(c) == {'label', 'count', 'parts'} for c in template['composition'].values())       # revision 없음
-    assert all(set(it) == {'part', 'size_mm', 'center_mm', 'R'} for c in template['composition'].values()
+    assert all(set(it) == {'part', 'stock_id', 'center_mm', 'R'} for c in template['composition'].values()
                for its in c['parts'].values() for it in its)               # cad 없음
     assert 'name' in seen['recipe']['template'] and 'revision' in next(iter(seen['recipe']['template']['composition'].values()))   # 가짜 builder 가 금지 칸을 실제로 냈다
     assert all('stock_id' not in s and 'cad_handle' not in s for s in out['placements']['steps'])
@@ -137,7 +137,7 @@ def test_to_template_recipe_filters_new_tree_without_mutating():
     built['template']['composition']['LEG']['parts']['LEG_001'][0]['cad'] = {'handle': '3E'}
     before = copy.deepcopy(built)
     out = converter.to_template_recipe(built)
-    kept = {k: before['template']['composition']['LEG']['parts']['LEG_001'][0][k] for k in ('part', 'size_mm', 'center_mm', 'R')}
+    kept = {k: before['template']['composition']['LEG']['parts']['LEG_001'][0][k] for k in ('part', 'stock_id', 'center_mm', 'R')}
     assert built == before and out is not built
     assert out['template'] == {'composition': {'LEG': {'label': '다리', 'count': 1, 'parts': {'LEG_001': [kept]}}}}
 

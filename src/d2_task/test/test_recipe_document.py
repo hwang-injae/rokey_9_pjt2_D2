@@ -122,14 +122,14 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: items(r)[0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
     (lambda r, p: comps(r)['LEG']['parts'].update(B001=comps(r)['LEG']['parts'].pop('LEG_001')), True),      # 그룹 이름이 역할_3자리가 아님
     (lambda r, p: items(r)[1].update(part=items(r)[0]['part']), True),                  # 같은 그룹 안 부품 번호 중복
-    (lambda r, p: items(r)[0].update(size_mm=[-75.0, 25.0, 15.0]), True),
+    (lambda r, p: r['stocks'][0].update(size_mm=[-75.0, 25.0, 15.0]), True),
     (lambda r, p: items(r)[0].update(part='1'), True),
     (lambda r, p: comps(r)['LEG'].update(count=3), True),                                # count 가 실제 그룹 수(2)와 다름
     (lambda r, p: comps(r)['LEG'].update(count=2.0), True),                              # 값이 같아도 정수 타입이 아님
     (lambda r, p: comps(r)['SEAT'].update(count=True), True),                            # bool 은 정수가 아니다
     (lambda r, p: comps(r)['LEG'].update(count='2'), True),
     (lambda r, p: comps(r)['LEG'].pop('label'), True),
-    (lambda r, p: r.update(stocks=[{'stock_id': 'PART_001', 'size_mm': [75.0, 25.0, 15.0]}]), True),    # 옛 최상위 stocks 가 남음
+    (lambda r, p: r.update(stocks=[{'stock_id': 'PART_001', 'size_mm': [75.0, 25.0, 15.0]}]), True),    # 부품이 참조하는 자재 번호가 사라짐
     (lambda r, p: r.update(parts=[]), True),                                              # 옛 최상위 parts 가 남음
     (lambda r, p: r['template'].pop('composition'), True),
     (lambda r, p: items(r)[0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
@@ -378,4 +378,22 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     assert direct == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
         # 새 구조(template.composition) 벤치 fixture 에 고정한 값 — 구조·키 이름이 바뀌면 여기서 걸린다(옛 구조 값 2685767e…1c76 은 폐기)
-        assert doc.placements['recipe_sha256'] == '34e2820175f566d6d37070cc8883087261379a701e7335acfbb51ffa2c966f99'
+        assert doc.placements['recipe_sha256'] == '87333b39c4897ce1fd6ebdf336b7f0a719feba547dd1bd1a3c63a4b039211645'
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda r: r.pop('stocks'),
+    lambda r: r.update(stocks=[]),
+    lambda r: r['stocks'].append(copy.deepcopy(r['stocks'][0])),
+    lambda r: r['stocks'][0].update(stock_id=''),
+    lambda r: items(r)[0].update(stock_id='MISSING'),
+    lambda r: items(r)[0].update(stock_id=[]),
+    lambda r: r['stocks'][0].update(size_mm=[True, 25, 15]),
+    lambda r: r['stocks'][0].update(size_mm=[0, 25, 15]),
+])
+def test_자재_목록과_참조_손상은_거절한다(pair, mutate):
+    """자재 누락·중복·없는 참조·불량 크기는 짝 해시가 맞아도 조립 전에 거절한다. 로봇 영향 없음."""
+    recipe, placements = pair
+    mutate(recipe)
+    with pytest.raises(ValueError):
+        RecipeDocument(*sealed(recipe, placements))
