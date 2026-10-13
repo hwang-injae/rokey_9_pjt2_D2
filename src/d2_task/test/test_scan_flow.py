@@ -89,6 +89,23 @@ def test_검토_저장선택_출발_재스캔_취소():
     assert m.last_build['placed'] == 11
 
 
+def test_DONE_에서_scan_은_새_run으로_시작하고_끝난_조립_기록은_그대로(tmp_path):
+    """조립이 끝난(DONE) 뒤 [스캔]: 새 run_id 로 SCAN_MOVE. 끝난 조립의 last_build · pending_builds · CSV 는 바꾸지 않는다(10/13 PL)."""
+    m, io = make(tmp_path)
+    assert m.command('select_design', 'bench') == (True, '') and m.command('start') == (True, '')
+    drive(m, 'DONE')
+    done_run, build, pending = m.run_id, copy.deepcopy(m.last_build), copy.deepcopy(m.pending_builds)
+    assert build['result'] == 'DONE' and build['placed'] == 11
+    assert m.command('scan') == (True, '')
+    assert m.state == 'SCAN_MOVE' and m.run_id not in (None, done_run)
+    assert m.last_build == build and m.pending_builds == pending
+    drive(m, 'SCAN_REVIEW')
+    assert io.captures and all(rid == m.run_id for _, rid in io.captures)
+    assert m.last_build == build                                  # 스캔은 조립 결과(build/2)를 만들지 않는다
+    m.finalize()
+    assert 'DONE' in (tmp_path / f'{done_run}.csv').read_text()
+
+
 @pytest.mark.parametrize('mutate', [
     lambda m, io: m.on_gripper({'grasped': True}),
     lambda m, io: m.on_safety(SAFE_STOP),

@@ -353,7 +353,7 @@ class TaskManager:
 
         select_design = 설계를 **조회**(/d2/hmi/get_design)하고 시작 점검 → READY. start = READY 에서 [설계 선택] 때 받아 둔 설계로 출발(점검 한 번 더) → CHECK(다시 조회하지 않는다),
         WAIT_SUPPLY 에서는 [계속](관측 자세 도착 뒤), WAIT_HMI 는 웹 재연결 뒤 진행 확인부터 SELECT 로 이어 간다(조회 없음).
-        scan 은 IDLE·SCAN_REVIEW 에서 새 촬영을 시작한다. cancel 은 READY·ERROR·SCAN_REVIEW 를 IDLE 로 돌린다(음성 cancel 과 같다, S-16).
+        scan 은 IDLE·SCAN_REVIEW·DONE 에서 새 촬영을 시작한다. cancel 은 READY·ERROR·SCAN_REVIEW 를 IDLE 로 돌린다(음성 cancel 과 같다, S-16).
         조회는 이 호출 스레드가 잠금 **밖에서** 기다린다(최대 timeout.service_s). 조회 실패 · 시간 초과 · 잘못된 답이면 새 조립을 시작하지 않고
         거절한다(로컬 파일로 몰래 대신하지 않는다 — 개발용 로컬은 노드가 design_source=local 로 명시해야 한다).
         reason 은 IRD 7장에 이미 있는 코드만 쓴다: 운전 중 'BUSY', 정지 중 'STOPPED', 조회 시간 초과 'TIMEOUT'. 맞는 코드가 없는 거절(설계 없음 ·
@@ -704,11 +704,12 @@ class TaskManager:
 
     # ---------- 스캔: 네트워크 대기는 잠금 밖 ----------
     def _begin_scan(self):
-        """잠금 안에서 IDLE·SCAN_REVIEW의 scan 명령을 점검하고 새 run으로 시작한다. 로봇 이동은 작업 스레드에서 한다.
+        """잠금 안에서 IDLE·SCAN_REVIEW·DONE의 scan 명령을 점검하고 새 run으로 시작한다. 로봇 이동은 작업 스레드에서 한다.
 
         설정은 robot.yaml scan.poses, 단위 없음. 점검 실패는 현재 상태·기록을 보존하며 (False, reason)을 반환한다.
         """
-        if self.state not in ('IDLE', 'SCAN_REVIEW') or self._shutdown:
+        # DONE 도 받는다(10/13 PL): 끝난 조립 기록은 이미 닫혀 있고 last_build · pending_builds 는 그대로 두며 새 run_id 로 시작한다
+        if self.state not in ('IDLE', 'SCAN_REVIEW', 'DONE') or self._shutdown:
             return self._reject(self._busy_reason(), '지금은 스캔을 시작할 수 없다')
         poses = self.cfg.get('scan', {}).get('poses')
         if not isinstance(poses, list) or not poses or any(
