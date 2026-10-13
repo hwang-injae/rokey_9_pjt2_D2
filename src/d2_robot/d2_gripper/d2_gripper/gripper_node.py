@@ -19,7 +19,6 @@ from std_msgs.msg import String
 
 DRIVER_SRV = '/onrobot/sendCommand'        # onrobot_rg_control 드라이버 (실기) / 가상 그리퍼 — 브링업이 띄운다
 FEEDBACK_TOPIC = '/onrobot_joint_states'   # 브링업이 드라이버의 joint_states 를 이 이름으로 바꿔 낸다
-MAX_WIDTH_M = 0.110                        # RG2 최대 열림
 FORCE_STEP_N = 2.5                         # 드라이버는 힘을 'i'/'d' 로 2.5 N 씩만 바꾼다 (켜질 때 40 N)
 FORCE_RESET_STEPS = 16                     # 40 N / 2.5 N — 이만큼 'd' 를 보내면 확실히 0 N
 STILL_M = 0.0002                           # 0.3 s 동안 폭 변화가 0.2 mm 미만이면 다 움직였다
@@ -51,6 +50,7 @@ class GripperNode(Node):
         g = cfg['gripper']
         self.offset_m, self.tol_m, self.settle_s = g['feedback_offset_m'], g['check_tolerance_m'], g['settle_timeout_s']
         self.cmd_offset_m = g['command_offset_m']
+        self.max_width_m = g['max_width_m']        # 드라이버 명령 상한 = '활짝'(robot.yaml 키 하나, E-108)
         self.grasp_widths = list(cfg['grasp_width_m'].values())
         self.virtual = self.declare_parameter('virtual', False).value
         cb = ReentrantCallbackGroup()
@@ -124,7 +124,7 @@ class GripperNode(Node):
         with self.lock:
             # 요청은 실제 손가락 끝 사이 폭. 드라이버 명령은 그보다 command_offset_m 만큼 크게 줘야 그 폭이 된다 (10/6 캘리퍼스)
             cmd_m = req.width_m + self.cmd_offset_m if req.width_m > 0 else 0.0
-            cmd = str(int(round(min(MAX_WIDTH_M, max(0.0, cmd_m)) * 10000)))   # 드라이버 단위 1/10 mm
+            cmd = str(int(round(min(self.max_width_m, max(0.0, cmd_m)) * 10000)))   # 드라이버 단위 1/10 mm
             closing = self.last_cmd_m is not None and req.width_m < self.last_cmd_m
             if not self._send(cmd):
                 res.success, res.reason, res.grasped, res.width_m = False, 'GRIPPER_NO_RESPONSE', False, float('nan')

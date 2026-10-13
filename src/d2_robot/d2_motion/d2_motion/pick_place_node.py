@@ -30,9 +30,6 @@ PLANNERS = ('BiTRRT', 'RRTConnect')    # BiTRRT 가 먼저 (관절을 덜 돌리
 LINE_SCALE = 1.0                       # 직선도 자유 이동과 같은 속도(10/12 박진용: 코드 안 속도는 모두 같게). 가상에서 공급 영역 728 · p1 12 ·
                                        # 레시피 4개 놓기 47 · 세우기 48 직선을 0.15 · 0.2 · 0.25 · 0.3 으로 계획해 실패가 모두 같았다(속도 탓 실패 0)
 GRIPPER_TIMEOUT_S = 10.0
-# 그리퍼 기본 상태 = 활짝(10/11 박진용): 관측 · 촬영 때 좁은 손가락이 손목 카메라 화면에 찍힌다(W134 · B34).
-# RG2 최대 열림 — 그리퍼 노드가 최대 명령으로 잘라 보낸다. 집는 폭은 지금처럼 집을 블록 바로 위에서 맞춘다
-OPEN_FULL_M = 0.110
 # run_recipe --grasp-test 의 part_id 앞글자 — 레시피에 없어 장면에 붙일 수 없지만 집은 자리로 되돌아오는 시험이라 그냥 진행한다
 TEST_BLOCK_PREFIX = 'GRASP_P'
 # 수직 직선 충돌 검사 간격 (관절 rad). Pilz 점은 0.1 s 마다라 0.15 m/s 에서 약 15 mm 씩 벌어져 블록 두께(14.8 mm)를 건너뛸 수 있다.
@@ -79,6 +76,9 @@ class PickPlaceNode(Node):
         """설정을 읽고 실행기·정지 기능·서버·클라이언트를 만든다."""
         super().__init__('pick_place')
         self.cfg = load_config('robot.yaml')
+        # 그리퍼 기본 상태 = 활짝(10/11 박진용): 관측 · 촬영 때 좁은 손가락이 손목 카메라 화면에 찍힌다(W134 · B34). 값은 robot.yaml
+        # gripper.max_width_m 하나(그리퍼 노드의 명령 상한과 같은 키 — E-108, 실제 약 101.5 mm). 집는 폭은 집을 블록 바로 위에서 맞춘다
+        self.open_full_m = self.cfg['gripper']['max_width_m']
         self.controller_error = None     # 제어기 TCP·툴이 tcp.json·tool.json 과 다르면 이유 (목표를 거절)
         cb = ReentrantCallbackGroup()
         self.stopper = SafeStop(self, self.cfg['stop']['first_wait_s'], spin_node=False)   # executor 는 다른 스레드
@@ -552,7 +552,7 @@ class PickPlaceNode(Node):
         ok, why = self.exe.execute(self.exe.reversed_path(c['down']), halted)
         if not ok:
             return finish(False, why, width)
-        why = grip_failure(self.grip(OPEN_FULL_M))
+        why = grip_failure(self.grip(self.open_full_m))
         return finish(not why, why or '', width)
 
     # ---------- 세우기 (W131 — 한세교 교시 동작, 10/13 박진용 옮김) ----------
@@ -686,7 +686,7 @@ class PickPlaceNode(Node):
             ok, why = line(name)
             if not ok:
                 return False, why, width
-        why = grip_failure(self.grip(OPEN_FULL_M))
+        why = grip_failure(self.grip(self.open_full_m))
         return not why, why or '', width
 
     def _execute(self, gh):
@@ -823,7 +823,7 @@ class PickPlaceNode(Node):
             if not ok:
                 return finish(False, why, width)
             # 놓은 블록 위로 올라온 뒤 기본 상태(활짝)로 — 놓는 자리 옆 블록을 덜 치게 놓을 때는 좁게 연다
-            why = grip_failure(self.grip(OPEN_FULL_M))
+            why = grip_failure(self.grip(self.open_full_m))
             return finish(not why, why or '', width)
         except Exception as e:            # 예상 못 한 오류: 궤적이 아직 돌고 있을 수 있으니 먼저 세운다
             self.get_logger().error(f'{g.part_id}: 오류 {e!r}')
@@ -891,7 +891,7 @@ class PickPlaceNode(Node):
                                    structure=box)
             # 도착한 뒤 기본 상태(활짝)로 — 관측 · 촬영 사진에 손가락이 안 찍히게. 블록을 쥐고 있으면 떨어뜨리므로 열지 않는다
             if ok and not self.holding:
-                why = grip_failure(self.grip(OPEN_FULL_M)) or ''
+                why = grip_failure(self.grip(self.open_full_m)) or ''
                 ok = not why
             res.success, res.reason = ok, why
             return res
