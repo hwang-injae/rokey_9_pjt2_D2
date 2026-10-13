@@ -404,6 +404,24 @@ def test_기존_거절_자료가_다르거나_읽을_수_없으면_메모리_요
     assert log.flush(5.0) and a in m._rejected_unsaved and old_path.read_text(encoding='utf-8') == old_text
 
 
+def test_기존_거절_자료의_자료형이_손상됐으면_같다고_보지_않는다(tmp_path):
+    import copy
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    current = copy.deepcopy(m.pending_builds[a])
+    assert current['stop_count'] == 0
+    (tmp_path / 'rejected').mkdir()
+    old_path = tmp_path / 'rejected' / f'{a}.json'
+    old = json.dumps(dict(current, stop_count=False))               # False == 0 이라 단순 비교로는 같아 보인다
+    old_path.write_text(old, encoding='utf-8')
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, REJECT) is False
+    assert log.flush(5.0)
+    assert old_path.read_text(encoding='utf-8') == old
+    assert m._rejected_unsaved == {a: current} and files(tmp_path) == [f'{a}.json']
+
+
 def test_이미_같은_내용으로_보관돼_있으면_성공으로_처리하고_pending을_정리한다(tmp_path):
     m, io, log = make(tmp_path)
     a = assemble(m, io)

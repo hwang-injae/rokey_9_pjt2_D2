@@ -306,8 +306,9 @@ class RunLogger:
         """(쓰기 스레드) pending/<run_id>.json 을 rejected/ 로 옮긴다. 반환: **이 summary 의** 거절 보관본이 디스크에 있으면 True.
 
         pending 파일이 있으면 그대로 os.replace 로 옮겨 원기록을 보존한다. 없으면(저장 실패 · 큐 가득) 메모리 summary 를 원자적으로 쓴다.
-        rejected/ 에 같은 run 의 자료가 이미 있으면 덮어쓰지 않는다 — 내용이 같으면 이미 보관된 것이라 pending 만 정리하고 True.
-        내용이 다르거나 읽을 수 없으면 경고하고 기존 자료 · pending 을 그대로 둔 채 **False** — 이 summary 는 아직 보관되지 않았으니
+        rejected/ 에 같은 run 의 자료가 이미 있으면 덮어쓰지 않는다 — 표준 JSON 이고 build/2 형식 검증을 통과한 자료가 summary 와 같으면
+        (int · float 값 비교는 그대로) 이미 보관된 것이라 pending 만 정리하고 True.
+        내용이 다르거나 형식이 손상됐거나 읽을 수 없으면 경고하고 기존 자료 · pending 을 그대로 둔 채 **False** — 이 summary 는 아직 보관되지 않았으니
         부르는 쪽이 메모리 요약을 계속 들고 있어야 한다(다시 보내는 것은 load_pending 이 rejected/ 존재로 막는다).
         """
         src = os.path.join(self.pending_dir, f'{run_id}.json')
@@ -316,7 +317,9 @@ class RunLogger:
         if os.path.exists(dst):
             try:
                 with open(dst, encoding='utf-8') as f:
-                    same = json.loads(f.read()) == summary
+                    existing = json.loads(f.read(), parse_constant=_reject_constant)
+                # 파이썬은 False == 0 이라 손상된 자료(stop_count 가 bool 등)도 같다고 볼 수 있다 — 형식을 먼저 검증한 자료만 비교한다
+                same = not _invalid_summary(existing, run_id) and existing == summary
             except (OSError, ValueError):
                 same = False
             if not same:
