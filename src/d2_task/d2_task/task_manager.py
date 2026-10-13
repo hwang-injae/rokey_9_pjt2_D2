@@ -82,8 +82,10 @@ class TaskManager:
     정지 노드가 멈추면(safety/state stopped) 어느 상태에서든 STOPPED 로 가고, 잠금이 풀린 신호가 새로 오면 RECOVER 로 간다.
     """
 
-    def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False, open_width_m=None):
+    def __init__(self, cfg, io, logger=None, clock=time.monotonic, monitor_hmi=False, open_width_m=None, allow_reorient=False):
         """cfg = robot.yaml dict, io = 위 설명의 바깥 일 담당, logger = RunLogger(없으면 파일 없이 run_id 만 만든다), clock = 단조 시계(시험용).
+        allow_reorient 는 흩뿌림 세우기(눕힌 블록을 빈 자리에 세움) 허용 — 기본 False(운영 보류: W131 두 grasp 지원 · W146 정식 좌표 ·
+        W131 과 맞춘 손가락 · 회전 · 접근 · 후퇴 공간 판정이 끝나기 전). 시험만 True 로 만든다. task 노드는 넘기지 않으므로 운영에서는 세우기 요청을 만들지 않는다(10/11 W130).
         monitor_hmi 는 웹 연결 신호 감시 여부. 이 클래스의 기본은 False(시험 · 웹 없이 동작)이고, task 노드는 design_source 와 따로 노드 파라미터 monitor_hmi(기본 true)로 정해 넘긴다(E-62).
         공급 방식은 cfg['supply_mode'](없으면 slots): slots = 공급 칸 6개(기본), scatter = 흩뿌린 공급(관측 → 후보 고르기, E-55). scatter 는 open_width_m(m)을 명시로 받아야
         집기 요청을 만든다 — task 노드는 0 을 넘기고, 0 은 'pick_place 가 robot.yaml grasp_open_pick_m.<잡기>를 쓴다'는 뜻이다(IRD PickPlace.srv). None(안 넘김)이면 scatter 선택은 ERROR 로 끝난다.
@@ -120,6 +122,8 @@ class TaskManager:
         self._pending_start = False               # WAIT_SUPPLY 에서 받은 [계속]
         self._supply_moved = False                # WAIT_SUPPLY 에서 관측 자세에 이미 도착했나(도착해야 알림 · [계속]을 받는다)
         self._reobserved = False                  # UNKNOWN_BLOCK 재관측을 이미 한 번 했나
+        self._allow_reorient = allow_reorient     # 운영 기본 False — 위 설명
+        self._reoriented = set()                  # 이번 조립(run)에서 세우기를 이미 보낸 목표 block_id — 목표당 최대 1회(10/11 PL). 출발 때만 비운다
         self._plan_retry = 0                      # PLAN_FAILED 다시 계획 횟수
         self._grasp_stage = 0                     # GRASP_FAILED: 1 = 같은 칸 재시도 중, 2 = 다음 칸 시도 중
         self._shutdown = False
@@ -457,7 +461,7 @@ class TaskManager:
         if not ok or self.halted():
             self._failed('STOPPED' if self.halted() else why, 'find_blocks 조회')
             return
-        result = self._scatter.prepare(target, body)
+        result = self._scatter.prepare(target, body, allow_reorient=self._allow_reorient and target['block_id'] not in self._reoriented)
         with self._lock:
             applied = self._scatter.commit(ticket, lambda: ((self._epoch, self._stop_count), self.halted()), result)
             if applied:
@@ -472,6 +476,10 @@ class TaskManager:
         if status == 'PICK':
             self._start_goal(dict(result['request'], status='FOUND'))
             self._set('PICK_PLACE', None, pick_message.format(block=block_id))
+        elif status == 'REORIENT':                 # 맞는 자세가 없어 눕힌 블록을 빈 자리에 세운다 — 보내는 순간 1회로 센다(실패해도 다시 세우지 않음)
+            self._reoriented.add(block_id)
+            self._start_goal(dict(result['request'], status='FOUND'))
+            self._set('PICK_PLACE', None, f'{block_id} 에 맞는 자세의 블록이 없어 눕힌 블록을 빈 자리에 세웁니다')
         elif status == 'EMPTY':
             self._enter_wait_supply(block_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
         elif status == 'NO_MATCH':
@@ -479,6 +487,7 @@ class TaskManager:
             # 기울어진 블록이 있고 제외 이유가 tilted · under 뿐이면 IRD 알림 tilted_block(E-68 — 덮인 블록이 같이 있어도 사람이 기울어진 것을 바로 놓으면 된다).
             # under 만이거나 다른 제외 이유가 섞이면 no_match_block(E-73) — 이유는 글자(message)로 같이 보낸다
             only_tilted = counts.get('tilted', 0) > 0 and all(n == 0 for k, n in counts.items() if k not in ('tilted', 'under'))
+            only_tilted = only_tilted and block_id not in self._reoriented     # 세운 뒤에도 후보가 없으면 맞는 블록 없음 알림(10/11 PL)
             self._enter_wait_supply(block_id, ('tilted_block' if only_tilted else 'no_match_block', result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
@@ -509,6 +518,14 @@ class TaskManager:
         self.last_pick = {'request_id': rid, 'ok': ok, 'reason': why,
                           'step': self._steps.last_step(rid), 'result_at': self._steps.result_at(rid)}
         self._steps.end(rid)                   # 이 번호의 늦은 피드백이 다음 요청에 섞이지 않게 닫는다
+        if ok and self.goal.get('reorient'):
+            # 세우기는 조립이 아니다 — placed · 조립 기록 · VERIFY 없이 SELECT 로 돌아가 공급을 다시 보고 방금 세운 블록을 일반 선택으로 집는다
+            self.logger.log('reorient', self.goal['block_id'], '눕힌 블록을 빈 자리에 세움')
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
+            self._set('SELECT', None, f'{self.goal["block_id"]} 에 쓸 블록을 세웠다. 공급을 다시 봅니다')
+            return None
         if ok:
             self.placed = self.goal['block_id']
             self.logger.record_placed(self.placed, self.goal['supply_slot'])
@@ -1007,6 +1024,7 @@ class TaskManager:
         if not ok:
             return self._reject(code, f'시작 점검 실패: {text}')
         self._reobserved = False
+        self._reoriented = set()                  # 새 조립에서만 비운다 — 정지 · 복구 · [계속]은 같은 조립이라 그대로 둔다
         self.placed = self.block_id = None
         self.run_id = self.logger.start_run(self.design_id, len(self.planner.blocks))   # 실제 출발 때만 새 run_id
         self._set('CHECK', None, '진행 확인을 시작합니다')

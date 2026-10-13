@@ -267,13 +267,24 @@ class MoveItExecutor:
             out.append(o)
         return out
 
-    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None, scale=None, obstacles=None):
+    def structure_box(self, box):
+        """scan_structure_box 의 (중심 m, 크기 m) → 계획 요청에 실을 상자 하나 (부풀리지 않음 — 10/12 실기에서 이 크기로 검증)."""
+        center, size = box
+        o = CollisionObject(id='pad_scan_structure', operation=CollisionObject.ADD)
+        o.header.frame_id = self.frame
+        o.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in size])]
+        o.primitive_poses = [make_pose(center, (0.0, 0.0, 0.0, 1.0))]
+        return o
+
+    def plan(self, goal, keep_down, planner, plan_time=5.0, pad_m=0.0, skip_slot=None, scale=None, obstacles=None,
+             structure=None):
         """지금 자세 -> 관절 목표 goal 을 OMPL 로 계획만 한다. 반환: (시간까지 매겨진 JointTrajectory, 결과 이름).
 
         속도·가속은 scale(없으면 robot.yaml speed_scale)을 MoveIt 에 넘겨 MoveIt 이 매긴다 (joint_limits.yaml x 비율).
         pad_m > 0 이면 놓인 블록과 공급 쪽 블록을 그만큼 부풀린 상자를 이 계획에만 더해 여유 있는 길을 찾게 한다.
         공급 쪽 블록 = obstacles 가 None 이면 공급 칸 가정 상자(skip_slot 칸 빼고), 목록이면 흩뿌림이라 그 블록들
         (빈 목록 = 주변 블록 없음 — 칸 가정 상자로 돌아가지 않는다, IRD 4.3).
+        structure = 스캔 이동의 구조물 상자(motion_math.scan_structure_box) — 주면 pad_m 과 상관없이 이 계획에 더한다(W186).
         """
         req = MotionPlanRequest()
         req.group_name = GROUP
@@ -292,6 +303,8 @@ class MoveItExecutor:
         if pad_m > 0:
             supply = self.supply_boxes(pad_m, skip_slot) if obstacles is None else self.obstacle_boxes(obstacles, pad_m)
             extra = self.padded_blocks(pad_m) + supply
+        if structure is not None:
+            extra = list(extra) + [self.structure_box(structure)]
         return self._send_plan(req, plan_time, extra)
 
     @staticmethod
