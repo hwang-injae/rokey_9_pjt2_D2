@@ -1076,6 +1076,8 @@ class TaskManager:
         ok, why, body = self.io.scan_capture(pose, self.run_id, self.halted)
         if not ok or self.halted():
             return self._failed('STOPPED' if self.halted() else why, '스캔 촬영')
+        if self._scan_data_failed(body, '스캔 실패', '스캔 촬영'):
+            return None
         points = body.get('points') if isinstance(body, dict) else None
         if not isinstance(body, dict) or body.get('ok') is not True or isinstance(points, bool) or not isinstance(points, int) or points < 0:
             return self._failed('SCAN_FAILED', '스캔 촬영 응답')
@@ -1086,6 +1088,24 @@ class TaskManager:
             self._scan_index += 1
             self._set('SCAN_MOVE' if self._scan_index < len(self._scan_poses) else 'SCAN_INFER', 'scan_running', '스캔 촬영을 마쳤습니다')
 
+    def _scan_data_failed(self, body, title, where):
+        """비전이 답은 냈지만 결과가 실패({"ok": false, "reason", "detail"} · success=true)면 화면에 '<title>\\n<detail>'로 알리고 ERROR. 반환: 처리했나.
+
+        W182(10/13 PL · 민범진 계약): scan_capture 의 ok:false = '스캔 실패'(재촬영으로 안 됨), scan_infer 의 ok:false = '다시 스캔하세요'(자료 실패).
+        detail 이 글자가 아니거나 ok 가 false 가 아니면 이 함수는 손대지 않는다 — 깨진 응답은 부르는 쪽의 기존 SCAN_FAILED 처리로 간다.
+        success=false(TIMEOUT 정지 요청 포함)는 여기 오기 전에 기존 _failed 로 처리된다. 로봇 이동 없음.
+        """
+        if not isinstance(body, dict) or body.get('ok') is not False or not isinstance(body.get('detail'), str):
+            return False
+        detail = body['detail'].strip() or str(body.get('reason') or '이유 없음')
+        with self._lock:
+            if self.halted():
+                self._failed('STOPPED', f'{where} 결과 적용')
+                return True
+        self.logger.log('fail', None, f'{where}: {body.get("reason") or ""} {detail}'.strip())
+        self._to_error(f'{title}\n{detail}')
+        return True
+
     def _scan_infer(self):
         """모은 점군을 추론해 scan_result/2.0 로 방송한 뒤 검토를 기다린다. 단위 mm, 로봇 이동 없음.
 
@@ -1094,6 +1114,8 @@ class TaskManager:
         ok, why, body = self.io.scan_infer(self.run_id, self.halted)
         if not ok or self.halted():
             return self._failed('STOPPED' if self.halted() else why, '스캔 추론')
+        if self._scan_data_failed(body, '다시 스캔하세요', '스캔 추론'):
+            return None
         try:
             blocks = body['blocks']
             if body.get('ok') is not True or not isinstance(blocks, dict) or not same_major(blocks.get('schema'), 'blocks/2'):
