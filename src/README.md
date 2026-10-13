@@ -18,7 +18,7 @@ src/
 [d2_robot/ 안내](d2_robot/README.md)에 장치 구성과 빌드 방법을 정리했다. `d2_robot/`은 폴더 묶음이며,
 ROS 패키지 이름·Python import·launch 이름은 유지한다. `d2_bridge`는 `src/d2_bridge/`(10/9 W127 최소형).
 
-ROS 2 Jazzy 패키지 8개(로봇 PC) + 레시피 도구 **(안)** + 저장소 루트 `web/`(웹 PC, ROS 아님). **10/6 18시 PC 배치(E-26~E-33):** 웹 PC에는 ROS가 없고, `d2_hmi` 대신 **`d2_bridge`(ROS ↔ MQTT 다리)** 가 로봇 PC에서 웹 자리를 대신한다. **10/6 주제 개편(E-01~E-25)** — 설계는 블록 JSON으로 오가고 로봇에는 레시피로 간다. 로봇 동작 노드 5개는 10/6 corecode에서 옮김, `d2_interfaces` 8개는 main(10/7 W121 JsonQuery 추가). 노드는 파트별로 나뉘어 있고, 서로 `/d2/` 아래 토픽·서비스·액션으로 주고받는다. 요청-결과는 전용 메시지 패키지 `d2_interfaces`, 상태 방송은 JSON 문자열이다. 이름·칸·단위 약속은 [인터페이스 문서](../docs/02_인터페이스_IRD_v3_101315.md), 구조는 [설계 문서](../docs/03_설계_SDD_v3_101315.md)에 있다.
+ROS 2 Jazzy 패키지 8개(로봇 PC) + 레시피 도구 **(안)** + 저장소 루트 `web/`(웹 PC, ROS 아님). **10/6 18시 PC 배치(E-26~E-33):** 웹 PC에는 ROS가 없고, `d2_hmi` 대신 **`d2_bridge`(ROS ↔ MQTT 다리)** 가 로봇 PC에서 웹 자리를 대신한다. **10/6 주제 개편(E-01~E-25)** — 설계는 블록 JSON으로 오가고 로봇에는 레시피로 간다. 로봇 동작 노드 5개는 10/6 corecode에서 옮김, `d2_interfaces` 8개는 main(10/7 W121 JsonQuery 추가). 노드는 파트별로 나뉘어 있고, 서로 `/d2/` 아래 토픽·서비스·액션으로 주고받는다. 요청-결과는 전용 메시지 패키지 `d2_interfaces`, 상태 방송은 JSON 문자열이다. 이름·칸·단위 약속은 [인터페이스 문서](../docs/02_인터페이스_IRD_v3_101315.md), 구조는 [설계 문서](../docs/03_설계_SDD_v3_101321.md)에 있다.
 
 | 패키지 (안) | 빌드 타입 | 담당 파트 | 역할 | 노드 (실행 이름, 안) | 돌리는 곳 |
 |---|---|---|---|---|---|
@@ -78,4 +78,4 @@ python3 -m pytest tests -q
   `ros2 run d2_task task --ros-args -p monitor_hmi:=false -p design_source:=local -p recipe_dir:=<저장소>/src/recipe_manager/recipes`
 - **CI**(`.github/workflows/ci.yml`, 토큰 없음): PR · main push마다 `tests/` · `src/d2_task/test` · `src/d2_vision/test` pytest(ROS 없이) + `ros:jazzy` 컨테이너에서 두산 의존이 없는 패키지(`d2_interfaces` · `d2_vision` → 생기면 `d2_bridge`)만 colcon build · test + ruff 치명 오류. 두산 · OnRobot 패키지가 필요한 `d2_bringup` · `d2_motion` · `d2_gripper` · `d2_safety`와 그것에 기대는 `d2_task`는 실기 PC에서 빌드한다. 시험을 더하는 규칙은 [tests/README.md](../tests/README.md).
 - 시험 수·결과는 코드가 생기면 이 절에 적는다.
-- 로봇을 움직이는 시험은 펜던트를 든 사람이 있을 때, 저속·짝과 함께, 정지가 되는지부터 본다([팀 협업 규칙](../docs/06_팀협업규칙_v1_101021.md)).
+- 로봇을 움직이는 시험은 펜던트를 든 사람이 있을 때, 저속·짝과 함께, 정지가 되는지부터 본다([팀 협업 규칙](../docs/06_팀협업규칙_v1_101321.md)).
