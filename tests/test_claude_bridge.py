@@ -133,3 +133,82 @@ def test_design_gen_runs_through_bridge(tmp_path):
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     r = DesignGenerator(store, check, RULES, client=client).generate('벤치', TEMPLATE)
     assert r['reference'] == [BENCH] and r['attempts'] == 1 and all(c['check']['ok'] for c in r['candidates'])
+
+
+# ---------- 웹 PC 준비 점검(--check, 10/13) — claude · 네트워크 · docker 는 모두 가짜 ----------
+from claude_bridge import SetupCheck  # noqa: E402
+
+HELP_ALL = ' '.join(['--output-format', '--model', '--tools', '--no-session-persistence', '--strict-mcp-config',
+                     '--disable-slash-commands', '--system-prompt', '--json-schema'])
+
+
+def fake_cmd(help_text=HELP_ALL, container='web-web-1', seen_from_container=True):
+    """claude --version · --help · docker ps · docker exec 대신 — 정해 둔 (종료 코드, 출력)."""
+    def cmd(argv, timeout):
+        if argv[-1] == '--version':
+            return 0, '2.1.295 (Claude Code)\n'
+        if argv[-1] == '--help':
+            return 0, help_text
+        if argv[:2] == ['docker', 'ps']:
+            return 0, container + '\n' if container else ''
+        if argv[:2] == ['docker', 'exec']:
+            return (0, '{"ok": true}') if seen_from_container else (1, 'URLError: timed out')
+        raise AssertionError(argv)
+    return cmd
+
+
+def good_claude(argv, prompt):
+    """로그인 · 모델이 되는 claude — 정해진 형식 답."""
+    return json.dumps({'is_error': False, 'structured_output': {'n': 1}, 'usage': {}})
+
+
+def check(**kw):
+    """가짜로 채운 SetupCheck — 바꿀 것만 kw 로."""
+    args = dict(host='127.0.0.1', port=8790, model='opus', claude='/x/claude', cmd=fake_cmd(),
+                fetch=lambda url, t: {'ok': True, 'default_model': 'opus'}, bridge_run=good_claude)
+    args.update(kw)
+    return SetupCheck(**args)
+
+
+def states(results):
+    """결과 목록 → 상태만."""
+    return [r[0] for r in results]
+
+
+def test_check_all_ok_and_flags_follow_bridge_code():
+    """다 되면 6개 ✅ · 종료 코드 0 쪽 요약. 옵션 목록은 중계 _ask 가 실제로 넘기는 것(코드를 따라감)."""
+    c = check()
+    r = c.run()
+    assert states(r) == ['ok'] * 6 and '준비 끝' in SetupCheck.report(r)
+    assert set(c.used_flags()) == set(HELP_ALL.split())
+
+
+def test_check_missing_flag_skips_login_and_says_upgrade():
+    """옛 판(옵션 없음)이면 ② ❌ + 새 판으로, 진짜 호출 ③은 건너뜀."""
+    r = check(cmd=fake_cmd(help_text=HELP_ALL.replace('--json-schema', ''))).run()
+    assert states(r)[:3] == ['ok', 'fail', 'skip'] and '--json-schema' in r[1][2] and '새 판' in r[1][3]
+
+
+@pytest.mark.parametrize('result, todo', [("You've hit your usage limit", '한도'), ('Please run /login', '로그인')])
+def test_check_login_failure_tells_what_to_do(result, todo):
+    """claude 오류 → ③ ❌ + 이유별 할 일(사용 한도 · 로그인)."""
+    r = check(bridge_run=lambda argv, prompt: json.dumps({'is_error': True, 'result': result})).run()
+    assert r[2][0] == 'fail' and todo in r[2][3]
+
+
+def test_check_bridge_off_and_no_container():
+    """중계가 꺼져 있으면 ⑤ ❌ + 켜는 명령(⑥은 ⏭), 웹 컨테이너가 없으면 ⑥ ⏭. --no-call 이면 ③ ⏭ · claude 가 없으면 ①②③."""
+    def refuse(url, t):
+        raise ConnectionRefusedError
+    r = check(fetch=refuse, cmd=fake_cmd(container=''), call=False).run()
+    assert states(r) == ['ok', 'ok', 'skip', 'ok', 'fail', 'skip'] and '--host 127.0.0.1' in r[4][3]
+    r = check(fetch=refuse).run()                                       # 꺼져 있으면 ⑥은 방화벽 탓으로 몰지 않고 ⏭
+    assert r[5][:3] == ('skip', '웹 컨테이너에서', '중계가 꺼져 있어 못 봄')
+    assert states(check(claude='').run())[:3] == ['fail', 'skip', 'skip']
+
+
+def test_check_container_cannot_see_bridge():
+    """웹 컨테이너에서 안 보이면 ⑥ ❌ + 방화벽 · extra_hosts 확인."""
+    r = check(cmd=fake_cmd(seen_from_container=False)).run()
+    assert r[5][0] == 'fail' and 'ufw' in r[5][3] and 'extra_hosts' in r[5][3] and 'timed out' in r[5][2]
+    assert '❌ 1개' in SetupCheck.report(r)

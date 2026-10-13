@@ -10,6 +10,7 @@ Claude 는 도구 · MCP · 슬래시 명령 없이, 빈 임시 폴더에서 부
 키는 쓰지 않는다(로그인 계정의 구독 한도를 쓴다). 들어온 Authorization 은 보지 않는다.
 
 실행(웹 PC 호스트): python3 web/claude_bridge.py [--host 172.17.0.1] [--port 8790] [--model opus]
+준비 점검(웹 PC 호스트): python3 web/claude_bridge.py --check [--host 172.17.0.1] [--no-call] — 항목마다 ✅ · ❌(할 일) · ⏭, 다 되면 종료 코드 0
 """
 import argparse
 import errno
@@ -18,9 +19,11 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -205,14 +208,161 @@ def make_handler(bridge):
     return Handler
 
 
+class SetupCheck:
+    """웹 PC 준비 점검(--check) — 중계가 설계 생성에 쓰일 수 있는지 차례로 본다(체크리스트 A · B 를 명령 하나로, 10/13).
+
+    항목: ① claude 실행 파일 ② 판 · 중계가 쓰는 옵션(_ask 가 실제로 넘기는 것을 모아 --help 와 대조 — 중계 코드가 바뀌어도 따라감)
+          ③ 로그인 · 모델(진짜 claude 한 번, call=False 면 건너뜀) ④ 듣는 주소가 이 PC 에 있는지 ⑤ 중계가 켜져 있는지(/health)
+          ⑥ 웹 컨테이너에서 중계가 보이는지(compose service web 이 떠 있고 ⑤가 됐을 때만).
+    입력: host · port · model(중계 인자와 같음), call(③을 할지), cmd((argv, timeout) → (종료 코드, 출력) — 시험 때 가짜),
+          fetch((url, timeout) → dict — 시험 때 가짜), claude(실행 파일 — 비우면 find_claude), bridge_run(③의 claude 실행 — 시험 때 가짜).
+    출력: run() → [(상태 'ok' · 'fail' · 'skip', 이름, 한 줄 설명, 할 일)]. 앞 항목이 실패해 볼 수 없는 항목은 skip.
+    바깥 영향: claude --version · --help 실행, ③이면 claude 한 번(구독 사용량 조금), /health 요청, docker ps · exec. 아무것도 바꾸지 않는다.
+    """
+
+    def __init__(self, host, port, model, call=True, cmd=None, fetch=None, claude=None, bridge_run=None):
+        """점검 대상과 바꿔 끼울 실행 함수들을 받는다."""
+        self.host, self.port, self.model, self.call = host, port, model, call
+        self.cmd, self.fetch, self.bridge_run = cmd or self._cmd, fetch or self._fetch, bridge_run
+        self.claude = claude if claude is not None else find_claude()
+
+    def run(self):
+        """6 항목을 차례로 → 결과 목록."""
+        out = []
+        if not self.claude:
+            out.append(('fail', 'claude 실행 파일', '못 찾음(CLAUDE_BIN · PATH · 데스크톱 앱 폴더)',
+                        'Claude Code(데스크톱 앱 또는 claude 명령)를 깔거나 CLAUDE_BIN=<경로> 를 준다'))
+            out += [('skip', n, 'claude 가 없어 못 봄', '') for n in ('판 · 옵션', '로그인 · 모델')]
+        else:
+            out.append(('ok', 'claude 실행 파일', self.claude, ''))
+            out.append(self._flags())
+            out.append(self._login() if self.call and out[-1][0] == 'ok'
+                       else ('skip', '로그인 · 모델', '--no-call' if not self.call else '옵션이 모자라 못 봄', ''))
+        out.append(self._address())
+        out.append(self._health())
+        out.append(self._container() if out[-1][0] == 'ok' else ('skip', '웹 컨테이너에서', '중계가 꺼져 있어 못 봄', ''))
+        return out
+
+    def used_flags(self):
+        """중계(_ask)가 claude 에 실제로 넘기는 옵션 이름들 — 가짜 실행으로 인자를 모은다(구조화 · system 둘 다 쓰는 길)."""
+        seen = []
+
+        def capture(argv, prompt):
+            seen.extend(argv)
+            return json.dumps({'is_error': False, 'structured_output': {}, 'result': '', 'usage': {}})
+        ClaudeBridge(self.claude or 'claude', self.model, capture)._ask(self.model, 'system', 'prompt', {'type': 'object'})
+        return sorted({a for a in seen if a.startswith('--')})
+
+    def _flags(self):
+        """② claude --version · --help 에 중계가 쓰는 옵션이 다 있는지."""
+        code, ver = self.cmd([self.claude, '--version'], 20)
+        code2, help_text = self.cmd([self.claude, '--help'], 20)
+        if code != 0 or code2 != 0:
+            return ('fail', '판 · 옵션', f'claude 를 실행하지 못함(종료 코드 {code} · {code2})', '실행 파일 권한 · 경로를 확인한다')
+        missing = [f for f in self.used_flags() if f not in help_text]
+        if missing:
+            return ('fail', '판 · 옵션', f'{ver.strip()} — 없는 옵션 {missing}', 'Claude Code 를 새 판으로 올린다')
+        return ('ok', '판 · 옵션', f'{ver.strip()} — 중계 옵션 {len(self.used_flags())}개 다 있음', '')
+
+    def _login(self):
+        """③ 진짜 claude 한 번(정해진 형식 답) — 로그인 · 모델 · 구조화 출력이 되는지. 걸린 시간도."""
+        fmt = {'type': 'json_schema', 'json_schema': {'name': 'ping', 'schema': {
+            'type': 'object', 'required': ['n'], 'properties': {'n': {'type': 'integer'}}}}}
+        t0 = time.time()
+        try:
+            res = ClaudeBridge(self.claude, self.model, self.bridge_run, timeout_s=120).complete(
+                {'model': self.model, 'response_format': fmt, 'messages': [{'role': 'user', 'content': '숫자 1 을 n 에 넣어 답하라'}]})
+            n = json.loads(res['choices'][0]['message']['content']).get('n')
+        except (BridgeError, ValueError, KeyError) as e:
+            text = getattr(e, 'message', str(e))
+            low = text.lower()
+            todo = ('구독 사용 한도 — 풀릴 때까지 기다리거나 시연 계정을 바꾼다' if 'limit' in low else
+                    '그 PC 에서 claude 를 한 번 실행해 로그인한다(또는 데스크톱 앱 로그인)' if 'log' in low or 'auth' in low else
+                    f'--model {"sonnet" if self.model != "sonnet" else "opus"} 로 다시 점검해 보고, 되면 web/.env 의 D2_LLM_MODEL 을 바꾼다'
+                    if 'model' in low else '위 오류를 보고 claude 를 직접 한 번 실행해 본다')
+            return ('fail', '로그인 · 모델', f'{self.model}: {text[:160]}', todo)
+        return ('ok', '로그인 · 모델', f'{self.model} 답 n={n} · {time.time() - t0:.1f} s', '')
+
+    def _address(self):
+        """④ 듣는 주소가 이 PC 에 있는지(0번 포트로 묶어 봄 — 중계가 이미 그 포트를 써도 상관없게)."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((self.host, 0))
+        except OSError as e:
+            return ('fail', '듣는 주소', f'{self.host} 가 이 PC 에 없음({e.strerror})',
+                    'ip -4 addr show docker0 의 주소로 --host 를 준다(보통 172.17.0.1)')
+        return ('ok', '듣는 주소', f'{self.host} 있음', '')
+
+    def _health(self):
+        """⑤ 중계가 켜져 있는지 — GET /health."""
+        url = f'http://{self.host}:{self.port}/health'
+        try:
+            body = self.fetch(url, 3)
+        except Exception as e:   # noqa: BLE001 — 연결 거부 · 시간 초과 모두 '꺼져 있음'으로
+            return ('fail', '중계 켜짐', f'{url} 응답 없음({type(e).__name__})',
+                    f'다른 터미널에서 python3 web/claude_bridge.py --host {self.host}'
+                    + (f' --port {self.port}' if self.port != 8790 else '') + ' 를 켜 둔다')
+        return ('ok', '중계 켜짐', f"{url} — 기본 모델 {body.get('default_model')}", '') if body.get('ok') else \
+            ('fail', '중계 켜짐', f'{url} 답이 이상함: {str(body)[:120]}', '그 포트를 다른 프로그램이 쓰는지 본다')
+
+    def _container(self):
+        """⑥ 웹 컨테이너(compose service web)에서 host.docker.internal 로 중계가 보이는지. 컨테이너가 없으면 skip."""
+        code, names = self.cmd(['docker', 'ps', '--filter', 'label=com.docker.compose.service=web', '--format', '{{.Names}}'], 10)
+        name = names.split()[0] if code == 0 and names.strip() else None
+        if not name:
+            return ('skip', '웹 컨테이너에서', '웹 컨테이너가 안 떠 있음(docker compose up 뒤 다시 점검)', '')
+        probe = (f"import urllib.request as u; print(u.urlopen('http://host.docker.internal:{self.port}/health', timeout=5).read().decode())")
+        code, out = self.cmd(['docker', 'exec', name, 'python', '-c', probe], 20)
+        if code == 0 and '"ok": true' in out:
+            return ('ok', '웹 컨테이너에서', f'{name} → host.docker.internal:{self.port} 보임', '')
+        last = (out.strip().splitlines() or [''])[-1]          # 파이썬 오류는 마지막 줄만(이유)
+        return ('fail', '웹 컨테이너에서', f'{name} 에서 안 보임: {last[-120:]}',
+                f'방화벽(sudo ufw status)이 docker(172.17.0.0/16)에서 {self.port} 를 막는지 본다(PL 확인 뒤 허용) · '
+                'compose 의 extra_hosts host.docker.internal:host-gateway 확인')
+
+    @staticmethod
+    def _cmd(argv, timeout):
+        """명령 실행 → (종료 코드, 출력). 실행 파일이 없거나 시간 초과면 (127, 이유)."""
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+            return p.returncode, p.stdout + p.stderr
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 127, f'{type(e).__name__}: {e}'
+
+    @staticmethod
+    def _fetch(url, timeout):
+        """GET → JSON dict."""
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return json.loads(r.read().decode('utf-8'))
+
+    @staticmethod
+    def report(results):
+        """결과 목록 → 사람이 읽을 글(항목마다 한 줄 + 실패면 할 일) · 끝에 요약."""
+        mark = {'ok': '✅', 'fail': '❌', 'skip': '⏭ '}
+        lines = []
+        for i, (state, name, detail, todo) in enumerate(results, 1):
+            lines.append(f'{mark[state]} {i}. {name} — {detail}')
+            if state == 'fail' and todo:
+                lines.append(f'      → 할 일: {todo}')
+        fails = sum(1 for r in results if r[0] == 'fail')
+        lines.append('준비 끝 — 웹 화면에서 [생성]을 한 번 해 본다' if not fails else f'❌ {fails}개를 고친 뒤 다시 --check')
+        return '\n'.join(lines)
+
+
 def main():
-    """인자를 읽고 서버를 띄운다. claude 를 못 찾으면 시작하지 않는다."""
+    """인자를 읽고 서버를 띄운다(--check 면 준비 점검만 하고 끝). claude 를 못 찾으면 시작하지 않는다."""
     ap = argparse.ArgumentParser(description='OpenAI 형식 → claude -p 중계(설계 생성용)')
     ap.add_argument('--host', default='127.0.0.1',
                     help='듣는 주소. compose 의 web 컨테이너가 부르면 docker0 주소(보통 172.17.0.1) — LAN 에는 열지 않는다')
     ap.add_argument('--port', type=int, default=8790)
     ap.add_argument('--model', default=os.environ.get('D2_LLM_MODEL') or 'opus', help='요청 model 이 별칭이 아닐 때 쓸 모델')
+    ap.add_argument('--check', action='store_true', help='웹 PC 준비 점검만 하고 끝(중계는 켜지 않음) — 다 되면 종료 코드 0')
+    ap.add_argument('--no-call', action='store_true', help='--check 때 진짜 claude 호출(로그인 · 모델)을 건너뜀(구독 사용량 안 씀)')
     a = ap.parse_args()
+    if a.check:
+        results = SetupCheck(a.host, a.port, a.model, call=not a.no_call).run()
+        print(SetupCheck.report(results))
+        raise SystemExit(1 if any(r[0] == 'fail' for r in results) else 0)
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     claude = find_claude()
     if not claude:
