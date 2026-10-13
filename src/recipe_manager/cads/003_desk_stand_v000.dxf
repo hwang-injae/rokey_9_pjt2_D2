@@ -6541,7 +6541,7 @@ TOP_001_01
 1001
 M0609_ASSEMBLY
 1000
-{"block_id":"TOP_001_01","sequence":7,"stage":3,"role":"left_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_SHORT","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm
+{"block_id":"TOP_001_01","sequence":7,"stage":3,"role":"left_top","orientation_name":"FLAT_Y","size_lwt_mm":[75.0,25.0,15.0],"grasp_candidate":"FLAT_LONG","grasp_validation":"REQUIRED_V04_V20","source_slot_id":null,"grip_force_N":null,"open_width_mm
 1000
 ":null,"T_tcp_from_block":null,"before_place_check":"VERIFY_PREVIOUS_BLOCK_STABLE","after_place_check":"VERIFY_RELEASE_AND_STRUCTURE_STABLE","definition_R_cad_from_block":[[0,-1,0],[1,0,0],[0,0,1]]}
   0

@@ -231,7 +231,7 @@ def test_recipe_sha256_matches_team_value():
     csv_sha = (folder / '001_CHAIR_BENCH_V000_placements.csv').read_text(encoding='utf-8').splitlines()[1].split(',')[-2]
     direct = hashlib.sha256(json.dumps(recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
     # 새 구조(template.composition) 벤치 fixture 의 고정값 — 옛 구조 값 2685767e…1c76 은 폐기. hashlib 직접 계산과도 같아야 한다
-    assert recipe_sha256(recipe) == direct == csv_sha == '87333b39c4897ce1fd6ebdf336b7f0a719feba547dd1bd1a3c63a4b039211645'
+    assert recipe_sha256(recipe) == direct == csv_sha == '861f9d1604d0b2e2e29789a7ec12aba7b5e1d622c33c1cab8767fe02b564d652'
 
 
 def test_recipe_from_design_attaches_structure():

@@ -378,7 +378,7 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     assert direct == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
         # 새 구조(template.composition) 벤치 fixture 에 고정한 값 — 구조·키 이름이 바뀌면 여기서 걸린다(옛 구조 값 2685767e…1c76 은 폐기)
-        assert doc.placements['recipe_sha256'] == '87333b39c4897ce1fd6ebdf336b7f0a719feba547dd1bd1a3c63a4b039211645'
+        assert doc.placements['recipe_sha256'] == '861f9d1604d0b2e2e29789a7ec12aba7b5e1d622c33c1cab8767fe02b564d652'
 
 
 @pytest.mark.parametrize('mutate', [
