@@ -2,7 +2,7 @@
 // 스캔 '추천 설계'(10/13 플랜 B 1단계) — 스캔 확인(SCAN_REVIEW) 때 저장된 설계 중 스캔과 가장 비슷한 것을 보여 주고,
 // 사람이 [조립]을 누르면 그 설계 ID 로 select_design(SCAN_REVIEW 에서 받음) → 이어서 start(10/13 PL — 한 번 누름 = 출발 확인, SR-09).
 // 이미 그 설계로 출발 대기(READY)면 start 만(lib/api assemble — 설계 3D 의 [조립]과 같음). 이미 검사를 통과한 저장 설계라
-// GPT · 새 검사 · 새 저장이 필요 없다 — GPT 가 막혀도 스캔 복제가 이어진다. 일치율 계산은 backend(비전 match_rate 와 같은 식).
+// AI · 새 검사 · 새 저장이 필요 없다 — AI 가 막혀도 스캔 복제가 이어진다. 일치율 계산은 backend(비전 match_rate 와 같은 식).
 // 다른 블록은 3D 로 비교해 사람이 확인한다(추천 설계 그대로 쌓으므로 스캔과 다른 블록은 설계대로 놓인다).
 import { useEffect, useState } from 'react';
 import * as api from '@/lib/api';
