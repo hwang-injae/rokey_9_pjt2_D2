@@ -37,8 +37,8 @@
 ### 아키텍처
 
 <p align="center">
-  <img src="docs/images/시스템아키텍처_v7_101317.png" width="900" alt="시스템 아키텍처 v7 — 노드 카드: 입력 → 처리 → 출력"><br>
-  <sub>시스템 아키텍처 v7 (10/13 main 기준 — 실선 = 지금 코드 · 점선 = 정했지만 아직 없음) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v4_101317.md">시스템 아키텍처 설명</a></sub>
+  <img src="docs/images/시스템아키텍처_v7_101318.png" width="900" alt="시스템 아키텍처 v7 — 노드 카드: 입력 → 처리 → 출력"><br>
+  <sub>시스템 아키텍처 v7 (10/13 main 기준 — 실선 = 지금 코드 · 점선 = 정했지만 아직 없음) · 따라 읽는 법: <a href="docs/시스템아키텍처_설명_v4_101318.md">시스템 아키텍처 설명</a></sub>
 </p>
 
 **PC 2대(10/6 18시 E-26~E-31).** **로봇 PC**에 ROS 2 노드 전부(브링업 · MoveIt2 · 정지 · 손목 비전 · 스캔 추론기 · **task** · **다리 `bridge`**)가 호스트로 돈다. **웹 PC**에는 ROS가 없다 — docker compose로 `mosquitto`(MQTT 브로커) · `db`(DB) · `web`(backend FastAPI — 설계 생성 · 저장소 + frontend 화면 정적 파일)을 띄우고, 음성은 호스트. 화면(frontend)은 사람의 브라우저에서 돌고 backend와 REST · WebSocket으로만 주고받는다(10/7 E-41). 두 PC는 **MQTT**로 잇는다(다리 노드가 ROS ↔ MQTT 변환).
@@ -71,7 +71,7 @@ ROS 노드는 **6개**(`task` · `wrist_block` · `pick_place` · `scene_manager
 
 ### 동작 흐름
 
-**설계 생성 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v4_101317.md))
+**설계 생성 → 조립** ([그림 설명](docs/시스템아키텍처_설명_v4_101318.md))
 
 ```
 ① 요청        웹 글상자 "2인용 벤치 만들어 줘" [생성]  /  "hello rokey" → 음성 → 받아 적은 문장을 화면에서 확인 → [생성]
