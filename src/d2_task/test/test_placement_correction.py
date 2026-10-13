@@ -127,3 +127,15 @@ def test_bad_target_rotation_is_not_pass_even_with_zero_offset():
     row=observation(center_m=[0,0,0])
     result=PlacementCorrection(.003,2).prepare_goal('a',([0,0,0],[0,0,0,0]),row,'FLAT_SHORT',0)
     assert result['decision']=='UNMEASURED' and result['reason']=='INVALID_TARGET_POSE'
+
+
+def test_goal_keys_match_task_node_pick_place_contract():
+    """main task_node.pick_place 가 읽는 키 · 자세 모양((xyz), (xyzw))과 맞는다 — block_id 같은 옛 키는 없다."""
+    result=PlacementCorrection(.003,2).prepare_goal('004_DESK_PEDESTAL_V000_BASE_001_01',([0,0,0],[0,0,0,1]),
+                                                    observation(part_id='004_DESK_PEDESTAL_V000_BASE_001_01',obstacles=[([.1,0,0],[0,0,0,1])]),'FLAT_SHORT',0)
+    goal=result['goal']
+    assert set(goal)=={'part_id','supply_slot','grasp','pick_pose','place_pose','open_width_m','obstacles'}
+    assert goal['part_id']=='004_DESK_PEDESTAL_V000_BASE_001_01' and goal['supply_slot']==''
+    for pose in [goal['pick_pose'],goal['place_pose'],*goal['obstacles']]:
+        (x,y,z),(qx,qy,qz,qw)=pose                       # task_node.to_pose 와 같은 풀기
+        assert all(isinstance(v,(int,float)) for v in (x,y,z,qx,qy,qz,qw))

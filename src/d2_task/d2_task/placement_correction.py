@@ -97,8 +97,8 @@ class PlacementCorrection:
                 or isinstance(open_width_m,bool) or not isinstance(open_width_m,(int,float))
                 or not math.isfinite(open_width_m) or open_width_m<0):
             return dict(assessment,decision='UNMEASURED',reason='INVALID_GRASP',goal=None)
-        # 현재 내부 task IO 계약은 block_id다. PLM 뒤 어댑터에서 part_id로 연결한다.
-        goal=dict(block_id=part_id,supply_slot='',grasp=grasp,open_width_m=open_width_m,
+        # 키는 PLM 뒤 main task_node.pick_place 가 읽는 이름 그대로(part_id · supply_slot · grasp · pick_pose · place_pose · open_width_m · obstacles)
+        goal=dict(part_id=part_id,supply_slot='',grasp=grasp,open_width_m=open_width_m,
                   pick_pose=(list(observation['center_m']),list(actual_q)),
                   place_pose=(list(center),list(quaternion)),
                   obstacles=[(list(p[0]),list(p[1])) for p in obstacles])
