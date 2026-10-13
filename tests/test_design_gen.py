@@ -1,9 +1,10 @@
 """AI 설계 생성(web/backend/design_gen.py — DesignGenerator, W108)이 SDD 6.6 · IRD 8.3 · E-72 · E-84 대로 도는지 지킨다.
 
 OpenAI 없이 돈다(가짜 클라이언트가 정해 둔 답을 차례로 준다). 검사는 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결).
-지키는 것: 첫 호출은 도구 get_design 을 꼭 부르게 함(RAG) · 도구는 확인된 Template 설계만(enum) · 읽은 설계 = 부모 · 후보에 검사 전 새 ID
-(Template 다음 V) · 합격 후보만 저장 · 다 떨어지면 검사 detail 을 피드백으로 다시(최대 2번) → GEN_FAILED · 범위 밖 OUT_OF_SCOPE ·
-검사 서비스 실패(로봇 PC)는 다시 만들지 않음 · 도구 단계 실패면 예시를 코드가 넣음 · 기록(NFR-17) · Template 고르기 · 키 없음.
+지키는 것: 부모 = 사람이 고른 설계(10/13 PL) · 바탕 설계를 요청 글에 넣음 · 도구는 같은 Template 의 다른 설계만(enum, 읽기는 골라서) ·
+후보에 검사 전 새 ID(Template 다음 V) · 합격 후보만 저장(AI 판단 기록은 비움) · 모자라면 검사 detail 을 피드백으로 더(최대 2번) ·
+범위 밖 OUT_OF_SCOPE · 검사 서비스 실패(로봇 PC)는 다시 만들지 않음 · 도구 단계 실패면 예시를 코드가 넣음 · 기록(NFR-17) · 키 없음 ·
+스캔 [저장](W177 scan_fill → 검사 → 저장).
 """
 import copy
 import json
@@ -21,7 +22,7 @@ for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_task', ROOT / 'src' / 'd2
 from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from design_gen import MAX_REGEN, DesignGenerator, GenError, scan_actions  # noqa: E402
-from design_store import DesignStore  # noqa: E402
+from design_store import DesignStore, split_design_id  # noqa: E402
 
 RECIPES = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
 CFG = yaml.safe_load((ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml').read_text(encoding='utf-8'))
@@ -92,6 +93,16 @@ def bad(good):
     return b
 
 
+def derive(store, parent=BENCH):
+    """같은 Template 에 파생 설계 하나를 저장한다(부모 블록 그대로 · 다음 번호, made_by web) — 도구로 읽을 '다른 설계'가 있게."""
+    template = split_design_id(parent)[0]
+    design_id, _ = store.new_design_id(template, parent)
+    parts = {**store.get_design(parent)['parts'], 'design_id': design_id}
+    res = real_check()({**parts, 'base_recipe': store.base_recipe(template)})
+    assert res['ok'], res['errors']
+    return store.save_design(parts, res['recipe'], res['placements'], parent, 'web', check={'ok': True})['design_id']
+
+
 def make(store, replies, check=None):
     """가짜 OpenAI · 진짜 검사(또는 주어진 check)로 생성기를 만든다."""
     client = FakeOpenAI(replies)
@@ -99,124 +110,180 @@ def make(store, replies, check=None):
 
 
 def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
-    """도구로 참고 설계를 읽고(부모) → 후보 3개에 새 ID → 진짜 검사 → 합격 후보 1개만 저장. 진행 표시 · 기록(NFR-17)도.
-    검사 요청에는 V000 레시피 통째(base_recipe — 10/13 PL)를 싣고, 후보 · 저장 설계에는 안 넣는다. 저장하면 AI 판단 기록 · AI 기록 번호(#14)."""
+    """고른 설계(부모)를 바탕으로 주고 → 같은 Template 의 다른 설계를 도구로 참고 → 후보 3개에 새 ID → 진짜 검사 → 떨어진 1개만큼 더 만들어
+    통과 3개 → 고른 1개만 저장. 진행 · 기록(NFR-17)도. 검사 요청에는 V000 레시피 통째(base_recipe — 10/13 PL)를 싣고, 후보 · 저장 설계에는
+    안 넣는다. 저장하면 AI 기록 번호(#14), AI 판단 기록 3칸은 비움(글 · 음성 — 10/13 PL)."""
+    v1 = derive(store)
     sent, check = [], real_check()
-    gen, client = make(store, [tool_call(BENCH), answer([good, bad, good])], check=lambda req: sent.append(req) or check(req))
+    gen, client = make(store, [tool_call(v1), answer([good, bad, good]), answer([good])],
+                       check=lambda req: sent.append(req) or check(req))
     events = []
-    r = gen.generate('벤치를 만들어 줘', TEMPLATE, on_progress=lambda stage, info: events.append(stage))
-    assert r['design_id'] == '001_CHAIR_BENCH_V001' and r['parent_id'] == BENCH and r['reference'] == [BENCH]
-    assert [c['check']['ok'] for c in r['candidates']] == [True, False, True]
-    assert r['candidates'][1]['check']['errors'] and r['candidates'][0]['parts']['design_id'] == '001_CHAIR_BENCH_V001'
-    assert len(sent) == 3 and all(req['base_recipe'] == store.get_design(BENCH)['recipe'] for req in sent)
+    r = gen.generate('벤치를 만들어 줘', BENCH, on_progress=lambda stage, info: events.append(stage))
+    assert r['design_id'] == '001_CHAIR_BENCH_V002' and r['parent_id'] == BENCH and r['base_id'] == BENCH and r['reference'] == [v1]
+    assert [c['check']['ok'] for c in r['candidates']] == [True, True, True] and r['attempts'] == 2   # 통과한 것만 화면에
+    assert r['candidates'][0]['parts']['design_id'] == '001_CHAIR_BENCH_V002'
+    assert len(sent) == 4 and all(req['base_recipe'] == store.get_design(BENCH)['recipe'] for req in sent)
     assert all('base_recipe' not in c['parts'] for c in r['candidates'])
-    assert events == ['reading', 'candidates', 'checked', 'checked', 'checked']
-    first, second = client.calls
-    assert first['model'] == 'gpt-4o' and first['temperature'] == 0 and first['tool_choice'] == 'required'
+    assert events == ['reading', 'candidates', 'checked', 'checked', 'checked', 'retry', 'candidates', 'checked']
+    assert '후보 2개는 통과해 남겨 둔다' in client.calls[2]['messages'][-1]['content'] and '새 후보 1개만' in client.calls[2]['messages'][-1]['content']
+    first, second, _ = client.calls
+    assert first['model'] == 'gpt-4o' and first['temperature'] == 0 and first['tool_choice'] == 'auto'   # 바탕은 줬으니 참고는 골라서
     assert first['parallel_tool_calls'] is False and first['response_format']['json_schema']['strict'] is True
-    assert first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [BENCH]   # 이 Template 설계만
+    assert first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [v1]   # 같은 Template 의 다른 설계만
+    request = first['messages'][1]['content']
+    assert '[바탕 설계 — 사용자가 고름]\n- 001_CHAIR_BENCH_V000 |' in request and json.dumps(good, ensure_ascii=False, separators=(',', ':')) in request
+    assert f'- {v1} |' in request.split('[DB 목록')[1]
     assert second['messages'][-1]['role'] == 'tool' and '"parts"' in second['messages'][-1]['content']
-    rec = gen.save(r, 0, ai_template='002_CHAIR_BACK', ai_reason='등받이가 있을 것 같아서')    # 사람이 확인 화면에서 바꾼 경우
-    assert rec['design_id'] == '001_CHAIR_BENCH_V001' and rec['parent_id'] == BENCH and rec['made_by'] == 'web'
-    assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
-    assert (rec['ai_template'], rec['ai_reason'], rec['template_changed']) == ('002_CHAIR_BACK', '등받이가 있을 것 같아서', True)
+    rec = gen.save(r, 0)
+    assert rec['design_id'] == '001_CHAIR_BENCH_V002' and rec['parent_id'] == BENCH and rec['made_by'] == 'web'
+    assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['model_id'] == '001_CHAIR_BENCH_V002'
+    assert (rec.get('ai_template'), rec.get('ai_reason'), rec.get('template_changed')) == (None, None, None)
     assert 'base_recipe' not in rec['parts'] and 'revision' not in json.dumps(rec['recipe'])   # AI 레시피 = composition 만(레시피 초안 6절)
     with pytest.raises(ValueError):
-        gen.save(r, 1)                                       # 떨어진 후보는 못 고름
+        gen.save(r, 3)                                       # 없는 번호(떨어진 후보는 아예 안 돌려줌)
     logs = list(store.gen_logs_dir.glob('*_generate.json'))
     assert len(logs) == 1 and r['gen_log'] == logs[0].name
     log = json.loads(logs[0].read_text(encoding='utf-8'))
-    assert log['messages'][0]['role'] == 'system' and len(log['calls']) == 2 and log['result']['design_id'] == '001_CHAIR_BENCH_V001'
-    assert log['design_id'] == '001_CHAIR_BENCH_V001'        # 고른 후보를 저장할 때 채움(설계_DB #14)
+    assert log['messages'][0]['role'] == 'system' and len(log['calls']) == 3 and log['result']['design_id'] == '001_CHAIR_BENCH_V002'
+    assert log['design_id'] == '001_CHAIR_BENCH_V002' and log['base_id'] == BENCH     # 고른 후보를 저장할 때 채움(설계_DB #14)
     assert 'sk-' not in logs[0].read_text(encoding='utf-8')
 
 
-def test_regenerates_with_check_feedback_then_succeeds(store, good, bad):
-    """3개 다 떨어지면 검사 detail 을 피드백으로 다시 — 두 번째에 합격하면 그것을 돌려준다(같은 ID)."""
-    gen, client = make(store, [tool_call(BENCH), answer([bad] * 3), answer([good, bad, bad])])
-    r = gen.generate('벤치', TEMPLATE)
-    assert r['attempts'] == 2 and r['candidates'][0]['check']['ok'] and r['design_id'] == '001_CHAIR_BENCH_V001'
-    retry = client.calls[-1]
-    assert retry['tool_choice'] == 'none' and retry['messages'][-1]['content'].startswith('[검사 결과]')
+def test_parent_is_chosen_design_not_what_gpt_read(store, good):
+    """부모 = 사람이 고른 설계(10/13 PL): 파생 V001 을 고르고 GPT 가 V000 을 읽어도 부모는 V001, 새 ID 는 Template 다음 번호.
+    같은 Template 에 다른 설계가 없으면(기본 설계만) 도구 없이 바로 후보를 받는다."""
+    v1 = derive(store)
+    gen, client = make(store, [tool_call(BENCH), answer([good] * 3)])
+    r = gen.generate('좌판을 넓혀 줘', v1)
+    assert (r['parent_id'], r['reference'], r['design_id'], r['template']) == (v1, [BENCH], '001_CHAIR_BENCH_V002', TEMPLATE)
+    assert client.calls[0]['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [BENCH]
+    assert gen.save(r, 1)['parent_id'] == v1
+    back = store.get_design('002_CHAIR_BACK_V000')['parts']['parts']
+    gen, client = make(store, [answer([back] * 3)])
+    r = gen.generate('다리를 늘려 줘', '002_CHAIR_BACK_V000')
+    assert r['parent_id'] == '002_CHAIR_BACK_V000' and r['design_id'] == '002_CHAIR_BACK_V001' and 'tools' not in client.calls[0]
+    assert '- 없음(이 Template 의 설계는 바탕 설계뿐)' in client.calls[0]['messages'][1]['content']
+
+
+def test_regenerates_with_check_feedback_keeps_passed_and_fills_shortfall(store, good, bad):
+    """다 떨어지면 검사 detail 을 피드백으로 3개 다시 → 1개 통과면 남기고 모자란 2개만 더 → 처음 + 2번 뒤 안 차면 통과한 것만(같은 ID)."""
+    gen, client = make(store, [answer([bad] * 3), answer([good, bad, bad]), answer([bad, bad])])
+    r = gen.generate('벤치', BENCH)
+    assert r['attempts'] == 3 and [c['check']['ok'] for c in r['candidates']] == [True] and r['design_id'] == '001_CHAIR_BENCH_V001'
+    retry = client.calls[1]
+    assert 'tools' not in retry and retry['messages'][-1]['content'].startswith('[검사 결과]')
     fb = retry['messages'][-1]['content']
-    assert '9번' in fb and '공중' in fb and '고칠 것' in fb and '후보 1(안 0)' in fb     # 후보별로 묶고 고치는 법을 붙임
+    assert '후보 3개를 다시' in fb and '9번' in fb and '공중' in fb and '고칠 것' in fb and '후보 1(안 0)' in fb   # 후보별로 묶고 고치는 법
     assert '아랫면 z 75.0' in fb and '가장 높아야 z 60.0' in fb                        # 어느 층이 비었는지(다리 꼭대기 60)
+    assert '후보 1개는 통과해 남겨 둔다' in client.calls[2]['messages'][-1]['content'] and '새 후보 2개만' in client.calls[2]['messages'][-1]['content']
+
+
+def test_refill_call_failure_keeps_passed(store, good, bad):
+    """더 만들기 호출만 실패하면(네트워크 등) 이미 통과한 후보는 버리지 않고 돌려준다."""
+    gen, _ = make(store, [answer([good, bad, bad]), RuntimeError('network')])
+    r = gen.generate('벤치', BENCH)
+    assert [c['check']['ok'] for c in r['candidates']] == [True]
+
+
+@pytest.mark.parametrize('reasons, code', [(['TEMPLATE_RANGE', 'TEMPLATE_SHAPE'], 'TEMPLATE_SHAPE'),
+                                           (['TEMPLATE_RANGE', 'CHECK_FAILED'], 'TEMPLATE_RANGE'),
+                                           (['CHECK_FAILED'], 'GEN_FAILED')])
+def test_none_passed_is_told_by_kind(store, good, reasons, code):
+    """하나도 통과 못 하면 실패 종류로 알린다(레시피 초안 7-1): 구성 형태 먼저 → 범위(21번 detail 의 범위 글을 붙임) → 그 밖."""
+    errs = [{'part': None, 'reason': r, 'kind': 'template' if r.startswith('TEMPLATE') else 'position',
+             'detail': '21번 범위: 다리 높이 150 mm — 범위 30 ~ 120' if r == 'TEMPLATE_RANGE' else r} for r in reasons]
+    gen, client = make(store, [answer([good] * 3)] * (MAX_REGEN + 1),
+                       check=lambda req: {'success': True, 'reason': '', 'ok': False, 'errors': errs})
+    with pytest.raises(GenError) as e:
+        gen.generate('다리 높은 벤치', BENCH)
+    assert e.value.code == code and len(client.calls) == 1 + MAX_REGEN
+    assert ('다리 높이 150 mm — 범위 30 ~ 120' in e.value.message) == (code == 'TEMPLATE_RANGE') and '21번' not in e.value.message
+
+
+def test_request_invalid_is_not_regenerated(store, good):
+    """REQUEST_INVALID(웹 쪽 잘못 — base_recipe 등)는 다시 만들어도 같아 바로 끝낸다(D10)."""
+    bad_req = {'success': True, 'reason': '', 'ok': False, 'errors': [{'part': None, 'reason': 'REQUEST_INVALID', 'detail': 'base_recipe 가 없다'}]}
+    gen, client = make(store, [answer([good] * 3)], check=lambda req: bad_req)
+    with pytest.raises(GenError) as e:
+        gen.generate('벤치', BENCH)
+    assert e.value.code == 'REQUEST_INVALID' and len(client.calls) == 1
 
 
 def test_gives_up_after_two_regenerations(store, bad):
-    """다시 만들기는 최대 2번 — 그래도 다 떨어지면 GEN_FAILED(마지막 errors 를 detail 로)."""
-    gen, client = make(store, [tool_call(BENCH)] + [answer([bad] * 3)] * (MAX_REGEN + 1))
+    """더 만들기는 최대 2번 — 그래도 하나도 통과 못 하면 실패 종류로(마지막 errors 를 detail 로). 좌판을 띄운 후보는 진짜 검사에서
+    공중(position)과 구성 형태(21번 — 좌판이 다리 위가 아님)가 같이 떨어져, 구성 형태 먼저(PL 4-2-추가) = TEMPLATE_SHAPE."""
+    gen, client = make(store, [answer([bad] * 3)] * (MAX_REGEN + 1))
     with pytest.raises(GenError) as e:
-        gen.generate('벤치', TEMPLATE)
-    assert e.value.code == 'GEN_FAILED' and e.value.detail
-    assert len(client.calls) == 1 + 1 + MAX_REGEN
+        gen.generate('벤치', BENCH)
+    kinds = {x.get('kind') for x in e.value.detail}
+    assert e.value.code == 'TEMPLATE_SHAPE' and {'position', 'template'} <= kinds
+    assert len(client.calls) == 1 + MAX_REGEN
 
 
 def test_out_of_scope(store):
     """AI 가 범위 밖이라고 하면 OUT_OF_SCOPE(이유 그대로) — 검사 · 저장 없음."""
-    gen, _ = make(store, [tool_call(BENCH), answer([], out=True, reason='벤치로는 2층 침대를 못 만들어요')])
+    gen, _ = make(store, [answer([], out=True, reason='벤치로는 2층 침대를 못 만들어요')])
     with pytest.raises(GenError) as e:
-        gen.generate('2층 침대', TEMPLATE)
+        gen.generate('2층 침대', BENCH)
     assert e.value.code == 'OUT_OF_SCOPE' and '침대' in e.value.message
     assert [r['design_id'] for r in store.list_designs(template=TEMPLATE)] == [BENCH]
 
 
 def test_tool_answers_only_template_designs_and_stops_after_two(store, good):
-    """목록 밖 설계를 부르면 이유만 돌려주고(읽지 않음), 2번 읽으면 그다음은 도구를 못 부르게(tool_choice none)."""
-    gen, client = make(store, [tool_call('002_CHAIR_BACK_V000'), tool_call(BENCH, 'c2'), tool_call(BENCH, 'c3'),
-                               answer([good] * 3)])
-    r = gen.generate('벤치', TEMPLATE)                         # 3라운드 내내 도구만 부름 → 예시를 코드가 넣는 길로(E-72)
+    """목록 밖 설계(다른 Template · 바탕 설계 자신)를 부르면 이유만 돌려주고(읽지 않음), 2번 읽으면 그다음은 도구를 못 부르게(none)."""
+    v1 = derive(store)
+    gen, client = make(store, [tool_call('002_CHAIR_BACK_V000'), tool_call(v1, 'c2'), tool_call(v1, 'c3'), answer([good] * 3)])
+    r = gen.generate('벤치', BENCH)                            # 3라운드 내내 도구만 부름 → 예시를 코드가 넣는 길로(E-72)
     assert r['reference'] == [] and r['parent_id'] == BENCH and 'tools' not in client.calls[-1]
-    gen, client = make(store, [tool_call(BENCH), tool_call(BENCH, 'c2'), answer([good] * 3)])
-    r = gen.generate('벤치', TEMPLATE)
-    assert [c['tool_choice'] for c in client.calls] == ['required', 'auto', 'none'] and r['reference'] == [BENCH, BENCH]
-    gen, client = make(store, [tool_call('002_CHAIR_BACK_V000'), tool_call(BENCH, 'c2'), answer([good] * 3)])
-    r = gen.generate('벤치', TEMPLATE)
-    assert 'error' in client.calls[1]['messages'][-1]['content'] and r['reference'] == [BENCH]
+    gen, client = make(store, [tool_call(v1), tool_call(v1, 'c2'), answer([good] * 3)])
+    r = gen.generate('벤치', BENCH)
+    assert [c['tool_choice'] for c in client.calls] == ['auto', 'auto', 'none'] and r['reference'] == [v1, v1]
+    gen, client = make(store, [tool_call(BENCH), tool_call(v1, 'c2'), answer([good] * 3)])
+    r = gen.generate('벤치', BENCH)
+    assert 'error' in client.calls[1]['messages'][-1]['content'] and r['reference'] == [v1] and r['parent_id'] == BENCH
 
 
 def test_falls_back_to_examples_when_tool_phase_fails(store, good):
-    """도구 단계 호출이 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환) — 부모 = 기본 설계."""
+    """도구 단계 호출이 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환) — 부모는 그대로 고른 설계, 바탕 설계는 예시에서 뺌."""
+    v1 = derive(store)
     gen, client = make(store, [RuntimeError('network'), answer([good] * 3)])
-    r = gen.generate('벤치', TEMPLATE)
-    assert r['parent_id'] == BENCH and r['reference'] == []
-    assert 'tools' not in client.calls[-1] and '도구 대신 코드가 넣음' in client.calls[-1]['messages'][1]['content']
+    r = gen.generate('벤치', v1)
+    assert r['parent_id'] == v1 and r['reference'] == []
+    text = client.calls[-1]['messages'][1]['content']
+    examples = text.split('[참고 설계 — 도구 대신 코드가 넣음]')[1]
+    assert 'tools' not in client.calls[-1] and f'({BENCH},' in examples and f'({v1},' not in examples
 
 
 def test_check_service_failure_is_not_regenerated(store, good):
     """검사 서비스가 답을 못 하면(로봇 PC · 다리 — TIMEOUT · ERROR) AI 탓이 아니라 다시 만들지 않고 그 이유로 끝낸다."""
-    gen, client = make(store, [tool_call(BENCH), answer([good] * 3)],
+    gen, client = make(store, [answer([good] * 3)],
                        check=lambda b: {'success': False, 'reason': 'TIMEOUT', 'message': '5초 안에 답이 없다'})
     with pytest.raises(GenError) as e:
-        gen.generate('벤치', TEMPLATE)
-    assert e.value.code == 'TIMEOUT' and len(client.calls) == 2
+        gen.generate('벤치', BENCH)
+    assert e.value.code == 'TIMEOUT' and len(client.calls) == 1
 
 
-def test_unknown_template_and_bad_answer(store):
-    """모르는 Template 은 부르기 전에 거절, AI 답이 JSON 이 아니면 GEN_FAILED(고쳐 읽지 않음)."""
+def test_unknown_base_and_bad_answer(store):
+    """고른 설계가 없거나(모르는 Template · 저장 안 된 번호 · ID 꼴 아님) 부르기 전에 ERROR, AI 답이 JSON 이 아니면 GEN_FAILED(고쳐 읽지 않음)."""
     gen, client = make(store, [])
-    with pytest.raises(GenError):
-        gen.generate('소파', '009_SOFA_LONG')
+    for base in ('009_SOFA_LONG_V000', '001_CHAIR_BENCH_V007', '001_CHAIR_BENCH', None):
+        with pytest.raises(GenError) as e:
+            gen.generate('소파', base)
+        assert e.value.code == 'ERROR'
     assert client.calls == []
-    gen, _ = make(store, [tool_call(BENCH), SimpleNamespace(content='블록을 이렇게…', refusal=None, tool_calls=None)])
+    gen, _ = make(store, [SimpleNamespace(content='블록을 이렇게…', refusal=None, tool_calls=None)])
     with pytest.raises(GenError) as e:
-        gen.generate('벤치', TEMPLATE)
+        gen.generate('벤치', BENCH)
     assert e.value.code == 'GEN_FAILED'
 
 
-def test_classify_template_or_none(store):
-    """Template 고르기(E-84 ③): 등록된 4개 + NONE 중 하나. NONE 이면 template None — 화면은 범위 밖 안내."""
-    reply = SimpleNamespace(content=json.dumps({'template': '003_DESK_STAND', 'reason': '다리가 선 책상'}), refusal=None, tool_calls=None)
-    none = SimpleNamespace(content=json.dumps({'template': 'NONE', 'reason': '소파는 없어요'}), refusal=None, tool_calls=None)
-    gen, client = make(store, [reply, none])
-    assert gen.classify('다리가 긴 책상') == {'template': '003_DESK_STAND', 'reason': '다리가 선 책상'}
-    assert gen.classify('소파') == {'template': None, 'reason': '소파는 없어요'}
-    call = client.calls[0]
-    assert call['model'] == 'gpt-4o'                     # 팀 키는 gpt-4o · whisper-1 만(10/10)
-    bench = store.get_design(BENCH)['recipe']['template']   # 설명 = V000 레시피 template 칸(코드 표 없음, 10/13 PL)
-    assert f"- {TEMPLATE}: {bench['name']} — {bench['description']} (" in call['messages'][0]['content']
-    assert call['response_format']['json_schema']['schema']['properties']['template']['enum'] == \
-        ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL', 'NONE']
+def test_request_names_template_from_v000_recipe(store, good):
+    """요청 글의 [Template] 줄 = V000 레시피 template 칸의 이름 — 설명(코드 표 없음, 10/13 PL). 모델은 gpt-4o(팀 키는 gpt-4o · whisper-1 만)."""
+    gen, client = make(store, [answer([good] * 3)])
+    gen.generate('벤치', BENCH)
+    bench = store.get_design(BENCH)['recipe']['template']
+    assert f"[Template] {TEMPLATE} — {bench['name']} — {bench['description']} (" in client.calls[0]['messages'][1]['content']
+    assert client.calls[0]['model'] == 'gpt-4o'
 
 
 def test_prompt_takes_rules_from_robot_yaml_and_roles(store):
@@ -234,7 +301,7 @@ def test_no_key_is_gen_failed(store, monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
     gen = DesignGenerator(store, real_check(), RULES)
     with pytest.raises(GenError) as e:
-        gen.generate('벤치', TEMPLATE)
+        gen.generate('벤치', BENCH)
     assert e.value.code == 'GEN_FAILED'
 
 
@@ -242,7 +309,7 @@ def test_no_credit_message(store):
     """크레딧이 없으면(429 insufficient_quota) 기다리라는 말 대신 크레딧을 채우라고 알린다(10/10 실제로 겪음)."""
     gen, _ = make(store, [RuntimeError("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")])
     with pytest.raises(GenError) as e:
-        gen.classify('벤치')
+        gen.generate('벤치', BENCH)
     assert e.value.code == 'GEN_FAILED' and '크레딧' in e.value.message
 
 
@@ -346,6 +413,8 @@ def test_four_bases_pass_real_check_with_their_base_recipe(store):
         assert chk['ok'] and chk['recipe']['model_id'] == design_id and 'revision' not in json.dumps(chk['recipe']), (t, chk['errors'])
     wrong = real_check()({**parts, 'base_recipe': store.base_recipe('001_CHAIR_BENCH')})
     assert wrong['ok'] is False and [e['reason'] for e in wrong['errors']] == ['REQUEST_INVALID']
+
+
 # ---------- 스캔 [저장] 채우기(W177 · IRD 8.4 ⑦ · E-79) ----------
 def scan_answer(parts, parent, reason='블록 수 · 다리 벽이 같다', drop=0):
     """GPT 의 스캔 채우기 답(W177 진짜 scan_fill 시험용) — scan_num 마다 채울 칸만(scan_of 의 번호 규칙: 거꾸로 = n − order + 1).
@@ -424,3 +493,15 @@ def test_scan_fill_rejects_bad_input_before_calling_ai(store):
             gen.scan_fill(bad)
         assert e.value.code == 'ERROR'
     assert client.calls == []
+
+
+@pytest.mark.parametrize('weird', ['그냥 글자', SimpleNamespace(choices=[]), SimpleNamespace(choices=[SimpleNamespace(message='글자')])])
+def test_weird_response_shape_is_gen_failed(store, weird):
+    """응답 모양이 다르면(글자뿐 · choices 비었음 · 메시지가 글자) AttributeError 가 아니라 GEN_FAILED(10/13 민범진 보고) — 기록엔 원문 일부."""
+    gen, client = make(store, [])
+    client.chat.completions.create = lambda **kw: weird
+    with pytest.raises(GenError) as e:
+        gen.generate('벤치', BENCH)
+    assert e.value.code == 'GEN_FAILED' and '모양' in e.value.message
+    log = json.loads(next(store.gen_logs_dir.glob('*_generate.json')).read_text(encoding='utf-8'))
+    assert 'raw' in log['calls'][0]

@@ -1,7 +1,7 @@
 'use client';
 // 설계 3D 패널 — [설계 목록](열 보기 DesignTree)에서 고른 설계(없으면 로봇에 선택된 설계)를 그린다(web/README 1장 ⑥ ⑦ ⑧).
-// 보는 곳에서 보낸다(10/10 황인재): 보고 있는 설계 바로 아래 [이 설계로 조립 준비](= select_design)가 로봇에 보내는 유일한 버튼.
-// 그다음 [출발]은 왼쪽 로봇 패널(사람이 영역 밖 확인 — SR-09).
+// 보는 곳에서 보낸다(10/10 황인재): 보고 있는 설계 바로 아래 [조립] 한 번 = select_design → 이어서 start(10/13 PL — 준비 · 출발 두 단계를
+// 합침). 이 누름이 출발 확인(SR-09 — 사람이 작업 영역 밖인지 확인하고 누름). 같은 설계로 AI 생성은 아래 패널(GeneratePanel).
 // 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/2.0) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
 // 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = parts.order 로 잇는다.
 import { useEffect, useMemo, useState } from 'react';
@@ -28,18 +28,18 @@ interface Props {
   onLog: (kind: string, text: string) => void;
 }
 
-const SELECTABLE = ['IDLE', 'READY', 'DONE']; // 설계를 바꿀 수 있는 작업 관리자 상태(web/README 3장 상태표)
+const SELECTABLE = ['IDLE', 'READY', 'DONE']; // 설계를 고르고 출발할 수 있는 작업 관리자 상태(web/README 3장 상태표)
 
 export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }: Props) {
   const [design, setDesign] = useState<Design | null>(null);
   const [failed, setFailed] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState<CmdResult | null>(null); // [이 설계로 조립 준비] 답(성공이면 상태가 READY 로 바뀐다)
+  const [sent, setSent] = useState<CmdResult | null>(null); // [조립] 답(select_design · start 중 거절된 것)
   const robotDesign = robot.state?.design_id ?? null;
 
   useEffect(() => {
-    setPickerOpen(false); // 로봇 설계가 바뀌면([이 설계로 조립 준비] 받음 · 음성) 열 보기를 닫는다 — 고르기가 끝났으니
+    setPickerOpen(false); // 로봇 설계가 바뀌면([조립] · 스캔 저장) 열 보기를 닫는다 — 고르기가 끝났으니
   }, [robotDesign]);
 
   useEffect(() => {
@@ -61,17 +61,27 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
 
   const st = robot.state;
   const onRobot = !!design && st?.design_id === design.design_id;
-  const canSend = !!design && !onRobot && !sending && !robot.safety?.locked && SELECTABLE.includes(st?.state ?? '');
+  const canSend = !!design && !sending && !robot.safety?.locked && robot.bridge && SELECTABLE.includes(st?.state ?? '');
 
   useEffect(() => setSent(null), [viewId]); // 다른 설계를 보면 앞 결과는 지운다
 
-  async function sendToRobot() {
+  /** [조립]: select_design → 받으면 start. 이미 이 설계로 출발 대기(READY — 스캔 저장 뒤 등)면 start 만. 바깥 영향: 로봇 출발 */
+  async function assemble() {
     if (!design) return;
     setSending(true);
-    const r = await api.command('select_design', design.design_id);
+    let step = '출발';
+    let r: CmdResult = { success: true, reason: '' };
+    if (!(onRobot && st?.state === 'READY')) {
+      step = '설계 선택';
+      r = await api.command('select_design', design.design_id);
+    }
+    if (r.success) {
+      step = '출발';
+      r = await api.command('start', design.design_id);
+    }
     setSending(false);
     setSent(r);
-    onLog('button', `조립 준비(${design.design_id}) → ${r.success ? '받음' : '거절'}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
+    onLog('button', `조립(${design.design_id}) → ${r.success ? '출발' : `${step} 거절`}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
   }
   const running = onRobot && !!st?.run_id && !st.state.startsWith('SCAN');
 
@@ -119,13 +129,20 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
       </div>
       {pickerOpen && <DesignTree picked={viewId} onRobot={robotDesign} onPick={onPick} />}
       {body}
-      {design && !onRobot && (
+      {design && !running && (
         <div className="send-row">
-          <button className="primary" disabled={!canSend} onClick={sendToRobot}>
-            {sending ? '보내는 중…' : '이 설계로 조립 준비'}
+          <button className="primary big" disabled={!canSend} onClick={assemble}
+            title="이 설계로 로봇이 바로 조립을 시작해요. 대기 · 출발 대기 · 완성일 때만 누를 수 있어요">
+            {sending ? '보내는 중…' : '조립'}
           </button>
-          <small className="muted" title="로봇에 이 설계를 보내요(로봇은 아직 안 움직여요). 대기 · 출발 대기 · 완성일 때만 바꿀 수 있어요">
-            {canSend || sending ? '그다음 왼쪽 [출발]' : robot.safety?.locked ? '멈춤 — 먼저 왼쪽 [다시 시작]' : `지금은 바꿀 수 없어요(${stateName(st?.state) || '연결 전'})`}
+          <small className={canSend ? 'warn-text' : 'muted'}>
+            {canSend || sending
+              ? '누르면 로봇이 움직여요 — 작업 영역에 사람이 없는지 확인하세요'
+              : robot.safety?.locked
+                ? '멈춤 — 먼저 왼쪽 [다시 시작]'
+                : !robot.bridge
+                  ? '로봇 PC 연결 끊김'
+                  : `지금은 조립할 수 없어요(${stateName(st?.state) || '연결 전'})`}
           </small>
           {sent && !sent.success && (
             <span className="result bad">

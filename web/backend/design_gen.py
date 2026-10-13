@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """DesignGenerator — AI 설계 생성에서 GPT 를 부르는 한 곳 (SDD 6.6 · IRD 8.3, W108). ROS 없음.
 
-흐름(E-69 · E-67 · E-72 · E-84):
-  classify(text)           → 어느 Template 인지 AI 가 고름 → 화면이 사용자에게 한 번 확인받음(W163). 의자 · 책상 밖이면 None
-  generate(text, template) → ① 그 Template 설계 목록 요약을 주고 도구 get_design(최대 2번 — 그 Template 설계만)으로 참고 설계를 읽게 함
+흐름(E-69 · E-67 · E-72 · E-84 · 10/13 PL 화면 결정):
+  generate(text, base_id)  → ① 사람이 설계 목록에서 고른 설계(base_id = 부모)를 바탕으로 주고, 같은 Template 의 다른 설계는 목록 요약 +
+                               도구 get_design(최대 2번 — 그 Template 설계만)으로 참고만 읽게 함(E-72). Template = base_id 앞부분
+                               (AI 모양 추천 classify 는 없앰 — 사람이 설계를 고르니까, 10/13 PL)
                              ② 같은 대화에서 후보 3개(블록 목록)를 받음(구조화 출력 · temperature 0)
-                             ③ 새 ID(store.new_design_id)를 붙여 check_design 3번(쌓을 만한지는 검사 묶음 — 로봇 PC task)
-                             ④ 3개 다 불합격이면 errors[].detail 을 피드백으로 다시(최대 2번) → 그래도 실패 GEN_FAILED
+                             ③ 새 ID(store.new_design_id)를 붙여 check_design(쌓을 만한지는 검사 묶음 — 로봇 PC task)
+                             ④ 통과한 후보만 남기고 모자란 개수만큼 떨어진 후보의 검사 결과를 알려 더 만듦(처음 + 2번, 10/11 PL N3 · A5)
+                                → 끝까지 안 차면 통과한 것만(1 ~ 2개), 하나도 없으면 실패 종류(구성 형태 · 범위 · 그 밖)로 알림
   save(result, index)      → 사람이 고른 합격 후보 1개만 store.save_design. 안 고른 후보는 버린다(E-84 ⑥)
   save_scan(scan_result)   → 스캔 [저장](IRD 8.4 ⑦): scan_fill(GPT 채우기 — W177 민범진이 안을 채움) → 검사 → 저장(made_by scan)
 AI 가 빠뜨리거나 틀린 칸을 코드가 대신 채우지 않는다(E-69) — 검사에서 떨어져 다시 만든다.
@@ -22,12 +24,11 @@ from pathlib import Path
 from d2_task.recipe_document import GRASPS
 from design_store import AI_NONE, SCHEMA_PARTS, build_summary, family_of, split_design_id
 
-MODEL = 'gpt-4o'                 # 설계 작성(SDD 6.6 · TR-12)
-MODEL_CLASSIFY = 'gpt-4o'        # Template 고르기 — 팀 키 프로젝트는 gpt-4o · whisper-1 만 열려 있다(10/10 모델 목록 확인 — mini 는 403)
+MODEL = 'gpt-4o'                 # 설계 작성 · 스캔 채우기(SDD 6.6 · TR-12) — 팀 키 프로젝트는 gpt-4o · whisper-1 만 열려 있다(10/10 — mini 는 403)
 CALL_TIMEOUT_S = 30              # 호출당 시간 제한(TR-12)
 CALL_RETRIES = 1                 # 호출 실패 때 다시 1번(TR-12)
 MAX_READS = 2                    # 도구 get_design 최대 횟수(E-72)
-MAX_REGEN = 2                    # 3개 다 불합격일 때 다시 만드는 횟수(SDD 6.6)
+MAX_REGEN = 2                    # 통과 후보가 3개 안 될 때 모자란 만큼 더 만드는 횟수(처음 + 2번 — 10/11 PL N3 · A5)
 SCAN_REFILLS = 2                 # 스캔 [저장]이 AI 칸 · Template 탓으로 떨어지면 GPT 가 다시 채우는 횟수(10/11 PL A3 — 레시피 초안 7-1)
 N_CANDIDATES = 3                 # 후보 수(E-67)
 FEEDBACK_MAX = 30                # 피드백 줄 수 상한 — 블록이 많이 틀려도 프롬프트가 지나치게 길어지지 않게
@@ -66,7 +67,7 @@ def scan_actions(errors):
 
 
 class DesignGenerator:
-    """요청 문장 → Template 고르기 · 후보 3개 · 검사 · 저장. 상태 없음(요청마다 새 대화) — 후보는 부르는 쪽(작업 job)이 들고 있다.
+    """요청 문장 + 고른 설계 → 후보 3개 · 검사 · 저장, 스캔 [저장]. 상태 없음(요청마다 새 대화) — 후보는 부르는 쪽(작업 job)이 들고 있다.
 
     입력: store(DesignStore), check(parts/3.0 dict → check_design 응답 dict — MqttClient.request 로 만든 함수),
           rules(app.load_rules — robot.yaml 설계 규칙 E-78), client(OpenAI 클라이언트 — 시험 때 가짜, 비우면 처음 부를 때 만듦).
@@ -89,7 +90,6 @@ class DesignGenerator:
             edge=f"{L / 2 - rules['margin_mm']:g}", half_L=f'{L / 2:g}', two_L=2 * L,     # 받침 예시 숫자(다리 끝 안쪽 · 이어 붙이기)
             max_blocks=rules['max_blocks'], finger_t=round(rules['finger_thickness_m'] * 1000, 1),
             finger_w=round(rules['finger_width_m'] * 1000, 1), roles='\n'.join(role_lines))
-        self.template_prompt = string.Template((Path(prompts_dir) / 'template_system.txt').read_text(encoding='utf-8'))
 
     @property
     def client(self):
@@ -102,31 +102,12 @@ class DesignGenerator:
                 raise GenError('GEN_FAILED', f'AI 를 부를 수 없어요(OpenAI 준비 실패: {type(e).__name__}) — .env 키 확인') from e
         return self._client
 
-    # ---------- Template 고르기(E-84 ③) ----------
-    def classify(self, text):
-        """요청 문장 → {'template': Template ID 또는 None, 'reason'}. None = 의자 · 책상 밖이거나 맞는 모양 없음(화면은 OUT_OF_SCOPE 안내).
-
-        Template = 저장소에 V000 이 등록된 기본 설계. 화면이 이 결과를 사용자에게 한 번 확인받은 뒤 generate 를 부른다.
-        """
-        templates = self.templates()
-        system = self.template_prompt.substitute(templates='\n'.join(f"- {t}: {h['label']}" for t, h in templates.items()))
-        fmt = self._format('template_choice', {
-            'type': 'object', 'additionalProperties': False, 'required': ['template', 'reason'],
-            'properties': {'template': {'type': 'string', 'enum': list(templates) + [AI_NONE]}, 'reason': {'type': 'string'}}})
-        log = self._new_log('classify', text, system)
-        messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': text}]
-        try:
-            data = self._parse(self._chat(log, MODEL_CLASSIFY, messages, fmt))
-            log['result'] = data
-        finally:
-            self._save_log(log, messages)
-        return {'template': None if data['template'] == AI_NONE else data['template'], 'reason': data['reason']}
-
+    # ---------- Template 이름 · 스캔 AI 판단 기록 ----------
     def templates(self):
         """{Template ID: {name, description, label}} — 저장소에 V000 이 있는 기본 설계만(E-84 ② Template 은 기본 4개로 고정).
 
         name · description = V000 레시피의 template 칸(10/13 PL — 코드에 설명 표를 두지 않음). label = 'name — description
-        (기본 설계 부품 n개, 외곽 …)' — AI 가 Template 을 고를 때 읽고, 화면 확인 칸(W163)이 카드에 쓴다(앞 ' — ' 앞이 이름).
+        (기본 설계 부품 n개, 외곽 …)' — 생성 요청 글의 [Template] 줄 · 화면 설계 이름(앞 ' — ' 앞이 이름)에 쓴다.
         """
         out = {}
         for t in self.store.templates():
@@ -138,48 +119,67 @@ class DesignGenerator:
 
     @staticmethod
     def ai_judgment(choice=None, code=None):
-        """Template 고르기 결과 → AI 판단 기록 {ai_template, ai_reason}(설계_DB 1절 — 화면이 생성 요청에 그대로 돌려보냄).
+        """스캔 부모 고르기 결과 → AI 판단 기록 {ai_template, ai_reason}(설계_DB 1절 — 스캔만 채움, 글 · 음성 설계는 비움 10/13 PL).
 
-        choice = classify 답, code = classify 실패 코드. 못 고름(NONE) · 실패면 ai_template 'NONE', 까닭은 GPT 가 말한 것 또는 '실패: <코드>'.
+        choice = {'template', 'reason'}(GPT 가 고른 것), code = 고르기 실패 코드. 못 고름(NONE) · 실패면 ai_template 'NONE',
+        까닭은 GPT 가 말한 것 또는 '실패: <코드>'.
         """
         if code is not None:
             return {'ai_template': AI_NONE, 'ai_reason': f'실패: {code}'}
         return {'ai_template': choice.get('template') or AI_NONE, 'ai_reason': choice.get('reason') or ''}
 
     # ---------- 후보 3개 ----------
-    def generate(self, text, template, on_progress=None):
-        """요청 문장 · 확인된 Template → 후보 3개 + 검사 결과. 하나라도 합격이면 돌려준다(사람이 고름 → save).
+    def generate(self, text, base_id, on_progress=None):
+        """요청 문장 · 사람이 고른 설계(base_id) → 검사를 통과한 후보만(최대 3개). 사람이 그중 하나를 고른다(→ save).
 
-        on_progress(stage, info): 화면 진행 표시용 — 'reading'(참고 설계 읽음) · 'candidates'(후보 3개 — 미리보기를 바로 그림) ·
-        'checked'(후보 하나 검사 끝) · 'retry'(다 떨어져 다시). 출력: {text, template, family, design_id, parent_id, reference,
-        candidates[{idea, parts, check}], attempts, elapsed_s, gen_log(이 생성의 AI 호출 기록 이름 — 고른 후보를 저장할 때 씀)}.
-        실패: GenError.
+        바탕(10/13 PL): 부모 = 고른 설계(GPT 가 읽은 설계가 아님), Template = base_id 앞부분. GPT 에는 고른 설계의 블록 목록을
+        바탕으로 주고, 같은 Template 의 다른 설계는 목록 요약 + 도구 get_design 으로 참고만 읽게 한다(안 읽어도 됨 — E-72).
+
+        후보 규칙(10/11 PL N3 · A5 — 레시피 초안 7-1): 3개 검사 → 통과한 후보만 남기고 모자란 개수만큼 AI 가 더 만든다(떨어진 후보의
+        검사 결과를 알려 줌). 더 만들기는 처음 + MAX_REGEN 번까지(35 ~ 60초 걸려도 그대로, 먼저 보여 주기 없음 — 화면은 끝난 뒤 통과한
+        후보만 그림). 끝까지 3개가 안 차면 통과한 1 ~ 2개만. REQUEST_INVALID(웹 쪽 잘못)는 더 만들지 않는다.
+        on_progress(stage, info): 화면 진행 표시용 — 'reading'(참고 설계 읽음) · 'candidates'(이번에 검사할 후보 수 count — 그림은 안 줌) ·
+        'checked'(후보 하나 검사 끝 — passed = 지금까지 통과 수) · 'retry'(모자라서 더 — need). 출력: {text, base_id, template, family,
+        design_id, parent_id(= base_id), reference(GPT 가 읽은 설계), candidates[{idea, parts, check}](통과한 것만), attempts, elapsed_s,
+        gen_log(이 생성의 AI 호출 기록 이름 — 고른 후보를 저장할 때 씀)}.
+        실패: GenError — 하나도 못 통과하면 code = TEMPLATE_SHAPE('만들 수 없는 모양') · TEMPLATE_RANGE('지금 만들 수 있는 범위가 아님'
+        + 범위) · GEN_FAILED(그 밖), 여러 실패가 같이면 구성 형태 먼저(PL 4-2-추가). REQUEST_INVALID · OUT_OF_SCOPE · 검사 서비스 실패 ·
+        고른 설계가 없음(ERROR)도 GenError.
         """
         result = None
         progress = on_progress or (lambda *_: None)
+        try:
+            template = split_design_id(base_id)[0]
+        except ValueError:
+            raise GenError('ERROR', f'고른 설계 ID 가 틀렸어요: {base_id}') from None
         rows = self.store.list_designs(template=template)          # E-84 ③ — 이 Template 설계만 보여 주고 읽게 한다
-        allowed = [r['design_id'] for r in rows]
-        if f'{template}_V000' not in allowed:
-            raise GenError('ERROR', f'모르는 Template: {template}')
+        base_row = next((r for r in rows if r['design_id'] == base_id), None)
+        if base_row is None:
+            raise GenError('ERROR', f'고른 설계가 저장소에 없어요: {base_id}')
+        others = [r for r in rows if r['design_id'] != base_id]
+        allowed = [r['design_id'] for r in others]                 # 도구로 읽을 수 있는 것 = 같은 Template 의 다른 설계
+        base_parts = self.store.get_design(base_id)['parts']['parts']
         family = family_of(template)
+        parent = base_id
         t0 = self.clock()
-        log = self._new_log('generate', text, self.design_prompt, template=template)
-        messages = [{'role': 'system', 'content': self.design_prompt},
-                    {'role': 'user', 'content': self._request_text(text, template, rows)}]
+        log = self._new_log('generate', text, self.design_prompt, template=template, base_id=base_id)
+        request = self._request_text(text, template, base_row, base_parts, others)
+        messages = [{'role': 'system', 'content': self.design_prompt}, {'role': 'user', 'content': request}]
         read = []
         try:
-            try:
-                msg = self._read_and_answer(log, messages, allowed, read, progress)
-            except GenError:
-                # 도구 단계가 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환)
-                log['fallback'] = True
-                read.clear()
-                messages[1:] = [{'role': 'user', 'content': self._request_text(text, template, rows)
-                                 + '\n\n' + self._examples_text(template)}]
+            if not allowed:                                         # 읽을 다른 설계가 없음(기본 설계뿐) — 도구 없이 바로 후보
                 msg = self._chat(log, MODEL, messages, self._candidates_format())
-            parent = read[0] if read else f'{template}_V000'    # 읽은 설계 = 부모(둘이면 처음 것), 자동 전환이면 기본 설계(E-72)
+            else:
+                try:
+                    msg = self._read_and_answer(log, messages, allowed, read, progress, first='auto')
+                except GenError:
+                    # 도구 단계가 실패하면 같은 Template 예시를 코드가 넣어 한 번 더(E-72 자동 전환)
+                    log['fallback'] = True
+                    read.clear()
+                    messages[1:] = [{'role': 'user', 'content': request + '\n\n' + self._examples_text(template, base_id)}]
+                    msg = self._chat(log, MODEL, messages, self._candidates_format())
             design_id = None
-            last = []
+            passed, failed, need, attempt = [], [], N_CANDIDATES, 0
             for attempt in range(1, MAX_REGEN + 2):
                 data = self._parse(msg)
                 if data.get('out_of_scope') is True:
@@ -191,31 +191,43 @@ class DesignGenerator:
                     design_id, _ = self.store.new_design_id(template, parent)   # 검사 전에 — 변환기 ①이 이 ID 로 레시피를 만든다
                 cands = [{'idea': str(c.get('idea') or ''), 'parts': {'schema': SCHEMA_PARTS, 'design_id': design_id,
                                                                       'parts': c['parts']}}
-                         for c in raw[:N_CANDIDATES]]
-                progress('candidates', {'attempt': attempt, 'design_id': design_id, 'candidates': cands})
+                         for c in raw[:need]]
+                progress('candidates', {'attempt': attempt, 'design_id': design_id, 'count': len(cands)})
                 for i, c in enumerate(cands):
                     c['check'] = self._check(c['parts'])
-                    progress('checked', {'attempt': attempt, 'index': i, 'check': c['check']})
+                    progress('checked', {'attempt': attempt, 'index': i, 'check': c['check'],
+                                         'passed': len(passed) + sum(x['check']['ok'] for x in cands[:i + 1])})
                 log['attempts'].append([{'idea': c['idea'], 'block_count': len(c['parts']['parts']),
                                          'check': {k: c['check'][k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}} for c in cands])
-                if any(c['check']['ok'] for c in cands):
-                    result = {'text': text, 'template': template, 'family': family, 'design_id': design_id, 'parent_id': parent,
-                              'reference': list(read), 'candidates': cands, 'attempts': attempt,
-                              'elapsed_s': round(self.clock() - t0, 1)}
-                    log['result'] = {k: result[k] for k in ('design_id', 'parent_id', 'reference', 'attempts', 'elapsed_s')}
-                    return result
                 if cands and all(c['check']['service_failed'] for c in cands):
                     first = cands[0]['check']
                     raise GenError(first['reason'] or 'ERROR', '설계 검사를 못 했어요 — 로봇 PC · 다리 연결을 확인하세요',
                                    [{'part': None, 'reason': first['reason'], 'detail': first['message'] or ''}])
-                last = [e for c in cands for e in c['check']['errors']]
-                if attempt > MAX_REGEN:
+                invalid = [e for c in cands for e in c['check']['errors'] if e.get('reason') == 'REQUEST_INVALID']
+                if invalid:                                  # 웹 쪽 잘못(base_recipe 등) — 다시 만들어도 같다(D10)
+                    raise GenError('REQUEST_INVALID', '검사 요청 오류(웹) — 다시 만들지 않아요', invalid)
+                passed += [c for c in cands if c['check']['ok']]
+                failed = [c for c in cands if not c['check']['ok']]
+                need = N_CANDIDATES - len(passed)
+                if need <= 0 or attempt > MAX_REGEN:
                     break
-                progress('retry', {'attempt': attempt + 1})
-                messages += [{'role': 'assistant', 'content': msg.content}, {'role': 'user', 'content': self._feedback(cands, self.extent)}]
-                msg = self._chat(log, MODEL, messages, self._candidates_format(),
-                                 **({'tools': [self._tool(allowed)], 'tool_choice': 'none'} if read else {}))
-            raise GenError('GEN_FAILED', 'AI 후보가 검사를 통과하지 못했어요 — 기본 설계를 골라 보세요', last)
+                progress('retry', {'attempt': attempt + 1, 'need': need})
+                messages += [{'role': 'assistant', 'content': msg.content},
+                             {'role': 'user', 'content': self._feedback(failed, self.extent, need, len(passed))}]
+                try:
+                    msg = self._chat(log, MODEL, messages, self._candidates_format(),
+                                     **({'tools': [self._tool(allowed)], 'tool_choice': 'none'} if read else {}))
+                except GenError:
+                    if passed:          # 더 만들기만 실패 — 이미 통과한 후보는 버리지 않고 보여 준다
+                        break
+                    raise
+            if passed:
+                result = {'text': text, 'base_id': base_id, 'template': template, 'family': family, 'design_id': design_id, 'parent_id': parent,
+                          'reference': list(read), 'candidates': passed[:N_CANDIDATES], 'attempts': attempt,
+                          'elapsed_s': round(self.clock() - t0, 1)}
+                log['result'] = {k: result[k] for k in ('design_id', 'parent_id', 'reference', 'attempts', 'elapsed_s')}
+                return result
+            raise self._no_pass_error([e for c in failed for e in c['check']['errors']])
         except GenError as e:
             log['error'] = {'code': e.code, 'message': e.message}
             raise
@@ -225,12 +237,12 @@ class DesignGenerator:
             if result is not None:
                 result['gen_log'] = log.get('file')    # 기록을 남긴 뒤에야 이름을 안다 — 돌려주기 전에 붙인다
 
-    def save(self, result, index, made_by='web', ai_template=None, ai_reason=None):
+    def save(self, result, index, made_by='web'):
         """사람이 고른 후보 1개를 저장한다(IRD 8.3 ⑥). 반환: 저장한 설계 기록. 불합격 후보 · 없는 번호는 ValueError(저장 안 함).
 
-        ai_template · ai_reason = Template 고르기 때의 AI 판단 기록(ai_judgment — 화면이 생성 요청에 실어 보낸 것). 저장하면
-        이 생성의 AI 호출 기록에 design_id 를 적는다(설계_DB #14). 그 사이 다른 요청이 같은 ID 를 먼저 저장했으면 store 가 거절
-        (ValueError) — 부르는 쪽은 처음부터 다시 만든다.
+        부모 = 사람이 고른 설계(result['parent_id']). AI 판단 기록 3칸은 비운다(글 · 음성은 사람이 설계를 고름 — 10/13 PL, 스캔만 채움).
+        저장하면 이 생성의 AI 호출 기록에 design_id 를 적는다(설계_DB #14). 그 사이 다른 요청이 같은 ID 를 먼저 저장했으면 store 가
+        거절(ValueError) — 부르는 쪽은 처음부터 다시 만든다.
         """
         if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < len(result['candidates']):
             raise ValueError(f'후보 번호가 틀렸다: {index!r}')
@@ -241,7 +253,7 @@ class DesignGenerator:
         return self.store.save_design(cand['parts'], chk['recipe'], chk['placements'], result['parent_id'], made_by,
                                       prompt=result['text'],
                                       check={'ok': True, 'min_margin_mm': chk['min_margin_mm'], 'errors': chk['errors']},
-                                      ai_template=ai_template, ai_reason=ai_reason, gen_log=result.get('gen_log'))
+                                      gen_log=result.get('gen_log'))
 
     # ---------- 스캔 [저장](IRD 8.4 ⑦) ----------
     def scan_fill(self, scan_result, feedback=None):
@@ -450,16 +462,16 @@ class DesignGenerator:
                                   'detail': 'AI 가 스캔한 부품의 위치 · 방향 · 개수를 바꿨다 — 그대로 두고 역할 · 그룹 · 순서 · 단계 · 잡기만 채워라'}
 
     # ---------- 대화 ----------
-    def _read_and_answer(self, log, messages, allowed, read, progress, fmt=None):
-        """참고 설계 읽기(도구) → 후보 답. 첫 번째는 도구를 꼭 부르게 하고(RAG — 예시 없이 쓰지 않게), 2번 읽으면 더는 못 부르게 한다.
+    def _read_and_answer(self, log, messages, allowed, read, progress, fmt=None, first='required'):
+        """참고 설계 읽기(도구) → 후보 답. 2번 읽으면 더는 못 부르게 한다. 병렬 도구 호출은 끈다(구조화 출력과 같이 쓸 때 OpenAI 권고).
 
-        병렬 도구 호출은 끈다(구조화 출력과 같이 쓸 때 OpenAI 권고). 끝까지 답이 없으면 GenError.
-        fmt = 답 형식(비우면 후보 3개 — generate). scan_fill 은 스캔 채우기 형식을 넘긴다.
+        first = 첫 번째 도구 선택 — 'required'(꼭 읽게: scan_fill 부모 고르기) · 'auto'(generate — 바탕 설계는 이미 줬으니 참고는 골라서).
+        fmt = 답 형식(비우면 후보 3개 — generate). scan_fill 은 스캔 채우기 형식을 넘긴다. 끝까지 답이 없으면 GenError.
         """
         tools = [self._tool(allowed)]
         fmt = fmt or self._candidates_format()
         for rnd in range(MAX_READS + 1):
-            choice = 'required' if rnd == 0 else ('auto' if len(read) < MAX_READS else 'none')
+            choice = first if rnd == 0 else ('auto' if len(read) < MAX_READS else 'none')
             msg = self._chat(log, MODEL, messages, fmt, tools=tools, tool_choice=choice, parallel_tool_calls=False)
             calls = msg.tool_calls or []
             if not calls:
@@ -494,6 +506,7 @@ class DesignGenerator:
         """GPT 를 한 번 부르고 메시지를 돌려준다(temperature 0). 응답 원문 · 걸린 시간 · 토큰 수를 log['calls'] 에 남긴다.
 
         실패(네트워크 · 시간 초과 · 키 · 거절)는 GenError(GEN_FAILED). 클라이언트가 재시도 1번을 한다(CALL_RETRIES).
+        응답 모양이 다르면(choices 없음 · 메시지가 글자뿐 등 — 10/13 민범진 보고 AttributeError) 그것도 GEN_FAILED 로(화면이 '오류'에 머물지 않게).
         """
         t0 = self.clock()
         try:
@@ -506,12 +519,17 @@ class DesignGenerator:
             if 'insufficient_quota' in str(e) or 'no credits' in str(e):   # 429 중 '크레딧 없음'은 기다려도 안 풀린다 — 화면에 그대로
                 raise GenError('GEN_FAILED', 'OpenAI 크레딧이 없어요 — 키 담당(PL)이 크레딧을 채워야 해요') from e
             raise GenError('GEN_FAILED', f'AI 호출 실패({type(e).__name__}) — 잠시 뒤 다시') from e
-        msg = resp.choices[0].message
-        usage = getattr(resp, 'usage', None)
-        log['calls'].append({'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'content': msg.content,
-                             'refusal': getattr(msg, 'refusal', None),
-                             'tool_calls': [{'name': tc.function.name, 'arguments': tc.function.arguments} for tc in (msg.tool_calls or [])],
-                             'tokens': getattr(usage, 'total_tokens', None)})
+        try:
+            msg = resp.choices[0].message
+            call = {'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'content': msg.content,
+                    'refusal': getattr(msg, 'refusal', None),
+                    'tool_calls': [{'name': tc.function.name, 'arguments': tc.function.arguments} for tc in (msg.tool_calls or [])],
+                    'tokens': getattr(getattr(resp, 'usage', None), 'total_tokens', None)}
+        except (AttributeError, IndexError, KeyError, TypeError) as e:
+            log['calls'].append({'model': model, 'elapsed_s': round(self.clock() - t0, 2), 'error': f'{type(e).__name__}: {e}',
+                                 'raw': repr(resp)[:2000]})
+            raise GenError('GEN_FAILED', 'AI 답의 모양이 틀렸어요(응답) — 잠시 뒤 다시') from e
+        log['calls'].append(call)
         return msg
 
     @staticmethod
@@ -546,11 +564,27 @@ class DesignGenerator:
                 'recipe': res.get('recipe') if ok else None, 'placements': res.get('placements') if ok else None}
 
     @staticmethod
-    def _feedback(cands, extent):
-        """후보마다 검사 errors 를 묶고 오류마다 고치는 법(FIX_HINTS) · 그 블록 위치를 붙인다 — 다음 답에서 고치게(SDD 6.6 ⑤).
+    def _no_pass_error(errors):
+        """후보가 하나도 통과 못 했을 때 화면에 알릴 실패(레시피 초안 7-1 · 10/11 PL C5 · C6). 여러 실패가 같이면 구성 형태 먼저(PL 4-2-추가).
 
-        위치 설명은 판정이 아니다(합격 · 불합격은 검사 묶음이 정함) — AI 가 어느 층이 비었는지 알게 할 뿐(10/10 시험: 다리를 2층만 쌓고 좌판을 4층 위에).
-        너무 길면 앞 FEEDBACK_MAX 줄만.
+        TEMPLATE_SHAPE = '만들 수 없는 모양'(취소하고 다른 요청으로) · TEMPLATE_RANGE = '지금 만들 수 있는 범위가 아님' + 21번 detail(범위 글)
+        · 그 밖 = GEN_FAILED '통과하지 못했어요'. 입력: 마지막 시도의 떨어진 후보 errors. 출력: GenError(detail = 그 errors).
+        """
+        reasons = {e.get('reason') for e in errors}
+        if 'TEMPLATE_SHAPE' in reasons:
+            return GenError('TEMPLATE_SHAPE', '만들 수 없는 모양이에요 — 취소하고 다시 요청해 주세요', errors)
+        if 'TEMPLATE_RANGE' in reasons:     # detail 앞 '21번 범위:' 같은 검사 번호는 떼고 사람이 읽는 범위 글만(화면 규칙 10/10)
+            ranges = list(dict.fromkeys(re.sub(r'^21번[^:]*:\s*', '', str(e.get('detail') or ''))
+                                        for e in errors if e.get('reason') == 'TEMPLATE_RANGE'))
+            return GenError('TEMPLATE_RANGE', '지금 만들 수 있는 범위가 아니에요 — ' + ' / '.join(r for r in ranges[:3] if r), errors)
+        return GenError('GEN_FAILED', 'AI 후보가 검사를 통과하지 못했어요 — 다르게 요청하거나 기본 설계를 골라 보세요', errors)
+
+    @staticmethod
+    def _feedback(cands, extent, need=N_CANDIDATES, n_passed=0):
+        """떨어진 후보마다 검사 errors 를 묶고 오류마다 고치는 법(FIX_HINTS) · 그 블록 위치를 붙인다 — 다음 답에서 고치게(SDD 6.6 ⑤).
+
+        need = 더 만들 후보 수(통과한 n_passed 개는 남겨 두고 모자란 만큼만 — 10/11 PL N3). 위치 설명은 판정이 아니다(합격 · 불합격은
+        검사 묶음이 정함) — AI 가 어느 층이 비었는지 알게 할 뿐(10/10 시험: 다리를 2층만 쌓고 좌판을 4층 위에). 너무 길면 앞 FEEDBACK_MAX 줄만.
         """
         lines = []
         for i, c in enumerate(cands, 1):
@@ -566,8 +600,10 @@ class DesignGenerator:
                 lines.append(f'  - {detail}{where}' + (f' → 고칠 것: {hint}' if hint else ''))
         if not lines:
             lines = ['후보가 없거나 검사 결과를 받지 못했다']
-        return ('[검사 결과] 후보가 모두 검사에서 떨어졌다. 후보마다 아래 문제를 고쳐 3개를 다시 써라 — 생각(idea)은 살리되, '
-                '받침이 모자라면 받침(다리 · 기둥)을 넓힌다. 규칙 · 칸은 그대로.\n' + '\n'.join(lines[:FEEDBACK_MAX]))
+        head = (f'[검사 결과] 후보 {n_passed}개는 통과해 남겨 둔다. 아래 떨어진 후보의 문제를 고쳐 새 후보 {need}개만 써라'
+                if n_passed else f'[검사 결과] 후보가 모두 검사에서 떨어졌다. 아래 문제를 고쳐 후보 {need}개를 다시 써라')
+        return (head + ' — 생각(idea)은 살리되, 받침이 모자라면 받침(다리 · 기둥)을 넓힌다. 규칙 · 칸은 그대로.\n'
+                + '\n'.join(lines[:FEEDBACK_MAX]))
 
     @staticmethod
     def _where(detail, by_order, extent):
@@ -596,24 +632,32 @@ class DesignGenerator:
         return text
 
     # ---------- 프롬프트 조각 ----------
-    def _request_text(self, text, template, rows):
-        """사용자 메시지: 요청 · 확인된 Template · 이 Template 설계 목록 요약(E-72 — 한 줄 = 설계 하나, 최근 조립 결과 포함)."""
-        lines = []
-        for r in rows:
-            x, y, z = r['size_mm']
-            b = r.get('last_build')
-            build = (f"{b['result']} {b['placed']}/{b['total']}" + (f", 최대 오차 {b['max_err_mm']} mm" if b['max_err_mm'] is not None else '')
-                     if b else '없음')
-            lines.append(f"- {r['design_id']} | {MADE_KO.get(r['made_by'], r['made_by'])} | 부모 {r['parent_id'] or '없음'} | "
-                         f"블록 {r['block_count']} | 외곽 {x:g}×{y:g}×{z:g} mm | 최근 조립: {build}")
+    def _request_text(self, text, template, base_row, base_parts, others):
+        """사용자 메시지: 요청 · Template · 바탕 설계(사람이 고름 — 요약 + 블록 목록) · 같은 Template 의 다른 설계 목록 요약(E-72 —
+        한 줄 = 설계 하나, 최근 조립 결과 포함. 도구 get_design 으로 참고만)."""
         label = self.templates().get(template, {}).get('label', template)
-        return (f'[요청] {text}\n[Template] {template} — {label} (사용자가 확인함)\n'
-                f'[DB 목록 — 이 Template 의 설계]\n' + '\n'.join(lines))
+        lines = [self._row_line(r) for r in others] or ['- 없음(이 Template 의 설계는 바탕 설계뿐)']
+        return (f'[요청] {text}\n[Template] {template} — {label}\n'
+                f'[바탕 설계 — 사용자가 고름]\n{self._row_line(base_row)}\n'
+                + json.dumps(base_parts, ensure_ascii=False, separators=(',', ':'))
+                + '\n[DB 목록 — 같은 Template 의 다른 설계(참고만)]\n' + '\n'.join(lines))
 
-    def _examples_text(self, template):
-        """자동 전환 예시(E-72): 그 V000 + 최근 파생 3개의 블록 목록(도구 단계가 실패했을 때만)."""
+    @staticmethod
+    def _row_line(r):
+        """설계 목록 한 줄 — ID · 만든 방법 · 부모 · 블록 수 · 외곽 · 최근 조립 결과."""
+        x, y, z = r['size_mm']
+        b = r.get('last_build')
+        build = (f"{b['result']} {b['placed']}/{b['total']}" + (f", 최대 오차 {b['max_err_mm']} mm" if b['max_err_mm'] is not None else '')
+                 if b else '없음')
+        return (f"- {r['design_id']} | {MADE_KO.get(r['made_by'], r['made_by'])} | 부모 {r['parent_id'] or '없음'} | "
+                f"블록 {r['block_count']} | 외곽 {x:g}×{y:g}×{z:g} mm | 최근 조립: {build}")
+
+    def _examples_text(self, template, base_id):
+        """자동 전환 예시(E-72): 그 V000 + 최근 파생 3개의 블록 목록(도구 단계가 실패했을 때만). 바탕 설계는 이미 줬으니 뺀다."""
         lines = ['[참고 설계 — 도구 대신 코드가 넣음]']
         for e in self.store.examples_for(template, n=3):
+            if e['design_id'] == base_id:
+                continue
             lines.append(f"({e['design_id']}, 최근 조립 {e['last_build'] or '없음'})\n"
                          + json.dumps(e['parts']['parts'], ensure_ascii=False, separators=(',', ':')))
         return '\n'.join(lines)
@@ -623,7 +667,7 @@ class DesignGenerator:
         """도구 get_design 정의 — design_id 는 이 Template 설계 목록 안에서만 고르게 enum 으로 묶는다(E-84 ③)."""
         return {'type': 'function', 'function': {
             'name': 'get_design', 'strict': True,
-            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(parts/3.0)과 최근 조립 결과. 참고할 설계를 1 ~ 2개 읽는다.',
+            'description': 'DB 목록의 설계 하나를 읽는다 — 블록 목록(parts/3.0)과 최근 조립 결과. 2개까지 읽을 수 있다.',
             'parameters': {'type': 'object', 'additionalProperties': False, 'required': ['design_id'],
                            'properties': {'design_id': {'type': 'string', 'enum': list(allowed)}}}}}
 
@@ -651,7 +695,7 @@ class DesignGenerator:
     # ---------- 기록(NFR-17) ----------
     def _new_log(self, kind, text, system, **kw):
         """기록 하나 시작 — 종류 · 요청 · 모델 · 시스템 프롬프트 sha256 앞 12자리(같은 프롬프트였는지 비교용)."""
-        return {'kind': kind, 'text': text, 'started': round(time.time(), 3), 'model': MODEL if kind == 'generate' else MODEL_CLASSIFY,
+        return {'kind': kind, 'text': text, 'started': round(time.time(), 3), 'model': MODEL,
                 'prompt_sha': hashlib.sha256(system.encode('utf-8')).hexdigest()[:12], 'calls': [], 'attempts': [], **kw}
 
     def _save_log(self, log, messages):

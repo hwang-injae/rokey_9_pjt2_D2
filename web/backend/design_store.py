@@ -352,10 +352,17 @@ class DesignStore:
         """build/2 하나를 builds/<run_id>.json 으로 저장한다. 반환: 새로 저장했으면 True, 같은 run_id 가 이미 있으면 False.
 
         작업 관리자는 저장이 확인될 때까지 같은 요약을 다시 보낸다(timeout.service_s 간격) — 그래서 두 번째부터는 쓰지 않고 성공으로 본다.
-        실패: 형식이 build/2 이 아니거나 run_id 가 파일 이름으로 못 쓰는 글자면 ValueError.
+        실패: 형식이 build/2 이 아니거나 · run_id 가 파일 이름으로 못 쓰는 글자거나 · 저장소에 없는 설계의 기록이면 ValueError
+        (다시 보내도 저장될 수 없음 — DB 에서는 builds.design_id 외래 키, 설계_DB 2절).
         """
         if not isinstance(build, dict) or not same_major(build.get('schema'), SCHEMA_BUILD):
             raise ValueError(f'형식이 {SCHEMA_BUILD} 가 아니다(받은 schema: {build.get("schema") if isinstance(build, dict) else None!r})')
+        try:
+            known = self._design_path(build.get('design_id')).is_file()
+        except KeyError:
+            known = False
+        if not known:
+            raise ValueError(f'저장소에 없는 설계의 조립 기록이다: {build.get("design_id")!r}')
         path = self.builds_dir / f'{self._safe(build.get("run_id"))}.json'
         if path.exists():
             return False
@@ -382,12 +389,20 @@ class DesignStore:
             return {'success': False, 'reason': 'ERROR', 'message': f'{design_id} 설계를 못 꺼냄'}
 
     def answer_save_build(self, body):
-        """/d2/hmi/save_build 요청(build/2 + req_id) → {success, reason, ok}. ok = 저장됨(같은 run_id 두 번째도 true, IRD 4.2)."""
+        """/d2/hmi/save_build 요청(build/2 + req_id) → {success, reason, ok}. ok = 저장됨(같은 run_id 두 번째도 true, IRD 4.2).
+
+        다시 보내도 저장될 수 없는 기록(형식 · run_id 틀림 · 없는 설계 — ValueError)은 retry: false = 영구 거절(10/13 PL, IRD 4.2 —
+        작업 관리자는 다시 보내지 않고 기록 폴더 rejected/ 로 옮김). 디스크 · DB 끊김 같은 일시 실패(OSError)는 retry 없이 ok false
+        (작업 관리자가 다시 보냄). 바깥 영향: data_dir/builds 에 파일 쓰기.
+        """
         build = {k: v for k, v in body.items() if k != 'req_id'}
         try:
             fresh = self.save_build(build)
-        except (ValueError, OSError) as e:
-            log.warning('[저장소] save_build 실패: %s', e)
+        except ValueError as e:
+            log.warning('[저장소] save_build 영구 거절: %s', e)
+            return {'success': True, 'reason': '', 'ok': False, 'retry': False, 'message': str(e)}
+        except OSError as e:
+            log.warning('[저장소] save_build 실패(다시 보내면 됨): %s', e)
             return {'success': True, 'reason': '', 'ok': False, 'message': str(e)}
         log.info('[저장소] save_build %s %s', build.get('run_id'), '저장' if fresh else '이미 있음')
         return {'success': True, 'reason': '', 'ok': True}

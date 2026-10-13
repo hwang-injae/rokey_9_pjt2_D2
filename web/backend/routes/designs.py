@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""/api/designs — 설계 목록(트리) · 설계 하나(3D 보기) · 조립 기록 · 설계 규칙 숫자 + AI 생성(Template 고르기 · 후보 3개 · 고르기)
+"""/api/designs — 설계 목록(트리) · 설계 하나(3D 보기) · 조립 기록 · 설계 규칙 숫자 + AI 생성(고른 설계 바탕 후보 3개 · 고르기) · 스캔 [저장]
 (web/README 2 · 4장, SDD 6.6 · 6.8, W111 · W108).
 
 읽기와 저장은 DesignStore 한 곳, GPT 는 DesignGenerator 한 곳. 생성은 오래 걸려(≤ 60초) 뒤 스레드로 돌리고 진행은 /ws {type: gen} 으로 민다.
@@ -11,7 +11,7 @@ from collections import OrderedDict
 from typing import Literal
 
 from design_gen import GenError, scan_actions
-from design_store import AI_NONE
+from design_store import split_design_id
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -40,17 +40,15 @@ class GenJobs:
         self.jobs = OrderedDict()
         self.lock = threading.Lock()
 
-    def start(self, text, template, ai_template=None, ai_reason=None):
-        """생성 하나를 뒤 스레드로 시작하고 job_id 를 돌려준다. 이미 도는 것이 있으면 RuntimeError(화면은 '만드는 중').
-
-        ai_template · ai_reason = Template 고르기 때의 AI 판단 기록 — job 이 들고 있다가 고른 후보를 저장할 때 넘긴다(설계_DB 6절).
-        """
+    def start(self, text, base_id):
+        """생성 하나를 뒤 스레드로 시작하고 job_id 를 돌려준다. base_id = 사람이 설계 목록에서 고른 설계(= 부모 — 10/13 PL).
+        이미 도는 것이 있으면 RuntimeError(화면은 '만드는 중')."""
         with self.lock:
             if any(j['state'] == 'running' for j in self.jobs.values()):
                 raise RuntimeError('이미 설계를 만드는 중이에요')
             job_id = uuid.uuid4().hex[:8]
-            self.jobs[job_id] = {'job_id': job_id, 'state': 'running', 'text': text, 'template': template, 'candidates': [],
-                                 'ai_template': ai_template, 'ai_reason': ai_reason}
+            self.jobs[job_id] = {'job_id': job_id, 'state': 'running', 'text': text, 'base_id': base_id,
+                                 'template': split_design_id(base_id)[0], 'candidates': []}
             while len(self.jobs) > JOBS_KEEP:
                 self.jobs.popitem(last=False)
         threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
@@ -97,22 +95,19 @@ class GenJobs:
         job = self.jobs[job_id]
 
         def progress(stage, info):
-            # job 에도 그때그때 적는다 — 화면은 알림이 올 때마다 GET 으로 job 전체를 다시 받아 알림이 몰려와도 빠짐없이 그린다
+            # job 에도 그때그때 적는다 — 화면은 알림이 올 때마다 GET 으로 job 전체를 다시 받아 알림이 몰려와도 빠짐없이 그린다.
+            # 후보 그림은 끝난 뒤 통과한 것만(10/11 PL A5 — 먼저 보여 주기 없음), 도는 동안은 수만(검사할 수 · 통과 수 · 더 만들 수)
             data = dict(info)
             if stage == 'reading':
                 job.setdefault('reading', []).append(data.get('design_id'))
-            if 'attempt' in data:
-                job['attempt'] = data['attempt']
-            if 'candidates' in data:
-                data['candidates'] = [slim(c) for c in data['candidates']]
-                job['candidates'] = data['candidates']
+            for k in ('attempt', 'count', 'passed', 'need'):
+                if k in data:
+                    job[k] = data[k]
             if 'check' in data:
                 data['check'] = {k: data['check'][k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}
-                if 0 <= data.get('index', -1) < len(job['candidates']):
-                    job['candidates'][data['index']] = {**job['candidates'][data['index']], 'check': data['check']}
             self.publish({'type': 'gen', 'data': {'job_id': job_id, 'stage': stage, **data}})
         try:
-            result = self.gen.generate(job['text'], job['template'], on_progress=progress)
+            result = self.gen.generate(job['text'], job['base_id'], on_progress=progress)
             job.update(state='ready', result=result, candidates=[slim(c) for c in result['candidates']])
         except GenError as e:
             job.update(state='failed', code=e.code, message=e.message, detail=e.detail)
@@ -126,7 +121,8 @@ class GenJobs:
         out = {k: job[k] for k in ('job_id', 'state', 'text', 'template', 'candidates')}
         if 'result' in job:
             out.update({k: job['result'][k] for k in ('design_id', 'parent_id', 'reference', 'attempts', 'elapsed_s')})
-        for k in ('reading', 'attempt', 'code', 'message', 'detail', 'saved', 'kind', 'run_id', 'actions'):
+        for k in ('base_id', 'reading', 'attempt', 'count', 'passed', 'need', 'code', 'message', 'detail', 'saved', 'kind', 'run_id',
+                  'actions'):
             if k in job:
                 out[k] = job[k]
         return out
@@ -136,24 +132,17 @@ class GenJobs:
         job = self.jobs.get(job_id)
         if job is None or job['state'] != 'ready':
             raise ValueError('고를 수 있는 생성 결과가 없어요(없거나 아직 만드는 중 · 이미 저장)')
-        rec = self.gen.save(job['result'], index, made_by, ai_template=job.get('ai_template'), ai_reason=job.get('ai_reason'))
+        rec = self.gen.save(job['result'], index, made_by)
         job.update(state='saved', saved={'design_id': rec['design_id'], 'version': rec['version'], 'parent_id': rec['parent_id'],
                                          'index': index})
         self.publish({'type': 'gen', 'data': {'stage': 'saved', **self.view(job_id)}})
         return job['saved']
 
 
-class TextBody(BaseModel):
-    """요청 문장(글상자 · 음성을 사람이 확인한 것)."""
-    text: str
-
-
 class GenBody(BaseModel):
-    """요청 문장 + 사용자가 확인한 Template(E-84 ③) + AI 판단 기록(POST /template 답의 ai_template · ai_reason 을 그대로 — 설계_DB 1절)."""
+    """요청 문장(글상자 · 음성 문장) + 사람이 설계 목록에서 고른 설계 ID(= 부모, Template 은 그 앞부분 — 10/13 PL)."""
     text: str
-    template: str
-    ai_template: str | None = None
-    ai_reason: str | None = None
+    design_id: str
 
 
 class PickBody(BaseModel):
@@ -162,34 +151,19 @@ class PickBody(BaseModel):
     made_by: Literal['web', 'voice'] = 'web'
 
 
-@router.post('/template')
-def choose_template(body: TextBody, request: Request):
-    """요청 문장 → AI 가 고른 Template + 이유 + 고를 수 있는 Template 목록(사용자가 화면에서 한 번 확인 · 바꿈 — W163).
-    template null = 범위 밖 안내(OUT_OF_SCOPE). ai_template · ai_reason = AI 판단 기록 — 화면이 /generate 에 그대로 돌려보낸다
-    (못 고름 · 실패면 'NONE', 설계_DB 1절)."""
-    text = body.text.strip()
-    if not text:
-        raise HTTPException(400, '요청 문장이 비었어요')
-    gen = request.app.state.gen
-    templates = [{'id': k, 'name': v['name'], 'label': v['label']} for k, v in gen.templates().items()]   # 실패해도 준다 — 사람이 직접 고르게
-    try:
-        choice = gen.classify(text)
-    except GenError as e:
-        return {'success': False, 'code': e.code, 'message': e.message, 'templates': templates, **gen.ai_judgment(code=e.code)}
-    return {'success': True, **choice, 'templates': templates, **gen.ai_judgment(choice)}
-
-
 @router.post('/generate')
 def generate(body: GenBody, request: Request):
-    """후보 3개 만들기 시작 → {job_id}. 진행 · 결과는 /ws {type: gen} 과 GET /generate/{job_id}. 이미 만드는 중이면 409.
-    ai_template 이 Template ID 도 'NONE' 도 아니면 400(만든 뒤 저장에서 막히지 않게 — 생성 전에 거름)."""
+    """고른 설계를 바탕으로 후보 3개 만들기 시작 → {job_id}. 진행 · 결과는 /ws {type: gen} 과 GET /generate/{job_id}.
+    문장이 비었으면 400, 고른 설계가 저장소에 없으면 404(만들기 전에 거름), 이미 만드는 중이면 409."""
     text = body.text.strip()
     if not text:
         raise HTTPException(400, '요청 문장이 비었어요')
-    if body.ai_template is not None and body.ai_template not in (AI_NONE, *request.app.state.gen.templates()):
-        raise HTTPException(400, f'ai_template 이 틀렸어요: {body.ai_template}')
     try:
-        return {'job_id': request.app.state.jobs.start(text, body.template, body.ai_template, body.ai_reason)}
+        request.app.state.store.get_design(body.design_id)
+    except (KeyError, ValueError):
+        raise HTTPException(404, f'고른 설계가 없어요: {body.design_id}') from None
+    try:
+        return {'job_id': request.app.state.jobs.start(text, body.design_id)}
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from None
 
