@@ -30,15 +30,19 @@ GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', '
 LEGACY_GRASP = {'END_75': 'LENGTH', 'SIDE_25': 'WIDTH', 'THICKNESS_15': 'THICKNESS'}
 
 # 조립 방법 CSV 칸 — (가) 조립 방법 · (나) 표시 칸(레시피 값을 읽기 좋게 옮김) · 짝 확인 해시 · 형식 이름. 모든 줄의 recipe_sha256 · schema 는 같다.
-PLACEMENT_COLUMNS = ('part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm',
+# 자재 번호 stock_id · cad_handle 은 placements/3.0 에서 뺐다(10/13 PLM — 자재 목록이 없어졌고 handle 은 레시피 부품 항목에만).
+PLACEMENT_COLUMNS = ('part_id', 'part_name', 'sequence', 'stage', 'size_L_mm', 'size_W_mm', 'size_T_mm',
                      'center_x_mm', 'center_y_mm', 'center_z_mm', 'axis_L', 'axis_W', 'axis_T',
-                     'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema')
+                     'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema')
 
 
 class RecipeBuilder:
     """블록 목록 → 레시피(recipe/3.0, 구조) → 조립 방법(placements/3.0) · 배치표 줄. ROS · 파일 없이 dict만 다룬다.
 
-    레시피 = 무엇을 어디에(블록 이름 · 부품 규격 · 중심 · 방향 · CAD 대응), 조립 방법 = 어떻게(순서 · 단계 · 잡기 · 받침).
+    레시피 = 무엇을 어디에(자재 stocks + template.composition[역할].parts[그룹] — 부품마다 자재 참조 · 중심 · 방향 · CAD 대응),
+    조립 방법 = 어떻게(순서 · 단계 · 잡기 · 받침).
+    이 클래스는 계산되는 값(구성요소의 count · parts)만 만든다. 사람이 정하는 값(template 의 name · description · tags,
+    구성요소의 label · revision)은 HMI에서 사람이 쓰고 넣지 않는다(10/13 한세교).
     둘은 블록 이름으로 잇고, 조립 방법의 recipe_sha256 으로 '이 레시피에 대해 쓴 순서'임을 확인한다(구조만 다시 만들고 조립 방법을
     그대로 둔 경우를 읽는 쪽이 거부하게 — 10/8 PL).
     CAD 도구(recipe_manager/main.py)와 변환기 ①(parts_to_recipe)이 같이 쓴다 — 계산 · 검사 규칙을 한 벌로 두려고.
@@ -53,13 +57,16 @@ class RecipeBuilder:
                    CAD가 없는 설계(변환기 ①)는 handle = None
             model_id: 모델 ID (예 001_CHAIR_BENCH_V000)
             source_filename, source_sha256: 원본 CAD 파일 이름과 해시. CAD가 없으면 None
-        출력: 레시피 dict (schema recipe/3.0 — source_cad · stocks · parts[part_name · stock_id · center_mm · R · cad.handle]).
-              CAD가 없으면 source_cad = None, 블록에 cad 칸 없음
+        출력: 레시피 dict (schema recipe/3.0 — model_id · source_cad · stocks[{stock_id, size_mm}] ·
+              template.composition{역할: {count, parts{그룹: [{part, stock_id, center_mm, R, cad{handle}}]}}}).
+              자재(stocks) = 부품을 만드는 기본 단위(젠가 블록). 부품은 stock_id 로 자재를 참조해 치수를 쓴다(10/13 한세교).
+              역할 키는 역할[_옵션](LEG · LEG_WHEEL), 그룹 키는 LEG_001, part 는 그룹 안 2자리 번호. 부품 항목은 번호 순.
+              CAD가 없으면 source_cad = None, 부품에 cad 칸 없음. 사람이 쓰는 칸(name · label · revision 등)은 없다.
         실패: 이름이 규칙과 다르거나 겹치거나 번호가 위치 순서와 다르면, 직육면체가 아니거나 축에 평행하지 않거나
               책상 아래이거나 서로 겹치면 ValueError.
         """
-        # 블록마다 직육면체 인식 → 같은 치수는 같은 부품 규격
-        stocks = {}   # 반올림한 치수 → 자재(stock) dict
+        # 블록마다 직육면체 인식 → 부품 크기 · 중심 · 방향. 같은 치수는 같은 자재(stock)
+        stocks = {}   # 반올림한 치수 → 자재 dict
         parts = []
         for box in boxes:
             name = box['part_name']
@@ -88,27 +95,23 @@ class RecipeBuilder:
             R = np.eye(3)[:, order]
             if np.linalg.det(R) < 0:
                 R[:, 1] *= -1
+            # stock_id 는 CAD에서 처음 나온 치수 순서. 젠가 블록만 쓰면 STOCK_001 하나다.
             size = [float(d) for d in dims[order]]
-
-            # stock_id 는 CAD에서 처음 나온 치수 순서. 젠가 블록만 쓰면 PART_001 하나다.
             key = tuple(round(v, 6) for v in size)
             if key not in stocks:
-                stocks[key] = {'stock_id': f'PART_{len(stocks) + 1:03d}', 'size_mm': size}
+                stocks[key] = {'stock_id': f'STOCK_{len(stocks) + 1:03d}', 'size_mm': size}
             part = {'part_name': name,
-                     'stock_id': stocks[key]['stock_id'],
-                     'center_mm': [float(c) for c in (lo + hi) / 2],
-                     'R': [[float(v) for v in row] for row in R]}
+                    'stock_id': stocks[key]['stock_id'],
+                    'size_mm': stocks[key]['size_mm'],
+                    'center_mm': [float(c) for c in (lo + hi) / 2],
+                    'R': [[float(v) for v in row] for row in R]}
             if box.get('handle') is not None:
                 part['cad'] = {'handle': box['handle']}
             parts.append(part)
-        source_cad = {'filename': source_filename, 'sha256': source_sha256} if source_filename else None
-        recipe = {'schema': RECIPE_SCHEMA, 'model_id': model_id,
-                  'source_cad': source_cad,
-                  'stocks': list(stocks.values()), 'parts': parts}
 
 
         # 순서와 무관한 최종 형상 검사: 책상 아래, 서로 겹침
-        boxes_lo_hi = [self.calculate_bounding_box(recipe, part) for part in parts]
+        boxes_lo_hi = [self.calculate_bounding_box(part) for part in parts]
         for n, (part, (lo, hi)) in enumerate(zip(parts, boxes_lo_hi)):
             if lo[2] < -TOL:
                 raise ValueError(f'Part below table: {part["part_name"]}')
@@ -119,21 +122,54 @@ class RecipeBuilder:
 
 
         # 정한 번호가 작명 규칙의 위치 순서와 맞는지 확인
-        self.check_block_numbering(recipe, boxes_lo_hi)
-        return recipe
+        self.check_block_numbering(parts, boxes_lo_hi)
 
-    def check_block_numbering(self, recipe, boxes_lo_hi):
+
+        # 부품 이름으로 구성요소(역할) → 그룹 → 부품 항목 트리를 만든다. 역할 · 그룹은 CAD에 처음 나온 순서, 그룹 안은 번호 순.
+        composition = {}
+        for part in parts:
+            role, group_no, part_no = PART_NAME.fullmatch(part['part_name']).groups()
+            item = {'part': part_no, 'stock_id': part['stock_id'], 'center_mm': part['center_mm'], 'R': part['R']}
+            if 'cad' in part:
+                item['cad'] = part['cad']
+            groups = composition.setdefault(role, {'count': 0, 'parts': {}})['parts']
+            groups.setdefault(f'{role}_{group_no}', []).append(item)
+        for comp in composition.values():
+            comp['count'] = len(comp['parts'])
+            for items in comp['parts'].values():
+                items.sort(key=lambda item: item['part'])
+        source_cad = {'filename': source_filename, 'sha256': source_sha256} if source_filename else None
+        return {'schema': RECIPE_SCHEMA, 'model_id': model_id, 'source_cad': source_cad,
+                'stocks': list(stocks.values()), 'template': {'composition': composition}}
+
+    def list_parts(self, recipe):
+        """레시피 트리(template.composition)를 펼쳐 부품 목록으로 만든다 — 받침 · 잡기 계산이 부품 하나씩 보려고.
+
+        입력:
+            recipe: 레시피 dict (recipe/3.0 트리)
+        출력: [{'part_name': 'LEG_001_01', 'size_mm', 'center_mm', 'R'}] (mm) — size_mm 은 부품이 참조하는 자재(stocks)의 치수.
+              사람이 쓰는 칸(label · revision)은 읽지 않는다.
+        실패: 없는 stock_id 를 참조하면 KeyError.
+        """
+        sizes = {stock['stock_id']: stock['size_mm'] for stock in recipe['stocks']}
+        return [{'part_name': f'{group}_{item["part"]}', 'size_mm': sizes[item['stock_id']],
+                 'center_mm': item['center_mm'], 'R': item['R']}
+                for comp in recipe['template']['composition'].values()
+                for group, items in comp['parts'].items()
+                for item in items]
+
+    def check_block_numbering(self, parts, boxes_lo_hi):
         """블록 이름의 번호가 위치 순서와 맞는지 본다 — 부품 번호 = 같은 역할(+ 옵션) 부품을 앞(−y)→뒤, 왼(−x)→오른 순,
         블록 번호 = 그 부품 안에서 아래층부터, 같은 층이면 앞→뒤, 왼→오른. 번호는 1부터 빠짐없이.
 
         입력:
-            recipe: 레시피 dict
-            boxes_lo_hi: blocks 순서와 같은 (lo, hi) 목록 (mm)
+            parts: 부품 목록 ([{'part_name', ...}])
+            boxes_lo_hi: parts 순서와 같은 (lo, hi) 목록 (mm)
         실패: 번호가 빠졌거나 위치 순서와 다르면 ValueError (어느 부품 · 블록인지 적는다).
         """
         # 부품(역할 + 부품 번호)별로 블록을 모은다. 위치 키는 (바닥 z, 중심 y, 중심 x) — 0.001 mm로 반올림해 같은 층을 묶는다.
         group_items = {}
-        for part, (lo, hi) in zip(recipe['parts'], boxes_lo_hi):
+        for part, (lo, hi) in zip(parts, boxes_lo_hi):
             role, group_no, part_no = PART_NAME.fullmatch(part['part_name']).groups()
             center = (lo + hi) / 2
             key = (round(float(lo[2]), 3), round(float(center[1]), 3), round(float(center[0]), 3))
@@ -172,12 +208,12 @@ class RecipeBuilder:
         입력:
             recipe: make_recipe 출력
             hints: {블록 이름: {'SEQ': '1', 'STAGE': '1', 'GRASP': 'FLAT_SHORT' 또는 옛 이름 SIDE_25 등}} — 정수는 글자 · 정수 둘 다
-        출력: 조립 방법 dict (schema placements/3.0 — model_id · recipe_sha256 · steps[block · part_id · sequence · stage ·
+        출력: 조립 방법 dict (schema placements/3.0 — model_id · recipe_sha256 · steps[part_name · part_id · sequence · stage ·
               grasp · grasp_axis · supports], steps는 sequence 순서)
         실패: 속성이 빠졌거나 정수가 아니거나 검사 항목을 어기면 블록 이름을 담은 ValueError.
         """
         # ① 블록마다 속성 → 순서 · 단계 · 파지 방법. 빠진 것은 한 번에 모아 알린다.
-        parts = {part['part_name']: part for part in recipe['parts']}
+        parts = {part['part_name']: part for part in self.list_parts(recipe)}
         missing = [f'{name}({", ".join(t for t in ("SEQ", "STAGE", "GRASP") if t not in hints.get(name, {}))})'
                    for name in parts if not all(t in hints.get(name, {}) for t in ('SEQ', 'STAGE', 'GRASP'))]
         if missing:
@@ -195,7 +231,7 @@ class RecipeBuilder:
                 axis_name = LEGACY_GRASP.get(grasp, grasp)
                 if axis_name not in AXES:
                     raise ValueError(f'{name}: unknown CAD GRASP attribute {grasp!r}')
-                grasp = self.find_grasp_from_closing_axis(recipe, part, AXES[axis_name])
+                grasp = self.find_grasp_from_closing_axis(part, AXES[axis_name])
             plan.append((sequence, stage, grasp, part))
 
 
@@ -214,10 +250,10 @@ class RecipeBuilder:
         placed = []   # (블록 이름, lo, hi) — 지금까지 놓인 블록
         steps = []
         for sequence, stage, grasp, part in plan:
-            closing_axis = self.find_closing_axis(recipe, part, grasp)
+            closing_axis = self.find_closing_axis(part, grasp)
 
             # 책상 위가 아니면, 이미 놓인 블록 중 바닥면이 그 윗면에 닿고 위에서 볼 때 면적이 겹치는 것이 받침이다.
-            lo, hi = self.calculate_bounding_box(recipe, part)
+            lo, hi = self.calculate_bounding_box(part)
             if lo[2] <= TOL:
                 supports = []
             else:
@@ -255,12 +291,11 @@ class RecipeBuilder:
             placements: make_placements 출력
         출력: 줄 목록. 한 줄 = PLACEMENT_COLUMNS 키의 dict (supports 는 목록 그대로 — 글자로 잇는 것은 파일 쓰는 쪽)
         """
-        parts = {part['part_name']: part for part in recipe['parts']}
-        sizes = {stock['stock_id']: stock['size_mm'] for stock in recipe['stocks']}
+        parts = {part['part_name']: part for part in self.list_parts(recipe)}
         rows = []
         for step in placements['steps']:
             part = parts[step['part_name']]
-            size = sizes[part['stock_id']]
+            size = part['size_mm']
 
             # 방향: 부품 L/W/T 축이 모델의 어느 축을 향하는지 '+X' · '-Y' 글자로. R의 k번째 열 = 부품 k번째 축 방향.
             directions = []
@@ -270,13 +305,13 @@ class RecipeBuilder:
                 directions.append(('+' if column[axis] > 0 else '-') + 'XYZ'[axis])
 
             rows.append({'part_id': step['part_id'], 'part_name': step['part_name'],
-                         'sequence': step['sequence'], 'stage': step['stage'], 'stock_id': part['stock_id'],
+                         'sequence': step['sequence'], 'stage': step['stage'],
                          'size_L_mm': size[0], 'size_W_mm': size[1], 'size_T_mm': size[2],
                          'center_x_mm': part['center_mm'][0], 'center_y_mm': part['center_mm'][1],
                          'center_z_mm': part['center_mm'][2],
                          'axis_L': directions[0], 'axis_W': directions[1], 'axis_T': directions[2],
                          'grasp': step['grasp'], 'grasp_axis': step['grasp_axis'],
-                         'supports': list(step['supports']), 'cad_handle': part.get('cad', {}).get('handle', ''),
+                         'supports': list(step['supports']),
                          'recipe_sha256': placements['recipe_sha256'], 'schema': placements['schema']})
         return rows
 
@@ -289,26 +324,23 @@ class RecipeBuilder:
         """
         return json.dumps(data, ensure_ascii=False, indent=2) + '\n'
 
-    def calculate_bounding_box(self, recipe, part):
+    def calculate_bounding_box(self, part):
         """블록이 목표 위치에서 차지하는 축 정렬 상자.
 
         입력:
-            recipe: 레시피 dict (부품 치수를 찾는 데 쓴다)
-            part: 레시피의 parts 항목
+            part: 부품 항목 (list_parts 출력 — part_name · size_mm · center_mm · R)
         출력: (lo, hi) — 최소 · 최대 꼭짓점 numpy 배열 (mm)
         """
         # 회전된 직육면체를 모델 축에 투영한 반폭 = |R| @ (치수 / 2). 축 정렬 회전만 받으므로 정확한 경계다.
-        size = next(stock['size_mm'] for stock in recipe['stocks'] if stock['stock_id'] == part['stock_id'])
-        half = np.abs(np.array(part['R'])) @ (np.array(size) / 2)
+        half = np.abs(np.array(part['R'])) @ (np.array(part['size_mm']) / 2)
         center = np.array(part['center_mm'])
         return center - half, center + half
 
-    def find_closing_axis(self, recipe, part, grasp):
+    def find_closing_axis(self, part, grasp):
         """파지 방법으로 블록을 잡을 때 그리퍼가 닫히는 부품 축을 구한다.
 
         입력:
-            recipe: 레시피 dict
-            part: 레시피의 parts 항목
+            part: 부품 항목 (list_parts 출력 — part_name · size_mm · center_mm · R)
             grasp: 파지 방법 이름 (GRASPS 중 하나)
         출력: 부품 축 번호 (AXES 값 — 0 L · 1 W · 2 T)
         실패: 파지 방법의 상태가 레시피 배치와 다르면 ValueError (예: 세워 놓을 블록을 FLAT_*로 잡을 수 없다).
@@ -321,37 +353,35 @@ class RecipeBuilder:
 
 
         # 수평 축 중 긴 쪽 또는 짧은 쪽
-        long_axis, short_axis = self.find_horizontal_axes(recipe, part)
+        long_axis, short_axis = self.find_horizontal_axes(part)
         return long_axis if length == 'LONG' else short_axis
 
-    def find_grasp_from_closing_axis(self, recipe, part, axis):
+    def find_grasp_from_closing_axis(self, part, axis):
         """닫힘 축 → 파지 방법 이름. 옛 형식(축 이름 · SIDE_25 등)을 바꿀 때 쓴다.
 
         입력:
-            recipe: 레시피 dict
-            part: 레시피의 parts 항목
+            part: 부품 항목 (list_parts 출력 — part_name · size_mm · center_mm · R)
             axis: 그리퍼가 닫히는 부품 축 번호 (수평이어야 한다)
         출력: 파지 방법 이름 (예: 'FLAT_SHORT')
         실패: 닫힘 축이 수직이면 ValueError.
         """
-        long_axis, short_axis = self.find_horizontal_axes(recipe, part)
+        long_axis, short_axis = self.find_horizontal_axes(part)
         if axis not in (long_axis, short_axis):
             name = next(n for n, k in AXES.items() if k == axis)
             raise ValueError(f'{part["part_name"]}: closing axis {name} is vertical; top-down grasp needs a horizontal axis')
         return f'{self.read_placed_state(part)}_{"LONG" if axis == long_axis else "SHORT"}'
 
-    def find_horizontal_axes(self, recipe, part):
+    def find_horizontal_axes(self, part):
         """이 배치에서 수평인 부품 축 둘을 긴 쪽부터 돌려준다.
 
         치수가 같으면(정사각 단면) 길게 · 짧게가 같은 잡기라서 축 번호가 작은 쪽을 '긴 쪽'으로 고정한다.
 
         입력:
-            recipe: 레시피 dict
-            part: 레시피의 parts 항목
+            part: 부품 항목 (list_parts 출력 — part_name · size_mm · center_mm · R)
         출력: [긴 쪽 축 번호, 짧은 쪽 축 번호]
         """
         up = VERTICAL_AXIS[self.read_placed_state(part)]
-        size = next(stock['size_mm'] for stock in recipe['stocks'] if stock['stock_id'] == part['stock_id'])
+        size = part['size_mm']
         return sorted((k for k in AXES.values() if k != up), key=lambda k: (-size[k], k))
 
     def read_placed_state(self, part):
@@ -360,7 +390,7 @@ class RecipeBuilder:
         R의 k번째 열이 부품 k번째 축 방향이고 3번째 행이 높이(Z) 성분이다. Z 성분이 ±1인 축이 위를 향한다.
 
         입력:
-            part: 레시피의 parts 항목
+            part: 부품 항목 (list_parts 출력 — part_name · size_mm · center_mm · R)
         출력: 'FLAT' / 'EDGE' / 'STAND'
         실패: 위를 향하는 부품 축이 없으면(축 정렬이 아님) ValueError.
         """
