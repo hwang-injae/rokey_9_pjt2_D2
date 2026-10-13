@@ -245,7 +245,7 @@ class DesignGenerator:
 
     # ---------- 스캔 [저장](IRD 8.4 ⑦) ----------
     def scan_fill(self, scan_result, feedback=None):
-        """스캔 추론 결과에 GPT 가 AI 칸을 채우고 부모를 고른다 — **W177(민범진)이 안을 채우는 자리**(10/13 PL). 지금은 GEN_FAILED.
+        """스캔 추론 결과에 GPT 가 AI 칸을 채우고 부모를 고른다 — W177(민범진, 10/13 PL). GPT 대화 한 번(도구 읽기 포함).
 
         입력: scan_result(scan_result/2.0 — blocks = blocks/2 {blocks[{scan_num, x, y, z, ori, inferred?}]} mm 설계 좌표 ·
               nearest_base(선택 — 추론기가 본 가장 가까운 기본 설계)), feedback(다시 채울 때만, 처음엔 None —
@@ -262,10 +262,130 @@ class DesignGenerator:
               화면 없음, 10/13 PL) — 그러면 최종 parent_id 의 Template 과 ai_template 이 달라 template_changed 가 true 가 된다(설계_DB 1절).
               부모 고르기만 실패하고 AI 칸 채우기가 됐으면 ai_reason = '실패: <코드>' 로 적고 parts 를 돌려준다(저장은 계속 — 생성의
               ai_judgment 와 같은 규칙). AI 칸 채우기 자체가 실패할 때만 GenError.
+        구현: GPT 는 scan_num 마다 order · role · group · stage · grasp 만 답하고 x · y · z · ori · inferred 는 코드가 스캔에서 옮긴다
+              (모양이 바뀔 수 없음). 대신할 부모 = nearest_base, 없으면 같은 family(nearest_base 의 family, 없으면 blocks.family) 기본 설계 중
+              부품 수가 가장 가까운 것. '부모 고르기 실패' = 도구 단계 실패 — 그때는 대신할 부모의 부품 목록을 코드가 넣고 칸만 채우게 한 번 더.
+              GPT 가 틀린 role · stage · grasp 를 코드가 고치지 않는다(E-69) — 검사에서 떨어져 feedback 으로 다시 온다.
         바깥 영향: OpenAI 호출(gpt-4o, temperature 0, 구조화 출력) · AI 호출 기록(kind scan_fill — 설계_DB 3절). 로봇은 움직이지 않는다.
-        실패: GenError(GEN_FAILED — 호출 실패 · 답 모양 틀림).
+        실패: GenError — GEN_FAILED(호출 실패 · 답의 scan_num 이 스캔과 다름) · ERROR(스캔 모양이 틀림 · 부모 후보 기본 설계 없음).
         """
-        raise GenError('GEN_FAILED', '스캔 저장의 AI 채우기가 아직 없어요(W177)')
+        body = scan_result.get('blocks') if isinstance(scan_result, dict) else None
+        scan = body.get('blocks') if isinstance(body, dict) else None
+        if not isinstance(scan, list) or not scan or not all(
+                isinstance(b, dict) and all(k in b for k in ('scan_num', 'x', 'y', 'z', 'ori')) for b in scan):
+            raise GenError('ERROR', '스캔 결과 모양이 틀렸어요(blocks/2 — blocks[scan_num · x · y · z · ori])')
+        by_num = {b['scan_num']: b for b in scan}
+        if len(by_num) != len(scan):
+            raise GenError('ERROR', '스캔 블록 번호(scan_num)가 겹쳐요')
+        rows = self.store.list_designs()
+        allowed = [r['design_id'] for r in rows]
+        family_by = {r['design_id']: r['family'] for r in rows}
+        nearest = scan_result.get('nearest_base') if scan_result.get('nearest_base') in family_by else None
+        family = family_by[nearest] if nearest else (body.get('family') if body.get('family') in ('chair', 'desk') else None)
+        bases = [r for r in rows if r['made_by'] == 'cad' and family in (None, r['family'])]
+        fallback = nearest or (min(bases, key=lambda r: abs(r['block_count'] - len(scan)))['design_id'] if bases else None)
+        if fallback is None:
+            raise GenError('ERROR', '부모로 삼을 기본 설계가 저장소에 없어요')
+
+        # 규칙 · 칸 설명(블록 · 방향 · 받침 · role · grasp)은 생성 프롬프트를 그대로 쓰고, 할 일만 스캔 채우기로 바꾼다
+        system = self.design_prompt + (
+            '\n\n[이번 일 — 스캔 채우기. 위 [참고 설계 읽기] · [출력] 대신 이것을 따른다]\n'
+            '사람이 쌓은 가구를 스캔해 블록마다 위치(x · y · z)와 방향(ori)을 얻었다. 모양은 정해졌다 — 블록을 더하거나 빼거나 옮기지 않는다.\n'
+            '1. [DB 목록](한 줄 = 설계 하나 — 기본 · 파생 · 예전 스캔)을 보고 도구 get_design 으로 스캔과 가장 비슷한 설계를 1 ~ 2개 읽는다.\n'
+            '   가장 비슷한 설계 = 부모(parent_id): 블록 수 · 외곽 크기 · 층 구성이 가깝고 같은 가구 종류(의자 · 책상)인 것. 맞는 것이 없으면 NONE.\n'
+            '2. 스캔 블록마다(scan_num) role · group · order · stage · grasp 를 위 규칙대로 쓴다. 읽은 설계에서 같은 자리 블록의 칸을 참고한다.\n'
+            '   order 는 scan_num 과 상관없이 실제로 쌓는 순서다(1부터, 겹치지 않게, 받치는 블록 먼저).\n'
+            '   inferred = true 는 가려져서 추정한 블록이다 — 다른 블록과 똑같이 채운다.\n'
+            '3. parts 에는 스캔 블록 하나마다 정확히 한 줄(scan_num 이 빠지거나 겹치면 안 된다).\n'
+            '4. reason: 그 부모를 고른 까닭 한국어 한 줄. plan: parts 를 쓰기 전에 층마다 한 줄 — 그 층 z, scan_num, role · stage.')
+        lines = []
+        for r in rows:
+            x, y, z = r['size_mm']
+            b = r.get('last_build')
+            build = f"{b['result']} {b['placed']}/{b['total']}" if b else '없음'
+            lines.append(f"- {r['design_id']} | {MADE_KO.get(r['made_by'], r['made_by'])} | 부모 {r['parent_id'] or '없음'} | "
+                         f"블록 {r['block_count']} | 외곽 {x:g}×{y:g}×{z:g} mm | 최근 조립: {build}")
+        shown = [{k: b[k] for k in ('scan_num', 'x', 'y', 'z', 'ori', 'inferred') if k in b}
+                 for b in sorted(scan, key=lambda b: (b['z'], b['y'], b['x']))]    # 아래층부터 — 층 구성을 읽기 쉽게
+        text = (f"[스캔] 블록 {len(scan)}개" + (f" · 추론기가 고른 가까운 기본 설계 {nearest}" if nearest else '') + '\n'
+                + json.dumps(shown, ensure_ascii=False, separators=(',', ':')) + '\n[DB 목록 — 전체 설계]\n' + '\n'.join(lines))
+        if feedback:
+            # 앞 답은 이 대화에 없다(요청마다 새 대화) — 앞 parts 를 scan_num 과 함께 보여 줘 오류의 'N번'(= 앞 order)이 어느 블록인지 알게
+            fb = feedback if isinstance(feedback, dict) else {'errors': feedback}
+
+            def shape(b):                                      # save_scan._moved 와 같은 비교 키(0.1 mm · ori)
+                return round(float(b['x']), 1), round(float(b['y']), 1), round(float(b['z']), 1), str(b['ori'])
+            num_of = {shape(b): b['scan_num'] for b in scan}
+            prev = [{'scan_num': num_of.get(shape(p)), **{k: p.get(k) for k in ('order', 'role', 'group', 'stage', 'grasp')}}
+                    for p in fb.get('parts') or [] if isinstance(p, dict) and all(k in p for k in ('x', 'y', 'z', 'ori'))]
+            fix = []
+            for e in (fb.get('errors') or [])[:FEEDBACK_MAX]:
+                detail = str(e.get('detail') or e.get('reason')) if isinstance(e, dict) else str(e)
+                hint = next((h for key, h in FIX_HINTS if key in detail), '')
+                fix.append(f'- {detail}' + (f' → 고칠 것: {hint}' if hint else ''))
+            text += ('\n\n[앞 검사 결과] 앞서 채운 칸이 검사에서 떨어졌다. 오류의 N번 = 아래 [앞 답]의 order. 위치 · 방향은 그대로 두고 '
+                     'role · group · order · stage · grasp 를 고쳐 다시 채워라.\n[앞 답]\n'
+                     + json.dumps(prev, ensure_ascii=False, separators=(',', ':')) + '\n[오류]\n' + '\n'.join(fix))
+        part = {'type': 'object', 'additionalProperties': False,
+                'required': ['scan_num', 'order', 'role', 'group', 'stage', 'grasp'],
+                'properties': {'scan_num': {'type': 'integer'}, 'order': {'type': 'integer'},
+                               'role': {'type': 'string', 'enum': self.role_names}, 'group': {'type': 'integer'},
+                               'stage': {'type': 'integer'}, 'grasp': {'type': 'string', 'enum': list(GRASPS)}}}
+        fmt = self._format('scan_fill', {
+            'type': 'object', 'additionalProperties': False, 'required': ['parent_id', 'reason', 'plan', 'parts'],
+            'properties': {'parent_id': {'type': 'string', 'enum': allowed + [AI_NONE]}, 'reason': {'type': 'string'},
+                           'plan': {'type': 'string'}, 'parts': {'type': 'array', 'items': part}}})
+
+        t0 = self.clock()
+        log = self._new_log('scan_fill', f'스캔 {scan_result.get("run_id")} 블록 {len(scan)}개', system,
+                            run_id=scan_result.get('run_id'), nearest_base=nearest, feedback=feedback or None)
+        messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': text}]
+        read = []
+        fail_code = None                                       # 부모 고르기(도구 단계) 실패 코드
+        try:
+            try:
+                msg = self._read_and_answer(log, messages, allowed, read, lambda *_: None, fmt)
+            except GenError as e:
+                # 도구 단계가 실패하면 대신할 부모의 블록 목록을 코드가 넣어 칸만 채우게 한 번 더(E-72 자동 전환과 같은 방식)
+                fail_code = e.code
+                log['fallback'] = True
+                read.clear()
+                messages[1:] = [{'role': 'user', 'content': text + f'\n\n[참고 설계 — 도구 대신 코드가 넣음] ({fallback})\n'
+                                 + json.dumps(self.store.get_design(fallback)['parts']['parts'], ensure_ascii=False,
+                                              separators=(',', ':'))}]
+                msg = self._chat(log, MODEL, messages, fmt)
+            data = self._parse(msg)
+            got = data.get('parts')
+            if not isinstance(got, list) or not all(isinstance(p, dict) for p in got) or \
+                    sorted(str(p.get('scan_num')) for p in got) != sorted(map(str, by_num)):
+                raise GenError('GEN_FAILED', 'AI 답의 블록이 스캔과 맞지 않아요(scan_num 빠짐 · 겹침)')
+            by_text = {str(k): b for k, b in by_num.items()}      # 비교와 같은 글자 키 — 숫자 · 글자 scan_num 이 섞여도 같은 블록
+            parts = []
+            for p in sorted(got, key=lambda p: p['order']):
+                b = by_text[str(p['scan_num'])]
+                parts.append({'order': p['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'],
+                              'role': p['role'], 'group': p['group'], 'stage': p['stage'], 'grasp': p['grasp'],
+                              **({'inferred': bool(b['inferred'])} if 'inferred' in b else {})})
+            choice = data.get('parent_id')
+            if fail_code is not None:                          # 부모 고르기만 실패 — 칸은 채웠으니 부모는 코드가, 저장은 계속(ai_judgment 규칙)
+                parent, judged = fallback, self.ai_judgment(code=fail_code)
+            else:
+                try:
+                    ai_template = split_design_id(choice)[0] if choice in family_by else AI_NONE
+                except ValueError:                             # E-84 꼴이 아닌 옛 이름 설계 — Template 을 모름
+                    ai_template = AI_NONE
+                parent = choice if choice in family_by and family in (None, family_by[choice]) else fallback
+                judged = {'ai_template': ai_template, 'ai_reason': str(data.get('reason') or '').strip()}
+            result = {'parts': parts, 'parent_id': parent, **judged}
+            log['result'] = {'parent_id': parent, 'ai_choice': choice, **judged, 'reference': list(read)}
+        except GenError as e:
+            log['error'] = {'code': e.code, 'message': e.message}
+            raise
+        finally:
+            log['elapsed_s'] = round(self.clock() - t0, 1)
+            self._save_log(log, messages)
+        result['gen_log'] = log.get('file')
+        return result
 
     def save_scan(self, scan_result, on_progress=None):
         """스캔 [저장] 한 번(IRD 8.4 ⑦): scan_fill → 새 ID(부모 Template 의 다음 V) → check_design(base_recipe 실음) → 합격이면 저장.
@@ -330,13 +450,14 @@ class DesignGenerator:
                                   'detail': 'AI 가 스캔한 부품의 위치 · 방향 · 개수를 바꿨다 — 그대로 두고 역할 · 그룹 · 순서 · 단계 · 잡기만 채워라'}
 
     # ---------- 대화 ----------
-    def _read_and_answer(self, log, messages, allowed, read, progress):
+    def _read_and_answer(self, log, messages, allowed, read, progress, fmt=None):
         """참고 설계 읽기(도구) → 후보 답. 첫 번째는 도구를 꼭 부르게 하고(RAG — 예시 없이 쓰지 않게), 2번 읽으면 더는 못 부르게 한다.
 
         병렬 도구 호출은 끈다(구조화 출력과 같이 쓸 때 OpenAI 권고). 끝까지 답이 없으면 GenError.
+        fmt = 답 형식(비우면 후보 3개 — generate). scan_fill 은 스캔 채우기 형식을 넘긴다.
         """
         tools = [self._tool(allowed)]
-        fmt = self._candidates_format()
+        fmt = fmt or self._candidates_format()
         for rnd in range(MAX_READS + 1):
             choice = 'required' if rnd == 0 else ('auto' if len(read) < MAX_READS else 'none')
             msg = self._chat(log, MODEL, messages, fmt, tools=tools, tool_choice=choice, parallel_tool_calls=False)

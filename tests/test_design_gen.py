@@ -277,13 +277,17 @@ def filled(parts, parent=BENCH, ai=TEMPLATE, reason='다리 둘 위 좌판'):
     return {'parts': copy.deepcopy(parts), 'parent_id': parent, 'ai_template': ai, 'ai_reason': reason}
 
 
-def test_scan_fill_is_the_w177_slot(store, good):
-    """scan_fill 은 아직 비어 있다(W177 민범진) — 스캔 저장은 GEN_FAILED, 화면 버튼은 [다시 스캔] · [취소]."""
-    gen, _ = make(store, [])
+def test_save_scan_with_real_scan_fill(store, good):
+    """진짜 scan_fill(가짜 GPT)로 스캔 [저장] 끝까지 — 채움 → 검사(base_recipe) → 저장(made_by scan · AI 판단 기록). GPT 가 못 채우면
+    GEN_FAILED, 화면 버튼은 [다시 스캔] · [취소]."""
+    gen, _ = make(store, [tool_call(BENCH), scan_answer(good, BENCH)])
+    rec = gen.save_scan(scan_of(good))
+    assert rec['made_by'] == 'scan' and rec['parent_id'] == BENCH and rec['design_id'] == '001_CHAIR_BENCH_V001'
+    assert rec['ai_template'] == TEMPLATE and rec['ai_reason'] == '블록 수 · 다리 벽이 같다'
+    gen, _ = make(store, [RuntimeError('network'), RuntimeError('network')])
     with pytest.raises(GenError) as e:
         gen.save_scan(scan_of(good))
-    assert e.value.code == 'GEN_FAILED' and 'W177' in e.value.message
-    assert scan_actions(e.value.detail) == ['rescan', 'cancel']
+    assert e.value.code == 'GEN_FAILED' and scan_actions(e.value.detail) == ['rescan', 'cancel']
 
 
 def test_save_scan_checks_with_base_recipe_and_saves_as_scan(store, good):
@@ -342,3 +346,81 @@ def test_four_bases_pass_real_check_with_their_base_recipe(store):
         assert chk['ok'] and chk['recipe']['model_id'] == design_id and 'revision' not in json.dumps(chk['recipe']), (t, chk['errors'])
     wrong = real_check()({**parts, 'base_recipe': store.base_recipe('001_CHAIR_BENCH')})
     assert wrong['ok'] is False and [e['reason'] for e in wrong['errors']] == ['REQUEST_INVALID']
+# ---------- 스캔 [저장] 채우기(W177 · IRD 8.4 ⑦ · E-79) ----------
+def scan_answer(parts, parent, reason='블록 수 · 다리 벽이 같다', drop=0):
+    """GPT 의 스캔 채우기 답(W177 진짜 scan_fill 시험용) — scan_num 마다 채울 칸만(scan_of 의 번호 규칙: 거꾸로 = n − order + 1).
+    drop 개만큼 뒤에서 뺀다(모양 틀린 답)."""
+    n = len(parts)
+    rows = [{'scan_num': n - p['order'] + 1, **{k: p[k] for k in ('order', 'role', 'group', 'stage', 'grasp')}} for p in parts]
+    body = {'parent_id': parent, 'reason': reason, 'plan': 'z0: …', 'parts': rows[:len(rows) - drop]}
+    return SimpleNamespace(content=json.dumps(body, ensure_ascii=False), refusal=None, tool_calls=None)
+
+
+def test_scan_fill_keeps_scan_shape_and_passes_check(store, good):
+    """도구로 비슷한 설계를 읽고(DB 전체) → scan_num 마다 칸만 받아 위치 · 방향은 스캔 그대로 → 진짜 검사 합격 · 기록."""
+    gen, client = make(store, [tool_call(BENCH), scan_answer(good, BENCH)])
+    r = gen.scan_fill(scan_of(good))
+    assert r['parent_id'] == BENCH and r['ai_template'] == TEMPLATE and r['ai_reason'] == '블록 수 · 다리 벽이 같다'
+    assert [{k: p[k] for k in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in r['parts']] == \
+        [{k: p[k] for k in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in good]
+    assert all('inferred' not in p for p in r['parts'])                     # 스캔에 없는 칸은 만들지 않음
+    design_id, _ = store.new_design_id(TEMPLATE, r['parent_id'])
+    chk = gen._check({'schema': 'parts/3.0', 'design_id': design_id, 'parts': r['parts']})
+    assert chk['ok'], chk['errors']
+    first = client.calls[0]
+    assert first['tool_choice'] == 'required' and first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == \
+        ['001_CHAIR_BENCH_V000', '002_CHAIR_BACK_V000', '003_DESK_STAND_V000', '004_DESK_PEDESTAL_V000']   # DB 전체(E-79)
+    item = first['response_format']['json_schema']['schema']['properties']['parts']['items']['properties']
+    assert 'x' not in item and 'ori' not in item and 'scan_num' in item           # AI 는 위치 · 방향을 쓰지 못한다
+    log = json.loads((store.gen_logs_dir / r['gen_log']).read_text(encoding='utf-8'))
+    assert log['kind'] == 'scan_fill' and log['result']['parent_id'] == BENCH and log['run_id'] == RUN
+
+
+def test_scan_fill_answer_must_cover_every_scan_num(store, good):
+    """AI 답에서 블록이 빠지면(또는 겹치면) 코드가 채우지 않고 GEN_FAILED — 기록에 오류."""
+    gen, _ = make(store, [tool_call(BENCH), scan_answer(good, BENCH, drop=1)])
+    with pytest.raises(GenError) as e:
+        gen.scan_fill(scan_of(good))
+    assert e.value.code == 'GEN_FAILED'
+    log = json.loads(next(store.gen_logs_dir.glob('*_scan_fill.json')).read_text(encoding='utf-8'))
+    assert log['error']['code'] == 'GEN_FAILED'
+
+
+def test_scan_fill_parent_other_family_or_none_is_replaced(store, good):
+    """부모는 같은 family 만(E-79): 다른 family 를 고르면 nearest_base 로, NONE 이고 nearest_base 도 없으면
+    (family 를 알면 같은 family) 기본 설계 중 부품 수가 가장 가까운 것으로. ai_template 은 AI 가 고른 그대로(template_changed 는 저장소가 계산)."""
+    gen, _ = make(store, [tool_call(BENCH), scan_answer(good, '003_DESK_STAND_V000')])
+    r = gen.scan_fill(scan_of(good))
+    assert r['parent_id'] == BENCH and r['ai_template'] == '003_DESK_STAND'
+    gen, _ = make(store, [tool_call(BENCH), scan_answer(good, 'NONE', reason='맞는 설계가 없다')])
+    r = gen.scan_fill(scan_of(good, nearest=None))                 # family 모름 · 부품 11개 → 기본 설계 중 벤치(11)가 가장 가깝다
+    assert r['parent_id'] == BENCH and r['ai_template'] == 'NONE' and r['ai_reason'] == '맞는 설계가 없다'
+
+
+def test_scan_fill_feedback_and_tool_failure_fallback(store, good):
+    """다시 채울 때 {errors, 앞 parts} 를 받아 앞 답(scan_num 붙여) · 오류 · 고치는 법을 넣고, 도구 단계(부모 고르기)가 실패하면
+    대신할 부모 부품 목록을 코드가 넣어 칸만 채우게 한 번 더 — 부모 = nearest_base, ai_template NONE · ai_reason '실패: <코드>'(저장은 계속)."""
+    first, _ = make(store, [tool_call(BENCH), scan_answer(good, BENCH)])
+    prev = first.scan_fill(scan_of(good))['parts']
+    feedback = {'errors': [{'part': 9, 'reason': 'unsupported', 'detail': '9번 블록이 공중', 'kind': 'ai_fields'}], 'parts': prev}
+    gen, client = make(store, [RuntimeError('network'), scan_answer(good, '002_CHAIR_BACK_V000')])
+    r = gen.scan_fill(scan_of(good), feedback=feedback)
+    assert r['parent_id'] == BENCH and r['ai_template'] == 'NONE' and r['ai_reason'] == '실패: GEN_FAILED'
+    last = client.calls[-1]
+    text = last['messages'][1]['content']
+    assert 'tools' not in last and '도구 대신 코드가 넣음' in text and BENCH in text
+    assert '[앞 검사 결과]' in text and '9번 블록이 공중' in text and '고칠 것' in text
+    n = len(good)
+    shown = json.loads(text.split('[앞 답]\n')[1].split('\n')[0])
+    assert {'scan_num': n - 9 + 1, 'order': 9} == {k: shown[8][k] for k in ('scan_num', 'order')}   # 앞 order 9 = 어느 스캔 블록인지
+
+
+def test_scan_fill_rejects_bad_input_before_calling_ai(store):
+    """스캔 모양이 틀리면(blocks 없음 · scan_num 겹침) AI 를 부르기 전에 ERROR."""
+    gen, client = make(store, [])
+    for bad in ({}, {'blocks': {'blocks': []}},
+                {'blocks': {'blocks': [{'scan_num': 1, 'x': 0, 'y': 0, 'z': 0, 'ori': 'x'}] * 2}}):
+        with pytest.raises(GenError) as e:
+            gen.scan_fill(bad)
+        assert e.value.code == 'ERROR'
+    assert client.calls == []
