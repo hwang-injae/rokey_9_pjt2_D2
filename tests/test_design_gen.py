@@ -3,7 +3,7 @@
 OpenAI 없이 돈다(가짜 클라이언트가 정해 둔 답을 차례로 준다). 검사는 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결).
 지키는 것: 부모 = 사람이 고른 설계(10/13 PL) · 바탕 설계를 요청 글에 넣음 · 도구는 같은 Template 의 다른 설계만(enum, 읽기는 골라서) ·
 후보에 검사 전 새 ID(Template 다음 V) · 합격 후보만 저장(AI 판단 기록은 비움) · 모자라면 검사 detail 을 피드백으로 더(최대 2번) ·
-범위 밖 OUT_OF_SCOPE · 검사 서비스 실패(로봇 PC)는 다시 만들지 않음 · 도구 단계 실패면 예시를 코드가 넣음 · 기록(NFR-17) · 키 없음 ·
+범위 밖 OUT_OF_SCOPE · 검사 서비스 실패(로봇 PC)는 다시 만들지 않음 · 도구 단계 실패면 예시를 코드가 넣음 · 기록(NFR-17) · 중계(claude_bridge) 꺼짐 · 사용 한도 ·
 스캔 [저장](W177 scan_fill → 검사 → 저장).
 """
 import copy
@@ -21,7 +21,8 @@ for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_task', ROOT / 'src' / 'd2
 
 from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
-from design_gen import MAX_REGEN, DesignGenerator, GenError, scan_actions  # noqa: E402
+import design_gen  # noqa: E402
+from design_gen import MAX_REGEN, MODEL, DesignGenerator, GenError, scan_actions  # noqa: E402
 from design_store import DesignStore, split_design_id  # noqa: E402
 
 RECIPES = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
@@ -127,7 +128,7 @@ def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
     assert events == ['reading', 'candidates', 'checked', 'checked', 'checked', 'retry', 'candidates', 'checked']
     assert '후보 2개는 통과해 남겨 둔다' in client.calls[2]['messages'][-1]['content'] and '새 후보 1개만' in client.calls[2]['messages'][-1]['content']
     first, second, _ = client.calls
-    assert first['model'] == 'gpt-4o' and first['temperature'] == 0 and first['tool_choice'] == 'auto'   # 바탕은 줬으니 참고는 골라서
+    assert first['model'] == MODEL and first['temperature'] == 0 and first['tool_choice'] == 'auto'   # 바탕은 줬으니 참고는 골라서
     assert first['parallel_tool_calls'] is False and first['response_format']['json_schema']['strict'] is True
     assert first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [v1]   # 같은 Template 의 다른 설계만
     request = first['messages'][1]['content']
@@ -278,12 +279,12 @@ def test_unknown_base_and_bad_answer(store):
 
 
 def test_request_names_template_from_v000_recipe(store, good):
-    """요청 글의 [Template] 줄 = V000 레시피 template 칸의 이름 — 설명(코드 표 없음, 10/13 PL). 모델은 gpt-4o(팀 키는 gpt-4o · whisper-1 만)."""
+    """요청 글의 [Template] 줄 = V000 레시피 template 칸의 이름 — 설명(코드 표 없음, 10/13 PL). 모델은 MODEL(Claude 별칭 — 10/13 중계 claude_bridge)."""
     gen, client = make(store, [answer([good] * 3)])
     gen.generate('벤치', BENCH)
     bench = store.get_design(BENCH)['recipe']['template']
     assert f"[Template] {TEMPLATE} — {bench['name']} — {bench['description']} (" in client.calls[0]['messages'][1]['content']
-    assert client.calls[0]['model'] == 'gpt-4o'
+    assert client.calls[0]['model'] == MODEL
 
 
 def test_prompt_takes_rules_from_robot_yaml_and_roles(store):
@@ -296,21 +297,28 @@ def test_prompt_takes_rules_from_robot_yaml_and_roles(store):
     assert 'LEG' in role_enum and 'LEG_WHEEL' in role_enum
 
 
-def test_no_key_is_gen_failed(store, monkeypatch):
-    """키가 없으면(또는 openai 라이브러리가 없으면) 웹은 켜져 있고 생성만 GEN_FAILED."""
-    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+def test_bridge_down_is_gen_failed(store, monkeypatch):
+    """중계(claude_bridge)가 꺼져 있으면(또는 openai 라이브러리가 없으면) 웹은 켜져 있고 생성만 GEN_FAILED + 중계를 켜라는 안내."""
+    pytest.importorskip('openai')
+    monkeypatch.setattr(design_gen, 'LLM_URL', 'http://127.0.0.1:9/v1')   # 아무도 안 듣는 자리 — 진짜 중계 · Claude 를 부르지 않게
     gen = DesignGenerator(store, real_check(), RULES)
     with pytest.raises(GenError) as e:
         gen.generate('벤치', BENCH)
-    assert e.value.code == 'GEN_FAILED'
+    assert e.value.code == 'GEN_FAILED' and 'claude_bridge' in e.value.message
 
 
-def test_no_credit_message(store):
-    """크레딧이 없으면(429 insufficient_quota) 기다리라는 말 대신 크레딧을 채우라고 알린다(10/10 실제로 겪음)."""
-    gen, _ = make(store, [RuntimeError("Error code: 429 - {'error': {'code': 'insufficient_quota'}}")])
+def test_bridge_down_and_usage_limit_messages(store):
+    """중계(claude_bridge)가 꺼져 있거나 Claude 사용 한도면 '잠시 뒤 다시' 대신 그 이유를 알린다(기다려도 안 풀려서)."""
+    class APIConnectionError(Exception):   # openai 의 같은 이름 예외 흉내 — 이름으로 가른다
+        pass
+    gen, _ = make(store, [APIConnectionError('Connection error.'),
+                          RuntimeError("Error code: 502 - {'error': {'message': \"claude 실패: You've hit your usage limit\"}}")])
     with pytest.raises(GenError) as e:
         gen.generate('벤치', BENCH)
-    assert e.value.code == 'GEN_FAILED' and '크레딧' in e.value.message
+    assert e.value.code == 'GEN_FAILED' and 'claude_bridge' in e.value.message
+    with pytest.raises(GenError) as e:
+        gen.generate('벤치', BENCH)
+    assert e.value.code == 'GEN_FAILED' and '사용 한도' in e.value.message
 
 
 

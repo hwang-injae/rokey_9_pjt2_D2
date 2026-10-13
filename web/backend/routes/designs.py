@@ -2,7 +2,7 @@
 """/api/designs — 설계 목록(트리) · 설계 하나(3D 보기) · 조립 기록 · 설계 규칙 숫자 + AI 생성(고른 설계 바탕 후보 3개 · 고르기) · 스캔 [저장]
 (web/README 2 · 4장, SDD 6.6 · 6.8, W111 · W108).
 
-읽기와 저장은 DesignStore 한 곳, GPT 는 DesignGenerator 한 곳. 생성은 오래 걸려(≤ 60초) 뒤 스레드로 돌리고 진행은 /ws {type: gen} 으로 민다.
+읽기와 저장은 DesignStore 한 곳, AI 는 DesignGenerator 한 곳. 생성은 오래 걸려(≤ 60초) 뒤 스레드로 돌리고 진행은 /ws {type: gen} 으로 민다.
 트리는 화면이 목록의 parent_id 로 만든다(따로 /tree 를 두지 않는다 — 같은 내용을 두 번 내보내지 않게).
 """
 import threading
@@ -55,7 +55,7 @@ class GenJobs:
         return job_id
 
     def start_scan(self, scan_result):
-        """스캔 [저장] 하나를 뒤 스레드로 시작하고 job_id 를 돌려준다(IRD 8.4 ⑦ — GPT 채우기 · 검사 · 저장, 최대 3번 부름).
+        """스캔 [저장] 하나를 뒤 스레드로 시작하고 job_id 를 돌려준다(IRD 8.4 ⑦ — AI 채우기 · 검사 · 저장, 최대 3번 부름).
 
         생성과 같은 줄에 선다(한 번에 하나) — 둘이 같은 Template 의 다음 V 번호를 같이 받지 않게(설계_DB 5절 · 8절 C).
         진행은 publish({type: scan_save, data}) — 생성 화면(type gen)과 섞이지 않게. 이미 도는 것이 있으면 RuntimeError.
@@ -217,7 +217,7 @@ def scan_save_state(job_id: str, request: Request):
 def scan_recommend(run_id: str, request: Request):
     """스캔 '추천 설계'(10/13 플랜 B 1단계) → {run_id, candidates[{design_id, family, made_by, matched, scan_count, part_count, rate}]}.
     마지막 scan_result 와 저장된 설계 전부의 일치율(비전 match_rate 와 같은 식) 높은 순 3개. 화면이 고르면 그 ID 로 select_design 을
-    보낸다 — 이미 검사를 통과한 저장 설계라 GPT · 새 검사 · 새 저장이 없다. 읽기만 한다.
+    보낸다 — 이미 검사를 통과한 저장 설계라 AI · 새 검사 · 새 저장이 없다. 읽기만 한다.
     마지막 scan_result 가 없거나 run_id 가 다르면 409(옛 스캔으로 추천하지 않게), 스캔 블록 모양이 틀려도 409."""
     scan = request.app.state.mqtt.snapshot().get('scan_result')
     if not isinstance(scan, dict) or scan.get('run_id') != run_id:

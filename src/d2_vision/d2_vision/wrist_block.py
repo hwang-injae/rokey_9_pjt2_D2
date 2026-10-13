@@ -7,8 +7,10 @@
 카메라 연결 신호 `/d2/vision/camera_status` 를 2 Hz 로 낸다(마지막 프레임 시각).
 스캔 · 흩뿌림 찾기도 이 노드 하나가 맡는다(IRD 84줄 '노드를 나눌지는 비전이 정함' → 카메라 구독 · 로봇 자세 · 보정값을 같이 쓰려고 한 노드, 10/8).
   `/d2/vision/scan_capture`(JsonQuery) {"pose_id","run_id"} → 요청 뒤 깊이 scan_frames 장 평균(구멍 0 은 빼고) + 지금 TF 자세 × 보정
-      → StructureScanner.add_capture(structure_scanner.py) → {"ok":true,"points":n}. run_id 마다 따로 모으고, 같은 run_id 에 같은
-      pose_id 가 다시 오면 덮어쓴다. 그때의 컬러 한 장도 둔다(scan_infer 의 사진).
+      + 요청 뒤 컬러 한 장의 YOLO 블록 마스크(답하기 전에 — 스캔 추론기 v12g 가 윗면 근거로 쓴다, 10/12 W115)
+      → StructureScanner.capture_pose(structure_scanner.py) → {"ok":true,"points":n}. run_id 마다 따로 모으고, 같은 run_id 에 같은
+      pose_id 가 다시 오면 덮어쓴다. 그때의 컬러 한 장도 둔다(scan_infer 의 사진). 컬러가 없거나 YOLO 를 안 읽었으면(yolo_fallback)
+      마스크 없이 넣고 경고만 — scan_infer 의 confidence.masks_missing 에 남는다(마스크가 없으면 일치율이 떨어질 수 있다).
       점군 미리보기(10/10 E-82): 답은 바로 하고, 그 뒤 따로 스레드가 지금까지 모은 점군을 `<scan_dir>/<run_id>/preview_<index>.ply`
       (save_cloud — 복셀 3 mm · ≤ 2 MB)로 저장해 `/d2/vision/scan_preview`(std_msgs/String, scan_preview/1.0 JSON, 기본 QoS)로 알린다.
       index = 이번 run 의 scan_capture 순번(1부터). 파일마다 그 자세까지 모은 점 전부(누적)라 화면은 index 가 가장 큰(최신) 파일로
@@ -544,9 +546,11 @@ class WristBlock(Node):
         return (mean_depth_mm(frames), img, frame_id, T_b2c), None
 
     def on_scan_capture(self, req, res):
-        """scan_capture 콜백: {"pose_id","run_id"} → 깊이 scan_frames 장 평균 → StructureScanner.add_capture → {"ok":true,"points"}.
+        """scan_capture 콜백: {"pose_id","run_id"} → 깊이 scan_frames 장 평균 + 컬러 YOLO 마스크 → StructureScanner.capture_pose → {"ok":true,"points"}.
 
         run_id 마다 StructureScanner 하나(최근 MAX_SCAN_RUNS 개만), 같은 pose_id 가 다시 오면 그 자세 촬영을 바꾼다. 컬러 한 장도 둔다.
+        YOLO 는 답하기 전에 한 번 돈다(답 시간 +YOLO 한 번 — 마지막 자세 마스크가 scan_infer 전에 꼭 붙게). find_lock 으로 find_blocks 와
+        번갈아 쓰고 scan_lock 밖에서 돈다. 컬러가 없거나 yolo_fallback 이면 마스크 없이 넣고 경고 로그만(실패로 하지 않음).
         답한 뒤 따로 스레드가 점군 미리보기를 낸다(_send_preview — 촬영 잠금 안에서 뜬 복사본 · 순번으로, 답 시간 3초 제한에 안 걸리게).
         실패는 맨 위 '스캔 · 찾기 실패 때'. 바깥 영향: 로그 · 미리보기 스레드 하나."""
         t0 = time.monotonic()
@@ -559,6 +563,16 @@ class WristBlock(Node):
             return self._answer(res, 'scan_capture', err, t0)
         depth_mm, color, _, T = snap
         rid, pose_id = body['run_id'], body['pose_id']
+        masks, yolo_ms = [], 0.0
+        if color is None or self.yolo is None:
+            self.get_logger().warn('scan_capture %s %s: %s — 마스크 없이 넣는다(스캔 추론 정확도가 떨어질 수 있다)' % (
+                rid, pose_id, '요청 뒤 컬러 없음' if color is None else 'YOLO 안 읽음(yolo_fallback)'))
+        else:
+            t_y = time.monotonic()
+            with self.find_lock:
+                masks, _ = self._yolo_masks(color)
+            masks = masks or []
+            yolo_ms = (time.monotonic() - t_y) * 1000
         try:
             with self.scan_lock:
                 run = self.scans.get(rid)
@@ -569,7 +583,8 @@ class WristBlock(Node):
                     old, _ = self.scans.popitem(last=False)
                     self.get_logger().warn('scan_infer 가 안 온 run_id %s 의 촬영을 버린다(최근 %d판만 기억)' % (old, MAX_SCAN_RUNS))
                 sc = run['scanner']
-                n = sc.capture_pose(pose_id, depth_mm, self.intr, T)            # 같은 자세 다시 찍음 → 덮어쓰기
+                n = sc.capture_pose(pose_id, depth_mm, self.intr, T, masks=masks)   # 같은 자세 다시 찍음 → 덮어쓰기
+                n_mask = len(sc.captures[-1]['masks'])
                 run['n_capture'] += 1
                 index, snap = run['n_capture'], sc.snapshot()                    # 미리보기용 — 잠금 밖 스레드가 이 복사본만 읽는다
                 if color is not None:
@@ -577,7 +592,8 @@ class WristBlock(Node):
                 poses = [c['pose_id'] for c in sc.captures]
         except ValueError as e:
             return self._answer(res, 'scan_capture', self._fail(True, 'SCAN_FAILED', '점군을 못 만듦: %s' % e), t0)
-        self.get_logger().info('scan_capture %s %s: 점 %d (모은 자세 %s, 카메라 z %.0f mm)' % (rid, pose_id, n, poses, T[2, 3] * 1000))
+        self.get_logger().info('scan_capture %s %s: 점 %d · 마스크 %d (YOLO %.0f ms) (모은 자세 %s, 카메라 z %.0f mm)' % (
+            rid, pose_id, n, n_mask, yolo_ms, poses, T[2, 3] * 1000))
         threading.Thread(target=self._after_capture, args=(snap, rid, pose_id, index, depth_mm, color, T), daemon=True).start()
         return self._answer(res, 'scan_capture', (True, '', {'ok': True, 'points': int(n)}), t0)
 
@@ -677,15 +693,16 @@ class WristBlock(Node):
         return self._answer(res, 'scan_infer', out, t0)
 
     def _yolo_masks(self, color):
-        """YOLO seg 로 블록 마스크 · 신뢰도. yolo_fallback 이라 모델을 안 읽었거나 추론 예외면 (None, None) → 예비 마스크(엣지 + 깊이)."""
+        """YOLO seg 로 블록 마스크 · 신뢰도(find_blocks · scan_capture 공용, find_lock 안에서 부른다).
+        yolo_fallback 이라 모델을 안 읽었거나 추론 예외면 (None, None) → find_blocks 는 예비 마스크(엣지 + 깊이), scan_capture 는 마스크 없이."""
         if self.yolo is None:
             return None, None
         try:
             r = self.yolo(color, imgsz=640, conf=float(self.get_parameter('yolo_conf').value), verbose=False,
                           retina_masks=True)[0]                          # retina_masks: 마스크를 원본 크기(640×480)로 받는다
             return masks_from_yolo(r, color.shape[:2])
-        except Exception as e:                # 추론이 실패해도 찾기는 예비로 계속한다
-            self.get_logger().error('YOLO 추론 실패(%r) — 이번 find_blocks 는 예비 마스크로' % (e,))
+        except Exception as e:                # 추론이 실패해도 찾기는 예비로 · 스캔은 마스크 없이 계속한다
+            self.get_logger().error('YOLO 추론 실패(%r) — 이번 find_blocks 는 예비 마스크로 · scan_capture 는 마스크 없이' % (e,))
             return None, None
 
     def publish_wrist_image(self, color, blocks, frame_id):

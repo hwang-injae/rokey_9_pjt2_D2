@@ -28,6 +28,7 @@ setup(
             'wrist_block = d2_vision.wrist_block:main',
             'mock_wrist_block = d2_vision.mock_wrist_block:main',
             'capture_scene = d2_vision.capture_scene:main',          # W114 촬영 저장 도구 (컬러 · 깊이 · 자세)
+            'scan_live_preview = d2_vision.scan_live_preview:main',  # W168 스캔 중 실시간 점군 미리보기(kind live, E-82 B)
         ],
     },
 )

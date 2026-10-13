@@ -29,7 +29,7 @@ for _pkg in ('d2_bridge', 'd2_task'):          # 웹 PC 에 ROS 는 없고, 이 
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from design_gen import DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
+from design_gen import LLM_URL, MODEL, DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
 from design_store import DesignStore   # noqa: E402
 from mqtt_client import MqttClient     # noqa: E402 — 위에서 d2_bridge 경로를 넣은 뒤
 from routes import designs, robot, voice, ws  # noqa: E402
@@ -86,8 +86,7 @@ def create_app(mqtt=None, rules=None, store=None, gen=None):
         """시작: 허브에 루프를 넣고 브로커에 붙는다 · 시작 점검을 찍는다. 끝: 연결 신호 false 를 남기고 나간다."""
         hub.bind(asyncio.get_running_loop())
         mqtt.start()
-        log.info('[웹] 브로커 %s:%s · OpenAI 키 %s · 화면 %s', mqtt.host, mqtt.port,
-                 '있음' if os.environ.get('OPENAI_API_KEY') else '없음(생성 · 음성 안 됨)',
+        log.info('[웹] 브로커 %s:%s · 설계 AI 중계 %s(%s) · 화면 %s', mqtt.host, mqtt.port, LLM_URL, MODEL,
                  '있음' if FRONTEND_OUT.is_dir() else '없음(frontend 빌드 전 — REST · /ws 만)')
         yield
         mqtt.stop()
