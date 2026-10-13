@@ -401,12 +401,12 @@ def test_형식이_틀리면_21번은_읽을_수_없어_형식_실패만_돌려�
     (lambda r: r['parts'][0].update(x='1'), 'position'),
     (lambda r: r['parts'][0].update(ori='q'), 'position'),
     (lambda r: r['parts'][0].pop('ori'), 'position'),
-    (lambda r: r['parts'][0].pop('role'), 'label'),
-    (lambda r: r['parts'][0].update(role='leg'), 'label'),
-    (lambda r: r['parts'][0].update(group=0), 'label'),
-    (lambda r: r['parts'][0].update(stage=True), 'label'),
-    (lambda r: r['parts'][0].update(grasp='SIDE'), 'label'),
-    (lambda r: r['parts'][1].update(order=99), 'label'),
+    (lambda r: r['parts'][0].pop('role'), 'ai_fields'),
+    (lambda r: r['parts'][0].update(role='leg'), 'ai_fields'),
+    (lambda r: r['parts'][0].update(group=0), 'ai_fields'),
+    (lambda r: r['parts'][0].update(stage=True), 'ai_fields'),
+    (lambda r: r['parts'][0].update(grasp='SIDE'), 'ai_fields'),
+    (lambda r: r['parts'][1].update(order=99), 'ai_fields'),
     (lambda r: r.update(parts=r['parts'] * 6), 'scope'),
 ])
 def test_기존_형식_실패에도_kind가_붙는다(mutate, kind):
@@ -435,10 +435,10 @@ def test_물리_실패_kind():
     assert 'position' in kinds(tipping)                                   # 쌓는 도중 안정성
 
 
-def test_잡을_면_없음은_label이다():
+def test_잡을_면_없음은_ai_fields이다():
     pocket = [(0, -25, 0, 'x'), (0, 25, 0, 'x'), (-50, 0, 0, 'y'), (50, 0, 0, 'y'), (0, 0, 0, 'x')]
     res = DesignChecker(CFG, template_checker=NO_TEMPLATE).check(design(*pocket))
-    assert [(e['reason'], e['kind']) for e in res['errors']] == [('CHECK_FAILED', 'label')]
+    assert [(e['reason'], e['kind']) for e in res['errors']] == [('CHECK_FAILED', 'ai_fields')]
 
 
 def test_변환기_예외와_REQUEST_INVALID에는_kind가_없다():

@@ -64,7 +64,7 @@ def test_변환기가_찾은_실수가_여러_개면_한_번에_모두_errors에
     blocks['parts'][1]['role'] = 'NADA'
     result = json.loads(attached(template_checker=NO_TEMPLATE).handle_json(json.dumps(blocks))[2])
     assert len(result['errors']) >= 2 and all(e['reason'] == 'CHECK_FAILED' and e['detail'] for e in result['errors'])
-    assert all(e['kind'] == 'label' for e in result['errors'])                  # 변환기 ①이 찾은 AI 칸 실수는 label
+    assert all(e['kind'] == 'ai_fields' for e in result['errors'])             # 변환기 ①이 찾은 AI 칸 실수는 ai_fields
 
 
 def test_변환기의_그_밖의_예외는_ERROR로_남는다():

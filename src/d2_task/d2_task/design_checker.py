@@ -62,7 +62,7 @@ class DesignChecker:
         그 뒤 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
         1~20번(물리·AI 칸)과 21번(Template)의 실패는 모두 모아 한 번에 돌려준다 — 물리 실패가 있어도 21번을 건너뛰지 않는다.
         reason: REQUEST_INVALID(요청 오류) · OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · TEMPLATE_SHAPE · TEMPLATE_RANGE(21번) · ERROR(변환기 ① 실패).
-        kind(실패 종류): position(위치·방향·작업영역) · label(역할·그룹·단계·잡기·잡을 면) · template(21번) · scope(블록 수 초과) — 웹이 재시도 방법을 고르는 데 쓴다.
+        kind(실패 종류): position(위치·방향·작업영역) · ai_fields(역할·그룹·단계·잡기·잡을 면) · template(21번) · scope(블록 수 초과) — 웹이 재시도 방법을 고르는 데 쓴다.
         입력을 바꾸지 않는다. 변환기 ①에는 base_recipe 를 뗀 사본을 준다(저장·응답에 Template 이 섞이지 않게).
         """
         detail = self._envelope(request)
@@ -99,7 +99,7 @@ class DesignChecker:
                 document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
                 result.update(recipe=document.recipe, placements=document.placements)
             except DesignRejected as e:      # 변환기 ①이 찾은 AI 실수(역할 목록 · 면 맞닿음 · 잡기) — 설계 탓이므로 CHECK_FAILED 로 돌려 재생성한다
-                return self._result(False, margin, [{'part': x['part'], 'reason': 'CHECK_FAILED', 'detail': x['detail'], 'kind': 'label'} for x in e.errors])
+                return self._result(False, margin, [{'part': x['part'], 'reason': 'CHECK_FAILED', 'detail': x['detail'], 'kind': 'ai_fields'} for x in e.errors])
             except Exception as e:   # 그 밖의 예외는 변환기 쪽 고장이라 ERROR 로 알린다
                 return self._result(False, margin, [{'part': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result
@@ -179,7 +179,7 @@ class DesignChecker:
     def _parse(self, request, errors):
         """형식을 확인해 order 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
         def bad(detail, kind, part=None, reason='CHECK_FAILED'):
-            """형식 오류 한 줄을 바깥 errors 에 쌓는다. 입력: detail = 이유 글자, kind = position · label · scope, part = 부품 order(없으면 None), reason = 실패 코드. 반환 없음. 바깥 영향은 errors 목록뿐이며 실패하지 않는다."""
+            """형식 오류 한 줄을 바깥 errors 에 쌓는다. 입력: detail = 이유 글자, kind = position · ai_fields · scope, part = 부품 order(없으면 None), reason = 실패 코드. 반환 없음. 바깥 영향은 errors 목록뿐이며 실패하지 않는다."""
             errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}', 'kind': kind})
 
         items = request.get('parts') if isinstance(request, dict) else None
@@ -196,7 +196,7 @@ class DesignChecker:
             miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp') if key not in it]
             if miss:
                 bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · group · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)',
-                    'position' if set(miss) <= {'x', 'y', 'z', 'ori'} else 'label')
+                    'position' if set(miss) <= {'x', 'y', 'z', 'ori'} else 'ai_fields')
                 continue
             for key in ('x', 'y', 'z'):
                 if not self._num(it[key]):
@@ -204,24 +204,24 @@ class DesignChecker:
             if not isinstance(it['ori'], str) or it['ori'] not in self.extent:       # 글자인지 먼저 — 목록 · 객체는 해시가 안 돼 TypeError
                 bad(f'{k}번째 항목 ori={it["ori"]!r} 는 x, y, xe, ye, zx, zy 가 아니다', 'position')
             if not isinstance(it['role'], str) or not ROLE_RE.fullmatch(it['role']):
-                bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다', 'label')
+                bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다', 'ai_fields')
             for key in ('group', 'stage'):
                 if not isinstance(it[key], int) or isinstance(it[key], bool) or it[key] < 1:
-                    bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다', 'label')
+                    bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다', 'ai_fields')
             if it['grasp'] not in GRASPS:
-                bad(f'{k}번째 항목 grasp={it["grasp"]!r} 는 {GRASPS} 중 하나가 아니다', 'label')
+                bad(f'{k}번째 항목 grasp={it["grasp"]!r} 는 {GRASPS} 중 하나가 아니다', 'ai_fields')
             if 'inferred' in it and not isinstance(it['inferred'], bool):
-                bad(f'{k}번째 항목 inferred 가 true · false 가 아니다', 'label')
+                bad(f'{k}번째 항목 inferred 가 true · false 가 아니다', 'ai_fields')
         if errors:
             return []
         orders = [it['order'] for it in items]
         if any(not isinstance(o, int) or isinstance(o, bool) for o in orders) or sorted(orders) != list(range(1, len(items) + 1)):
-            bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다', 'label')
+            bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다', 'ai_fields')
             return []
         ordered = sorted(items, key=lambda it: it['order'])
         stages = [it['stage'] for it in ordered]
         if stages[0] != 1 or any(b - a not in (0, 1) for a, b in zip(stages, stages[1:])):
-            bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다', 'label')
+            bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다', 'ai_fields')
             return []
         return ordered
 
@@ -403,7 +403,7 @@ class DesignChecker:
         for i, a in enumerate(boxes):
             if not self._grasps(a, boxes[:i]):
                 errs.append({'part': a['order'], 'reason': 'CHECK_FAILED',
-                             'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'label'})
+                             'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'ai_fields'})
         return errs
 
     # ---------------- 6. 작업영역 ----------------
