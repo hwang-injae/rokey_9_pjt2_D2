@@ -12,6 +12,7 @@ Claude 는 도구 · MCP · 슬래시 명령 없이, 빈 임시 폴더에서 부
 실행(웹 PC 호스트): python3 web/claude_bridge.py [--host 172.17.0.1] [--port 8790] [--model opus]
 """
 import argparse
+import errno
 import glob
 import json
 import logging
@@ -224,8 +225,15 @@ def main():
     if not claude:
         raise SystemExit('claude 실행 파일을 못 찾았다 — Claude Code 를 깔고 로그인하거나 CLAUDE_BIN 을 준다')
     bridge = ClaudeBridge(claude, a.model)
+    try:
+        server = ThreadingHTTPServer((a.host, a.port), make_handler(bridge))
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:   # 흔한 경우 = 이미 다른 터미널에서 켜 둠 — 긴 오류 대신 할 일만
+            raise SystemExit(f'{a.host}:{a.port} 를 이미 쓰고 있다 — 중계가 벌써 켜져 있으면 그대로 쓰면 된다 '
+                             f'(확인: curl -s http://{a.host}:{a.port}/health)') from e
+        raise
     log.info('[중계] %s:%d → %s (기본 모델 %s)', a.host, a.port, claude, a.model)
-    ThreadingHTTPServer((a.host, a.port), make_handler(bridge)).serve_forever()
+    server.serve_forever()
 
 
 if __name__ == '__main__':
