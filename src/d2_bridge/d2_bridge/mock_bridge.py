@@ -3,8 +3,8 @@
 
 다리와 같은 ROS 이름 · 형식을 쓴다 — 작업 관리자 · 정지 노드는 진짜 다리와 구별하지 못한다.
 - /d2/hmi/alive 를 alive_s 마다 낸다 → 작업 관리자가 웹이 붙은 것으로 본다(monitor_hmi 를 끄지 않아도 출발 · 스캔이 된다)
-- /d2/hmi/get_design: recipe_dir 의 레시피 두 파일(<id>_recipe.json + _placements.csv) → design/2.0(recipe · placements · blocks)
-- /d2/hmi/save_build: 받은 build/1 을 로그로 찍고 ok true(DB 없음)
+- /d2/hmi/get_design: recipe_dir 의 레시피 두 파일(<id>_recipe.json + _placements.csv) → design/3.0(recipe · placements · parts)
+- /d2/hmi/save_build: 받은 build/2 을 로그로 찍고 ok true(DB 없음)
 - 터미널 명령으로 화면 버튼 · 음성 흉내(help 로 목록)
 로봇을 직접 움직이지 않는다 — 출발 · 정지는 작업 관리자 · 정지 노드에 요청만 한다.
 """
@@ -19,7 +19,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.srv import HmiCommand, JsonQuery, StopRequest
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks
+from d2_task.recipe_to_parts import RecipeToParts
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from rclpy.node import Node
@@ -82,28 +82,28 @@ class MockBridge(Node):
 
     # ---------- 웹 backend 흉내 ----------
     def design(self, design_id):
-        """레시피 두 파일 → design/2.0 dict(웹 backend design_store 의 기본 설계와 같은 칸). 실패는 OSError · ValueError."""
+        """레시피 두 파일 → design/3.0 dict(웹 backend design_store 의 기본 설계와 같은 칸). 실패는 OSError · ValueError."""
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         out = doc.design(design_id)
         out.update(family=family, version='V000', parent_id=None, made_by='cad',
-                   blocks=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
+                   parts=RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements))
         return out
 
     def _on_get_design(self, req, res):
-        """/d2/hmi/get_design — {"design_id"} → design/2.0. 못 찾거나 틀리면 success false · ERROR."""
+        """/d2/hmi/get_design — {"design_id"} → design/3.0. 못 찾거나 틀리면 success false · ERROR."""
         try:
             design_id = json.loads(req.request_json)['design_id']
             res.response_json = json.dumps(self.design(design_id), ensure_ascii=False)
             res.success, res.reason = True, ''
-            self.get_logger().info(f'[가짜 다리] get_design {design_id} — 블록 {len(json.loads(res.response_json)["blocks"]["blocks"])}개')
+            self.get_logger().info(f'[가짜 다리] get_design {design_id} — 블록 {len(json.loads(res.response_json)["parts"]["parts"])}개')
         except (OSError, ValueError, KeyError, TypeError) as e:
             res.success, res.reason, res.response_json = False, 'ERROR', ''
             self.get_logger().warn(f'[가짜 다리] get_design 실패: {e}')
         return res
 
     def _on_save_build(self, req, res):
-        """/d2/hmi/save_build — build/1 을 로그로 찍고 {"ok": true}(DB 없음 — 두 층 모두 참, IRD 4.2)."""
+        """/d2/hmi/save_build — build/2 을 로그로 찍고 {"ok": true}(DB 없음 — 두 층 모두 참, IRD 4.2)."""
         self.get_logger().info(f'[가짜 다리] save_build {req.request_json}')
         res.success, res.reason, res.response_json = True, '', json.dumps({'ok': True})
         return res

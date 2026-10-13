@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""변환기 ② — 레시피 두 파일(recipe/2.0 구조 + placements/2.0 조립 방법)을 블록 JSON(blocks/2.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
+"""변환기 ② — 레시피 두 파일(recipe/3.0 구조 + placements/3.0 조립 방법)을 블록 JSON(parts/3.0)으로 바꾼다 (ROS 없이 동작, W117, E-69).
 
 기본 설계(벤치 · 의자 · 책상)를 DB와 AI 생성의 예시로 넘길 때, 그리고 검사 묶음이 같은 형식으로 시험할 때 쓴다.
 검사 묶음 · HMI 가 부른다. 레시피를 읽기만 하고 파일 · 로봇 · 메시지에는 손대지 않는다.
@@ -9,7 +9,7 @@ import re
 
 from d2_task.recipe_document import RecipeDocument
 
-SCHEMA_OUT = 'blocks/2.0'              # IRD 6장 blocks/2.0 (E-69)
+SCHEMA_OUT = 'parts/3.0'              # IRD 6장 parts/3.0 (E-69)
 
 
 
@@ -22,14 +22,14 @@ def ori_extents(block_mm):
     return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 
 
-class RecipeToBlocks:
-    """레시피 하나를 blocks/2.0 하나로 바꾸는 변환기.
+class RecipeToParts:
+    """레시피 하나를 parts/3.0 하나로 바꾸는 변환기.
 
-    입력: recipe(recipe/2.0 구조) + placements(placements/2.0 조립 방법) dict(단위 mm). 출력: blocks/2.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
-    위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · part 는 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
+    입력: recipe(recipe/3.0 구조) + placements(placements/3.0 조립 방법) dict(단위 mm). 출력: parts/3.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
+    위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · group 은 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
-    **블록 크기를 두 곳에서 가져온다:** ① 방향 길이 계산 = 레시피 parts[].size_mm, ② 방향 코드 표 = robot.yaml block_size_m × 1000(생성자의 block_mm).
+    **블록 크기를 두 곳에서 가져온다:** ① 방향 길이 계산 = 레시피 stocks[].size_mm, ② 방향 코드 표 = robot.yaml block_size_m × 1000(생성자의 block_mm).
     두 값은 **허용 오차 없이 같아야** 길이_i 가 표 6개 중 정확히 하나와 맞아 방향이 정해진다(지금 둘 다 설계 기준값 75 · 25 · 15 mm — 젠가 하나로 고정).
     """
 
@@ -37,7 +37,7 @@ class RecipeToBlocks:
         """design_id · family 는 레시피에 없으므로 부르는 쪽이 정해서 넣는다(규칙을 새로 만들지 않는다).
 
         block_mm: 블록 크기 [길이, 폭, 두께] mm — robot.yaml block_size_m × 1000. 방향 코드 표를 만드는 데 쓴다.
-        레시피 parts[].size_mm 와 허용 오차 없이 같아야 한다(다르면 convert 가 방향을 못 골라 ValueError).
+        레시피 stocks[].size_mm 와 허용 오차 없이 같아야 한다(다르면 convert 가 방향을 못 골라 ValueError).
         """
         if not design_id or not family:
             raise ValueError('design_id 와 family 가 필요하다')
@@ -46,20 +46,20 @@ class RecipeToBlocks:
         self.extent = ori_extents(block_mm)
 
     def convert(self, recipe, placements):
-        """recipe(구조) + placements(조립 방법)를 blocks/2.0 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
+        """recipe(구조) + placements(조립 방법)를 parts/3.0 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
 
         order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
 
-        반환: {"schema","design_id","family","blocks":[{"order","x","y","z","ori","role","part","stage","grasp"}]} (order 오름차순). inferred 는 스캔 설계만이라 넣지 않는다.
+        반환: {"schema","design_id","parts":[{"order","x","y","z","ori","role","group","stage","grasp"}]} (order 오름차순). inferred 는 스캔 설계만이라 넣지 않는다.
         """
         recipe = RecipeDocument(recipe, placements).geometry
         model = recipe.get('model')
         if not isinstance(model, dict) or model.get('frame', {}).get('units') != 'mm':
             raise ValueError('model.frame.units 가 mm 가 아니다')
-        parts = {p['part_id']: p['size_mm'] for p in model.get('parts', [])}
+        stocks = {p['stock_id']: p['size_mm'] for p in model.get('stocks', [])}
         instances = {i['instance_id']: i for i in model.get('instances', [])}
 
-        blocks, seen = [], set()
+        parts, seen = [], set()
         for step in sorted(recipe.get('steps', []), key=lambda s: s['sequence']):
             seq, iid = step['sequence'], step['instance_id']
             if seq in seen:
@@ -68,19 +68,19 @@ class RecipeToBlocks:
             if iid not in instances:
                 raise ValueError(f'sequence {seq}: instance {iid} 가 model.instances 에 없다')
             inst = instances[iid]
-            if inst['part_id'] not in parts:
-                raise ValueError(f'sequence {seq}: part {inst["part_id"]} 가 model.parts 에 없다')
+            if inst['stock_id'] not in stocks:
+                raise ValueError(f'sequence {seq}: stock {inst["stock_id"]} 가 model.stocks 에 없다')
             x, y, cz = inst['center_mm']
-            extent = self._world_extent(seq, inst['R'], parts[inst['part_id']])
-            role, part = self._role_part(seq, step['block'])
-            blocks.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
-                           'role': role, 'part': part, 'stage': step['stage'], 'grasp': step['grasp']})
-        if not blocks:
+            extent = self._world_extent(seq, inst['R'], stocks[inst['stock_id']])
+            role, group = self._role_group(seq, step['part_name'])
+            parts.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
+                           'role': role, 'group': group, 'stage': step['stage'], 'grasp': step['grasp']})
+        if not parts:
             raise ValueError('레시피에 steps 가 없다')
-        return {'schema': SCHEMA_OUT, 'design_id': self.design_id, 'family': self.family, 'blocks': blocks}
+        return {'schema': SCHEMA_OUT, 'design_id': self.design_id, 'parts': parts}
 
     @staticmethod
-    def _role_part(seq, name):
+    def _role_group(seq, name):
         """블록 이름 `<역할>[_<옵션>]_<부품 3자리>_<블록 2자리>` → (역할[_옵션], 부품 번호 정수). 역할이 '한 단어 + 옵션 0~1개'가 아니면 ValueError."""
         m = re.fullmatch(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_[0-9]{2}', name)
         if m is None:

@@ -5,7 +5,7 @@
   ① RunDesignCache 규칙 자체(같은 판 · 새 판 · 빈 run_id · 다시 읽다 실패).
   ② wrist_block · mock_wrist_block **실제 메서드**(checker_for · tops_for · _remote_* · _local_* · on_check)를 소스에서 꺼내(ast)
      가짜 get_design 과 붙여 같은 규칙으로 도는지 — 두 노드가 같은 시험을 통과한다. rclpy 를 import 하지 않는다(CI 는 d2_vision 만 본다).
-  ③ mock 이 get_design 의 AI 생성 · 스캔 설계(design/2.0)를 읽어 블록 이름 · 윗면 높이를 내는지 — d2_motion · d2_task 가 없으면(CI) 건너뛴다.
+  ③ mock 이 get_design 의 AI 생성 · 스캔 설계(design/3.0)를 읽어 블록 이름 · 윗면 높이를 내는지 — d2_motion · d2_task 가 없으면(CI) 건너뛴다.
 """
 import ast
 import json
@@ -118,13 +118,13 @@ def load_function(path, name, scope):
 
 
 def versioned_design(design_id, n):
-    """읽을 때마다 내용이 다른 design/2.0 — 구조의 parts 에 n 을 적는다(짝 해시도 맞춘다). 어느 판에서 읽은 것인지 알아보려고."""
+    """읽을 때마다 내용이 다른 design/3.0 — 구조의 parts 에 n 을 적는다(짝 해시도 맞춘다). 어느 판에서 읽은 것인지 알아보려고."""
     recipe = dict(RECIPE, model_id=design_id, parts=[{'tag': n}])
     return design(recipe, dict(PLACEMENTS, model_id=design_id, recipe_sha256=recipe_sha256(recipe)), design_id=design_id)
 
 
 class FakeDesigns:
-    """/d2/hmi/get_design 가짜. mode: ok · timeout(답 없음) · fail(success=false) · bad(design/2.0 아님) · down(서버 없음).
+    """/d2/hmi/get_design 가짜. mode: ok · timeout(답 없음) · fail(success=false) · bad(design/3.0 아님) · down(서버 없음).
     ok 일 때 registry 에 있는 설계를 그대로, 없으면 읽을 때마다 번호가 오르는 versioned_design 을 답한다. requests 는 받은 design_id 목록."""
 
     def __init__(self, registry=None):
@@ -181,7 +181,7 @@ class Harness:
         n.get_logger = lambda: logging.getLogger('test_design_cache')
         n._call = lambda cli, req, wait_s: cli.answer(req)
         if kind == 'wrist':
-            n._make_checker = lambda recipe: SimpleNamespace(tag=recipe['structure']['parts'][0]['tag'], blocks={'A': 1, 'B': 2})
+            n._make_checker = lambda recipe: SimpleNamespace(tag=recipe['structure']['parts'][0]['tag'], parts={'A': 1, 'B': 2})
             n.T_tcp2c = object()
             n.read_tcp = lambda: self.reached.append(1)      # 설계를 읽은 뒤 첫 단계 — None 을 돌려 TF 없음(TIMEOUT)으로 끝낸다
             n.now = lambda: 0.0
@@ -198,7 +198,7 @@ class Harness:
 
     def ask(self, design_id='D1', run_id='R1', ids=('A',)):
         """check_progress 요청 하나를 on_check 로 보낸다. 결과는 SimpleNamespace(ok, reason, tag, states)."""
-        req = SimpleNamespace(design_id=design_id, run_id=run_id, block_ids=list(ids))
+        req = SimpleNamespace(design_id=design_id, run_id=run_id, part_ids=list(ids))
         if self.kind == 'wrist':
             before = len(self.reached)
             out = self.node.on_check(req, SimpleNamespace())
@@ -324,19 +324,19 @@ def robot_cfg():
 
 
 def generated_design(model_id, family, design_id, made_by):
-    """기본 설계(model_id)의 블록 JSON 을 design_id 설계로 바꿔 변환기 ① 에 통과시킨 design/2.0 — AI 생성 · 스캔 저장 설계 모양(DB 에만 있음).
+    """기본 설계(model_id)의 블록 JSON 을 design_id 설계로 바꿔 변환기 ① 에 통과시킨 design/3.0 — AI 생성 · 스캔 저장 설계 모양(DB 에만 있음).
     블록 이름은 `<design_id 대문자>_<역할>_<부품>_<번호>` 가 된다."""
     import copy
     rd = pytest.importorskip('d2_task.recipe_document')
-    rb = pytest.importorskip('d2_task.recipe_to_blocks')
-    b2r = pytest.importorskip('d2_task.blocks_to_recipe')
+    rb = pytest.importorskip('d2_task.recipe_to_parts')
+    b2r = pytest.importorskip('d2_task.parts_to_recipe')
     dc = pytest.importorskip('d2_task.design_checker')
     cfg = robot_cfg()
     block_mm = [v * 1000.0 for v in cfg['block_size_m']]
     base = rd.RecipeDocument.load(ROOT / 'src/recipe_manager/recipes', model_id)
-    blocks = copy.deepcopy(rb.RecipeToBlocks(model_id, family, block_mm).convert(base.recipe, base.placements))
+    blocks = copy.deepcopy(rb.RecipeToParts(model_id, family, block_mm).convert(base.recipe, base.placements))
     blocks['design_id'] = design_id
-    out = b2r.BlocksToRecipe(dc.DesignChecker(cfg).grasp_options, block_mm).convert(blocks)
+    out = b2r.PartsToRecipe(dc.DesignChecker(cfg).grasp_options, block_mm).convert(blocks)
     doc = rd.RecipeDocument(out['recipe'], out['placements']).design(design_id)
     return json.loads(json.dumps(dict(doc, made_by=made_by, family=family)))       # get_design 답은 DB 칸(made_by 등)이 더 붙는다 — 모르는 칸은 무시한다
 
@@ -345,8 +345,8 @@ def base_tops(model_id):
     """기본 설계 파일(로컬 길)의 {블록 이름: 윗면 높이 m} — AI · 스캔 설계와 높이를 맞춰 본다."""
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()
-    return {b['block_id']: b['center'][2] + mm.half_height(b['rot'], cfg['block_actual_m'])
-            for b in mm.recipe_blocks(cfg, mm.load_recipe(str(ROOT / 'src/recipe_manager/recipes' / f'{model_id}_recipe.json')))}
+    return {b['part_id']: b['center'][2] + mm.half_height(b['rot'], cfg['block_actual_m'])
+            for b in mm.recipe_parts(cfg, mm.load_recipe(str(ROOT / 'src/recipe_manager/recipes' / f'{model_id}_recipe.json')))}
 
 
 @pytest.mark.parametrize('model_id, family, design_id, made_by', [
@@ -354,26 +354,26 @@ def base_tops(model_id):
     ('004_DESK_PEDESTAL_V000', 'desk', 'scan_desk_0001', 'scan'),
 ])
 def test_mock이_get_design의_AI_스캔_설계로_블록_이름과_윗면_높이를_낸다(tmp_path, model_id, family, design_id, made_by):
-    """recipe_dir 에는 이 설계가 없다 — 오직 get_design(design/2.0) 으로만 알 수 있다. 블록 이름은 설계 이름 대문자 + 역할 · 부품 · 번호,
+    """recipe_dir 에는 이 설계가 없다 — 오직 get_design(design/3.0) 으로만 알 수 있다. 블록 이름은 설계 이름 대문자 + 역할 · 부품 · 번호,
     높이는 같은 모양의 기본 설계와 같다(같은 블록을 같은 실측 두께로 쌓으니까). 다른 설계의 이름은 unknown."""
     mm = pytest.importorskip('d2_motion.motion_math')
     cfg = robot_cfg()
     doc = generated_design(model_id, family, design_id, made_by)
-    real_tops = load_function(PKG / 'mock_wrist_block.py', 'recipe_tops', {'half_height': mm.half_height, 'recipe_blocks': mm.recipe_blocks})
+    real_tops = load_function(PKG / 'mock_wrist_block.py', 'recipe_tops', {'half_height': mm.half_height, 'recipe_parts': mm.recipe_parts})
     hh = Harness('mock', tmp_path, registry={design_id: doc}, real_tops=real_tops)
     hh.node.cfg = cfg
     expected = {name.replace(model_id, design_id.upper(), 1): top for name, top in base_tops(model_id).items()}
     assert all(name.startswith(design_id.upper() + '_') for name in expected)
     names = list(expected)
     res = SimpleNamespace()
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', block_ids=names + [f'{model_id}_LEG_001_01']), res)
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', part_ids=names + [f'{model_id}_LEG_001_01']), res)
     assert res.success and res.reason == ''
     assert res.states == ['present'] * len(names) + ['unknown']                       # 기본 설계 이름은 이 설계에 없다
     assert res.top_z_m[:-1] == pytest.approx([expected[n] for n in names], abs=1e-9)
     assert math.isnan(res.top_z_m[-1]) and all(math.isnan(v) for v in res.dx_m + res.dy_m)
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', block_ids=names), SimpleNamespace())
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R1', part_ids=names), SimpleNamespace())
     assert hh.client.requests == [design_id]                                           # 같은 판 — 한 번만 받았다
-    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R2', block_ids=names), SimpleNamespace())
+    hh.node.on_check(SimpleNamespace(design_id=design_id, run_id='R2', part_ids=names), SimpleNamespace())
     assert hh.client.requests == [design_id, design_id]                                # 새 판 — 다시 받았다
 
 

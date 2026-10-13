@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BASE, setReqTimeout } from './api';
 import { stateName, stopReasonKo } from './names';
-import type { GenEvent, GripperState, Intent, Progress, SafetyState, ScanResult, TaskState, WsEvent } from './types';
+import type { BlobInfo, GenEvent, GripperState, Intent, Progress, SafetyState, ScanResult, ScanSaveJob, TaskState, WsEvent } from './types';
 
 const RETRY_MS = 2000;
 const LOG_MAX = 100; // 화면 로그 줄 수(오래된 것부터 지움)
@@ -26,10 +26,16 @@ export interface Robot {
   intent: Intent | null;
   wrist: { seq: number; at: number } | null; // 손목 검출 그림 번호 · 웹 PC 가 받은 시각(ms)
   gen: GenEvent | null; // 마지막 AI 생성 알림 — 생성 패널이 받으면 job 을 다시 받는다(W112)
+  scanImage: BlobInfo | null; // 마지막 스캔 사진 번호 · run_id(그림은 /api/robot/scan.jpg)
+  scanCloud: BlobInfo | null; // 마지막 스캔 점군 번호 · run_id(PLY 는 /api/robot/scan_cloud.ply)
+  scanSave: (ScanSaveJob & { stage: string }) | null; // 마지막 스캔 [저장] 알림 — 비교 화면이 받으면 job 을 다시 받는다
   log: LogLine[];
 }
 
-const EMPTY: Robot = { ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null, wrist: null, gen: null, log: [] };
+const EMPTY: Robot = {
+  ws: false, broker: false, bridge: false, state: null, safety: null, progress: null, gripper: null, scan: null, intent: null,
+  wrist: null, gen: null, scanImage: null, scanCloud: null, scanSave: null, log: [],
+};
 
 function wsUrl(): string {
   const base = BASE || window.location.origin;
@@ -106,6 +112,15 @@ function apply(r: Robot, e: WsEvent): Robot {
       return { ...r, broker: e.data.connected };
     case 'wrist_image': // 그림 자체는 /api/robot/wrist.jpg 로 받는다 — 로그에는 남기지 않음(검출 때마다 와서)
       return { ...r, wrist: { seq: e.data.seq, at: e.data.stamp * 1000 } };
+    case 'scan_image': // 사진 · 점군 바이트는 REST 로 받는다 — 여기서는 번호 · 어느 스캔 것인지만
+      return { ...r, scanImage: e.data };
+    case 'scan_cloud':
+      return { ...r, scanCloud: e.data };
+    case 'scan_save': {
+      const j = e.data;
+      const text = j.stage === 'saved' ? '스캔 설계 저장됨' : j.stage === 'failed' ? `스캔 저장 실패 — ${j.message ?? ''}` : '';
+      return { ...r, scanSave: j, log: text ? log(text) : r.log };
+    }
     case 'gen': {
       const g = e.data;
       const text = g.stage === 'done' ? 'AI 후보 준비됨 — 고르세요' : g.stage === 'failed' ? `AI 생성 실패 — ${g.message ?? ''}` : g.stage === 'saved' ? '설계 저장됨' : '';

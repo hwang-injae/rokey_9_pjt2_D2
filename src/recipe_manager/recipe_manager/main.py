@@ -1,9 +1,10 @@
-"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/2.0 + 조립 방법 placements/2.0).
+"""CAD(DXF) → 레시피 (10/8 E-68 — 레시피 recipe/3.0 + 조립 방법 placements/3.0).
 build: cads/<모델ID 소문자>.dxf → recipes/<모델ID>_recipe.json(구조) + _placements.csv(조립 방법)."""
 import argparse
 import csv
 import hashlib
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -24,6 +25,7 @@ USAGE_EXAMPLES = """
 
 순서 · 단계 · 잡기는 DXF INSERT 속성(SEQ · STAGE · GRASP), 블록 이름은 INSERT 블록 이름(예 LEG_001_01)에서 읽는다.
 바꾸려면 CAD를 고친 뒤 다시 build 한다(계획 파일은 없다 — E-52).
+이미 저장된 레시피에 사람이 HMI에서 쓴 칸(name · description · tags · label · revision)이 있으면 그대로 옮긴다.
 """
 
 
@@ -53,10 +55,11 @@ class RecipeManager:
         바깥 영향: recipe_dir 에 두 파일을 쓰고(save_file), 배치표를 터미널에 출력한다.
         실패: CAD · 이름 · 속성 · 배치가 틀리면 ValueError (파일을 쓰지 않는다), ezdxf가 없으면 ImportError.
         """
-        # DXF → 레시피 → 조립 방법(recipe_sha256 = 레시피 객체의 해시)
+        # DXF → 레시피 → 사람 칸 옮기기 → 조립 방법(recipe_sha256 = 사람 칸까지 넣은 레시피 객체의 해시)
         cad_path = Path(cad_path)
         model_id = cad_path.stem.upper()
         recipe, hints = self.load_recipe(cad_path, model_id)
+        recipe = self.copy_human_fields(recipe, self.recipe_dir / f'{model_id}_recipe.json')
         placements = self.builder.make_placements(recipe, hints)
         rows = self.builder.make_placement_rows(recipe, placements)
         print(f'검증 완료: {model_id}, {len(placements["steps"])}개 배치\n')
@@ -69,7 +72,7 @@ class RecipeManager:
             center = f"({row['center_x_mm']:g}, {row['center_y_mm']:g}, {row['center_z_mm']:g})"
             axes = f"{row['axis_L']}/{row['axis_W']}/{row['axis_T']}"
             supports = ', '.join(row['supports']) or '책상'
-            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['block']:<15}{size:<12}"
+            print(f"{row['sequence']:>4} {row['stage']:>4}  {row['part_name']:<15}{size:<12}"
                   f"{center:<24}{axes:<12}{row['grasp']:<13}{row['grasp_axis']:<11}{supports}")
         print()
 
@@ -98,7 +101,45 @@ class RecipeManager:
         boxes = self.reader.read_dxf(cad_path)
         sha256 = hashlib.sha256(Path(cad_path).read_bytes()).hexdigest()
         recipe = self.builder.make_recipe(boxes, model_id, Path(cad_path).name, sha256)
-        return recipe, {box['block']: box['hints'] for box in boxes}
+        return recipe, {box['part_name']: box['hints'] for box in boxes}
+
+    def copy_human_fields(self, recipe, saved_path):
+        """이미 저장된 레시피에서 사람이 HMI에서 쓴 칸을 새로 만든 레시피로 옮긴다 — 다시 build 해도 사람 칸이 지워지지 않게.
+
+        사람 칸 = template 의 name · description · tags, 구성요소(역할)마다 label · revision (10/13 한세교 — 도구는 계산 값만 만든다).
+        칸 순서는 레시피 초안 모양(name · description · tags · composition / label · count · revision · parts)으로 맞춘다.
+
+        입력:
+            recipe: RecipeBuilder.make_recipe 출력 (계산 값만)
+            saved_path: 같은 모델의 저장된 _recipe.json 경로
+        출력: 사람 칸을 더한 레시피 dict (저장 파일이 없거나 사람 칸이 없으면 계산 값만)
+        바깥 영향: 사람 칸이 빠진 역할이 있으면 터미널에 알린다(HMI에서 써야 한다).
+        실패: 저장 파일이 JSON이 아니면 json.JSONDecodeError(ValueError).
+        """
+        # 저장된 파일의 사람 칸 읽기. 파일이 없으면 처음 만드는 설계라 계산 값만 둔다.
+        saved_template = {}
+        if Path(saved_path).exists():
+            saved_template = json.loads(Path(saved_path).read_text(encoding='utf-8')).get('template') or {}
+        saved_roles = saved_template.get('composition') or {}
+
+
+        # template 위 칸 → 구성요소마다 label · count · revision · parts 순서로 다시 짠다
+        template = {key: saved_template[key] for key in ('name', 'description', 'tags') if key in saved_template}
+        composition = {}
+        missing = []
+        for role, comp in recipe['template']['composition'].items():
+            saved = saved_roles.get(role) or {}
+            new = {key: saved[key] for key in ('label',) if key in saved}
+            new['count'] = comp['count']
+            new.update({key: saved[key] for key in ('revision',) if key in saved})
+            new['parts'] = comp['parts']
+            composition[role] = new
+            missing += [f'{role}.{key}' for key in ('label', 'revision') if key not in saved]
+        template['composition'] = composition
+        missing = [key for key in ('name', 'description', 'tags') if key not in template] + missing
+        if missing:
+            print(f'사람 칸 없음(HMI에서 써야 함): {", ".join(missing)}\n')
+        return dict(recipe, template=template)
 
     def save_file(self, path, text):
         """text를 파일로 저장한다. 같은 이름이 있으면 덮어쓰기 / 다른 이름으로 저장 / 취소 중에서 고르게 한다.

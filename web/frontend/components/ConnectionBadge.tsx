@@ -28,7 +28,7 @@ export function ConnectionBanners({ robot }: { robot: Robot }) {
       {!robot.ws && <div className="banner warn">웹 서버(backend) 연결 끊김 — 다시 붙는 중. 정지는 로봇 PC 키 · 펜던트로</div>}
       {robot.ws && !robot.broker && <div className="banner warn">브로커 연결 끊김 — 웹 PC 의 mosquitto 를 확인하세요</div>}
       {robotPcLost && (
-        <div className="banner danger">로봇 PC 연결 끊김 — [출발] · [스캔]을 막았어요. 정지는 로봇 PC 키 · 펜던트로</div>
+        <div className="banner danger">로봇 PC 연결 끊김 — [조립] · [스캔]을 막았어요. 정지는 로봇 PC 키 · 펜던트로</div>
       )}
     </>
   );

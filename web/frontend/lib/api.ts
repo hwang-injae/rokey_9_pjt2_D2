@@ -1,6 +1,6 @@
 // REST 한 곳(SDD 3.3 — 화면은 backend 의 REST · /ws 만 쓴다, E-41).
 // 운영: backend 가 이 화면을 같은 주소에서 내려 주므로 BASE 는 빈 글자. 개발(next dev :3000): NEXT_PUBLIC_BACKEND=http://localhost:8000
-import type { Cmd, CmdResult, Design, DesignSummary, GenJob, Rules, TemplateChoice } from './types';
+import type { Cmd, CmdResult, Design, DesignSummary, GenJob, Rules, ScanMatch, ScanSaveJob } from './types';
 
 export const BASE = process.env.NEXT_PUBLIC_BACKEND ?? '';
 // 버튼 답을 기다리는 시간 = backend 의 req_timeout_s(robot.yaml 한 곳 — /ws 가 붙을 때 timing 으로 알려 줌) + 여유.
@@ -38,10 +38,22 @@ async function post(path: string, body?: unknown): Promise<CmdResult> {
 
 /** /d2/hmi/command — 설계 선택 · 출발([계속]) · 스캔 · 취소. 자동으로 다시 보내지 않는다(IRD 10.1) */
 export const command = (cmd: Cmd, designId = '') => post('/api/robot/command', { cmd, design_id: designId, mode: 'auto' });
+/** [조립] 한 번(10/13 PL): select_design → 받으면 이어서 start. 이미 그 설계로 출발 대기(READY)면 start 만.
+ *  설계 3D(DesignView) · 스캔 추천 설계(ScanRecommend)가 같이 쓴다. 반환: 마지막으로 보낸 단계와 그 답(거절이면 그 단계에서 멈춤).
+ *  바깥 영향: 로봇 출발 — 누르기 전에 사람이 작업 영역 밖인지 확인(SR-09) */
+export async function assemble(designId: string, alreadyReady: boolean): Promise<{ step: '설계 선택' | '출발'; r: CmdResult }> {
+  if (!alreadyReady) {
+    const r = await command('select_design', designId);
+    if (!r.success) return { step: '설계 선택', r };
+  }
+  return { step: '출발', r: await command('start', designId) };
+}
 /** /d2/safety/stop — 화면 정지(reason 비움 → 정지 노드가 STOP_WEB) */
 export const stop = () => post('/api/robot/stop');
 /** /d2/safety/resume — 다시 시작(잠금 풀기 한 번) */
 export const resume = () => post('/api/robot/resume');
+/** 마이크 버튼 — voice.py 에 한 번 듣기(d2/hmi/voice/listen, 10/13 PL). 문장은 나중에 /ws {type: intent} 로 온다 */
+export const voiceListen = () => post('/api/voice/listen');
 
 async function getJson<T>(path: string): Promise<T | null> {
   try {
@@ -54,15 +66,21 @@ async function getJson<T>(path: string): Promise<T | null> {
 
 /** 설계 요약 목록(트리용). 못 받으면 null — 화면이 '못 받음'을 보여 준다 */
 export const listDesigns = () => getJson<DesignSummary[]>('/api/designs');
-/** design/2.0 하나(3D 보기용). 없으면 null */
+/** design/3.0 하나(3D 보기용). 없으면 null */
 export const getDesign = (id: string) => getJson<Design>('/api/designs/' + encodeURIComponent(id));
 /** 설계 규칙 숫자 — 3D 블록 크기(robot.yaml block_size_m 한 곳, 10/9 PL E-78) */
 export const getRules = () => getJson<Rules>('/api/designs/rules');
+/** 스캔 '추천 설계' — 지금 스캔(run_id)과 저장된 설계 전부의 일치율 높은 순 3개. 옛 스캔 · 못 받음은 null */
+export const getScanRecommend = (runId: string) =>
+  getJson<{ run_id: string; candidates: ScanMatch[] }>('/api/designs/scan/recommend?run_id=' + encodeURIComponent(runId));
 /** 손목 검출 그림 주소 — seq 가 바뀔 때마다 새로 받는다(브라우저가 옛 그림을 다시 쓰지 않게) */
 export const wristUrl = (seq: number) => `${BASE}/api/robot/wrist.jpg?seq=${seq}`;
+/** 마지막 스캔 사진(JPEG) · 점군(PLY) 주소 — seq 가 바뀔 때마다 새로 받는다 */
+export const scanImageUrl = (seq: number) => `${BASE}/api/robot/scan.jpg?seq=${seq}`;
+export const scanCloudUrl = (seq: number) => `${BASE}/api/robot/scan_cloud.ply?seq=${seq}`;
 
 // ---------- AI 생성(W108 · W112) ----------
-const AI_TIMEOUT_MS = 45000; // Template 고르기는 GPT 를 한 번 부른다(호출당 30초 + 다시 1번) — 버튼 명령보다 길게
+const AI_TIMEOUT_MS = 15000; // 생성 시작 · 저장 요청 기본 기다림(생성 자체는 뒤에서 돌고 진행은 /ws 로 온다)
 
 /** POST 하고 JSON 을 받는다. 실패면 {error} — FastAPI 의 {detail} 글을 그대로(예: 409 '이미 설계를 만드는 중이에요') */
 async function postJson<T>(path: string, body: unknown, timeoutMs = AI_TIMEOUT_MS): Promise<{ data?: T; error?: string }> {
@@ -85,11 +103,9 @@ async function postJson<T>(path: string, body: unknown, timeoutMs = AI_TIMEOUT_M
   }
 }
 
-/** 요청 문장 → AI 가 고른 모양(Template) + 이유 + 고를 수 있는 목록 */
-export const chooseTemplate = (text: string) => postJson<TemplateChoice>('/api/designs/template', { text });
-/** 후보 3개 만들기 시작 → {job_id}(한 번에 하나 — 이미 만드는 중이면 error) */
-export const startGenerate = (text: string, template: string) =>
-  postJson<{ job_id: string }>('/api/designs/generate', { text, template }, 10000);
+/** 고른 설계(= 부모)를 바탕으로 후보 3개 만들기 시작 → {job_id}(한 번에 하나 — 이미 만드는 중이면 error) */
+export const startGenerate = (text: string, designId: string) =>
+  postJson<{ job_id: string }>('/api/designs/generate', { text, design_id: designId }, 10000);
 /** 생성 작업 하나의 지금 모습. 없으면 null */
 export const getGenJob = (jobId: string) => getJson<GenJob>('/api/designs/generate/' + encodeURIComponent(jobId));
 /** 고른 후보 저장 → {design_id, version, parent_id, index}. 떨어진 후보 · 이미 저장이면 error */
@@ -98,3 +114,9 @@ export const pickCandidate = (jobId: string, index: number, madeBy: 'web' | 'voi
     `/api/designs/generate/${encodeURIComponent(jobId)}/pick`, { index, made_by: madeBy }, 15000);
 /** 모양(Template) 이름 · 설명 — 설계 ID 대신 '벤치 V001' 처럼 보여 줄 때(lib/names) */
 export const getTemplates = () => getJson<{ id: string; name: string; label: string }[]>('/api/designs/templates');
+
+// ---------- 스캔 [그대로 저장](IRD 8.4 ⑦ · W112 · W177) ----------
+/** 스캔 저장 시작 → {job_id}. 화면이 본 스캔의 run_id 를 보낸다(backend 의 마지막 스캔과 다르면 error — 옛 스캔을 저장하지 않게) */
+export const scanSave = (runId: string) => postJson<{ job_id: string }>('/api/designs/scan/save', { run_id: runId }, 10000);
+/** 스캔 저장 작업 하나의 지금 모습(AI 채우기 · 검사 · 저장 — 최대 3번 부름). 없으면 null */
+export const getScanSave = (jobId: string) => getJson<ScanSaveJob>('/api/designs/scan/save/' + encodeURIComponent(jobId));

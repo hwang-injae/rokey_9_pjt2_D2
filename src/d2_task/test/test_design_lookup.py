@@ -16,8 +16,8 @@ from test_task_manager import CFG, RECIPE, PLACEMENTS, SAFE_OK, SAFE_STOP, FakeI
 
 
 def design(design_id='bench', recipe=RECIPE, placements=PLACEMENTS, **over):
-    """정상 design/2.0 답(recipe 구조 + placements 조립 방법)."""
-    return dict({'schema': 'design/2.0', 'design_id': design_id, 'recipe': recipe, 'placements': placements}, **over)
+    """정상 design/3.0 답(recipe 구조 + placements 조립 방법)."""
+    return dict({'schema': 'design/3.0', 'design_id': design_id, 'recipe': recipe, 'placements': placements}, **over)
 
 
 class LookupIO(FakeIO):
@@ -78,7 +78,7 @@ def test_음성으로_설계를_포함해_출발하면_조회_뒤_출발한다()
 
 BAD_DESIGNS = {
     '객체가 아님': ['글자', None, []],
-    'schema 다름': [design(schema='design/2'), design(schema=None)],
+    'schema 다름': [design(schema='design/2.0'), design(schema=None)],
     'design_id 다름': [design(design_id='다른설계')],
     'recipe 없음': [design(recipe=None), design(recipe='글자'), design(recipe=[])],
     'recipe schema 다름 · 옛 형식': [design(recipe=dict(RECIPE, schema='other/1')), design(recipe={}), design(recipe=dict(RECIPE, schema='cad_structure/1.0'))],

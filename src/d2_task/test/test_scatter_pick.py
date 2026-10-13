@@ -12,7 +12,7 @@ from d2_task.block_picker import BlockPicker
 from d2_task.scatter_pick import ScatterFlow, StepTracker, block_pose, contact_phase, failure_action, grasped_now
 from test_block_picker import CFG, MIN_GAP, blk
 
-TARGET = {'block_id': '001_CHAIR_BENCH_V000_LEG_001_04', 'grasp': 'FLAT_LONG',
+TARGET = {'part_id': '001_CHAIR_BENCH_V000_LEG_001_04', 'grasp': 'FLAT_LONG',
           'place_pose': ((0.43, -0.07, -0.0035), (0.0, 0.0, 0.0, 1.0))}
 
 
@@ -34,13 +34,13 @@ def resp(*blocks, ok=True):
     return {'ok': ok, 'blocks': list(blocks)}
 
 
-def test_FOUND는_목표_block_id_놓을_자세_잡기를_유지한다():
+def test_FOUND는_목표_part_id_놓을_자세_잡기를_유지한다():
     f = flow()
     target = copy.deepcopy(TARGET)
     r = run(f, target, resp(blk(length=30)))
     req = r['request']
     assert r['status'] == 'PICK'
-    assert (req['block_id'], req['grasp'], req['supply_slot']) == (TARGET['block_id'], 'FLAT_LONG', '')
+    assert (req['part_id'], req['grasp'], req['supply_slot']) == (TARGET['part_id'], 'FLAT_LONG', '')
     assert req['place_pose'] == TARGET['place_pose'] and req['open_width_m'] == 0.0865
     assert target == TARGET                                        # 목표 입력은 바뀌지 않는다
 
@@ -52,8 +52,8 @@ def test_선택한_후보와_요청은_복사본():
     r['request']['place_pose'] = None
     again = f.reusable_request()
     assert again['place_pose'] == TARGET['place_pose'] and f.candidate['candidate']['gap_mm']['LENGTH'] == 30
-    again['block_id'] = '다른'
-    assert f.reusable_request()['block_id'] == TARGET['block_id']
+    again['part_id'] = '다른'
+    assert f.reusable_request()['part_id'] == TARGET['part_id']
 
 
 def test_후보가_여럿이면_BlockPicker_규칙대로_틈이_넓은_것():
@@ -326,13 +326,13 @@ def test_옆세움_목표는_두께_틈이_빠진_응답이면_요청을_만들�
     f = flow()
     bad = blk(up='WIDTH', length=80)
     del bad['gap_mm']['THICKNESS'], bad['clear']['THICKNESS']
-    r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(bad))
+    r = f.prepare({'part_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(bad))
     assert r['status'] != 'PICK' and 'request' not in r
 
 
 def test_옆세움_목표는_두께_틈이_있으면_요청을_만든다():
     f = flow()
-    r = f.prepare({'block_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(blk(up='WIDTH', length=80, thickness=30)))
+    r = f.prepare({'part_id': 'B', 'grasp': 'EDGE_SHORT', 'place_pose': TARGET['place_pose']}, resp(blk(up='WIDTH', length=80, thickness=30)))
     assert r['status'] == 'PICK' and 'request' in r
 
 

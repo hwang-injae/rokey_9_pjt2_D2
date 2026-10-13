@@ -1,6 +1,6 @@
 """StructureScanner 시험 (pytest, ROS · 로봇 없음) — W115 스캔 추론기 ③ · V-48 일치율.
 
-1. 합성: 기본 설계 4개의 정답 blocks/1(변환기 ② RecipeToBlocks 로 레시피에서)을 실측 크기(74.45 × 24.8 × 14.8 mm) 상자로 놓고
+1. 합성: 기본 설계 4개의 정답 blocks/2(변환기 ② RecipeToParts 로 레시피에서)을 실측 크기(74.45 × 24.8 × 14.8 mm) 상자로 놓고
    촬영 자세 3곳(W134 실측 카메라 위치와 같은 곳)에서 깊이 영상을 광선으로 그린다(깊이 잡음 ± 0.5 mm, 1 mm 단위 PNG 와 같음).
    기본 · 구조물 전체가 몇 mm 밀림 · 작업면 높이 1 mm 틀림 세 경우 모두 일치율 ≥ 0.9.
    추론기(v12g)가 윗면 YOLO 마스크를 쓰므로 그린 블록 번호로 가짜 마스크를 만들어 넣는다. 5자세(대각선 2곳 더)는 1.0 · 추정 0.
@@ -25,7 +25,7 @@ from d2_vision.structure_scanner import StructureScanner, match_rate, ori_extent
 
 SRC = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(SRC / 'd2_task'))
-from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents as task_ori_extents   # noqa: E402
+from d2_task.recipe_to_parts import RecipeToParts, ori_extents as task_ori_extents   # noqa: E402
 
 CFG = yaml.safe_load((SRC / 'd2_robot/d2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 RECIPES = SRC / 'recipe_manager/recipes'
@@ -52,8 +52,10 @@ CFG_OLD = {**CFG, 'assembly_origin': {**CFG['assembly_origin'], 'z_m': -0.018}}
 
 
 def truth(design_id):
-    """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — blocks/2.0, 자리 · 방향 칸은 blocks/1 과 같다)."""
-    return RecipeToBlocks(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
+    """레시피 두 파일(E-69) → 정답 블록 (변환기 ② — parts/3.0, 자리 · 방향 칸은 blocks/2 과 같다).
+    스캔은 진짜 블록을 보므로 목록 칸 이름을 스캔 쪽(blocks)으로 맞춰 돌려준다(10/13 이름 규칙)."""
+    d = RecipeToParts(design_id, 'test', [75, 25, 15]).convert(*load_recipe_files(str(RECIPES), design_id))
+    return {**d, 'blocks': d['parts']}
 
 
 def cam_rot(look):
@@ -121,7 +123,7 @@ def scan(blocks, poses=tuple(CAMS), **kw):
     return sc
 
 
-def test_ori_table_same_as_recipe_to_blocks():
+def test_ori_table_same_as_recipe_to_parts():
     """방향 코드 표가 변환기 ②(정답을 만드는 쪽)와 같아야 일치율 비교가 맞다."""
     assert ori_extents([75, 25, 15]) == task_ori_extents([75, 25, 15])
     assert ori_extents(ACTUAL_MM) == task_ori_extents(ACTUAL_MM)
@@ -130,7 +132,7 @@ def test_ori_table_same_as_recipe_to_blocks():
 @pytest.mark.parametrize('design_id', DESIGNS)
 @pytest.mark.parametrize('case', [{}, {'offset': (24.0, 21.0)}, {'z_off': 1.0}], ids=['base', 'shift', 'z1mm'])
 def test_synthetic_match_rate(design_id, case, request):
-    """기본 설계 4개 × (기본 · 밀림 · 높이 1 mm 틀림) — 3자세 일치율 ≥ 0.9, ok, blocks/1 형식.
+    """기본 설계 4개 × (기본 · 밀림 · 높이 1 mm 틀림) — 3자세 일치율 ≥ 0.9, ok, blocks/2 형식.
     002 를 (17, 27) mm 에 둔 3자세(기본 · 높이)는 v12g 시제품도 11/16 — 등받이 6단을 세운 블록 3개로 봄(10/12 확인). 알려진 약점으로 xfail."""
     if design_id == '002_CHAIR_BACK_V000' and 'offset' not in case:
         request.applymarker(pytest.mark.xfail(reason='v12g 3자세 합성 002 등받이 → 세운 블록(시제품 11/16, 5자세는 16/16)', strict=False))
@@ -141,8 +143,8 @@ def test_synthetic_match_rate(design_id, case, request):
     assert r['ok'], r['reason']
     assert rate >= 0.9, detail
     body = r['blocks']
-    assert body['schema'] == 'blocks/1' and body['design_id'] == 'scan_test' and body['family']
-    orders = [b['order'] for b in body['blocks']]
+    assert body['schema'] == 'blocks/2' and body['design_id'] == 'scan_test' and body['family']
+    orders = [b['scan_num'] for b in body['blocks']]
     assert orders == list(range(1, len(orders) + 1))
     for b in body['blocks']:
         assert b['ori'] in ('x', 'y', 'xe', 'ye', 'zx', 'zy') and isinstance(b['inferred'], bool)
@@ -343,7 +345,7 @@ def test_real_s11_bench_report():
               f'ok={r["ok"]} {r["reason"]} 설명률 {c.get("explained")} 추정 {r["inferred_count"]} '
               f'자세 맞춤 {[pl.get("align_mm") for pl in c.get("planes", [])]}')
         print('   틀림(정답 중 못 맞춤):', [(t['order'], t['x'], t['y'], t['z'], t['ori']) for t in detail['missed']])
-        print('   남음(추론 중 짝 없음):', [(b['order'], b['x'], b['y'], b['z'], b['ori'], b['inferred']) for b in detail['extra']])
+        print('   남음(추론 중 짝 없음):', [(b['scan_num'], b['x'], b['y'], b['z'], b['ori'], b['inferred']) for b in detail['extra']])
 
 
 @pytest.mark.skipif(not all((SCAN_DIR / d / 'masks.pkl').is_file() for d in SCAN5.values()),

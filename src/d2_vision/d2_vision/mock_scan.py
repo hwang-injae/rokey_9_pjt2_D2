@@ -2,16 +2,16 @@
 
 IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) 의 응답을 카메라 없이 만든다.
 노드와 나눈 이유: ROS 없이 pytest 로 응답 모양을 시험하려고(CLAUDE.md 2장 — 계산 파일은 같은 패키지 다른 파일로).
-- scan_infer 의 blocks/1 은 레시피 두 파일(구조 `<id>_recipe.json` recipe/2.0 + 조립 방법 `<id>_placements.csv` placements/2.0, E-69)에서
+- scan_infer 의 blocks/2 는 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
   직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
-  d2_task 의 변환기 ②(RecipeToBlocks)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
+  d2_task 의 변환기 ②(RecipeToParts)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
   d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
   결과가 같은지는 시험(test_mock_scan.py)이 d2_task 가 있을 때 비교한다.
 - image_path · cloud_path 는 실제 파일을 쓴다(다리가 읽어 보낼 수 있게): `<임시 폴더>/d2_scan/<run_id>/color.png` · `cloud.ply`.
   PNG 는 표준 라이브러리(zlib)로, PLY 는 글자(ASCII)로 쓴다 — cv2 · open3d 없이(CI 에 없음, 가짜라 가볍게).
 - 스캔 중 점군 미리보기(10/10 E-82): preview() 가 `<임시 폴더>/d2_scan/<run_id>/preview_<index>.ply` 와 scan_preview/1.0 dict 를 만든다
   (wrist_block 과 같은 칸). 가짜 점군 = scan_design_id 설계 블록 윗면을 찍은 자세 수만큼 늘려 보인다(1곳 1/3 · 2곳 2/3 · 3곳 이상 전부).
-단위: blocks/1 은 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
+단위: blocks/2 는 mm(설계 좌표계), PLY · find_blocks 는 m(base_link).
 바깥 영향: infer 가 임시 폴더에 파일 두 개를 쓴다. 그 밖에는 계산만.
 실패: 잘못된 요청 → (False, 코드, {"ok":false,"reason","detail"}) — 서비스 success=false 로 답한다.
       답은 냈지만 결과가 실패(촬영 안 한 run_id · 레시피 못 읽음 · scan_fail 흉내) → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail"}).
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-from d2_vision.block_checker import PLACEMENTS_SCHEMA, RECIPE_SCHEMA, recipe_path, recipe_sha256
+from d2_vision.block_checker import PLACEMENTS_SCHEMA, RECIPE_SCHEMA, recipe_path, recipe_sha256, same_major
 
 MOCK_POINTS = 180000            # scan_capture 가 답하는 '모은 점 수'(가짜 — IRD 예시와 비슷한 크기)
 MAX_RUNS = 20                   # 기억하는 run_id 수(오래된 것부터 지운다 — 노드를 오래 띄워도 메모리가 늘지 않게)
@@ -78,64 +78,68 @@ def ori_table(size_mm):
 
 
 def load_recipe_files(recipe_dir, design_id):
-    """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/2.0 dict, 조립 방법 placements/2.0 dict). 바깥 영향 없음(파일 읽기만).
+    """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/3.0 dict, 조립 방법 placements/3.0 dict). 바깥 영향 없음(파일 읽기만).
 
-    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, block_id, sequence, stage, grasp,
+    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, part_id, sequence, stage, grasp,
     grasp_axis, supports[]}]} — CSV 에서 sequence · stage 는 정수, supports 는 ';' 로 나눈 목록(빈 칸이면 []).
     d2_motion.load_recipe 를 쓰지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣는다. 거절 규칙은 load_recipe 와 같다.
     출력: 두 파일 중 하나라도 없으면(이름 비었음 · 경로 문자 포함) None.
-    실패: 형식이 recipe/2.0 · placements/2.0 이 아님(옛 cad_* 는 바꿔 읽지 않음) · 줄마다 schema · recipe_sha256 이 다름 ·
+    실패: 형식이 recipe/3.0 · placements/3.0 이 아님(옛 cad_* 는 바꿔 읽지 않음) · 줄마다 schema · recipe_sha256 이 다름 ·
           recipe_sha256 이 구조와 다름 · model_id 다름 → ValueError. 칸이 없으면 KeyError, 숫자가 아니면 ValueError."""
     r_path = recipe_path(recipe_dir, design_id, ('_recipe.json',))
     p_path = recipe_path(recipe_dir, design_id, ('_placements.csv',))
     if r_path is None or p_path is None:
         return None
     recipe = json.loads(r_path.read_text(encoding='utf-8'))
-    if not isinstance(recipe, dict) or recipe.get('schema') != RECIPE_SCHEMA:
+    if not isinstance(recipe, dict) or not same_major(recipe.get('schema'), RECIPE_SCHEMA):
         got = recipe.get('schema') if isinstance(recipe, dict) else None
-        raise ValueError(f'{r_path.name}: 형식 {got!r} 는 읽지 않는다({RECIPE_SCHEMA} 만)')
+        raise ValueError(f'{r_path.name}: 형식 {got!r} 는 읽지 않는다({RECIPE_SCHEMA} 앞자리만)')
     with p_path.open(encoding='utf-8', newline='') as f:
         rows = list(csv.DictReader(f))
     if not rows:
         raise ValueError(f'{p_path.name}: 줄이 없다')
-    if {r['schema'] for r in rows} != {PLACEMENTS_SCHEMA}:
+    if not all(same_major(r['schema'], PLACEMENTS_SCHEMA) for r in rows) or len({r['schema'] for r in rows}) != 1:
         raise ValueError(f'{p_path.name}: 형식 {sorted({r["schema"] for r in rows})} 는 읽지 않는다({PLACEMENTS_SCHEMA} 만)')
     shas = {r['recipe_sha256'] for r in rows}
     if shas != {recipe_sha256(recipe)}:
         raise ValueError(f'{p_path.name} 의 recipe_sha256 이 {r_path.name} 와 다르다(구조가 바뀜 — 레시피 도구로 다시 만든다)')
-    steps = [{'block': r['block'], 'block_id': r['block_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
+    steps = [{'part_name': r['part_name'], 'part_id': r['part_id'], 'sequence': int(r['sequence']), 'stage': int(r['stage']),
               'grasp': r['grasp'], 'grasp_axis': r['grasp_axis'], 'supports': [x for x in r['supports'].split(';') if x]}
              for r in rows]
     return recipe, {'schema': PLACEMENTS_SCHEMA, 'model_id': recipe['model_id'], 'recipe_sha256': shas.pop(), 'steps': steps}
 
 
 def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
-    """레시피 두 파일 dict(구조 recipe/2.0 + 조립 방법 placements/2.0, load_recipe_files 출력) → blocks/1 dict(mm, 설계 좌표계). 바깥 영향 없음.
+    """레시피 두 파일 dict(구조 recipe/3.0 + 조립 방법 placements/3.0, load_recipe_files 출력) → blocks/2 dict(mm, 설계 좌표계). 바깥 영향 없음.
 
+    구조 = 맨 위 자재 stocks[](stock_id · size_mm) + template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
+    부품 이름 = '<그룹>_<part>' 예 LEG_001_01(10/13 PL — stocks 되살림, motion_math.recipe_parts 와 같은 읽기).
     order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
-    parts = {p['part_id']: [float(v) for v in p['size_mm']] for p in recipe['parts']}
-    by_name = {b['block']: b for b in recipe['blocks']}
+    sizes = {s['stock_id']: [float(v) for v in s['size_mm']] for s in recipe['stocks']}
+    by_name = {f'{group}_{item["part"]}': item
+               for comp in recipe['template']['composition'].values()
+               for group, items in comp['parts'].items() for item in items}
     rows = []
     for st in sorted(placements['steps'], key=lambda s: s['sequence']):
-        b = by_name[st['block']]
-        size = parts[b['part_id']]
+        b = by_name[st['part_name']]
+        size = sizes[b['stock_id']]
         ext = tuple(sum(abs(b['R'][i][k]) * size[k] for k in range(3)) for i in range(3))
         hits = [o for o, e in ori_table(size).items() if e == ext]
         if len(hits) != 1:
-            raise ValueError(f'{st["block"]}: 크기 {ext} 에 맞는 방향 코드가 {len(hits)}개다')
+            raise ValueError(f'{st["part_name"]}: 크기 {ext} 에 맞는 방향 코드가 {len(hits)}개다')
         x, y, cz = (float(v) for v in b['center_mm'])
-        rows.append({'order': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
+        rows.append({'scan_num': int(st['sequence']), 'x': x, 'y': y, 'z': cz - ext[2] / 2, 'ori': hits[0], 'inferred': False})
     if not rows:
         raise ValueError('조립 방법에 steps 가 없다')
     for r in rows[:max(0, min(int(inferred_count), len(rows)))]:
         r['inferred'] = True
-    return {'schema': 'blocks/1', 'design_id': design_id, 'family': family, 'blocks': rows}
+    return {'schema': 'blocks/2', 'design_id': design_id, 'family': family, 'blocks': rows}
 
 
 def _footprints(blocks, size_mm):
-    """blocks/1 블록마다 (x0, x1, y0, y1, 윗면 z) mm — 설계 좌표계. size_mm = 블록 크기(robot.yaml block_size_m × 1000)."""
+    """blocks/2 블록마다 (x0, x1, y0, y1, 윗면 z) mm — 설계 좌표계. size_mm = 블록 크기(robot.yaml block_size_m × 1000)."""
     table = ori_table(size_mm)
     out = []
     for b in blocks['blocks']:
@@ -145,9 +149,9 @@ def _footprints(blocks, size_mm):
 
 
 def blocks_to_points(blocks, origin, size_mm, step_mm=CLOUD_STEP_MM):
-    """blocks/1(mm, 설계) → 블록 윗면 점군 (N, 3) m, base_link. 바깥 영향 없음.
+    """blocks/2(mm, 설계) → 블록 윗면 점군 (N, 3) m, base_link. 바깥 영향 없음.
 
-    size_mm = 블록 크기(길이 · 폭 · 두께). origin = robot.yaml assembly_origin(x_m · y_m · z_m · yaw_deg) — 설계 원점을 base 로 옮긴다(motion_math.recipe_blocks 와 같은 뜻:
+    size_mm = 블록 크기(길이 · 폭 · 두께). origin = robot.yaml assembly_origin(x_m · y_m · z_m · yaw_deg) — 설계 원점을 base 로 옮긴다(motion_math.recipe_parts 와 같은 뜻:
     설계 좌표를 yaw 만큼 돌리고 원점만큼 민다). 위에서 보는 손목 카메라처럼 윗면만 둔다(가려진 아래 블록 윗면도 겹쳐 남는다 — 가짜라 그대로)."""
     yaw = math.radians(float(origin.get('yaw_deg', 0.0)))
     c, s = math.cos(yaw), math.sin(yaw)
@@ -183,7 +187,7 @@ def write_png(path, rgb):
 
 
 def top_view(blocks, size_mm):
-    """blocks/1 · 블록 크기(mm) → 위에서 본 가짜 사진 (IMG_H, IMG_W, 3) uint8. 1 px = 1 mm, 가운데 = 설계 원점, 위층일수록 밝게.
+    """blocks/2 · 블록 크기(mm) → 위에서 본 가짜 사진 (IMG_H, IMG_W, 3) uint8. 1 px = 1 mm, 가운데 = 설계 원점, 위층일수록 밝게.
     화면의 '실물 사진' 칸을 채워 보려는 그림이라 실제 카메라 모습과는 다르다."""
     img = np.full((IMG_H, IMG_W, 3), 40, np.uint8)          # 어두운 작업면
     for x0, x1, y0, y1, top in sorted(_footprints(blocks, size_mm), key=lambda f: f[4]):   # 낮은 것부터 칠해 위층이 위에 남게
@@ -229,7 +233,7 @@ class MockScan:
         return True, '', {'ok': True, 'points': MOCK_POINTS}
 
     def infer(self, text, recipe_dir, design_id, family, inferred_count, fail=False):
-        """scan_infer: {"run_id"} → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}.
+        """scan_infer: {"run_id"} → {"ok":true,"blocks":blocks/2,"inferred_count","image_path","cloud_path"}.
 
         blocks 는 recipe_dir 의 design_id 레시피 두 파일로 만든다(그 설계를 '스캔했다'고 흉내). 설계 이름은 scan_<family>_<번호>.
         바깥 영향: out_root/<run_id>/color.png · cloud.ply 를 쓴다. 실패: 촬영 안 한 run_id · 레시피 못 읽음 · fail 흉내 → ok:false SCAN_FAILED."""
@@ -248,7 +252,7 @@ class MockScan:
                 return _result_fail(f'레시피 {design_id} 두 파일(_recipe.json · _placements.csv)을 못 찾음(recipe_dir={recipe_dir!r})')
             blocks = structure_to_blocks(*pair, f'scan_{family}_{self.n_designs + 1:02d}', family, inferred_count)
         except (OSError, KeyError, TypeError, ValueError, IndexError) as e:
-            return _result_fail(f'레시피 {design_id} 를 blocks/1 로 못 바꿈: {e}')
+            return _result_fail(f'레시피 {design_id} 를 blocks/2 로 못 바꿈: {e}')
         out = self.out_root / rid
         out.mkdir(parents=True, exist_ok=True)
         image, cloud = out / 'color.png', out / 'cloud.ply'

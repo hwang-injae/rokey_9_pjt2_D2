@@ -1,9 +1,9 @@
 # web/backend — AI 설계 생성 파트 설계 노트 (W108, 10/7 황인재)
 
-> **10/8 E-69로 바뀜:** 템플릿 길(4장 · `templates.py` · `tune_system.txt` · `param_schema.json`) · `base_designs/`(10/3 lv*.json) · `blocks/1` 출력은 **옛것**이다. 지금 기준은 [../README.md](../README.md) 4장 — GPT-4o가 `blocks/2.0`(role · part · stage · grasp 포함)을 직접 쓰고 후보 3개 중 사람이 1개를 고른다. 이 노트의 피드백 문구 · 기록 · 시험 틀(3 · 8 · 9장)은 그대로 쓴다.
+> **10/8 E-69로 바뀜:** 템플릿 길(4장 · `templates.py` · `tune_system.txt` · `param_schema.json`) · `base_designs/`(10/3 lv*.json) · `blocks/2` 출력은 **옛것**이다. 지금 기준은 [../README.md](../README.md) 4장 — GPT-4o가 `parts/3.0`(role · part · stage · grasp 포함)을 직접 쓰고 후보 3개 중 사람이 1개를 고른다. 이 노트의 피드백 문구 · 기록 · 시험 틀(3 · 8 · 9장)은 그대로 쓴다.
 
 
-> 정본은 [SDD 3.1.1 · 6.6](../../docs/03_설계_SDD_v3_101110.md) · [IRD 6 · 7 · 8.3장](../../docs/02_인터페이스_IRD_v3_101221.md) · 결정 E-08 ~ E-15 · E-40 · E-41. 이 노트는 그것을 **코드로 옮길 때의 세부**(파일 · 함수 · 프롬프트 · 스키마 · 시험)만 적는다. 정본과 다르면 정본이 맞다.
+> 정본은 [SDD 3.1.1 · 6.6](../../docs/03_설계_SDD_v3_101110.md) · [IRD 6 · 7 · 8.3장](../../docs/02_인터페이스_IRD_v3_101308.md) · 결정 E-08 ~ E-15 · E-40 · E-41. 이 노트는 그것을 **코드로 옮길 때의 세부**(파일 · 함수 · 프롬프트 · 스키마 · 시험)만 적는다. 정본과 다르면 정본이 맞다.
 > 이 폴더의 다른 부분(REST · WebSocket · MQTT · DB)은 W126 · W111에서 더한다. 여기는 **AI 파트**만.
 
 ## 1. 범위 — 무엇을 만들고 무엇을 안 만드나
@@ -27,7 +27,7 @@ web/backend/
 │   ├── free_system.txt  ② 자유 생성 프롬프트 — 좌표 · 방향 코드 · 규칙 6개 · {examples} 자리
 │   ├── param_schema.json  ①의 구조화 출력 스키마 (strict)
 │   └── blocks_schema.json ②의 구조화 출력 스키마 (strict)
-├── base_designs/        기본 설계 4개 blocks/1 — RAG 예시 · 템플릿 기준값 (W117 비전 변환기 ②가 주면 교체. 1단계는 10/3 lv1 · lv2 · lv4에서 변환 — §7)
+├── base_designs/        기본 설계 4개 blocks/2 — RAG 예시 · 템플릿 기준값 (W117 비전 변환기 ②가 주면 교체. 1단계는 10/3 lv1 · lv2 · lv4에서 변환 — §7)
 └── trial_w108.py        V-44 시험 실행기. 결과는 out_w108/<시각>/ (gitignore)
 ```
 
@@ -39,10 +39,10 @@ web/backend/
 ```
 text ──① 튜닝 호출(tune_system + param_schema)──► {decision, family, template, params, count, reason}
           decision reject ──────────────────────► OUT_OF_SCOPE (가구 2종 밖 · 숫자 범위 밖 · 54개 초과, reason 글) — 끝, LLM 1번
-          decision template ─► templates.build(template, params, count) ─► blocks/1   (gen_path = "param")
+          decision template ─► templates.build(template, params, count) ─► blocks/2   (gen_path = "param")
              코드 쪽 범위 검사도 실패(LLM이 범위를 어김) ─► OUT_OF_SCOPE (이유 = ValueError 글) — 끝
-          decision free ─► ② 자유 호출(free_system + examples + blocks_schema) ─► blocks/1   (gen_path = "free")
-       ③ checker(blocks/1) ─► check_result/1
+          decision free ─► ② 자유 호출(free_system + examples + blocks_schema) ─► blocks/2   (gen_path = "free")
+       ③ checker(blocks/2) ─► check_result/1
           ok ─► 결과 {blocks, check, gen_path, prompt 기록} 반환 → (W111) store.save_design → 화면
           실패 ─► feedback = errors[].detail 줄들 → 같은 길로 다시(①은 피드백을 담아 튜닝 재호출, ②는 대화에 이어 재생성) — 최대 2번
        3번 모두 실패 ─► GEN_FAILED {errors, attempts}  → 화면 이유 + 기본 설계 권함
@@ -59,7 +59,7 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 
 ## 4. 템플릿 4종 (`templates.py`) — 기본 설계 4개(E-14) 기준
 
-좌표 · 방향 코드는 `blocks/1`(mm, 설계 좌표계, `ori` x · y · xe · ye · zx · zy). 기본값이면 **기본 설계와 블록 하나까지 같아야 한다**(pytest로 `base_designs/`와 비교).
+좌표 · 방향 코드는 `blocks/2`(mm, 설계 좌표계, `ori` x · y · xe · ye · zx · zy). 기본값이면 **기본 설계와 블록 하나까지 같아야 한다**(pytest로 `base_designs/`와 비교).
 
 | 템플릿 | 숫자(기본값) · 범위(FR-G02 제안) | 만드는 법 | 기본값 = 기본 설계 |
 |---|---|---|---|
@@ -75,11 +75,11 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 | | 1단계 (10/7 W108) | 2단계 (10/8~, W109 · W126 · W127 뒤) |
 |---|---|---|
 | 누가 | `check_local.LocalChecker` — 10/3 `jenga_check`의 형식 · 파고듦 · 받침 · 안정성(쌓는 도중 최소 여유 ≥ 7 mm) | task `DesignChecker`(비전) — 위 4개 + 잡기 틈 · 막힌 칸 · 작업영역 + 변환기 ① 레시피 |
-| 어떻게 | 함수 호출 | `MqttClient.request('d2/task/check_design', blocks/1)` → `…/res`(req_id, 5 s) |
+| 어떻게 | 함수 호출 | `MqttClient.request('d2/task/check_design', blocks/2)` → `…/res`(req_id, 5 s) |
 | 답 모양 | **둘 다 `check_result/1`** `{ok, min_margin_mm, errors:[{block, reason, detail}], recipe?}` — 로컬은 `recipe` 없음 | 같음 |
 | detail 글 | 10/3 `summary()` 대신 블록 단위로: `"n번 공중(받침 없음)"` · `"n번 ↔ m번 겹침"` · `"n번 단계 여유 3.0 mm < 7"` · `"형식: order가 1~N 연속이 아님"` | IRD 6장 예시와 같은 투 |
 
-- **요청 · 응답 모양(10/7 15시 PL, main 9d8425d · IRD 4.2):** 요청은 `blocks/1` 객체를 **그대로** 보낸다(바깥 상자에 다시 넣지 않음, 다리가 `req_id`만 더함). 응답은 두 층이다 — 서비스 `success`(요청을 처리했나) · `check_result/1`의 `ok`(설계 합격). **`success = true` + `ok = false`만 LLM 피드백으로 돌린다.** `success = false`나 5초 `TIMEOUT`은 설계 문제가 아니므로 재생성하지 않고 이유를 붙여 멈춘다(재생성 횟수를 쓰지 않음).
+- **요청 · 응답 모양(10/7 15시 PL, main 9d8425d · IRD 4.2):** 요청은 `blocks/2` 객체를 **그대로** 보낸다(바깥 상자에 다시 넣지 않음, 다리가 `req_id`만 더함). 응답은 두 층이다 — 서비스 `success`(요청을 처리했나) · `check_result/1`의 `ok`(설계 합격). **`success = true` + `ok = false`만 LLM 피드백으로 돌린다.** `success = false`나 5초 `TIMEOUT`은 설계 문제가 아니므로 재생성하지 않고 이유를 붙여 멈춘다(재생성 횟수를 쓰지 않음).
 - 로컬 검사기는 **임시**다. 10/3 `jenga_check.py`는 `docs/research/`에 그대로 두고(지우지 않음), 계산 함수(`Block` · `check` · `penetrations` · `step_margins` · `format_errors`)만 `check_local.py`로 옮긴다. 10/3 코드의 **내민 구조 버그**(SDD 6.7 ④)는 비전이 `design_checker.py`에서 고친다 — 로컬 검사기는 10/3 그대로 쓰고 결과표에 "로컬 검사기(10/3 계산)"라고 적는다.
 
 ## 6. 프롬프트 · 스키마 (`prompts/`) — 파일이 정본, 여기는 요지
@@ -93,9 +93,9 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 
 | 파일 | 출처 | 상태 |
 |---|---|---|
-| `bench.json` | 10/3 `lv1_bench.json` → blocks/1 (= `001_CHAIR_BENCH_V000` placements, 확인함) | 1단계 |
-| `chair.json` | 10/3 `lv2_chair.json` → blocks/1 (= `002_CHAIR_BACK_V000` 16개 — placements 대조는 구현 때) | 1단계 |
-| `desk_std.json` | 10/3 `lv4_table_standing.json` → blocks/1 (= `003_DESK_STAND_V000`, 확인함) | 1단계 |
+| `bench.json` | 10/3 `lv1_bench.json` → blocks/2 (= `001_CHAIR_BENCH_V000` placements, 확인함) | 1단계 |
+| `chair.json` | 10/3 `lv2_chair.json` → blocks/2 (= `002_CHAIR_BACK_V000` 16개 — placements 대조는 구현 때) | 1단계 |
+| `desk_std.json` | 10/3 `lv4_table_standing.json` → blocks/2 (= `003_DESK_STAND_V000`, 확인함) | 1단계 |
 | `desk_wall.json` | **없음** — 한세교 CAD(W074) → 비전 변환기 ②(W117) | 받으면 넣음 |
 
 `design_id`는 W111(DesignStore)에서 정한다 — 1단계 안: `bench` · `chair` · `desk_std` · `desk_wall`(IRD 예시 `"design_id":"bench"` 투). `family`: `chair` · `desk`.
@@ -124,7 +124,7 @@ text ──① 튜닝 호출(tune_system + param_schema)──► {decision, fam
 | 무엇 | 누구 · 언제 | 그 전까지 |
 |---|---|---|
 | `desk_wall` 치수(벽 간격 · 층수 · 상판 · 선반 자리) | 한세교 W074(10/7 오후~10/8) | 벤치 6층 자리값(안)으로 시험, 결과표에 '안' 표시 |
-| 기본 설계 4개 blocks/1 정본 | 비전 W117(변환기 ②) | 10/3 JSON 변환본(§7) |
+| 기본 설계 4개 blocks/2 정본 | 비전 W117(변환기 ②) | 10/3 JSON 변환본(§7) |
 | FR-G02 숫자 범위 확정(위 표는 '제안') | PL(황인재) — W108 결과 보고 10/8 | 표 값 |
 | `check_design` MQTT 왕복 · `req_id` | W126(황인재) · W127(다리) · W109(비전) | LocalChecker |
 | `design_id` 규칙 · `rejected` 보관 | W111 | 반환값만 |

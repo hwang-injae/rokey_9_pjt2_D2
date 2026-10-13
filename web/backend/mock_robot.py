@@ -3,7 +3,7 @@
 
 - d2/bridge/alive 를 1초마다(LWT alive false), 처음 상태를 retained 로(task/state IDLE · safety/state · gripper/state)
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
-  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/1.1) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/1.2 · cancel
+  hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/2.0) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/2.0 · cancel
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결,
   ROS 없는 파일이라 웹 PC 에서도 돎) — AI 생성(W108) 을 로봇 PC 없이 실제 검사 결과로 시험한다
   safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
@@ -18,6 +18,7 @@
 import argparse
 import io
 import json
+import os
 import random
 import sys
 import tempfile
@@ -33,13 +34,13 @@ for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS �
 import yaml  # noqa: E402
 from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, PendingReplies, alive_payload,  # noqa: E402
                                     parse_request, req_topic, res_topic)
-from d2_task.blocks_to_recipe import BlocksToRecipe  # noqa: E402
+from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from d2_task.recipe_document import RecipeDocument  # noqa: E402
-from d2_task.recipe_to_blocks import RecipeToBlocks  # noqa: E402
+from d2_task.recipe_to_parts import RecipeToParts  # noqa: E402
 from mqtt_client import make_mqtt_client  # noqa: E402
 
-RECIPES = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
+RECIPES = Path(os.environ.get('RECIPE_DIR') or REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes')   # app.py 와 같은 환경 변수
 ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 BENCH = '001_CHAIR_BENCH_V000'           # 가짜 스캔 결과 · nearest_base 에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')
@@ -71,7 +72,7 @@ def fake_wrist_jpeg(seed, text):
 def fake_scan_media(blocks, origin, size_mm):
     """가짜 스캔 사진(위에서 본 블록, JPEG 바이트) · 점군(블록 윗면, base_link m ASCII PLY 바이트) — 비전 가짜 스캔과 같은 그림 · 점.
 
-    입력: blocks = blocks/1 · origin = robot.yaml assembly_origin · size_mm = 블록 크기. numpy · PIL 이 없으면 (None, None).
+    입력: blocks = blocks/2 · origin = robot.yaml assembly_origin · size_mm = 블록 크기. numpy · PIL 이 없으면 (None, None).
     """
     try:
         from d2_vision.mock_scan import blocks_to_points, top_view, write_ply
@@ -98,12 +99,12 @@ class MockRobot:
         self.block_mm = [v * 1000 for v in cfg['block_size_m']]
         self.origin = cfg['assembly_origin']   # 가짜 점군을 base_link 로 옮길 때(진짜 점군과 같은 좌표)
         self.checker = DesignChecker(cfg)      # 로봇 PC task_node 와 같은 연결(검사 묶음 + 변환기 ① — 손가락 규칙은 검사 묶음 것)
-        self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, self.block_mm).convert
+        self.checker.parts_to_recipe = PartsToRecipe(self.checker.grasp_options, self.block_mm).convert
         self.step_s = step_s
         self.service_s = float(cfg['timeout']['service_s'])   # get_design 답을 기다리는 시간(작업 관리자와 같은 값)
         self.pending = PendingReplies()
         self.lock = threading.Lock()
-        self.st = dict(state='IDLE', run_id=None, design_id=None, block_id=None, message_id=None, message='대기')
+        self.st = dict(state='IDLE', run_id=None, design_id=None, part_id=None, message_id=None, message='대기')
         self.locked = False
         self.assembling = False       # 멈췄을 때 조립 중이었나 — 다시 시작 뒤 이어 갈지 정한다(진짜 작업 관리자와 같음)
         self.placed = []              # 이번 조립(run)에서 놓은 블록 이름 — 다시 시작 뒤 건너뛴다
@@ -117,10 +118,10 @@ class MockRobot:
 
     # ---------- 설계 ----------
     def design(self, design_id):
-        """설계 → (doc, blocks/2.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
+        """설계 → (doc, parts/3.0). 웹 저장소에 먼저 묻고(get_design), 답이 없으면 레시피 파일. 둘 다 없으면 OSError · ValueError."""
         body = self.fetch_design(design_id)
         if body is not None:
-            return RecipeDocument(body['recipe'], body['placements']), body['blocks']
+            return RecipeDocument(body['recipe'], body['placements']), body['parts']
         return self.local_design(design_id)
 
     def fetch_design(self, design_id):
@@ -132,10 +133,10 @@ class MockRobot:
         return body if body and body.get('success') is True else None
 
     def local_design(self, design_id):
-        """레시피 두 파일 → (doc, blocks/2.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
+        """레시피 두 파일 → (doc, parts/3.0) — 기본 설계만 있다. 없으면 OSError · ValueError."""
         family = 'chair' if 'CHAIR' in design_id.upper() else 'desk'
         doc = RecipeDocument.load(RECIPES, design_id)
-        return doc, RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
+        return doc, RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements)
 
     # ---------- 방송 ----------
     def pub(self, topic, body, qos=1):
@@ -143,10 +144,10 @@ class MockRobot:
         self.c.publish(topic, json.dumps({**body, 'stamp': round(time.time(), 3)}, ensure_ascii=False), qos=qos, retain=True)
 
     def set_state(self, state, message='', message_id=None, **kw):
-        """작업 관리자 상태를 바꾸고 state/1 을 보낸다."""
+        """작업 관리자 상태를 바꾸고 state/2 을 보낸다."""
         with self.lock:
             self.st.update(state=state, message=message, message_id=message_id, **kw)
-            body = dict(schema='state/1', mode='auto', **self.st)
+            body = dict(schema='state/2', mode='auto', **self.st)
         self.pub('d2/task/state', body)
         print(f'[가짜 로봇] {state} {message}')
 
@@ -163,11 +164,11 @@ class MockRobot:
         """
         doc, _ = self.design(design_id)
         steps = sorted(doc.placements['steps'], key=lambda s: s['sequence'])
-        ids = [s['block_id'] for s in steps]
+        ids = [s['part_id'] for s in steps]
         if recovering:
             for state, text in (('RECOVER', '다시 시작 — 쥔 블록을 확인합니다'),
                                 ('CHECK', f'진행 확인부터 다시 합니다 — 놓인 블록 {len(placed)}개는 건너뜀')):
-                self.set_state(state, text, block_id=None)
+                self.set_state(state, text, part_id=None)
                 if self.abort.wait(self.step_s):
                     return
         for n, bid in enumerate(ids, 1):
@@ -177,18 +178,18 @@ class MockRobot:
             if jpeg:
                 self.c.publish('d2/vision/wrist_image', jpeg, qos=0)   # 진짜와 같이 retained 아님(IRD 10.1)
             for state in ('PICK_PLACE', 'VERIFY'):
-                self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', block_id=bid)
+                self.set_state(state, f'{len(placed) + 1}/{len(ids)} {bid}', part_id=bid)
                 if self.abort.wait(self.step_s):
                     return
             placed.append(bid)
-            self.pub('d2/task/progress', {'schema': 'progress/1.1', 'design_id': design_id, 'run_id': run_id,
+            self.pub('d2/task/progress', {'schema': 'progress/2.0', 'design_id': design_id, 'run_id': run_id,
                                           'obs_stamp': round(time.time(), 3),
-                                          'blocks': [{'block_id': b, 'state': 'present' if b in placed else 'absent',
+                                          'parts': [{'part_id': b, 'state': 'present' if b in placed else 'absent',
                                                       'by': 'robot'} for b in ids]})
-        self.set_state('DONE', '완성했어요', 'done', block_id=None)
+        self.set_state('DONE', '완성했어요', 'done', part_id=None)
 
     def _scan(self, run_id):
-        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/1.2(벤치 blocks/1, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
+        """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/2, 추정 2개) + 사진 · 점군 → SCAN_REVIEW."""
         for pose in ('observe', 'observe_front', 'observe_side'):
             for state in ('SCAN_MOVE', 'SCAN_CAPTURE'):
                 self.set_state(state, f'스캔 중 — {pose}', 'scan_running')
@@ -197,12 +198,12 @@ class MockRobot:
         self.set_state('SCAN_INFER', '스캔 결과 계산 중', 'scan_running')
         if self.abort.wait(self.step_s):
             return
-        _, blocks = self.local_design(BENCH)
-        items = [{'order': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
-                 for i, b in enumerate(blocks['blocks'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
-        scan = {'schema': 'blocks/1', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
+        _, design = self.local_design(BENCH)
+        items = [{'scan_num': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
+                 for i, b in enumerate(design['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
+        scan = {'schema': 'blocks/2', 'design_id': 'scan_chair_01', 'family': 'chair', 'blocks': items}
         jpeg, ply = fake_scan_media(scan, self.origin, self.block_mm)
-        result = {'schema': 'scan_result/1.2', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
+        result = {'schema': 'scan_result/2.0', 'run_id': run_id, 'inferred_count': 2, 'blocks': scan,
                   'image_path': f'/mock/scan/{run_id}/color.png' if jpeg else '',   # 로봇 PC 경로 흉내 — 웹은 열지 않는다
                   'poses_used': ['observe', 'observe_front', 'observe_side'], 'nearest_base': BENCH}   # E-79 힌트
         if ply:
@@ -276,7 +277,7 @@ class MockRobot:
             if was and self.assembling and self.st['design_id'] and self.st['run_id']:
                 self._run(self._assemble, self.st['design_id'], self.st['run_id'], self.placed, True)   # 같은 run_id 로 이어서
             elif was:
-                self.set_state('IDLE', '정지가 풀렸어요. 설계를 다시 고르세요', design_id=None, run_id=None, block_id=None)
+                self.set_state('IDLE', '정지가 풀렸어요. 설계를 다시 고르세요', design_id=None, run_id=None, part_id=None)
             return {'success': True, 'message': '잠금을 풀었다' if was else '잠겨 있지 않았다'}
         request = {k: v for k, v in b.items() if k != 'req_id'}   # check_design — 진짜 검사 묶음 그대로(IRD 4.2 응답 칸)
         success, reason, rj = self.checker.handle_json(json.dumps(request, ensure_ascii=False))

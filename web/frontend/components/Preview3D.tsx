@@ -1,5 +1,5 @@
 'use client';
-// 설계 3D 보기(E-40 — 미리보기는 three.js 하나). blocks/2.0 · blocks/1 의 x · y · z · ori 를 그대로 상자로 그린다(계산 · 판정 없음).
+// 설계 3D 보기(E-40 — 미리보기는 three.js 하나). parts/3.0 · blocks/2 의 x · y · z · ori 를 그대로 상자로 그린다(계산 · 판정 없음).
 // 좌표: 설계(mm, x 오른쪽 · y 뒤 · z 위 = 아랫면) → three.js(y 가 위): (x, z, −y). 블록 크기는 backend 가 robot.yaml 에서 준 값(한 곳).
 // 같은 부품을 후보 3개(W112) · 스캔 비교(W116)에도 쓴다 — 색 · 투명도는 부르는 쪽이 정한다.
 import { useEffect, useRef, useState } from 'react';
@@ -17,7 +17,7 @@ export interface Item3D {
 
 type Mm3 = [number, number, number];
 
-/** 방향 코드 → 설계 x · y · z 방향 길이(IRD 2장 ori 표 — d2_task recipe_to_blocks.ori_extents 와 같은 규칙). 모르는 코드는 null */
+/** 방향 코드 → 설계 x · y · z 방향 길이(IRD 2장 ori 표 — d2_task recipe_to_parts.ori_extents 와 같은 규칙). 모르는 코드는 null */
 export function oriExtent(ori: string, [L, W, T]: Mm3): Mm3 | null {
   const table: Record<string, Mm3> = { x: [L, W, T], y: [W, L, T], xe: [L, T, W], ye: [T, L, W], zx: [T, W, L], zy: [W, T, L] };
   return table[ori] ?? null;

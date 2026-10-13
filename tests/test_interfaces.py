@@ -92,9 +92,9 @@ def test_move_to_fields():
 
 
 def test_check_progress_request_has_design_id_and_run_id():
-    """CheckProgress.srv 요청 — design_id(E-52) 다음에 run_id(E-60), 그 뒤 block_ids. 순서가 바뀌면 받는 쪽(손목 블록 인식)과 어긋난다."""
+    """CheckProgress.srv 요청 — design_id(E-52) 다음에 run_id(E-60), 그 뒤 part_ids. 순서가 바뀌면 받는 쪽(손목 블록 인식)과 어긋난다."""
     req, _ = (fields(s) for s in sections(IFACE / 'srv' / 'CheckProgress.srv'))
-    assert list(req) == ['design_id', 'run_id', 'block_ids']
+    assert list(req) == ['design_id', 'run_id', 'part_ids']
     assert req['run_id'] == 'string'
 
 
@@ -112,9 +112,9 @@ def test_gripper_command_fields():
 
 
 def test_pick_place_action_fields():
-    """PickPlace.action — 목표 block_id·supply_slot·pick_pose·place_pose·grasp, 피드백 step."""
+    """PickPlace.action — 목표 part_id·supply_slot·pick_pose·place_pose·grasp, 피드백 step."""
     goal, _, feedback = (fields(s) for s in sections(IFACE / 'action' / 'PickPlace.action'))
-    assert {'block_id', 'supply_slot', 'pick_pose', 'place_pose', 'grasp'} <= set(goal)
+    assert {'part_id', 'supply_slot', 'pick_pose', 'place_pose', 'grasp'} <= set(goal)
     assert goal['pick_pose'] == goal['place_pose'] == 'geometry_msgs/Pose'
     assert goal.get('open_width_m') == 'float64'          # W121, 0 = robot.yaml grasp_open_pick_m
     assert goal.get('obstacles') == 'geometry_msgs/Pose[]'   # E-53 B안, 흩뿌림 공중 이동 계획용(빈 목록 = 다른 블록 없음)
@@ -129,10 +129,10 @@ def test_json_query_fields():
 
 
 def test_scene_attach_fields():
-    """SceneAttach.srv(E-76) — 요청 block_id·attach + 쥔 상자(held_size_m · held_offset_m)·놓은 자리(placed_center_m · placed_quat) 배열, 응답 success·reason.
+    """SceneAttach.srv(E-76) — 요청 part_id·attach + 쥔 상자(held_size_m · held_offset_m)·놓은 자리(placed_center_m · placed_quat) 배열, 응답 success·reason.
     배열 칸이 빠지면 장면 관리가 레시피 파일에 없는 설계(AI · 스캔)의 쥔 블록을 못 그려 집은 뒤 ERROR 로 멈춘다."""
     req, res = (fields(s) for s in sections(IFACE / 'srv' / 'SceneAttach.srv'))
-    assert req.get('block_id') == 'string' and req.get('attach') == 'bool'
+    assert req.get('part_id') == 'string' and req.get('attach') == 'bool'
     for name in ('held_size_m', 'held_offset_m', 'placed_center_m', 'placed_quat'):
         assert req.get(name) == 'float64[]', name
     assert {'success', 'reason'} <= set(res)

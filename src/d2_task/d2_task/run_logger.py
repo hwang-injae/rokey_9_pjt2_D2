@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""기록기 RunLogger — 조립 한 번(run_id)의 CSV 기록과 결과 요약(build/1)을 만든다 (ROS 없이 동작, W065, SDD 6.8 · IRD 6장).
+"""기록기 RunLogger — 조립 한 번(run_id)의 CSV 기록과 결과 요약(build/2)을 만든다 (ROS 없이 동작, W065, SDD 6.8 · IRD 6장).
 
 TaskManager 가 기록할 때를 정하고 이 클래스는 받아 적기만 한다(기록기 노드는 없다 — IRD 3장).
-CSV 칸: run_id · design_id · time · module · kind · block_id · value (SDD 기록 칸). 오차는 mm(파일은 mm, NFR-12).
+CSV 칸: run_id · design_id · time · module · kind · part_id · value (SDD 기록 칸). 오차는 mm(파일은 mm, NFR-12).
 저장 위치는 부르는 쪽(task 노드 파라미터 log_dir)이 정한다. 비어 있으면 파일은 쓰지 않고 run_id · 요약만 만든다.
 저장소 안에는 쓰지 않는다 — 부르는 쪽이 저장소 밖 경로를 준다.
 
-**미전송 build/1 요약은 log_dir/pending_builds/<run_id>.json 으로도 보관한다**(save_pending · delete_pending · load_pending, W119).
+**미전송 build/2 요약은 log_dir/pending_builds/<run_id>.json 으로도 보관한다**(save_pending · delete_pending · load_pending, W119).
 같은 폴더의 임시 파일에 쓰고 flush · fsync 한 뒤 os.replace 로 완성본을 만든다. CSV 의 file_ok 와는 따로 실패를 다룬다.
 
 **파일 쓰기는 전용 스레드 하나가 한다.** 부르는 쪽(상태표 · 정지 · 취소 경로)은 메모리 값을 바꾸고 줄을 큐에 넣기만 하므로
-디스크가 느리거나 멈춰도 정지 · 취소 처리가 기다리지 않는다. run_id 와 build/1 요약은 메모리에서 바로 확정된다.
+디스크가 느리거나 멈춰도 정지 · 취소 처리가 기다리지 않는다. run_id 와 build/2 요약은 메모리에서 바로 확정된다.
 """
 import csv
 import json
@@ -24,9 +24,9 @@ import time
 
 LOG = logging.getLogger('d2_task')
 
-COLUMNS = ('run_id', 'design_id', 'time', 'module', 'kind', 'block_id', 'value')
-SCHEMA_BUILD = 'build/1'
-RESULTS = ('DONE', 'STOPPED', 'ERROR')     # IRD 6장 build/1 result
+COLUMNS = ('run_id', 'design_id', 'time', 'module', 'kind', 'part_id', 'value')
+SCHEMA_BUILD = 'build/2'
+RESULTS = ('DONE', 'STOPPED', 'ERROR')     # IRD 6장 build/2 result
 # 쓰기 스레드가 막혔을 때 메모리가 끝없이 늘지 않게 하는 안전 한도. 조립 한 번이 수백 줄이라 정상일 때는 닿지 않는다
 QUEUE_LIMIT = 10000
 
@@ -66,7 +66,7 @@ class RunLogger:
         self._started = 0.0
         self._total = 0
         self._stop_count = 0
-        self._placed = {}                    # block_id → {dx_m, dy_m, dz_m} (놓은 순서 유지, 값은 마지막 측정)
+        self._placed = {}                    # part_id → {dx_m, dy_m, dz_m} (놓은 순서 유지, 값은 마지막 측정)
 
     @property
     def enabled(self):
@@ -101,10 +101,10 @@ class RunLogger:
         return run_id
 
     def finish(self, result):
-        """run 을 닫고 build/1 요약(dict)을 돌려준다. result = DONE · STOPPED · ERROR. 이미 닫혔으면 None.
+        """run 을 닫고 build/2 요약(dict)을 돌려준다. result = DONE · STOPPED · ERROR. 이미 닫혔으면 None.
 
         요약: run_id · design_id · result · placed(놓은 블록 수) · total · duration_s · stop_count ·
-        blocks[block_id · dz_m · dx_m · dy_m(m, 못 잰 값 null)]. 요약은 메모리에서 바로 확정한다(파일 I/O 없음).
+        blocks[part_id · dz_m · dx_m · dy_m(m, 못 잰 값 null)]. 요약은 메모리에서 바로 확정한다(파일 I/O 없음).
         CSV 끝 줄(end)과 닫기는 쓰기 스레드가 이어서 한다.
         """
         if result not in RESULTS:
@@ -116,7 +116,7 @@ class RunLogger:
             summary = {'schema': SCHEMA_BUILD, 'run_id': self.run_id, 'design_id': self.design_id, 'result': result,
                        'placed': len(self._placed), 'total': self._total,
                        'duration_s': round(self.clock() - self._started, 3), 'stop_count': self._stop_count,
-                       'blocks': [{'block_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
+                       'parts': [{'part_id': b, 'dz_m': m['dz_m'], 'dx_m': m['dx_m'], 'dy_m': m['dy_m']}
                                   for b, m in self._placed.items()]}
             self._active = False
             if self._thread is not None:
@@ -141,36 +141,36 @@ class RunLogger:
         return done.wait(timeout_s)
 
     # ---------- 적기 ----------
-    def log(self, kind, block_id=None, value=None, module='task'):
+    def log(self, kind, part_id=None, value=None, module='task'):
         """CSV 한 줄(큐에 넣기만 한다). run 이 없거나 파일이 꺼져 있으면 아무것도 안 한다. 실패해도 예외를 내지 않는다."""
         with self._lock:
-            self._row(kind, block_id, value, module)
+            self._row(kind, part_id, value, module)
 
-    def record_placed(self, block_id, slot=None):
+    def record_placed(self, part_id, slot=None):
         """블록 하나를 놓았다(pick_place 성공). 결과 요약의 placed · blocks 에 들어간다. 오차는 아직 안 잼."""
         with self._lock:
             if not self._active:
                 return
-            self._placed.setdefault(block_id, {'dx_m': None, 'dy_m': None, 'dz_m': None})
-            self._row('placed', block_id, '' if slot is None else f'slot {slot}')
+            self._placed.setdefault(part_id, {'dx_m': None, 'dy_m': None, 'dz_m': None})
+            self._row('placed', part_id, '' if slot is None else f'slot {slot}')
 
-    def record_measure(self, block_id, dx_m, dy_m, dz_m):
+    def record_measure(self, part_id, dx_m, dy_m, dz_m):
         """놓은 블록의 배치 확인 측정값(m)을 적는다. 못 잰 값(NaN · None)은 CSV 에 빈 칸, 요약에 null — 0 으로 만들지 않는다.
 
-        CSV 는 mm 로 쓴다(dx_mm · dy_mm · dz_mm 세 줄). 요약(build/1)은 m 그대로.
+        CSV 는 mm 로 쓴다(dx_mm · dy_mm · dz_mm 세 줄). 요약(build/2)은 m 그대로.
         """
         with self._lock:
             if not self._active:
                 return
             vals = {'dx_m': _finite_or_none(dx_m), 'dy_m': _finite_or_none(dy_m), 'dz_m': _finite_or_none(dz_m)}
-            if block_id in self._placed:
-                self._placed[block_id] = vals
+            if part_id in self._placed:
+                self._placed[part_id] = vals
             for key in ('dx_m', 'dy_m', 'dz_m'):
                 v = vals[key]
-                self._row(key[:2] + '_mm', block_id, '' if v is None else f'{v * 1000:.3f}')
+                self._row(key[:2] + '_mm', part_id, '' if v is None else f'{v * 1000:.3f}')
 
     def count_stop(self):
-        """정지가 한 번 있었다(build/1 stop_count)."""
+        """정지가 한 번 있었다(build/2 stop_count)."""
         with self._lock:
             if self._active:
                 self._stop_count += 1
@@ -225,11 +225,35 @@ class RunLogger:
             except queue.Full:
                 LOG.warning('기록 쓰기가 밀려 %s 의 보관 파일을 못 지웠다 — 다음 시작 때 다시 전송될 수 있다', run_id)
 
+    @property
+    def rejected_dir(self):
+        """영구 거절된 요약 폴더(log_dir/rejected). log_dir 이 비어 있으면 빈 글자."""
+        return os.path.join(self.log_dir, 'rejected') if self.log_dir else ''
+
+    def reject_pending(self, run_id, summary, on_done):
+        """웹이 영구 거절(retry:false)한 요약을 log_dir/rejected/<run_id>.json 으로 옮기라고 쓰기 스레드에 맡긴다(기다리지 않는다).
+
+        반환: 맡겼으면 True(끝나면 쓰기 스레드가 on_done(ok) — ok = 거절 보관본이 디스크에 있다). 파일 기록이 꺼져 있거나
+        큐가 가득 차 못 맡기면 False(on_done 안 불림, 부르는 쪽이 메모리 요약을 들고 다시 맡긴다). 네트워크는 쓰지 않는다.
+        저장 요청(pend_save)과 같은 큐라서 늦게 끝난 저장이 거절 뒤에 pending 파일을 되살리지 못한다.
+        """
+        if not self.enabled:
+            return False
+        with self._lock:
+            self._ensure_thread()
+            try:
+                self._queue.put_nowait(('pend_reject', run_id, summary, on_done))
+                return True
+            except queue.Full:
+                LOG.warning('기록 쓰기가 밀려 거절된 요약 %s 을 디스크에 못 맡긴다 — 메모리에 보관하고 다시 시도한다', run_id)
+                return False
+
     def load_pending(self):
         """시작할 때 한 번: 보관된 미전송 요약을 읽는다. 반환: [(run_id, 요약 dict)] (파일 이름순).
 
         완성본(<run_id>.json)만 읽고 임시 파일(.tmp)은 무시한다. schema · run_id(파일 이름과 같음) · 필수 칸 · 자료형이 틀린 파일은
         지우지 않고 경고만 남기고 건너뛴다. 폴더가 없거나 log_dir 이 비어 있으면 빈 목록(파일 I/O 오류도 경고 뒤 빈 목록).
+        rejected/ 에 같은 run_id 가 이미 있으면(거절 보관은 끝났는데 pending 삭제가 남은 경우) 다시 보내지 않고 건너뛴다(지우지 않음).
         """
         found = []
         folder = self.pending_dir
@@ -250,19 +274,77 @@ class RunLogger:
                 why = _invalid_summary(summary, name[:-len('.json')])
             except (OSError, ValueError) as e:
                 why = f'읽을 수 없다: {e!r}'
+            if not why and os.path.exists(os.path.join(self.rejected_dir, name)):
+                why = '이미 영구 거절되어 rejected/ 에 있다 — 다시 보내지 않는다'
             if why:
                 LOG.warning('미전송 요약 파일을 건너뛴다(지우지 않음) %s — %s', path, why)
             else:
                 found.append((summary['run_id'], summary))
         return found
 
+    def _write_atomic(self, final, summary):
+        """(쓰기 스레드) summary 를 같은 폴더 임시 파일에 쓰고 flush · fsync 한 뒤 os.replace 로 final 을 만든다. 실패하면 임시 파일을 지우고 예외."""
+        tmp = final + '.tmp'
+        try:
+            f = self._opener(tmp, 'w', encoding='utf-8')
+            try:
+                f.write(json.dumps(summary, ensure_ascii=False, allow_nan=False))
+                f.flush()
+                if hasattr(f, 'fileno'):
+                    os.fsync(f.fileno())
+            finally:
+                f.close()
+            os.replace(tmp, final)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+
+    def _reject_op(self, run_id, summary):
+        """(쓰기 스레드) pending/<run_id>.json 을 rejected/ 로 옮긴다. 반환: **이 summary 의** 거절 보관본이 디스크에 있으면 True.
+
+        pending 파일이 있으면 그대로 os.replace 로 옮겨 원기록을 보존한다. 없으면(저장 실패 · 큐 가득) 메모리 summary 를 원자적으로 쓴다.
+        rejected/ 에 같은 run 의 자료가 이미 있으면 덮어쓰지 않는다 — 표준 JSON 이고 build/2 형식 검증을 통과한 자료가 summary 와 같으면
+        (int · float 값 비교는 그대로) 이미 보관된 것이라 pending 만 정리하고 True.
+        내용이 다르거나 형식이 손상됐거나 읽을 수 없으면 경고하고 기존 자료 · pending 을 그대로 둔 채 **False** — 이 summary 는 아직 보관되지 않았으니
+        부르는 쪽이 메모리 요약을 계속 들고 있어야 한다(다시 보내는 것은 load_pending 이 rejected/ 존재로 막는다).
+        """
+        src = os.path.join(self.pending_dir, f'{run_id}.json')
+        dst = os.path.join(self.rejected_dir, f'{run_id}.json')
+        os.makedirs(self.rejected_dir, exist_ok=True)
+        if os.path.exists(dst):
+            try:
+                with open(dst, encoding='utf-8') as f:
+                    existing = json.loads(f.read(), parse_constant=_reject_constant)
+                # 파이썬은 False == 0 이라 손상된 자료(stop_count 가 bool 등)도 같다고 볼 수 있다 — 형식을 먼저 검증한 자료만 비교한다
+                same = not _invalid_summary(existing, run_id) and existing == summary
+            except (OSError, ValueError):
+                same = False
+            if not same:
+                LOG.warning('같은 run %s 의 거절 자료가 다른 내용이거나 읽을 수 없다 — 덮어쓰지 않고 기존 자료와 pending 을 보존한다(%s)', run_id, dst)
+                return False        # 이 요약은 아직 보관되지 않았다 — 부르는 쪽이 메모리 요약을 지우면 원자료를 잃는다
+            try:
+                os.remove(src)
+            except FileNotFoundError:
+                pass
+            return True
+        if os.path.exists(src):
+            os.replace(src, dst)
+        else:
+            self._write_atomic(dst, summary)
+        return True
+
     def _pending_op(self, item):
-        """(쓰기 스레드) 미전송 요약 파일 저장 · 삭제. 실패해도 CSV 쪽 상태는 건드리지 않는다."""
+        """(쓰기 스레드) 미전송 요약 파일 저장 · 삭제 · 거절 보관. 실패해도 CSV 쪽 상태는 건드리지 않는다."""
         ok = False
         try:
             folder = self.pending_dir
             final = os.path.join(folder, f'{item[1]}.json')
-            if item[0] == 'pend_save':
+            if item[0] == 'pend_reject':
+                ok = self._reject_op(item[1], item[2])
+            elif item[0] == 'pend_save':
                 os.makedirs(folder, exist_ok=True)
                 tmp = final + '.tmp'
                 try:
@@ -289,23 +371,25 @@ class RunLogger:
                     pass
                 ok = True
         except Exception as e:   # noqa: BLE001
-            LOG.warning('미전송 요약 파일 %s 실패(run %s) — %r%s', '저장' if item[0] == 'pend_save' else '삭제', item[1], e,
-                        ' — 재시작 복구를 보장하지 않는다' if item[0] == 'pend_save' else ' — 다음 시작 때 다시 전송될 수 있다')
-        if item[0] == 'pend_save':
+            what = {'pend_save': '저장', 'pend_reject': '거절 보관'}.get(item[0], '삭제')
+            tail = {'pend_save': ' — 재시작 복구를 보장하지 않는다',
+                    'pend_reject': ' — 원본(pending 파일 또는 메모리)을 보존하고 다시 시도한다'}.get(item[0], ' — 다음 시작 때 다시 전송될 수 있다')
+            LOG.warning('미전송 요약 파일 %s 실패(run %s) — %r%s', what, item[1], e, tail)
+        if item[0] in ('pend_save', 'pend_reject'):
             try:
                 item[3](ok)
             except Exception:   # noqa: BLE001
                 LOG.exception('미전송 요약 저장 완료 알림 실패')
 
     # ---------- 큐 · 쓰기 스레드 (잠금 안에서 부른다) ----------
-    def _row(self, kind, block_id, value, module='task'):
+    def _row(self, kind, part_id, value, module='task'):
         """(잠금 안) 줄 하나를 시각과 함께 큐에 넣는다."""
         if not self._active or not self.file_ok:
             return
         now = self.clock()
         stamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(now))
         self._put(('row', self.run_id, [self.run_id, self.design_id, f'{stamp}.{int(now % 1 * 1000):03d}', module, kind,
-                           '' if block_id is None else block_id, '' if value is None else value]))
+                           '' if part_id is None else part_id, '' if value is None else value]))
 
     def _put(self, item):
         """(잠금 안) 큐에 넣는다(기다리지 않는다). 가득 찼으면 줄을 못 넣은 것이므로 이 run 의 파일 기록을 끄고 False."""
@@ -337,7 +421,7 @@ class RunLogger:
             item = self._queue.get()
             try:
                 kind = item[0]
-                if kind in ('pend_save', 'pend_del'):
+                if kind in ('pend_save', 'pend_del', 'pend_reject'):
                     self._pending_op(item)
                 elif kind == 'barrier':
                     item[1].set()
@@ -384,7 +468,7 @@ def _num_or_none(v):
 
 
 def _invalid_summary(s, stem):
-    """보관된 build/1 요약이 올바른가. 올바르면 빈 글자, 아니면 이유. stem = 파일 이름(확장자 뺀 것) = run_id."""
+    """보관된 build/2 요약이 올바른가. 올바르면 빈 글자, 아니면 이유. stem = 파일 이름(확장자 뺀 것) = run_id."""
     if not isinstance(s, dict):
         return '객체가 아니다'
     if s.get('schema') != SCHEMA_BUILD:
@@ -401,10 +485,10 @@ def _invalid_summary(s, stem):
             return f'{key} 가 0 이상 정수가 아니다'
     if not _num_or_none(s.get('duration_s')) or s.get('duration_s') is None:
         return 'duration_s 가 숫자가 아니다'
-    if not isinstance(s.get('blocks'), list):
+    if not isinstance(s.get('parts'), list):
         return 'blocks 가 목록이 아니다'
-    for b in s['blocks']:
-        if not isinstance(b, dict) or not isinstance(b.get('block_id'), str) or \
+    for b in s['parts']:
+        if not isinstance(b, dict) or not isinstance(b.get('part_id'), str) or \
                 not all(k in b and _num_or_none(b[k]) for k in ('dz_m', 'dx_m', 'dy_m')):
             return 'blocks 항목이 올바르지 않다'
     return ''

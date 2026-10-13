@@ -1,16 +1,16 @@
-"""스캔 추론기 ③ — 여러 자세의 깊이 영상 + YOLO 마스크를 블록 JSON(blocks/1)으로 바꾼다. ROS 없는 계산 (W115, SDD §6.9).
+"""스캔 추론기 ③ — 여러 자세의 깊이 영상 + YOLO 마스크를 블록 JSON(blocks/2)으로 바꾼다. ROS 없는 계산 (W115, SDD §6.9).
 
 흐름:
   add_capture: 자세마다 깊이 한 장(+ YOLO 마스크) → 추론용 원본(깊이 uint16 mm · 내부 파라미터 · T) + 미리보기 · PLY 용 base_link 점군.
                깊이 여러 장 평균 · YOLO 는 노드(scan_capture) 일이다. 마스크는 attach_masks 로 뒤에 붙여도 된다.
   infer: layer_solver.LayerSolver(층 지도 + 정수계획, 확정 판 v12g — 10/12) 로 블록을 구하고
     ① 바닥 외곽(가장 아래층 블록 외곽)의 가운데 = (0, 0) 으로 옮김 → 좌표 소수 1자리 mm
-    ② order: 아래층부터, 같은 층은 위 블록을 많이 받치는 순
+    ② scan_num(블록 번호): 아래층부터, 같은 층은 위 블록을 많이 받치는 순 — 쌓는 순서가 아니라 번호(10/13 order → scan_num)
     ③ 신뢰도: 점 설명률(O 칸 중 블록 상자 ± 5 mm 안 비율) · 추정 블록 비율 · 촬영 자세 수 → 낮으면 ok False + 이유(SCAN_FAILED)
   save_cloud: 합친 점군(base_link, m)을 복셀 다운샘플해 binary PLY(≤ 2 MB, IRD E-67 cloud_path)로 저장.
   match_rate: 추론 vs 정답 일치율(V-48, E-45).
 
-방향 코드(ori)는 d2_task.recipe_to_blocks.ori_extents 와 같은 표다(정답 블록 JSON 이 그 변환기에서 나온다 — 시험이 같은지 확인한다).
+방향 코드(ori)는 d2_task.recipe_to_parts.ori_extents 와 같은 표다(정답 블록 JSON 이 그 변환기에서 나온다 — 시험이 같은지 확인한다).
 d2_task 를 import 하지 않는다(CI 는 d2_vision 만 빌드 · 시험).
 단위: 이 파일 안 계산은 mm(설계 좌표계, 블록 JSON 과 같음). 입력 자세 · 출력 PLY 는 m(base_link).
 """
@@ -27,7 +27,7 @@ from scipy import ndimage
 from d2_vision.block_checker import depth_to_base_points
 from d2_vision.layer_solver import MIN_POINTS, LayerSolver, ori_extents
 
-SCHEMA = 'blocks/1'
+SCHEMA = 'blocks/2'                    # 10/13: 블록 번호 칸 order → scan_num(쌓는 순서 order 와 헷갈리지 않게) — 앞자리 +1
 FLYING_MM = 8.0           # 깊이 3×3 안에서 이보다 크게 튀는 픽셀(물체 모서리의 허공 점)은 미리보기 · PLY 점군에서 버린다
 EXPLAIN_MIN = 0.8         # ③ 점 설명률 기준(실측 4장면 × 5 · 3자세 0.991 ~ 1.000 — 10/12)
 INFERRED_MAX = 0.5        # ③ 추정 블록이 전체의 절반을 넘으면 다시 스캔
@@ -38,7 +38,7 @@ PREVIEW_SCHEMA = 'scan_preview/1.0'   # 스캔 중 점군 미리보기 알림(E-
 
 
 def _bottom_center(blocks, extent):
-    """blocks/1 블록 목록의 바닥 외곽 가운데(x, y, mm) — 가장 낮은 층(최저 z + 7.5 mm 안) 블록들의 외곽 사각형 가운데."""
+    """blocks/2 블록 목록의 바닥 외곽 가운데(x, y, mm) — 가장 낮은 층(최저 z + 7.5 mm 안) 블록들의 외곽 사각형 가운데."""
     zmin = min(b['z'] for b in blocks)
     xs, ys = [], []
     for b in blocks:
@@ -50,17 +50,17 @@ def _bottom_center(blocks, extent):
 
 
 def _block_list(blocks):
-    """blocks/1 dict 또는 블록 목록 → 블록 목록."""
+    """blocks/2 dict 또는 블록 목록 → 블록 목록."""
     return blocks['blocks'] if isinstance(blocks, dict) else list(blocks)
 
 
 def match_rate(pred_blocks, truth_blocks, block_mm=(75.0, 25.0, 15.0), tol_mm=12.5):
     """추론 vs 정답 일치율(V-48, E-45). 바깥 영향 없음.
 
-    입력: pred_blocks · truth_blocks = blocks/1 dict 또는 블록 목록(mm, 설계 좌표) · block_mm = 설계 블록 크기.
+    입력: pred_blocks · truth_blocks = blocks/2 dict 또는 블록 목록(mm, 설계 좌표) · block_mm = 설계 블록 크기.
     맞음 = 같은 방향(ori) + 같은 격자 자리 — 두 설계를 각자 '바닥 외곽 가운데'로 옮긴 뒤 x · y 가 25 mm 격자 한 칸 안(|차| < 12.5 mm),
            z(아랫면)가 반 층 안(|차| < 7.5 mm). 한 블록은 한 번만 짝짓는다(가까운 쌍부터).
-    출력: (rate, matched, detail) — rate = matched ÷ max(정답 수, 추론 수) · detail = {'pairs': [(정답 order, 추론 order, dx, dy, dz)],
+    출력: (rate, matched, detail) — rate = matched ÷ max(정답 수, 추론 수) · detail = {'pairs': [(정답 번호, 추론 번호, dx, dy, dz)],
           'missed': [맞는 짝이 없는 정답 블록], 'extra': [맞는 짝이 없는 추론 블록]}. 둘 다 비면 (0.0, 0, …).
     """
     pred, truth = _block_list(pred_blocks), _block_list(truth_blocks)
@@ -84,7 +84,7 @@ def match_rate(pred_blocks, truth_blocks, block_mm=(75.0, 25.0, 15.0), tol_mm=12
             continue
         used_t.add(i)
         used_p.add(j)
-        detail['pairs'].append((truth[i].get('order'), pred[j].get('order'), round(dx, 1), round(dy, 1), round(dz, 1)))
+        detail['pairs'].append((truth[i].get('scan_num', truth[i].get('order')), pred[j].get('scan_num', pred[j].get('order')), round(dx, 1), round(dy, 1), round(dz, 1)))
     detail['missed'] = [t for i, t in enumerate(truth) if i not in used_t]
     detail['extra'] = [p for j, p in enumerate(pred) if j not in used_p]
     matched = len(used_t)
@@ -92,7 +92,7 @@ def match_rate(pred_blocks, truth_blocks, block_mm=(75.0, 25.0, 15.0), tol_mm=12
 
 
 class StructureScanner:
-    """사람이 쌓은 구조물의 깊이 촬영(자세 2~5곳) + YOLO 마스크를 blocks/1 로 추론한다 (로봇 · ROS 없음, SDD §6.9).
+    """사람이 쌓은 구조물의 깊이 촬영(자세 2~5곳) + YOLO 마스크를 blocks/2 로 추론한다 (로봇 · ROS 없음, SDD §6.9).
 
     입력: cfg = robot.yaml 을 읽은 dict(assembly_origin · assembly_area_half_m · block_size_m · block_actual_m) ·
           design_id = 결과 설계 이름(노드가 'scan_<run_id>' 등으로 정함) · family = 기본 'unknown' · stride = 미리보기 · PLY 점군 픽셀 간격.
@@ -180,10 +180,10 @@ class StructureScanner:
 
     # ------------------------------------------------------------------ 추론
     def infer(self, bases=None):
-        """모은 촬영 → blocks/1 추론(LayerSolver → 바닥 가운데 맞춤 → order → 신뢰도). 바깥 영향 없음.
+        """모은 촬영 → blocks/2 추론(LayerSolver → 바닥 가운데 맞춤 → scan_num → 신뢰도). 바깥 영향 없음.
 
-        입력: bases = (선택) 기본 설계 blocks/1 목록 — 주면 블록 수 · 외곽이 가장 가까운 설계의 family 를 쓴다.
-        출력: {'ok', 'reason', 'blocks': blocks/1(mm, order · x · y · z · ori · inferred), 'inferred_count', 'confidence': {...},
+        입력: bases = (선택) 기본 설계 blocks/2 목록 — 주면 블록 수 · 외곽이 가장 가까운 설계의 family 를 쓴다.
+        출력: {'ok', 'reason', 'blocks': blocks/2(mm, scan_num · x · y · z · ori · inferred), 'inferred_count', 'confidence': {...},
                'nearest_base'} — ok False 면 reason 에 SCAN_FAILED 로 넘길 사유(다시 스캔 안내). 실패 검사 순서:
                촬영 없음 → 작업면 위 점 < 200 → 블록 없음(정수계획 해 없음 포함) → 점 설명률 < 0.8 → 추정 > 절반 → 자세 < 2.
         confidence: explained · inferred_ratio · points · center_shift_mm · planes(자세마다 pose_id · align_mm · masks · faces) ·
@@ -231,12 +231,12 @@ class StructureScanner:
 
     # ------------------------------------------------------------------ 블록 사이 계산(mm)
     def _rect(self, b):
-        """blocks/1 블록 → 상자 (x0, x1, y0, y1, z0, z1) mm."""
+        """blocks/2 블록 → 상자 (x0, x1, y0, y1, z0, z1) mm."""
         ex, ey, ez = self.extent[b['ori']]
         return b['x'] - ex / 2, b['x'] + ex / 2, b['y'] - ey / 2, b['y'] + ey / 2, b['z'], b['z'] + ez
 
     def _order(self, blocks):
-        """② order: 아래층부터, 같은 높이는 위 블록을 많이 받치는 순(그다음 x · y). 출력: order 를 단 blocks/1 블록 목록."""
+        """② scan_num: 아래층부터, 같은 높이는 위 블록을 많이 받치는 순(그다음 x · y). 출력: scan_num 을 단 blocks/2 블록 목록."""
         def carried(b):
             """b 윗면에 바로 얹힌 블록 수."""
             _, _, _, _, _, z1 = self._rect(b)
@@ -248,11 +248,11 @@ class StructureScanner:
                     k += 1
             return k
         rows = sorted(blocks, key=lambda b: (b['z'], -carried(b), b['x'], b['y']))
-        return [{'order': i + 1, 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': b['inferred']}
+        return [{'scan_num': i + 1, 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': b['inferred']}
                 for i, b in enumerate(rows)]
 
     def nearest_base(self, blocks, bases):
-        """블록 수 · 바닥 외곽 크기가 가장 가까운 기본 설계(blocks/1 dict)를 고른다. bases 가 비면 None."""
+        """블록 수 · 바닥 외곽 크기가 가장 가까운 기본 설계(blocks/2 dict)를 고른다. bases 가 비면 None."""
         def sig(bl):
             """(블록 수, 외곽 x 폭, y 폭, 높이) mm."""
             rs = [self._rect(b) for b in bl]
@@ -422,7 +422,7 @@ def scan_response(result, image_path, cloud_path):
     """infer() 결과 → scan_infer 응답 (success, reason, 응답 dict) — 노드가 JsonQuery 응답 세 칸에 그대로 넣는다(IRD 4.2).
 
     입력: result = StructureScanner.infer() 출력 · image_path = 컬러 사진 경로(없으면 '') · cloud_path = PLY 경로(저장 실패면 None).
-    출력: ok → (True, '', {"ok":true,"blocks":blocks/1,"inferred_count","image_path"[,"cloud_path"][,"nearest_base"]}),
+    출력: ok → (True, '', {"ok":true,"blocks":blocks/2,"inferred_count","image_path"[,"cloud_path"][,"nearest_base"]}),
           신뢰도 미달 → (True, '', {"ok":false,"reason":"SCAN_FAILED","detail":이유}) — 답은 냈지만 결과가 나쁨(mock_scan 과 같은 두 층).
     cloud_path 가 None 이면 그 칸을 뺀다(PLY 저장 실패 — IRD 4.2 선택 칸, 10/8 PL: 없으면 화면 점군 창만 안 뜬다). 블록 좌표는 소수 1자리 mm 로 반올림.
     nearest_base(IRD 4.2 선택 칸, E-79)는 추론기가 기본 설계를 골랐을 때만 넣는다 — 못 골랐으면(None · 빈 글자) 뺀다. 바깥 영향 없음."""
@@ -432,7 +432,7 @@ def scan_response(result, image_path, cloud_path):
     for b in blocks['blocks']:
         for k in ('x', 'y', 'z'):
             b[k] = round(float(b[k]), 1)
-        b['order'], b['inferred'] = int(b['order']), bool(b.get('inferred', False))
+        b['scan_num'], b['inferred'] = int(b['scan_num']), bool(b.get('inferred', False))
     body = {'ok': True, 'blocks': blocks, 'inferred_count': sum(1 for b in blocks['blocks'] if b['inferred']),
             'image_path': str(image_path or '')}
     if cloud_path is not None:

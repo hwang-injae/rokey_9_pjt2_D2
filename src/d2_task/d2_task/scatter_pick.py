@@ -2,7 +2,7 @@
 """흩뿌림 집기 준비 ScatterFlow — 목표 블록을 유지한 채 find_blocks 결과로 후보를 고르고 집기 요청을 준비한다 (ROS 없이 동작, W130).
 
 TaskManager 의 SELECT 안에서(공개 상태를 늘리지 않고) 쓰려고 만든 계산 클래스다. 아직 TaskManager · 로봇 호출에 연결하지 않았다.
-호출 흐름(연결할 때): ① SELECT 가 TaskPlanner 에서 목표 블록(block_id · 잡기 · 놓을 자세)을 정한다 → ② begin() 으로 요청 표를 받는다 →
+호출 흐름(연결할 때): ① SELECT 가 TaskPlanner 에서 목표 블록(part_id · 잡기 · 놓을 자세)을 정한다 → ② begin() 으로 요청 표를 받는다 →
 ③ 잠금 밖에서 observe_supply 로 가서 find_blocks 를 부르고 prepare() 로 후보를 계산한다(계산만 — 상태를 바꾸지 않는다) →
 ④ **TaskManager 잠금 안에서** commit() 이 요청 번호 · 상태 · 정지 · 종료를 다시 확인하고 같은 구간에서 후보를 적용한다(확인과 적용 사이에 정지가 끼지 못한다) →
 ⑤ 실패하면 on_failure() 가 실행 단계 · 잡힘 상태로 다음 동작(REPLAN_SAME · WAIT · REOBSERVE · RECOVER · ERROR)을 알려 준다.
@@ -244,7 +244,7 @@ class ScatterFlow:
         """목표 블록 + find_blocks 응답 → 집기 요청 준비. 반환 dict 의 status:
 
         (후보는 이 함수가 정하지 않는다 — 계산만. 적용은 commit.)
-        PICK          request = PickPlace 목표 칸(block_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m · obstacles)과 candidate(복사본)
+        PICK          request = PickPlace 목표 칸(part_id · supply_slot '' · grasp · pick_pose · place_pose · open_width_m · obstacles)과 candidate(복사본)
                       obstacles = 같은 응답에서 고른 블록 하나(인덱스)만 뺀 나머지 전부의 중심 자세 [(xyz m, 쿼터니언 xyzw)](under · top 포함, 자르기 없음).
                       고른 블록만 있었으면 빈 목록 — 정상이다(다른 블록 없음, 공급 칸 가정 상자로 안 돌아감).
                       기울어진(tilted) 블록도 장애물에 넣는다 — 지금(핵심 단계)은 집기 요청을 막지 않고 IRD 4.2 그대로 '윗면 = 가장 높은 점인 반듯한 상자'로
@@ -259,7 +259,7 @@ class ScatterFlow:
         REORIENT      (allow_reorient 이고 목표가 세움 · 옆세움인데 맞는 후보가 없을 때만) 눕힌 블록을 빈 자리(spare_spots)에 세우는 요청.
                       request 는 PICK 과 같은 칸 + 내부 표시 'reorient': True(액션으로는 안 감 — task_node 는 이름 있는 칸만 읽는다).
                       세울 수 없으면(눕힌 후보 없음 · 기울어진 블록이 있음 · 빈 자리 없음) REORIENT 를 만들지 않고 NO_MATCH 그대로.
-        target = {block_id, grasp, place_pose}. 목표 block_id · 놓을 자세 · 잡기는 그대로 유지하고 복사해서 쓴다.
+        target = {part_id, grasp, place_pose}. 목표 part_id · 놓을 자세 · 잡기는 그대로 유지하고 복사해서 쓴다.
         """
         if not self.configured:
             return {'status': 'NOT_CONFIGURED'}
@@ -283,7 +283,7 @@ class ScatterFlow:
         if isinstance(obstacles, dict):
             return obstacles
         center, quat = block_pose(self.cfg, c['up'], c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
-        request = {'block_id': target['block_id'], 'supply_slot': '', 'grasp': target['grasp'],
+        request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': target['grasp'],
                    'pick_pose': (center, quat), 'place_pose': copy.deepcopy(target['place_pose']),
                    'open_width_m': self.open_width_m, 'obstacles': obstacles}
         return {'status': 'PICK', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm']}
@@ -292,7 +292,7 @@ class ScatterFlow:
         """눕힌 블록 하나를 빈 자리에 세우는 요청(REORIENT) 또는 None(세울 수 없음 → 부르는 쪽이 NO_MATCH).
 
         잡기 = REORIENT_GRASP[up](PL 확정), 눕힌 후보는 그 잡기로 BlockPicker 의 같은 규칙으로 고른다. 놓을 자세 = 빈 자리 중심 · yaw_deg 에
-        블록을 up 축이 위로 서게(block_pose — 공급 칸과 같은 yaw 규약, 세움은 윗면 25 mm 변 방향). block_id 는 목표 그대로(장면 · 진행표에서 같은 이름).
+        블록을 up 축이 위로 서게(block_pose — 공급 칸과 같은 yaw 규약, 세움은 윗면 25 mm 변 방향). part_id 는 목표 그대로(장면 · 진행표에서 같은 이름).
         빈 자리 확인은 놓기 전 필수 — 이번 관측에서 외곽을 아는 블록(고른 블록 제외)의 수평 외곽과 세운 블록 외곽이 겹치면 점유.
         기울어진 블록이 하나라도 있으면 외곽을 확정할 수 없어 세우지 않는다(관측 불확실성 — 근사 상자로 대신하지 않음).
         손가락 접근 공간은 W131 접근 경로가 정해지기 전이라 보지 않는다. 바깥 영향 없음(계산만).
@@ -321,7 +321,7 @@ class ScatterFlow:
         pick_pose = block_pose(self.cfg, c['up'], c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
         place_pose = block_pose(self.cfg, up, spot['yaw_deg'], spot['x_m'], spot['y_m'],
                                 self.cfg['table_z_m'] + self.cfg['block_actual_m'][UP_INDEX[up]])
-        request = {'block_id': target['block_id'], 'supply_slot': '', 'grasp': grasp, 'pick_pose': pick_pose, 'place_pose': place_pose,
+        request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': grasp, 'pick_pose': pick_pose, 'place_pose': place_pose,
                    'open_width_m': self.open_width_m, 'obstacles': obstacles, 'reorient': True}
         return {'status': 'REORIENT', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm'],
                 'spot': spots.index(spot)}

@@ -35,7 +35,7 @@ class SceneManagerNode(Node):
     """MoveIt2 장면을 고치는 유일한 노드. 다른 노드는 apply_planning_scene 을 부르지 않는다.
 
     받는 것: /d2/motion/scene/attach (SceneAttach — 잡은 뒤 붙이기 / 놓은 뒤 떼기 = 놓인 블록으로),
-             /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<block_id> 를 관측 자세로 맞춤)
+             /d2/task/progress (JSON progress/1 — 놓인 블록 blk_<part_id> 를 관측 자세로 맞춤)
     부르는 것: MoveIt2 apply_planning_scene, get_planning_scene
     파라미터 recipe: 레시피 파일 경로 (여럿이면 쉼표로, 세트 배치) — 요청에 쥔 상자 · 놓은 자리가 없을 때(옛 방식)만 여기서 계산한다(E-76).
                     비우면 share/d2_bringup/recipes/ 의 레시피(*_recipe.json)를 하나씩(세트 배치 없이) 모두 읽는다 — run_recipe 가 번호로 고를 때.
@@ -48,19 +48,19 @@ class SceneManagerNode(Node):
         with open(os.path.join(share, 'config', 'robot.yaml')) as f:
             self.cfg = yaml.safe_load(f)
         paths = [p for p in self.declare_parameter('recipe', '').value.split(',') if p.strip()]
-        self.blocks = {}
+        self.parts = {}
         if paths:
             recipes = [load_recipe(path.strip()) for path in paths]
             # 여러 레시피면 run_recipe 와 같은 세트 배치 (layout_designs 는 계산만으로 정해져 같은 자리가 나온다)
-            self.blocks = {b['block_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
-            self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.blocks)}개: {", ".join(paths)}')
+            self.parts = {b['part_id']: b for design, _ in layout_designs(self.cfg, recipes) for b in design}
+            self.get_logger().info(f'레시피 {len(paths)}개, 블록 {len(self.parts)}개: {", ".join(paths)}')
         else:
-            # 설치된 레시피를 하나씩 읽는다: block_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_V000_LEG_001_01) 한 사전에 넣어도 겹치지 않는다.
+            # 설치된 레시피를 하나씩 읽는다: part_id 에 모델 이름이 붙어 있어(001_CHAIR_BENCH_V000_LEG_001_01) 한 사전에 넣어도 겹치지 않는다.
             # 레시피 하나를 쌓는 자리는 layout_designs 의 설계 1개 = 조립 원점 그대로라, run_recipe 에서 하나를 골라도 자리가 같다
             for path in recipe_files(os.path.join(share, 'recipes')):
-                self.blocks.update({b['block_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})
+                self.parts.update({b['part_id']: b for design, _ in layout_designs(self.cfg, [load_recipe(path)]) for b in design})
                 self.get_logger().info(f'레시피: {path}')
-            if not self.blocks:
+            if not self.parts:
                 self.get_logger().warn('레시피가 없다 — 쥔 블록·놓은 블록을 장면에 넣지 못한다')
         cb = ReentrantCallbackGroup()
         self.scene_cli = self.create_client(ApplyPlanningScene, 'apply_planning_scene', callback_group=cb)
@@ -138,15 +138,15 @@ class SceneManagerNode(Node):
         return ([o.id for o in sc.world.collision_objects],
                 [a.object.id for a in sc.robot_state.attached_collision_objects])
 
-    def add_placed(self, block_id, center, quat):
-        """놓인 블록 blk_<block_id> 를 base 자세 (중심 m, 쿼터니언) 로 넣거나 옮긴다."""
+    def add_placed(self, part_id, center, quat):
+        """놓인 블록 blk_<part_id> 를 base 자세 (중심 m, 쿼터니언) 로 넣거나 옮긴다."""
         size = [max(0.001, v - 2 * PLACED_SHRINK_M) for v in self.cfg['block_actual_m']]
-        oid = f'blk_{block_id}'
+        oid = f'blk_{part_id}'
         sc = PlanningScene()
         sc.world.collision_objects = [self._box(oid, size, make_pose(center, quat))]
         sc.object_colors = [self._color(oid, PLACED_RGBA)]
         if self.apply(sc):
-            self.placed.add(block_id)
+            self.placed.add(part_id)
 
     def _held_box(self, b):
         """블록 b 를 쥐었을 때 TCP 기준 상자 (크기·위치). 공급 칸은 잡기마다 하나로 고정이라, 그 칸의 교시 깊이까지
@@ -162,12 +162,12 @@ class SceneManagerNode(Node):
 
         붙이기: 요청에 held_size_m · held_offset_m(각 3개)이 있으면 그 상자를 쓴다 — 집기·놓기가 실제로 집은 자세로 계산한 값이라
         레시피 파일에 없는 설계(AI · 스캔) · 흩뿌림 · 다시 집기도 맞다(10/9 PL E-76). 없으면 설치된 레시피로 계산하고,
-        레시피에도 없는 block_id 면 success=false, reason UNKNOWN_BLOCK.
-        붙이기 때 같은 블록이 놓인 블록(blk_<block_id>)으로 장면에 있으면 같은 변경에서 지운다(다시 집기).
+        레시피에도 없는 part_id 면 success=false, reason UNKNOWN_BLOCK.
+        붙이기 때 같은 블록이 놓인 블록(blk_<part_id>)으로 장면에 있으면 같은 변경에서 지운다(다시 집기).
         떼기: placed_center_m(3) · placed_quat(4)가 있으면 그 자리에, 없으면 레시피 자리에 놓인 블록을 넣는다.
         둘 다 없으면 쥔 상자만 지운다(놓인 블록은 다음 진행표 progress 가 넣는다).
         """
-        b = self.blocks.get(req.block_id)
+        b = self.parts.get(req.part_id)
         held_given = len(req.held_size_m) == 3 and len(req.held_offset_m) == 3
         placed_given = len(req.placed_center_m) == 3 and len(req.placed_quat) == 4
         if req.attach and not held_given and b is None:
@@ -188,36 +188,36 @@ class SceneManagerNode(Node):
             sc.object_colors = [self._color(HELD, HELD_RGBA)]
             # 장면에 '놓인 블록'으로 남은 같은 블록을 다시 집으면(다시 집기 W135 · 세우기 W131 · 3동작 시험) 쥔 상자와 겹쳐
             # 다음 계획이 시작 자세 충돌(CheckStartStateCollision)로 막힌다(10/10 실기) — 같은 변경에서 놓인 블록을 지운다
-            if req.block_id in self.placed:
-                sc.world.collision_objects = [self._remove(f'blk_{req.block_id}')]
+            if req.part_id in self.placed:
+                sc.world.collision_objects = [self._remove(f'blk_{req.part_id}')]
         else:
             aco.object.operation = CollisionObject.REMOVE
             sc.world.collision_objects = [self._remove(HELD)]
         sc.robot_state.attached_collision_objects = [aco]
         res.success = self.apply(sc)
         if res.success and req.attach:
-            self.placed.discard(req.block_id)
+            self.placed.discard(req.part_id)
         if res.success and not req.attach:
             if placed_given:
-                self.add_placed(req.block_id, list(req.placed_center_m), list(req.placed_quat))
+                self.add_placed(req.part_id, list(req.placed_center_m), list(req.placed_quat))
             elif b is not None:
-                self.add_placed(req.block_id, b['center'], b['quat'])
+                self.add_placed(req.part_id, b['center'], b['quat'])
             else:
-                self.get_logger().warn(f'{req.block_id}: 놓은 자리를 몰라 쥔 상자만 지웠다 — 놓인 블록은 진행표가 넣는다')
+                self.get_logger().warn(f'{req.part_id}: 놓은 자리를 몰라 쥔 상자만 지웠다 — 놓인 블록은 진행표가 넣는다')
         res.reason = '' if res.success else 'TIMEOUT'
         return res
 
     def _on_progress(self, msg):
-        """진행표 progress/1 를 따라 놓인 블록을 맞춘다: present 는 진행표의 center_m · quat(설계 자리)로 넣고, absent 는 뺀다.
+        """진행표 progress/2.0 을 따라 놓인 블록을 맞춘다: present 는 진행표의 center_m · quat(설계 자리)로 넣고, absent 는 뺀다.
         occluded · unknown 은 있는지 모르므로 그대로 둔다. state 이름은 IRD 2장 '블록 관측 states'(task_planner.STATES)와 같다.
 
         진행표에 없는 놓인 블록(앞 설계 것)도 뺀다 — 진행표는 지금 설계의 블록 전부라, 설계가 바뀌면 앞 설계 블록이
         조립 영역에 남아 새 설계의 놓기 경로를 막는다(10/7 실기: 벤치 11개가 남아 003 PLAN_FAILED).
         """
-        blocks = json.loads(msg.data).get('blocks', [])
-        gone = self.placed - {blk.get('block_id') for blk in blocks}
+        blocks = json.loads(msg.data).get('parts', [])
+        gone = self.placed - {blk.get('part_id') for blk in blocks}
         for blk in blocks:
-            bid, state = blk.get('block_id'), blk.get('state')
+            bid, state = blk.get('part_id'), blk.get('state')
             if state == 'present' and blk.get('center_m') and blk.get('quat'):
                 self.add_placed(bid, blk['center_m'], blk['quat'])
             elif state == 'absent' and bid in self.placed:

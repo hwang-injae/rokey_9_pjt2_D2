@@ -144,7 +144,7 @@ def test_계속은_같은_run으로_진행을_확인한_뒤_다음_블록을_고
     m.run_once()
     assert [c[0] for c in io.calls[before:]] == ['move_to', 'check']
     assert m.planner.progress[IDS[0]]['state'] == 'present'
-    assert m.state == 'PICK_PLACE' and m.goal['block_id'] == IDS[1]
+    assert m.state == 'PICK_PLACE' and m.goal['part_id'] == IDS[1]
     assert m.planner.empty_slots == {1} and m.run_id == run_id
     assert len(picks(io)) == 1                          # 다음 액션은 이 단계에서 아직 안 보낸다
 
@@ -172,10 +172,10 @@ def test_진행_재확인_중_다시_끊기면_새_목표를_보내지_않는다
     m.command('start')
     observe = io.check_progress
 
-    def lose_during_check(block_ids, should_abort):
+    def lose_during_check(part_ids, should_abort):
         """재관측 답을 기다리던 중 연결 신호가 끊긴다."""
         clock.now += CFG['mqtt']['lost_after_s']
-        return observe(block_ids, should_abort)
+        return observe(part_ids, should_abort)
 
     io.check_progress = lose_during_check
     m.run_once()

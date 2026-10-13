@@ -31,10 +31,10 @@ export const ROLE: Record<string, { ko: string; color: string }> = {
 };
 export const roleOf = (role?: string) => (role ?? '').split('_')[0]; // LEG_WHEEL → LEG (옵션은 나누지 않음)
 
-/** '001_CHAIR_BENCH_V001_LEG_001_03' → '다리 1-3'(부품 1의 3번째 블록) */
-export function blockName(blockId?: string | null, designId?: string | null): string {
-  if (!blockId) return '';
-  const rest = designId && blockId.startsWith(designId + '_') ? blockId.slice(designId.length + 1) : blockId;
+/** '001_CHAIR_BENCH_V001_LEG_001_03' → '다리 1-3'(부품 그룹 1의 3번째 부품) */
+export function partName(partId?: string | null, designId?: string | null): string {
+  if (!partId) return '';
+  const rest = designId && partId.startsWith(designId + '_') ? partId.slice(designId.length + 1) : partId;
   const m = /^([A-Z]+)(?:_[A-Z]+)?_(\d{3})_(\d{2})$/.exec(rest);
   return m ? `${ROLE[m[1]]?.ko ?? m[1]} ${Number(m[2])}-${Number(m[3])}` : rest;
 }
@@ -66,7 +66,7 @@ export function checkReasonKo(detail: string): string {
   const table: [string, string][] = [
     ['공중', '받침 없는 블록'], ['여유', '넘어질 수 있음'], ['겹침', '블록이 겹침'], ['grasp', '로봇이 잡기 어려움'],
     ['잡을 면', '로봇이 잡기 어려움'], ['작업영역', '작업 공간을 넘음'], ['작업대', '작업 공간을 넘음'], ['역할', '이름 규칙 위반'],
-    ['part', '부품 묶음 규칙 위반'], ['형식', '형식 오류'], ['상한', '블록이 너무 많음'],
+    ['group', '부품 그룹 규칙 위반'], ['형식', '형식 오류'], ['상한', '블록이 너무 많음'],
   ];
   return table.find(([k]) => detail.includes(k))?.[1] ?? '규칙 위반';
 }

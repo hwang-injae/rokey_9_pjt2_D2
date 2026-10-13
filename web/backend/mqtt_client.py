@@ -21,6 +21,7 @@ STATE_TOPICS = {            # MQTT 상태 토픽(retained) → /ws 이벤트 typ
     'd2/gripper/state': 'gripper',
 }
 INTENT_TOPIC = 'd2/hmi/intent'
+VOICE_LISTEN_TOPIC = 'd2/hmi/voice/listen'   # 화면 마이크 버튼 → voice.py(웹 PC 안에서만 — 다리 안 거침, 10/13 PL). retained 아님
 # 바이트 토픽(JSON 아님 · retained 아님 — IRD 10.1 · 10.5) → (/ws 이벤트 type, 구독 QoS). 마지막 한 장만 들고 화면에는 번호만 알린다
 BLOB_TOPICS = {
     'd2/vision/wrist_image': ('wrist_image', 0),   # 손목 검출 그림 JPEG, 1~2 Hz — 하나 잃어도 곧 다음이 온다
@@ -50,7 +51,7 @@ class MqttClient:
 
     입력: host · port(.env), req_timeout_s · alive_s · lost_after_s(robot.yaml mqtt.*). client 는 시험 때 가짜를 넣는다.
     바깥 영향: d2/web/alive 를 alive_s 마다 retained 로 보낸다(작업 관리자는 3초 끊기면 WAIT_HMI — IRD 10.3).
-    실패: 브로커가 없으면 paho 가 1~5초 간격으로 다시 붙는다. 요청은 자동으로 다시 보내지 않는다(실제 상태는 state/1 로 본다).
+    실패: 브로커가 없으면 paho 가 1~5초 간격으로 다시 붙는다. 요청은 자동으로 다시 보내지 않는다(실제 상태는 state/2 로 본다).
     """
 
     def __init__(self, host, port, req_timeout_s, alive_s, lost_after_s, client=None, clock=time.monotonic):
@@ -158,6 +159,15 @@ class MqttClient:
         if body is None:
             return {'success': False, 'reason': 'TIMEOUT', 'message': f'{self.req_timeout_s:g}초 안에 답이 없다 — 실제 상태는 화면 상태 줄로'}
         return {k: v for k, v in body.items() if k != 'req_id'}
+
+    def listen(self):
+        """마이크 버튼 → voice.py 에 '한 번 듣기'를 알린다(d2/hmi/voice/listen {schema voice_listen/1, stamp}, QoS 1).
+        retained 로 두지 않는다 — 늦게 붙은 voice.py 가 옛 누름으로 녹음하지 않게. voice.py 는 녹음 · Whisper 뒤 d2/hmi/intent
+        {intent: request_design, text} 를 낸다(backend 가 /ws 로 넘김). 반환: {success, reason[, message]} — 브로커가 없으면 success false."""
+        if not self.client.is_connected():
+            return {'success': False, 'reason': 'ERROR', 'message': '브로커 연결 없음'}
+        self.client.publish(VOICE_LISTEN_TOPIC, json.dumps({'schema': 'voice_listen/1', 'stamp': round(time.time(), 3)}), qos=1)
+        return {'success': True, 'reason': ''}
 
     def blob(self, kind):
         """마지막 바이트(kind = wrist_image · scan_image JPEG, scan_cloud PLY). 아직 없거나 새 스캔으로 지워졌으면 None."""

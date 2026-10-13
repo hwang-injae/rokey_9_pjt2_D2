@@ -57,8 +57,8 @@ def rows(path):
 
 
 def kinds(path):
-    """CSV 의 (kind, block_id, value) 들."""
-    return [(r['kind'], r['block_id'], r['value']) for r in rows(path)]
+    """CSV 의 (kind, part_id, value) 들."""
+    return [(r['kind'], r['part_id'], r['value']) for r in rows(path)]
 
 
 # ---------- RunLogger 단위 ----------
@@ -134,7 +134,7 @@ def test_못_잰_값은_0이_아니라_빈_칸과_null(tmp_path):
     log.record_measure('B1', float('nan'), None, 0.0008)
     build = log.finish('DONE')
     assert kinds(tmp_path / f'{run_id}.csv')[2:5] == [('dx_mm', 'B1', ''), ('dy_mm', 'B1', ''), ('dz_mm', 'B1', '0.800')]
-    assert build['blocks'] == [{'block_id': 'B1', 'dz_m': 0.0008, 'dx_m': None, 'dy_m': None}]
+    assert build['parts'] == [{'part_id': 'B1', 'dz_m': 0.0008, 'dx_m': None, 'dy_m': None}]
     json.dumps(build, allow_nan=False)
 
 
@@ -144,7 +144,7 @@ def test_유한한_숫자가_아니면_못_잰_값(bad):
     log.start_run('d', 1)
     log.record_placed('B1')
     log.record_measure('B1', bad, bad, bad)
-    assert log.finish('DONE')['blocks'][0] == {'block_id': 'B1', 'dz_m': None, 'dx_m': None, 'dy_m': None}
+    assert log.finish('DONE')['parts'][0] == {'part_id': 'B1', 'dz_m': None, 'dx_m': None, 'dy_m': None}
 
 
 def test_build_1_요약_칸과_단위():
@@ -158,10 +158,10 @@ def test_build_1_요약_칸과_단위():
     log.count_stop()
     clock.now += 742.5
     build = log.finish('STOPPED')
-    assert build == {'schema': 'build/1', 'run_id': run_id, 'design_id': '001_CHAIR_BENCH_V001', 'result': 'STOPPED',
+    assert build == {'schema': 'build/2', 'run_id': run_id, 'design_id': '001_CHAIR_BENCH_V001', 'result': 'STOPPED',
                      'placed': 2, 'total': 18, 'duration_s': 742.5, 'stop_count': 2,
-                     'blocks': [{'block_id': 'B1', 'dz_m': 0.0003, 'dx_m': 0.0001, 'dy_m': -0.0002},
-                                {'block_id': 'B2', 'dz_m': None, 'dx_m': None, 'dy_m': None}]}
+                     'parts': [{'part_id': 'B1', 'dz_m': 0.0003, 'dx_m': 0.0001, 'dy_m': -0.0002},
+                                {'part_id': 'B2', 'dz_m': None, 'dx_m': None, 'dy_m': None}]}
 
 
 def test_같은_블록을_다시_놓아도_한_번만_센다():
@@ -270,8 +270,8 @@ def test_이전_run의_파일_열기가_늦게_성공해도_새_run_줄이_섞�
     log.record_placed('B1')
     gate.set()
     log.finish('DONE')
-    assert [(r['kind'], r['block_id']) for r in rows(tmp_path / f'{old}.csv')] == [('start', ''), ('placed', 'A1'), ('end', '')]
-    assert [(r['kind'], r['block_id']) for r in rows(tmp_path / f'{new}.csv')] == [('start', ''), ('placed', 'B1'), ('end', '')]
+    assert [(r['kind'], r['part_id']) for r in rows(tmp_path / f'{old}.csv')] == [('start', ''), ('placed', 'A1'), ('end', '')]
+    assert [(r['kind'], r['part_id']) for r in rows(tmp_path / f'{new}.csv')] == [('start', ''), ('placed', 'B1'), ('end', '')]
 
 
 def test_쓰기가_밀려_큐가_차도_부르는_쪽은_안_막힌다(tmp_path, monkeypatch):
@@ -345,8 +345,8 @@ def test_정상_완료_기록과_요약(tmp_path):
     assert m.run_id == run_id and io.states[-1]['run_id'] == run_id          # 끝난 직후에도 화면에 남는다
     b = m.last_build
     assert (b['result'], b['placed'], b['total'], b['stop_count']) == ('DONE', 11, 11, 0) and b['run_id'] == run_id
-    assert [x['block_id'] for x in b['blocks']] == IDS and all(x['dz_m'] == 0.0 for x in b['blocks'])
-    assert all(x['dx_m'] is None and x['dy_m'] is None for x in b['blocks'])  # 가짜 io 는 dx · dy 를 못 잼
+    assert [x['part_id'] for x in b['parts']] == IDS and all(x['dz_m'] == 0.0 for x in b['parts'])
+    assert all(x['dx_m'] is None and x['dy_m'] is None for x in b['parts'])  # 가짜 io 는 dx · dy 를 못 잼
     got = rows(csv_of(tmp_path, m))
     assert got[0]['kind'] == 'start' and got[0]['value'] == '11' and got[-1]['kind'] == 'end' and got[-1]['value'] == 'DONE'
     assert sum(r['kind'] == 'placed' for r in got) == 11 and sum(r['kind'] == 'dz_mm' for r in got) == 11

@@ -19,7 +19,7 @@ from d2_task.task_manager import TaskManager
 from test_scatter_connect import SCATTER_CFG, ScatterIO, calls, start
 from test_task_manager import SAFE_OK, SAFE_STOP, drive, picks, seen
 
-STAND = {'block_id': '003_DESK_STAND_V000_LEG_001_01', 'grasp': 'STAND_SHORT', 'place_pose': ((0.43, -0.07, 0.04), (0, 0, 0, 1))}
+STAND = {'part_id': '003_DESK_STAND_V000_LEG_001_01', 'grasp': 'STAND_SHORT', 'place_pose': ((0.43, -0.07, 0.04), (0, 0, 0, 1))}
 EDGE = dict(STAND, grasp='EDGE_LONG')
 FAR = dict(x=0.50, y=0.28)            # 빈 자리(설정 1번 · 2번)와 떨어진 눕힌 블록 자리
 
@@ -42,7 +42,7 @@ def test_세움_목표는_FLAT_SHORT로_집어_설정의_빈_자리에_세우는
     r = flow().prepare(STAND, response(c), allow_reorient=True)
     assert r['status'] == 'REORIENT' and r['spot'] == 0
     req, spot = r['request'], CFG['spare_spots'][0]
-    assert (req['block_id'], req['supply_slot'], req['grasp'], req['reorient']) == (STAND['block_id'], '', 'FLAT_SHORT', True)
+    assert (req['part_id'], req['supply_slot'], req['grasp'], req['reorient']) == (STAND['part_id'], '', 'FLAT_SHORT', True)
     assert req['pick_pose'] == block_pose(CFG, 'THICKNESS', c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
     assert req['place_pose'] == block_pose(CFG, 'LENGTH', spot['yaw_deg'], spot['x_m'], spot['y_m'],
                                            CFG['table_z_m'] + CFG['block_actual_m'][0])
@@ -109,7 +109,7 @@ def stand_run(find_script, allow_reorient=True):
     m, io = make(allow_reorient)
     io.find_script = list(find_script)
     start(m)
-    m.planner.blocks[0]['grasp'] = 'STAND_SHORT'
+    m.planner.parts[0]['grasp'] = 'STAND_SHORT'
     return m, io
 
 
@@ -124,9 +124,9 @@ def test_세우기_성공은_조립_기록_없이_재관측으로_이어진다()
     m.run_once()                                                         # 세우기 성공
     assert m.state == 'SELECT' and m.placed is None and 'VERIFY' not in seen(io)
     drive(m, 'VERIFY')                                                   # 다시 보고 방금 세운 블록을 일반 집기로
-    assert len(calls(io, 'find_blocks')) == 2 and m.placed == m.planner.blocks[0]['block_id']
+    assert len(calls(io, 'find_blocks')) == 2 and m.placed == m.planner.parts[0]['part_id']
     assert m.goal.get('reorient') is None and m.goal['grasp'] == 'STAND_SHORT'
-    assert [p[0] for p in picks(io)] == [m.planner.blocks[0]['block_id']] * 2      # 세우기도 같은 목표 block_id
+    assert [p[0] for p in picks(io)] == [m.planner.parts[0]['part_id']] * 2      # 세우기도 같은 목표 part_id
 
 
 def test_세운_뒤에도_후보가_없으면_두_번째_세우기_없이_no_match_block():
@@ -151,7 +151,7 @@ def test_조회_중_정지가_끼면_세우기_요청을_적용하지_않는다(
 
     io.find_script = [stop_then_answer]
     start(m)
-    m.planner.blocks[0]['grasp'] = 'STAND_SHORT'
+    m.planner.parts[0]['grasp'] = 'STAND_SHORT'
     drive(m, 'STOPPED')
     assert not picks(io) and m.goal is None and not m._reoriented
 
@@ -182,7 +182,7 @@ def test_잘못된_spare_spots는_세우기가_꺼져_있으면_일반_집기를
     m.on_gripper({'grasped': False})
     start(m)
     drive(m, 'DONE')
-    assert m.last_build['placed'] == len(m.planner.blocks)
+    assert m.last_build['placed'] == len(m.planner.parts)
 
 
 def test_잘못된_spare_spots는_세우려는_순간_요청_없이_ERROR():
@@ -193,6 +193,6 @@ def test_잘못된_spare_spots는_세우려는_순간_요청_없이_ERROR():
     m.on_gripper({'grasped': False})
     io.find_script = [LYING_ONLY]
     start(m)
-    m.planner.blocks[0]['grasp'] = 'STAND_SHORT'
+    m.planner.parts[0]['grasp'] = 'STAND_SHORT'
     drive(m, 'ERROR')
     assert not picks(io) and 'spare_spots' in io.states[-1]['message']

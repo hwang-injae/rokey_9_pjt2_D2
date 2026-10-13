@@ -4,15 +4,15 @@
 웹 화면 · 음성은 웹 PC 에 있고 다리(bridge)가 ROS 이름 그대로 대신 부른다(E-26~E-28). 이 노드는 MQTT 를 모른다.
 받는 것: /d2/hmi/command (HmiCommand 서비스), /d2/hmi/intent (JSON intent/1), /d2/safety/state (JSON safety_state/1),
         /d2/gripper/state (JSON gripper_state/1), /d2/hmi/alive (웹 연결 신호 — 파라미터 monitor_hmi 가 참일 때 감시, 기본 참)
-제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = blocks/2.0 글자, 응답 = check_result/2.0 글자)
+제공하는 것: /d2/task/check_design (JsonQuery — 검사 묶음 DesignChecker, 요청 = parts/3.0 글자, 응답 = check_result/3.0 글자)
 부르는 것: /d2/motion/move_to (MoveTo), /d2/vision/check_progress (CheckProgress), /d2/motion/pick_place (액션 PickPlace),
         /d2/safety/stop (StopRequest — 시간 초과 · Ctrl+C 때 먼저 정지 요청),
         /d2/vision/scan_capture · scan_infer (JsonQuery — 촬영 점군 수집과 추론),
-        /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/1 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
-내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/1.1) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
-        /d2/task/scan_result (JSON scan_result/1.2 — 구조 검사·저장은 HMI에서 진행)
+        /d2/hmi/save_build (JsonQuery — 끝난 조립의 build/2 요약, 저장이 확인될 때까지 TaskManager 가 들고 있고 여기서 비동기로 보낸다)
+내보내는 것: /d2/task/state (JSON state/1), /d2/task/progress (JSON progress/2.0) — 늦게 붙는 쪽(다리)도 마지막 값을 받게 TRANSIENT_LOCAL
+        /d2/task/scan_result (JSON scan_result/2.0 — 구조 검사·저장은 HMI에서 진행)
 기록(CSV): ROS 파라미터 log_dir 아래 <run_id>.csv — 기본은 홈 아래 d2_data/runs(저장소 밖), `~` 는 홈으로 바뀐다. 빈 값을 주면 파일 기록이 꺼지고 run_id 만 만든다
-설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/2.0) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
+설계 조회: 설계 선택 때(출발은 받아 둔 설계, E-55 ①) /d2/hmi/get_design (JsonQuery, design/3.0) 을 비동기로 부르고 timeout.service_s 안에 답이 없으면 실패로 본다.
         원격 조회가 실패해도 로컬 파일로 몰래 대신하지 않는다. 웹 없이 개발할 때만 파라미터 design_source:=local 로 명시하고
         recipe_dir 아래 <design_id>_recipe.json(구조) · _placements.csv(조립 방법)를 읽는다(E-69).
         design_source 는 설계 읽기만 정한다. 웹 연결 감시는 따로 monitor_hmi 로 끈다(웹 없이 개발할 때 -p monitor_hmi:=false, E-62).
@@ -40,7 +40,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
-from d2_task.blocks_to_recipe import BlocksToRecipe
+from d2_task.parts_to_recipe import PartsToRecipe
 from d2_task.build_sender import BuildSender
 from d2_task.design_checker import DesignChecker
 from d2_task.recipe_document import RecipeDocument
@@ -96,7 +96,7 @@ class TaskNode(Node):
                                    monitor_hmi=bool(self.get_parameter('monitor_hmi').value),
                                    open_width_m=0.0)       # 0 = pick_place 가 잡기마다 robot.yaml grasp_open_pick_m 을 쓴다(한 값으로 고정하면 잡기가 섞일 때 PLAN_FAILED, 10/10 W130)
         self.checker = DesignChecker(cfg)
-        self.checker.blocks_to_recipe = BlocksToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
+        self.checker.parts_to_recipe = PartsToRecipe(self.checker.grasp_options, [v * 1000.0 for v in cfg['block_size_m']]).convert     # 변환기 ①(한세교 W110) — 손가락 규칙은 검사 묶음 것을 받아 쓴다
         self._active = None                       # 진행 중인 pick_place 목표 핸들(취소용)
         self._active_lock = threading.Lock()
         self.move_cli = self.create_client(MoveTo, '/d2/motion/move_to', callback_group=cb)
@@ -171,7 +171,7 @@ class TaskNode(Node):
 
     # ---------- 결과 저장(save_build) ----------
     def _call_save(self, summary):
-        """build/1 요약을 /d2/hmi/save_build 로 비동기로 보낸다. 반환: future."""
+        """build/2 요약을 /d2/hmi/save_build 로 비동기로 보낸다. 반환: future."""
         req = JsonQuery.Request()
         req.request_json = json.dumps(summary, ensure_ascii=False, allow_nan=False)
         return self.save_cli.call_async(req)
@@ -204,7 +204,7 @@ class TaskNode(Node):
             return False, 'ERROR', None
 
     def _local_design(self, design_id):
-        """개발용 레시피(_recipe.json + _placements.csv 두 파일)를 design/2.0 로컬 파일 모양(design_id · recipe · placements)으로 읽는다. 파일·형식 오류는 실패 반환."""
+        """개발용 레시피(_recipe.json + _placements.csv 두 파일)를 design/3.0 로컬 파일 모양(design_id · recipe · placements)으로 읽는다. 파일·형식 오류는 실패 반환."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir or not design_id or any(c in design_id for c in '/\\') or design_id.startswith('.'):
             return False, '', None
@@ -268,7 +268,7 @@ class TaskNode(Node):
         return self._scan_query(self.find_cli, dict(run_id=run_id), should_abort, default_reason='ERROR')
 
     def publish_scan_result(self, body):
-        """완성된 scan_result/1.2(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
+        """완성된 scan_result/2.0(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
         self.scan_pub.publish(String(data=json.dumps(body, ensure_ascii=False, allow_nan=False)))
 
     def _call(self, client, request, should_abort, timeout_s):
@@ -316,21 +316,21 @@ class TaskNode(Node):
         res, why = self._call(self.stop_cli, req, lambda: not rclpy.ok(), self.service_s)
         return (False, why or 'ERROR') if res is None else (res.success, res.message)
 
-    def check_progress(self, block_ids, should_abort):
+    def check_progress(self, part_ids, should_abort):
         """진행 확인을 service_s 초 안에 받는다. 반환: (성공, reason, 블록별 관측). 중단 · 시간 초과 · 실패 때 관측은 빈 dict."""
         req = CheckProgress.Request()
         req.design_id = self.manager.design_id     # 이름에서 _B 앞을 자르면 새 역할 이름(BACK · BEAM)이 설계 ID 를 망가뜨린다(E-52)
         req.run_id = self.manager.run_id or ''      # 손목 블록 인식은 run_id가 바뀔 때 설계를 다시 읽는다(E-60 ②). 조립 · 스캔 시작 때 정해지고 한 판 동안 같다
-        req.block_ids = list(block_ids)
+        req.part_ids = list(part_ids)
         res, why = self._call(self.check_cli, req, should_abort, self.service_s)
         if res is None:
             return False, why or 'ERROR', {}
         if not res.success:
             return False, res.reason, {}
-        n = len(res.block_ids)
+        n = len(res.part_ids)
         if not all(len(a) == n for a in (res.states, res.dx_m, res.dy_m, res.dz_m, res.top_z_m)):
             return False, 'ERROR', {}               # 결과 배열 길이가 서로 다르면 어느 칸이 어느 블록인지 모른다
-        rows = {res.block_ids[i]: {'state': res.states[i], 'dx_m': res.dx_m[i], 'dy_m': res.dy_m[i],
+        rows = {res.part_ids[i]: {'state': res.states[i], 'dx_m': res.dx_m[i], 'dy_m': res.dy_m[i],
                                    'dz_m': res.dz_m[i], 'top_z_m': res.top_z_m[i]} for i in range(n)}
         return True, '', rows
 
@@ -346,7 +346,7 @@ class TaskNode(Node):
         if should_abort():
             return False, 'STOPPED'
         g = PickPlace.Goal()
-        g.block_id, g.supply_slot, g.grasp = goal['block_id'], goal['supply_slot'], goal['grasp']
+        g.part_id, g.supply_slot, g.grasp = goal['part_id'], goal['supply_slot'], goal['grasp']
         g.pick_pose, g.place_pose = to_pose(goal['pick_pose']), to_pose(goal['place_pose'])
         g.open_width_m = float(goal.get('open_width_m', 0.0))              # 흩뿌림만 실제 폭(m). 0 = robot.yaml grasp_open_pick_m (공급 칸 목표는 0)
         g.obstacles = [to_pose(p) for p in goal.get('obstacles', ())]      # 흩뿌림만(E-53 B). 공급 칸 목표에는 없다 → 빈 목록(동작 쪽이 칸 모드에서는 안 쓴다)
@@ -413,11 +413,11 @@ class TaskNode(Node):
         sent.wait(CANCEL_WAIT_S)
 
     def publish_state(self, msg):
-        """/d2/task/state 로 state/1 JSON 을 보낸다."""
+        """/d2/task/state 로 state/2 JSON 을 보낸다."""
         self.state_pub.publish(String(data=json.dumps(msg, ensure_ascii=False, allow_nan=False)))
 
     def publish_progress(self, msg):
-        """/d2/task/progress 로 progress/1.1 JSON 을 보낸다(안 잰 값은 이미 null)."""
+        """/d2/task/progress 로 progress/2.0 JSON 을 보낸다(안 잰 값은 이미 null)."""
         self.progress_pub.publish(String(data=json.dumps(msg, ensure_ascii=False, allow_nan=False)))
 
 

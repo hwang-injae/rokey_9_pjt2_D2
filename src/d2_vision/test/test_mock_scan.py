@@ -1,7 +1,7 @@
 """MockScan 시험 (pytest, ROS · 로봇 없음) — 가짜 scan_capture · scan_infer · find_blocks 응답이 작업 관리자 검사를 통과하는 모양인지.
 
 작업 관리자(task_manager._scan_capture · _scan_infer)가 응답에서 확인하는 칸을 여기서 그대로 확인한다(d2_task 를 import 하지 않고).
-변환기 ②(d2_task RecipeToBlocks)와 같은 blocks 를 내는지는 d2_task 를 읽을 수 있을 때만 비교한다(없으면 건너뜀).
+변환기 ②(d2_task RecipeToParts)와 같은 blocks 를 내는지는 d2_task 를 읽을 수 있을 때만 비교한다(없으면 건너뜀).
 레시피는 저장소 src/recipe_manager/recipes 의 기본 설계 두 파일(E-69 _recipe.json + _placements.csv)을 읽는다. 파일은 pytest 임시 폴더에 쓴다.
 """
 import json
@@ -40,14 +40,14 @@ def load(design_id):
 def task_accepts_infer(body):
     """task_manager._scan_infer 의 형식 검사를 그대로 옮긴 것(+ PR #82 의 cloud_path: 있으면 비지 않은 글자). 틀리면 AssertionError."""
     blocks = body['blocks']
-    assert body.get('ok') is True and isinstance(blocks, dict) and blocks.get('schema') == 'blocks/1'
+    assert body.get('ok') is True and isinstance(blocks, dict) and blocks.get('schema') == 'blocks/2'
     assert all(isinstance(blocks.get(k), str) and blocks[k] for k in ('design_id', 'family'))
     rows = blocks['blocks']
     assert isinstance(rows, list) and rows
     orders = set()
     for b in rows:
-        assert not isinstance(b['order'], bool) and isinstance(b['order'], int) and b['order'] > 0 and b['order'] not in orders
-        orders.add(b['order'])
+        assert not isinstance(b['scan_num'], bool) and isinstance(b['scan_num'], int) and b['scan_num'] > 0 and b['scan_num'] not in orders
+        orders.add(b['scan_num'])
         assert b.get('ori') in ('x', 'y', 'xe', 'ye', 'zx', 'zy') and isinstance(b.get('inferred', False), bool)
         assert all(not isinstance(b[k], bool) and isinstance(b[k], (int, float)) for k in ('x', 'y', 'z'))
     count = body['inferred_count']
@@ -154,32 +154,33 @@ def test_infer_result_failures(tmp_path):
 
 
 def test_bench_blocks_match_ird_example():
-    """벤치 첫 블록 = IRD 6장 blocks/1 예시({"order":1,"x":-25,"y":0,"z":0,"ori":"y"}) — 설계 좌표 mm, z = 아랫면."""
+    """벤치 첫 블록 = IRD 6장 blocks/2 예시({"order":1,"x":-25,"y":0,"z":0,"ori":"y"}) — 설계 좌표 mm, z = 아랫면."""
     s, r = load('001_CHAIR_BENCH_V000')
     first = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)['blocks'][0]
-    assert (first['order'], first['x'], first['y'], first['z'], first['ori'], first['inferred']) == (1, -25.0, 0.0, 0.0, 'y', False)
+    assert (first['scan_num'], first['x'], first['y'], first['z'], first['ori'], first['inferred']) == (1, -25.0, 0.0, 0.0, 'y', False)
 
 
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
-    """변환기 ②(d2_task RecipeToBlocks)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
-    변환기 ②는 blocks/2.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/1 이라 order · x · y · z · ori 만 비교한다."""
+    """변환기 ②(d2_task RecipeToParts)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
+    변환기 ②는 parts/3.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 order · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:
-        rtb = pytest.importorskip('d2_task.recipe_to_blocks')
+        rtb = pytest.importorskip('d2_task.recipe_to_parts')
     finally:
         sys.path.remove(str(ROOT / 'src/d2_task'))
-    want = rtb.RecipeToBlocks('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
+    want = rtb.RecipeToParts('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
     got = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)
-    keys = ('order', 'x', 'y', 'z', 'ori')
-    assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['blocks']]
-    assert (got['design_id'], got['family'], len(got['blocks'])) == (want['design_id'], want['family'], n)
+    keys = ('x', 'y', 'z', 'ori')
+    assert [b['scan_num'] for b in got['blocks']] == [b['order'] for b in want['parts']]     # 가짜 스캔 번호 = 조립 순서
+    assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['parts']]
+    assert (got['design_id'], len(got['blocks'])) == (want['design_id'], n)
 
 
 def test_points_follow_origin_yaw():
     """설계 (0,0) 윗면 점이 assembly_origin 으로 간다(yaw 0.3° 돌림 포함)."""
-    blocks = {'blocks': [{'order': 1, 'x': 0.0, 'y': 0.0, 'z': 0.0, 'ori': 'x', 'inferred': False}]}
+    blocks = {'blocks': [{'scan_num': 1, 'x': 0.0, 'y': 0.0, 'z': 0.0, 'ori': 'x', 'inferred': False}]}
     pts = blocks_to_points(blocks, ORIGIN, BLOCK_MM)
     assert np.allclose(pts[:, :2].mean(axis=0), [ORIGIN['x_m'], ORIGIN['y_m']], atol=1e-4)
     assert np.allclose(pts[:, 2], ORIGIN['z_m'] + 0.015)

@@ -61,7 +61,7 @@ def plan_jobs(cfg, recipes, slots=None, only=None):
             cand = [k + 1 for k, st in enumerate(cfg['supply_slots'])
                     if st.get('grasp', b['grasp']) == b['grasp'] and st.get('block_up', 'THICKNESS') == up]
             if not cand:
-                raise ValueError(f'{b["block_id"]}: {b["grasp"]} 공급 칸이 robot.yaml 에 없다')
+                raise ValueError(f'{b["part_id"]}: {b["grasp"]} 공급 칸이 robot.yaml 에 없다')
             slot = cand[turn.get(b['grasp'], 0) % len(cand)]
             turn[b['grasp']] = turn.get(b['grasp'], 0) + 1
         if only and i + 1 not in only:
@@ -75,13 +75,13 @@ def grasp_test_jobs(cfg, slots, repeat):
     """잡기 폭 시험용 목표: 공급 칸마다 그 칸의 잡기로 집어 같은 자리에 다시 놓는다 (레시피 없이 6가지 잡기를 다 본다).
 
     입력: slots = 칸 번호 목록(1부터), repeat = 칸마다 반복 횟수. 반환: plan_jobs 와 같은 (블록, 칸, 중심, 회전) 목록.
-    block_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면에 쥔 블록이 안 붙는다(UNKNOWN_BLOCK). 같은 자리로 돌아오므로 pick_place 가 이 앞글자만 예외로 진행한다.
+    part_id 는 GRASP_P<칸>_<회> — 레시피에 없어 장면에 쥔 블록이 안 붙는다(UNKNOWN_BLOCK). 같은 자리로 돌아오므로 pick_place 가 이 앞글자만 예외로 진행한다.
     """
     jobs = []
     for slot in slots:
         center, rot = slot_block_pose(cfg, slot)
         for k in range(1, repeat + 1):
-            b = {'block_id': f'GRASP_P{slot}_{k}', 'grasp': cfg['supply_slots'][slot - 1]['grasp'],
+            b = {'part_id': f'GRASP_P{slot}_{k}', 'grasp': cfg['supply_slots'][slot - 1]['grasp'],
                  'center': center, 'rot': rot, 'quat': quat_from_axes(*(column(rot, i) for i in range(3)))}
             jobs.append((b, slot, center, rot))
     return jobs
@@ -95,10 +95,10 @@ def show(cfg, jobs):
         try:
             pxyz, pq, lxyz, lq, _ = pick_place_tcp(cfg, center, rot, b['center'], b['rot'], b['grasp'], slot)
         except ValueError as e:
-            print(f'{b["block_id"]:<10} 계산 실패: {e}')
+            print(f'{b["part_id"]:<10} 계산 실패: {e}')
             ok = False
             continue
-        print(f'{b["block_id"]:<10} {b["grasp"]:<12} {slot:>2}  ({", ".join(f"{v:.3f}" for v in pxyz)})'.ljust(52) +
+        print(f'{b["part_id"]:<10} {b["grasp"]:<12} {slot:>2}  ({", ".join(f"{v:.3f}" for v in pxyz)})'.ljust(52) +
               f'{close_angle_deg(pq):6.1f}  ({", ".join(f"{v:.3f}" for v in lxyz)})'.ljust(28) + f'{close_angle_deg(lq):6.1f}')
     return ok
 
@@ -132,10 +132,10 @@ def choose_recipe(folder):
     return files[int(k) - 1]
 
 
-def stale_scene_objects(node, block_ids, wait):
+def stale_scene_objects(node, part_ids, wait):
     """MoveIt 장면에서 이번 실행과 무관한 물체 이름 목록 — 다른 블록 blk_*, 쥔 상자 held (world·붙은 것 모두).
 
-    입력: block_ids = 장면에 있어도 되는 block_id 집합(--steps 로 이어 쌓을 때 앞 순번), wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
+    입력: part_ids = 장면에 있어도 되는 part_id 집합(--steps 로 이어 쌓을 때 앞 순번), wait = future 기다리는 함수. get_planning_scene 이 없거나 답이 없으면
     빈 목록(점검을 건너뛴다 — 장면 관리가 없으면 pick_place 가 따로 알린다). 장면은 읽기만 한다.
     """
     cli = node.create_client(GetPlanningScene, 'get_planning_scene')
@@ -146,7 +146,7 @@ def stale_scene_objects(node, block_ids, wait):
     if r is None:
         return []
     names = [o.id for o in r.scene.world.collision_objects] + [a.object.id for a in r.scene.robot_state.attached_collision_objects]
-    return sorted({n for n in names if n == 'held' or (n.startswith('blk_') and n[4:] not in block_ids)})
+    return sorted({n for n in names if n == 'held' or (n.startswith('blk_') and n[4:] not in part_ids)})
 
 
 def main():
@@ -245,7 +245,7 @@ def main():
         before = set()
         if recipes and args.steps:
             first = min(parse_list(args.steps))
-            before = {b['block_id'] for i, b in enumerate(b for design, _ in layout_designs(cfg, recipes) for b in design) if i + 1 < first}
+            before = {b['part_id'] for i, b in enumerate(b for design, _ in layout_designs(cfg, recipes) for b in design) if i + 1 < first}
         stale = stale_scene_objects(node, before, wait)
         if stale:
             print(f'[오류] 장면에 앞 실행 물체가 남아 있다: {", ".join(stale)}\n'
@@ -255,17 +255,17 @@ def main():
         if not go_home():
             return 1
         for b, slot, center, rot in jobs:
-            goal = PickPlace.Goal(block_id=b['block_id'], supply_slot=str(slot), grasp=b['grasp'],
+            goal = PickPlace.Goal(part_id=b['part_id'], supply_slot=str(slot), grasp=b['grasp'],
                                   pick_pose=make_pose(center, quat_from_axes(*(column(rot, k) for k in range(3)))),
                                   place_pose=make_pose(b['center'], b['quat']))
-            print(f'===== {b["block_id"]} ({b["grasp"]}, 칸 {slot})')
+            print(f'===== {b["part_id"]} ({b["grasp"]}, 칸 {slot})')
             gh = wait(ac.send_goal_async(goal, feedback_callback=lambda m: print(f'   {m.feedback.step}')), 10.0)
             if gh is None or not gh.accepted:
                 print('[오류] 목표를 받지 않았다')
                 break
             r = wait(gh.get_result_async()).result
             gh = None
-            rows.append([b['block_id'], b['grasp'], slot, r.success, r.reason,
+            rows.append([b['part_id'], b['grasp'], slot, r.success, r.reason,
                          '' if math.isnan(r.grip_width_m) else round(r.grip_width_m * 1000, 1), round(r.duration_s, 1)])
             print(f'   -> {"성공" if r.success else "실패 " + r.reason} ({r.duration_s:.1f} s)')
             if not r.success:
@@ -287,7 +287,7 @@ def main():
                 out = os.path.join(folder, f'run_{model_id}_{time.strftime("%m%d%H%M")}.csv')
                 with open(out, 'w', newline='') as f:
                     w = csv.writer(f)
-                    w.writerow(['block_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
+                    w.writerow(['part_id', 'grasp', 'slot', 'success', 'reason', 'grip_width_mm', 'duration_s'])
                     w.writerows(rows)
             ok_n = sum(1 for r in rows if r[3])
             print(f'결과: {ok_n}/{len(jobs)} 성공, 전체 {time.monotonic() - t_start:.0f} s, 기록 {out}')

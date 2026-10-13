@@ -1,7 +1,7 @@
 """손목 블록 인식 노드 (wrist_block) — IRD 4.2 `/d2/vision/check_progress` · `scan_capture` · `scan_infer` · `find_blocks`
 · 4.1 `camera_status/1` · `wrist_image` (W041 · W140 E-52 → E-69 · W115 · W086 · W148).
 
-작업 관리자가 관측 자세에서 `check_progress`(design_id · block_ids)를 부르면:
+작업 관리자가 관측 자세에서 `check_progress`(design_id · part_ids)를 부르면:
   손목 깊이 영상 10장(중앙값) + 로봇 자세(TF base_link → rg2_tcp, 10/9 E-70 ③) + hand-eye 보정값(rg2_tcp 틀) → base 점군 → BlockChecker(block_checker.py)
   → 블록마다 state(present·absent·occluded·unknown) · top_z_m · dz_m (dx·dy 는 1차 NaN) 로 답한다.
 카메라 연결 신호 `/d2/vision/camera_status` 를 2 Hz 로 낸다(마지막 프레임 시각).
@@ -19,7 +19,7 @@
       (capture_scene 과 같은 칸 — intrinsics_px · depth_unit · T_base2cam_m(m) · tcp + run_id · index)을 남긴다. 같은 자세 다시 찍으면 덮어씀.
       컬러는 요청 뒤 들어온 것이 있을 때만(답 시간이 늘지 않게 기다리지 않음). 실패는 경고 로그만. 스캔이 저절로 구조물 사진 자료가 되게.
   `/d2/vision/scan_infer`(JsonQuery) {"run_id"} → infer() → `<scan_dir>/<run_id>/` 에 color.png · cloud.ply(≤ 2 MB) · blocks.json
-      → {"ok":true,"blocks":blocks/1,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
+      → {"ok":true,"blocks":blocks/2,"inferred_count","image_path","cloud_path"}. 설계 이름 scan_<family>_<번호>(IRD 2장) —
       family 는 recipe_dir 의 기본 설계(이름에 CHAIR · DESK) 중 블록 수 · 외곽이 가장 가까운 것, 못 구하면 unknown.
       번호 = scan_dir 에 이미 있는 blocks.json 수 + 1(노드를 다시 켜도 이름이 겹치지 않게). 추론이 끝난 run_id 는 메모리에서 지운다.
   `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + TF 자세 × 보정 → BlockFinder(block_finder.py)
@@ -29,19 +29,19 @@
       (윤곽 · 번호 · up · yaw)를 그린 그림 한 장(IRD E-67 '때만 내도 됨'). 매 프레임 내지 않는다.
 
 설계 · 블록 이름 (E-52, 10/7)
-  요청 design_id 칸으로 설계를 고른다(블록 이름에서 잘라 내지 않는다). block_ids 는 전체 블록 이름
+  요청 design_id 칸으로 설계를 고른다(블록 이름에서 잘라 내지 않는다). part_ids 는 전체 블록 이름
   `<design_id>_<역할>_<부품 3자리>_<블록 2자리>`(예 001_CHAIR_BENCH_V000_LEG_001_01)를 그대로 받아 레시피가 만든 이름과 맞춘다.
   design_id 칸이 비면 설계를 고를 수 없어 실패로 답한다(success=false, reason=ERROR — 아래 '실패 때').
   한 요청은 한 설계다 — 그 설계 레시피에 없는 블록은 그 블록만 unknown.
 
 설계 읽기 — task 와 같은 파라미터 design_source (10/7 민범진 · 한석형 합의). **task 와 손목에 같은 design_source 값을 준다**
   (다르면 task 는 웹 설계로 쌓는데 손목은 파일 설계로 보는 식으로 어긋난다).
-  remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/2.0)으로 받는다 — 생성 · 스캔 설계도 같은 길.
-                design/2.0 의 recipe(구조) + placements(조립 방법)를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
-                팀 공용 `d2_motion.motion_math.recipe_blocks()` 로 base 블록 목록을 만든다. 설계마다 · 판(run)마다 받아 캐시(실패는 캐시 안 함).
+  remote(기본)  설계를 늘 `/d2/hmi/get_design`(JsonQuery, 요청 {"design_id"} → 응답 design/3.0)으로 받는다 — 생성 · 스캔 설계도 같은 길.
+                design/3.0 의 recipe(구조) + placements(조립 방법)를 load_recipe 와 같은 모양으로 붙여(block_checker.recipe_from_design)
+                팀 공용 `d2_motion.motion_math.recipe_parts()` 로 base 블록 목록을 만든다. 설계마다 · 판(run)마다 받아 캐시(실패는 캐시 안 함).
                 제한 시간 robot.yaml timeout.service_s. 실패하면 로컬 파일로 대신하지 않고 check_progress 를 실패로 답한다(아래).
   local         파일만(웹 없이 개발할 때 명시): `<recipe_dir>/<design_id>_recipe.json`(구조, E-69 — 같은 폴더 `_placements.csv` 도 읽음)을
-                `load_recipe()` · `recipe_blocks()` 로(설계마다 · 판마다 캐시).
+                `load_recipe()` · `recipe_parts()` 로(설계마다 · 판마다 캐시).
   캐시는 한 판(run) 안에서만(E-55 ① 10/7 PL — 기본 설계는 같은 design_id 로 다시 등록될 수 있다): check_progress 요청의 run_id 가
   지난 요청과 다르면 새 판으로 보고 그 설계를 다시 읽는다(E-60 ②, 10/10 W157). 같은 run_id 면 블록을 몇 개 묻든(전부를 묻는 시작 확인도)
   읽어 둔 설계를 쓴다 — '블록 전부를 묻는 요청 = 새 판'이라고 짐작하지 않는다. 다시 읽기가 실패하면 지난 판의 설계로 답하지 않는다.
@@ -92,7 +92,7 @@ NaN 규칙(CheckProgress.srv · IRD 5장 W121 C-5): dx·dy 는 1차 늘 NaN. dz_
   웹 없이 파일로(task 도 -p design_source:=local -p recipe_dir:=… 로 띄운다):
     ros2 run d2_vision wrist_block --ros-args -p design_source:=local -p recipe_dir:=src/recipe_manager/recipes
 시험 호출 (design_id 칸 + 전체 블록 이름):
-  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH_V000, block_ids: [001_CHAIR_BENCH_V000_LEG_001_01, 001_CHAIR_BENCH_V000_SEAT_001_03]}"
+  ros2 service call /d2/vision/check_progress d2_interfaces/srv/CheckProgress "{design_id: 001_CHAIR_BENCH_V000, part_ids: [001_CHAIR_BENCH_V000_LEG_001_01, 001_CHAIR_BENCH_V000_SEAT_001_03]}"
 스캔(촬영 자세마다 scan_capture → 마지막에 scan_infer) · 흩뿌림 찾기 · 검출 그림 보기:
   ros2 run d2_vision wrist_block --ros-args -p recipe_dir:=src/recipe_manager/recipes          (YOLO = 설치된 기본 모델)
   (ultralytics · 모델 없이 시험할 때만: … -p yolo_fallback:=true — 예비 마스크)
@@ -123,11 +123,11 @@ from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import String
 
 from d2_interfaces.srv import CheckProgress, JsonQuery
-from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_blocks
+from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_parts
 from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_depth_mm, recipe_from_design, recipe_path
 from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
 from d2_vision.design_cache import RunDesignCache
-# 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/1 은 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
+# 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/2 는 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
 from d2_vision.structure_scanner import StructureScanner, family_of, save_capture, save_preview, scan_response
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
@@ -276,7 +276,7 @@ class WristBlock(Node):
         return model
 
     def _load_bases(self):
-        """recipe_dir 의 기본 설계(이름에 CHAIR · DESK, 레시피 두 파일 `_recipe.json` + `_placements.csv`, E-69) → blocks/1 목록. scan_infer 가 family 를 고르는 데 쓴다(nearest_base).
+        """recipe_dir 의 기본 설계(이름에 CHAIR · DESK, 레시피 두 파일 `_recipe.json` + `_placements.csv`, E-69) → blocks/2 목록. scan_infer 가 family 를 고르는 데 쓴다(nearest_base).
         폴더가 비었거나 못 읽은 설계는 빼고 경고 — 하나도 없으면 스캔 family 는 unknown."""
         recipe_dir = self.get_parameter('recipe_dir').value
         if not recipe_dir:
@@ -293,7 +293,7 @@ class WristBlock(Node):
                     continue
                 bases.append(structure_to_blocks(*pair, design_id, family_of(design_id), 0))
             except (OSError, KeyError, TypeError, ValueError, IndexError) as e:
-                self.get_logger().warn('기본 설계 %s 를 blocks/1 로 못 바꿈: %s — 스캔 family 후보에서 뺀다' % (design_id, e))
+                self.get_logger().warn('기본 설계 %s 를 blocks/2 로 못 바꿈: %s — 스캔 family 후보에서 뺀다' % (design_id, e))
         self.get_logger().info('스캔 family 후보(기본 설계): %s' % [b['design_id'] for b in bases])
         return bases
 
@@ -314,7 +314,7 @@ class WristBlock(Node):
 
     def _local_checker(self, design_id):
         """design_source:=local — `<recipe_dir>/<design_id>_recipe.json`(구조 — load_recipe 가 옆 `_placements.csv` 도 붙임)
-        → recipe_blocks(robot.yaml, 레시피) → BlockChecker. block_id 는 조립 방법의 block_id 칸('<model_id>_<블록 이름>').
+        → recipe_parts(robot.yaml, 레시피) → BlockChecker. part_id 는 조립 방법의 part_id 칸('<model_id>_<블록 이름>').
         출력: (BlockChecker, '') 또는 (None, 'ERROR') — 파일 없음 · 이름 문자 이상 · 조립 방법 파일 없음 · 형식 틀림(옛 cad_* 포함) ·
         recipe_sha256 다름 · 블록 크기 다름. 바깥 영향: 파일 읽기 · 로그."""
         recipe_dir = self.get_parameter('recipe_dir').value
@@ -327,21 +327,21 @@ class WristBlock(Node):
         except (OSError, KeyError, TypeError, ValueError) as e:
             self.get_logger().error('레시피 %s 를 못 읽음(%s): %s' % (design_id, path, e))
             return None, 'ERROR'
-        self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.blocks)))
+        self.get_logger().info('레시피 %s (%s): 블록 %d개' % (design_id, path.name, len(chk.parts)))
         return chk, ''
 
     def _make_checker(self, recipe):
-        """레시피 dict(load_recipe 모양, mm) → 팀 공용 recipe_blocks(robot.yaml) → BlockChecker. 실패는 recipe_blocks 의 예외 그대로."""
+        """레시피 dict(load_recipe 모양, mm) → 팀 공용 recipe_parts(robot.yaml) → BlockChecker. 실패는 recipe_parts 의 예외 그대로."""
         o = self.cfg['assembly_origin']
-        return BlockChecker(recipe_blocks(self.cfg, recipe), (o['x_m'], o['y_m']),
+        return BlockChecker(recipe_parts(self.cfg, recipe), (o['x_m'], o['y_m']),
                             float(self.cfg['assembly_area_half_m']), self.cfg['block_actual_m'])
 
     def _remote_checker(self, design_id):
-        """/d2/hmi/get_design 으로 design/2.0 을 받아 BlockChecker 를 만든다. 출력: (BlockChecker, '') 또는 (None, 코드).
+        """/d2/hmi/get_design 으로 design/3.0 을 받아 BlockChecker 를 만든다. 출력: (BlockChecker, '') 또는 (None, 코드).
 
         요청 {"design_id"} → 최대 timeout.service_s 기다림(서비스 콜백 안이라 _call — 멀티스레드 실행기 + 재진입 그룹).
         실패 코드는 task_node.get_design 과 맞춘다: 서버 없음(지금 안 보임) → ERROR · 시간 초과(요청을 치움) → TIMEOUT ·
-        success=false → ERROR(서버 이유는 로그에만 — 10/7 합의) · JSON · design/2.0 형식(옛 design/1 은 거절) · 짝 해시 · 레시피 내용 오류 → ERROR.
+        success=false → ERROR(서버 이유는 로그에만 — 10/7 합의) · JSON · design/3.0 형식(옛 design/1 은 거절) · 짝 해시 · 레시피 내용 오류 → ERROR.
         로컬 파일로 몰래 대신하지 않는다. 바깥 영향: get_design 요청 하나 · 로그."""
         if not self.cli_design.service_is_ready():
             self.get_logger().error('get_design 서버가 없다(다리 · 웹?) — 설계 %s 를 못 받음 → ERROR' % design_id)
@@ -357,10 +357,10 @@ class WristBlock(Node):
             return None, 'ERROR'
         try:
             chk = self._make_checker(recipe_from_design(json.loads(res.response_json), design_id))
-        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/2.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError) as e:   # JSON 깨짐(ValueError) · design/3.0 형식 · 레시피 내용 — 바깥 입력이라 넓게 잡아 콜백이 죽지 않게
             self.get_logger().error('get_design 답으로 설계 %s 를 못 읽음: %s → ERROR' % (design_id, e))
             return None, 'ERROR'
-        self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.blocks)))
+        self.get_logger().info('설계 %s (get_design): 블록 %d개' % (design_id, len(chk.parts)))
         return chk, ''
 
     # ---------- 카메라 ----------
@@ -436,7 +436,7 @@ class WristBlock(Node):
     def _fill(self, res, ids, state='unknown', success=False, reason=''):
         """결과 배열을 요청 길이로 채운다(모두 같은 길이 — IRD 5장)."""
         n = len(ids)
-        res.block_ids = list(ids)
+        res.part_ids = list(ids)
         res.states = [state] * n
         res.dx_m, res.dy_m, res.dz_m, res.top_z_m = [NAN] * n, [NAN] * n, [NAN] * n, [NAN] * n
         res.success, res.reason = success, reason
@@ -444,13 +444,13 @@ class WristBlock(Node):
 
     def on_check(self, req, res):
         """check_progress 콜백. 입력 req.design_id(설계 이름 — 빈 값이면 ERROR) · req.run_id(조립 한 판의 ID — 바뀌면 설계를 다시 읽음, 빈 값 = 판 구분 없음) ·
-        req.block_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
+        req.part_ids(전체 블록 이름). 출력 res(배열은 모두 요청 길이).
 
         보정값 확인 → 설계 고르기 · 읽기(checker_for — remote 면 처음 보는 설계 · run_id 가 바뀐 판만 get_design) → 요청 뒤 새 깊이 프레임 n장 중앙값
         + TF 자세 → 점군 → BlockChecker → 답. 바깥 영향: get_design · 로그.
         실패: 보정값 없음 · design_id 칸이 빔 · 설계를 못 읽음 → ERROR(get_design 시간 초과만 TIMEOUT), 프레임 · TF 자세 없음 → TIMEOUT
         (모두 state unknown, 값 NaN)."""
-        ids = list(req.block_ids)
+        ids = list(req.part_ids)
         if self.T_tcp2c is None:              # 보정값이 없으면 설계를 받아도 답할 수 없다 — get_design 을 부르지 않는다
             self.get_logger().error('보정값이 없어 답할 수 없다 → ERROR')
             return self._fill(res, ids, reason='ERROR')
@@ -482,7 +482,7 @@ class WristBlock(Node):
         pts = depth_to_base_points(depth_m, self.intr, T_b2c, stride=2)
         results = checker.check(pts, ids)
 
-        res.block_ids = ids
+        res.part_ids = ids
         res.states = [r['state'] for r in results]
         res.dx_m = [r['dx_m'] for r in results]
         res.dy_m = [r['dy_m'] for r in results]
@@ -492,7 +492,7 @@ class WristBlock(Node):
         res.success, res.reason = True, ''
         # 로그에는 absent 때 보이는 면(작업면) 높이도 적는다 — 보정 기울기 진단용(10/7 박진용 실기: 윗면 −2.8 mm). 서비스 답은 IRD 5장대로 NaN
         self.get_logger().info('check_progress %s %d개 (점 %d, 손끝 z %.0f mm) → %s' % (
-            design_id, len(ids), len(pts), T_b2t[2, 3], {r['block_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
+            design_id, len(ids), len(pts), T_b2t[2, 3], {r['part_id']: (r['state'], None if np.isnan(r['top_z_m']) else round(r['top_z_m'] * 1000, 1)) for r in results}))
         return res
 
     # ---------- 스캔 · 흩뿌림 찾기 (JsonQuery) ----------

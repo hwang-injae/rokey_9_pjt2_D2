@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TaskManager 시험 (SDD 5장 상태표 · 7.1 실패 대응). ROS · 로봇 없이 가짜 io 로 돈다.
 
-레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/2.0 구조 + placements/2.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
+레시피는 한세교 LV1 벤치 11개(001_CHAIR_BENCH_V000, recipe/3.0 구조 + placements/3.0 조립 방법 두 파일, E-69), 설정은 실제 robot.yaml(공급 칸은 잡기마다 하나).
 '칸이 둘' 시험은 FLAT_SHORT 칸을 하나 더한 복사본을 쓴다.
 """
 import copy
@@ -21,9 +21,9 @@ SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
-RECIPE = _DOC.recipe              # 구조(recipe/2.0)
-PLACEMENTS = _DOC.placements      # 조립 방법(placements/2.0)
-IDS = [f'001_CHAIR_BENCH_V000_{s["block"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
+RECIPE = _DOC.recipe              # 구조(recipe/3.0)
+PLACEMENTS = _DOC.placements      # 조립 방법(placements/3.0)
+IDS = [f'001_CHAIR_BENCH_V000_{s["part_name"]}' for s in sorted(PLACEMENTS['steps'], key=lambda s: s['sequence'])]   # E-52 역할 블록 이름
 
 
 def reseal(recipe, placements):
@@ -56,11 +56,11 @@ class FakeIO:
         return [e[1:] for e in self.events if e[0] == 'call']
 
     def get_design(self, design_id, should_abort):
-        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/2.0 dict."""
+        """설계 조회(/d2/hmi/get_design) 가짜 — bench 만 있다. 답은 design/3.0 dict."""
         self.events.append(('call', 'load', design_id))
         if design_id != 'bench':
             return False, '', None
-        return True, '', {'schema': 'design/2.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
+        return True, '', {'schema': 'design/3.0', 'design_id': design_id, 'recipe': self.recipe, 'placements': self.placements}
 
     def services_ready(self):
         return list(self.missing)
@@ -77,13 +77,13 @@ class FakeIO:
         step = self.stop_script.pop(0) if self.stop_script else (False, '가짜 정지 서비스 없음')
         return step(self) if callable(step) else step
 
-    def check_progress(self, block_ids, should_abort):
-        self.events.append(('call', 'check', tuple(block_ids)))
+    def check_progress(self, part_ids, should_abort):
+        self.events.append(('call', 'check', tuple(part_ids)))
         script = self.check_script.pop(0) if self.check_script else None
         if isinstance(script, tuple):                      # (False, reason): 호출 실패
             return False, script[1], {}
         rows = {}
-        for b in block_ids:
+        for b in part_ids:
             state = (script or {}).get(b, 'present' if b in self.world else 'absent')
             here = state == 'present'
             rows[b] = {'state': state, 'dx_m': float('nan'), 'dy_m': float('nan'),
@@ -91,12 +91,12 @@ class FakeIO:
         return True, '', rows
 
     def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
-        self.events.append(('call', 'pick', goal['block_id'], goal['supply_slot']))
+        self.events.append(('call', 'pick', goal['part_id'], goal['supply_slot']))
         step = self.pick_script.pop(0) if self.pick_script else OK
         if callable(step):
             step = step(self)
         if step[0]:
-            self.world.add(goal['block_id'])
+            self.world.add(goal['part_id'])
         return step
 
     def publish_state(self, msg):
@@ -146,7 +146,7 @@ def drive(m, until, limit=500):
 
 
 def picks(io):
-    """pick_place 로 보낸 (block_id, 칸) 들."""
+    """pick_place 로 보낸 (part_id, 칸) 들."""
     return [c[1:] for c in io.calls if c[0] == 'pick']
 
 
@@ -163,9 +163,9 @@ def two_flat_short_slots():
 
 
 def assert_ird_only(io):
-    """방송한 state/1 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null 또는 R<날짜>_<시각>_<무작위 4자>, mode 는 auto."""
+    """방송한 state/2 이 IRD 에 있는 이름만 쓰는지: message_id 는 IRD 값 또는 null, run_id 는 null 또는 R<날짜>_<시각>_<무작위 4자>, mode 는 auto."""
     for s in io.states:
-        assert s['schema'] == 'state/1' and s['mode'] == 'auto'
+        assert s['schema'] == 'state/2' and s['mode'] == 'auto'
         assert s['run_id'] is None or re.fullmatch(r'R\d{8}_\d{6}_[0-9a-f]{4}', s['run_id']), s
         assert s['message_id'] is None or s['message_id'] in IRD_MESSAGE_IDS, s
 
@@ -443,7 +443,8 @@ def test_설계를_못_읽으면_거절():
     assert m.command('select_design', 'nope') == (False, '')
     assert m.command('select_design', '') == (False, '')
     io.recipe = copy.deepcopy(RECIPE)
-    io.recipe['parts'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 구조
+    for stock in io.recipe['stocks']:     # robot.yaml 블록 크기와 다른 자재
+        stock['size_mm'] = [80.0, 25.0, 15.0]
     io.placements = reseal(io.recipe, PLACEMENTS)               # 짝 해시는 맞춰 두고 크기 때문에 거절되는지 본다
     assert m.command('select_design', 'bench') == (False, '')
     assert m.state == 'IDLE'

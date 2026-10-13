@@ -1,7 +1,7 @@
 'use client';
 // 로봇 패널 — 상태 · 로봇 설계 · 버튼 · 그리퍼 (web/README 1 · 3장, W047). 진행도는 위쪽 가운데(ProgressTop).
 // 버튼 하나 = REST 하나(lib/api). 판단은 로봇 쪽이 한다 — 여기서는 상태표대로 보이고 켜고 끄기만 한다. 자동 재전송 없음.
-// 설계를 로봇에 보내는 것은 오른쪽 설계 3D 의 [이 설계로 조립 준비](보는 곳에서 보냄 — 10/10). [출발]은 로봇에 선택된 설계로 간다.
+// 조립 시작은 오른쪽 설계 3D 의 [조립] 하나(보는 곳에서 보냄 — select_design + start, 10/13 PL). 여기에는 [출발]이 없다.
 // 그때만 쓰는 버튼은 그때만 보인다(10/10 황인재): [계속] = 공급 · 웹 연결을 기다릴 때, [다시 시작] = 멈췄을 때. 긴 설명은 title(마우스).
 import { useState } from 'react';
 import * as api from '@/lib/api';
@@ -33,11 +33,10 @@ export default function RobotPanel({ robot, onLog }: Props) {
     return r;
   }
 
-  // 상태표(web/README 3장, SDD 5.1). 로봇 PC 가 끊기면 출발 · 계속 · 스캔은 막는다(IRD 10.3)
+  // 상태표(web/README 3장, SDD 5.1). 로봇 PC 가 끊기면 계속 · 스캔은 막는다(IRD 10.3)
   const bridge = robot.bridge;
   const waiting = has(['WAIT_SUPPLY', 'WAIT_HMI'], st);
   const can = {
-    start: !busy && !locked && bridge && st === 'READY',
     cont: !busy && !locked && bridge && waiting,
     scan: !busy && !locked && bridge && has(['IDLE', 'DONE', 'SCAN_REVIEW'], st),
     cancel: !busy && !locked && has(['READY', 'ERROR', 'SCAN_REVIEW'], st),
@@ -64,13 +63,9 @@ export default function RobotPanel({ robot, onLog }: Props) {
         <span className="muted">로봇 설계</span>
         <strong>{robotDesign ? designName(robotDesign) : '아직 없음'}</strong>
       </div>
-      {!robotDesign && <p className="hint">오른쪽에서 설계를 보고 [이 설계로 조립 준비]를 누르세요</p>}
+      {!robotDesign && <p className="hint">오른쪽 [설계 목록]에서 고르고 [조립]을 누르세요</p>}
 
       <div className="btn-stack">
-        <button className="primary big" disabled={!can.start} title="사람이 로봇 작업 영역 밖인지 확인하고 누르세요"
-          onClick={() => send('출발', () => api.command('start', robotDesign ?? ''))}>
-          {label('출발', '출발')}
-        </button>
         {waiting && (
           <button className="warn big" disabled={!can.cont}
             title={st === 'WAIT_SUPPLY' ? '공급 영역에 블록을 채운 뒤 누르세요' : '웹이 다시 붙었으면 누르세요 — 진행 확인부터 이어 가요'}

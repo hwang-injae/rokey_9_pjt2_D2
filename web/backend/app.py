@@ -32,7 +32,7 @@ for _pkg in ('d2_bridge', 'd2_task'):          # 웹 PC 에 ROS 는 없고, 이 
 from design_gen import DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
 from design_store import DesignStore   # noqa: E402
 from mqtt_client import MqttClient     # noqa: E402 — 위에서 d2_bridge 경로를 넣은 뒤
-from routes import designs, robot, ws  # noqa: E402
+from routes import designs, robot, voice, ws  # noqa: E402
 
 ROBOT_YAML = Path(os.environ.get('ROBOT_YAML') or REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml')
 FRONTEND_OUT = REPO / 'web' / 'frontend' / 'out'
@@ -100,6 +100,7 @@ def create_app(mqtt=None, rules=None, store=None, gen=None):
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
     app.include_router(robot.router)
     app.include_router(designs.router)
+    app.include_router(voice.router)
     app.include_router(ws.router)
     if FRONTEND_OUT.is_dir():
         app.mount('/', StaticFiles(directory=FRONTEND_OUT, html=True), name='frontend')   # 마지막에 — /api · /ws 보다 뒤

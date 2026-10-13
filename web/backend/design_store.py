@@ -2,8 +2,8 @@
 """DesignStore — 설계 · 조립 기록을 저장하는 한 곳 (SDD 6.8, W111 1단계 = JSON 파일 폴더 → W088 PostgreSQL). ROS 없음.
 
 하는 일:
-- 기본 설계 등록: 레시피 폴더의 <모델ID>_recipe.json + _placements.csv → 변환기 ②(d2_task, E-59) → design/2.0 → designs/<id>.json
-- 읽기: list_designs(트리 · RAG 목록 요약 + 최근 조립 결과, E-72 — Template 으로 거름) · children · get_design(design/2.0) · builds_for ·
+- 기본 설계 등록: 레시피 폴더의 <모델ID>_recipe.json + _placements.csv → 변환기 ②(d2_task, E-59) → design/3.0 → designs/<id>.json
+- 읽기: list_designs(트리 · RAG 목록 요약 + 최근 조립 결과, E-72 — Template 으로 거름) · children · get_design(design/3.0) · builds_for ·
         examples_for(RAG 자동 전환)
 - 쓰기: new_design_id(검사 전에 ID 만 정함) → save_design(검사 합격한 고른 후보 1개) · save_build(build/1, 같은 run_id 는 한 번만) ·
         save_gen_log(AI 호출 기록 — NFR-17)
@@ -20,13 +20,14 @@ import time
 from pathlib import Path
 
 from d2_task.recipe_document import RecipeDocument
-from d2_task.recipe_to_blocks import RecipeToBlocks, ori_extents
+from d2_task.recipe_to_parts import RecipeToParts, ori_extents
 
-SCHEMA_DESIGN = 'design/2.0'
-SCHEMA_BLOCKS = 'blocks/2.0'
-SCHEMA_BUILD = 'build/1'
+SCHEMA_DESIGN = 'design/3.0'
+SCHEMA_PARTS = 'parts/3.0'
+SCHEMA_BUILD = 'build/2'
 RECIPE_SUFFIX = '_recipe.json'
 MADE_BY_NEW = ('web', 'voice', 'scan')       # save_design 으로 들어오는 made_by(IRD 2장) — cad 는 register_base 만
+AI_NONE = 'NONE'    # AI 판단 기록 ai_template — AI 가 Template 을 못 고름(맞는 모양 없음 · 호출 실패, 설계_DB 1절 · 10/13 PL 8절 B 나)
 SAFE_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.\-]*')   # 파일 이름으로 쓰는 ID — 경로 글자(/ \ ..)를 막는다
 DESIGN_ID = re.compile(r'([0-9]{3}(?:_[A-Z]+)+)_V([0-9]{3})')   # <Template ID>_V<3자리>(E-84) — 예 001_CHAIR_BENCH_V001
 log = logging.getLogger('web.store')
@@ -51,7 +52,7 @@ def split_design_id(design_id):
 
 
 def same_major(got, expected):
-    """형식 버전 규칙(IRD 6장): 이름과 앞자리가 같으면 받는다(뒷자리 · 모르는 칸은 무시). 'state/1' 같은 점 없는 이름도 앞자리로 본다."""
+    """형식 버전 규칙(IRD 6장): 이름과 앞자리가 같으면 받는다(뒷자리 · 모르는 칸은 무시). 'state/2' 같은 점 없는 이름도 앞자리로 본다."""
     if not isinstance(got, str) or '/' not in got:
         return False
     name, ver = got.split('/', 1)
@@ -60,11 +61,11 @@ def same_major(got, expected):
 
 
 def build_summary(build):
-    """build/1 → 목록 · 프롬프트용 한 줄 {run_id, result, placed, total, max_err_mm}.
+    """build/2 → 목록 · 프롬프트용 한 줄 {run_id, result, placed, total, max_err_mm}.
 
     max_err_mm = 블록마다 잰 dx · dy · dz 중 가장 큰 절댓값(mm, 측정값만 — null 은 뺌). 잰 값이 하나도 없으면 None.
     """
-    errs = [abs(b[k]) for b in build.get('blocks') or [] if isinstance(b, dict)
+    errs = [abs(b[k]) for b in build.get('parts') or [] if isinstance(b, dict)
             for k in ('dx_m', 'dy_m', 'dz_m') if isinstance(b.get(k), (int, float)) and not isinstance(b.get(k), bool)]
     return {'run_id': build.get('run_id'), 'result': build.get('result'), 'placed': build.get('placed'),
             'total': build.get('total'), 'max_err_mm': round(max(errs) * 1000, 1) if errs else None}
@@ -108,19 +109,19 @@ class DesignStore:
         return done
 
     def register_base(self, design_id):
-        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/2.0(V000 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
+        """기본 설계 하나: 레시피 두 파일 → 변환기 ② → design/3.0(V000 · made_by cad · 부모 없음) → 저장. 실패는 OSError · ValueError."""
         family = family_of(design_id)
         doc = RecipeDocument.load(self.recipe_dir, design_id)
         design = doc.design(design_id)
         design.update(schema=SCHEMA_DESIGN, family=family, version='V000', parent_id=None, made_by='cad',
-                      blocks=RecipeToBlocks(design_id, family, self.block_mm).convert(doc.recipe, doc.placements),
+                      parts=RecipeToParts(design_id, family, self.block_mm).convert(doc.recipe, doc.placements),
                       created=round(time.time(), 3))
         self._write(self._design_path(design_id), design)
         return design
 
     # ---------- 읽기 ----------
     def get_design(self, design_id):
-        """design/2.0 하나. 없으면 KeyError, 저장된 형식이 design/2 가 아니면 ValueError(옛 형식은 변환하지 않고 거절, E-69)."""
+        """design/3.0 하나. 없으면 KeyError, 저장된 형식이 design/2 가 아니면 ValueError(옛 형식은 변환하지 않고 거절, E-69)."""
         path = self._design_path(design_id)
         if not path.is_file():
             raise KeyError(design_id)
@@ -144,22 +145,98 @@ class DesignStore:
         return [row for row in self.list_designs() if row['parent_id'] == design_id]
 
     def builds_for(self, design_id):
-        """이 설계의 조립 기록 build/1 전부, 최근 것 먼저(run_id 가 시각으로 시작해 글자 순 = 시각 순, IRD 2장)."""
+        """이 설계의 조립 기록 build/2 전부, 최근 것 먼저(run_id 가 시각으로 시작해 글자 순 = 시각 순, IRD 2장)."""
         return sorted((b for b in self._builds() if b.get('design_id') == design_id),
                       key=lambda b: b['run_id'], reverse=True)
 
     def examples_for(self, template, n=3):
         """RAG 자동 전환용 예시(E-72 — GPT 가 도구 get_design 으로 못 골랐을 때): 이 Template 의 기본 설계(V000) + 최근 파생 n 개.
 
-        출력: [{요약 칸(list_designs 와 같음), 'blocks': blocks/2.0}] — 기본 설계 먼저, 파생은 저장 시각 최신순.
-        프롬프트에는 blocks 만 넣는다(recipe · placements 는 GPT 가 쓰지 않음). 모르는 Template 이면 ValueError.
+        출력: [{요약 칸(list_designs 와 같음), 'parts': parts/3.0}] — 기본 설계 먼저, 파생은 저장 시각 최신순.
+        프롬프트에는 parts 만 넣는다(recipe · placements 는 GPT 가 쓰지 않음). 모르는 Template 이면 ValueError.
         """
         self._check_template(template)
         rows = self._rows(template=template)
-        bases = [{**row, 'blocks': d['blocks']} for row, d in rows if row['made_by'] == 'cad']
+        bases = [{**row, 'parts': d['parts']} for row, d in rows if row['made_by'] == 'cad']
         derived = sorted(((row, d) for row, d in rows if row['made_by'] != 'cad'),
                          key=lambda rd: rd[1].get('created') or 0, reverse=True)[:max(0, n)]
-        return bases + [{**row, 'blocks': d['blocks']} for row, d in derived]
+        return bases + [{**row, 'parts': d['parts']} for row, d in derived]
+
+    def match_scan(self, blocks, top=3):
+        """스캔 블록과 저장된 설계 전부의 일치율 — 스캔 화면 '추천 설계'(10/13 플랜 B 1단계). 바깥 영향 없음(읽기만).
+
+        입력: blocks = 스캔 blocks/2 의 블록 목록[{scan_num, x, y, z, ori, …}](mm, 설계 좌표) · top = 돌려줄 개수.
+        맞음 = 비전 structure_scanner.match_rate(V-48 · E-45)와 같은 식 — 같은 ori + 두 쪽을 각자 '바닥 외곽 가운데'로 옮긴 뒤
+               x · y 차 < 12.5 mm(25 mm 격자 한 칸) · z(아랫면) 차 < 7.5 mm(반 층), 한 부품은 한 번만(가까운 쌍부터).
+        출력: [{design_id, family, made_by, matched, scan_count, part_count, rate}] — rate = matched ÷ max(스캔 수, 부품 수).
+              일치율 높은 순(같으면 부품 수 차가 작은 것 → 기본 설계 → ID 순)으로 앞 top 개. 스캔이 비면 빈 목록.
+        실패: 읽을 수 없는 설계는 건너뛴다(_rows 와 같음). 스캔 블록 칸이 틀리면 KeyError · TypeError(부르는 쪽이 409).
+        """
+        scan = [b for b in blocks if b['ori'] in self.extent]
+        if not scan:
+            return []
+        sx, sy = self._bottom_center(scan)
+        out = []
+        for row, d in self._rows():
+            parts = [p for p in d['parts']['parts'] if p.get('ori') in self.extent]
+            if not parts:
+                continue
+            px, py = self._bottom_center(parts)
+            pairs = []
+            for i, p in enumerate(parts):
+                for j, b in enumerate(scan):
+                    if b['ori'] != p['ori']:
+                        continue
+                    dx, dy, dz = (b['x'] - sx) - (p['x'] - px), (b['y'] - sy) - (p['y'] - py), b['z'] - p['z']
+                    if abs(dx) < 12.5 and abs(dy) < 12.5 and abs(dz) < 7.5:
+                        pairs.append((dx * dx + dy * dy + dz * dz, i, j))
+            used_p, used_s = set(), set()
+            for _, i, j in sorted(pairs):
+                if i not in used_p and j not in used_s:
+                    used_p.add(i)
+                    used_s.add(j)
+            out.append({'design_id': row['design_id'], 'family': row['family'], 'made_by': row['made_by'],
+                        'matched': len(used_p), 'scan_count': len(scan), 'part_count': len(parts),
+                        'rate': round(len(used_p) / max(len(scan), len(parts)), 3)})
+        out.sort(key=lambda m: (-m['rate'], abs(m['part_count'] - m['scan_count']), m['made_by'] != 'cad', m['design_id']))
+        return out[:max(0, top)]
+
+    def _bottom_center(self, items):
+        """블록 · 부품 목록의 바닥 외곽 가운데(x, y, mm) — 가장 낮은 층(최저 z + 7.5 mm 안)의 외곽 사각형 가운데(match_rate 와 같음)."""
+        zmin = min(b['z'] for b in items)
+        xs, ys = [], []
+        for b in items:
+            if b['z'] <= zmin + 7.5:
+                ex, ey, _ = self.extent[b['ori']]
+                xs += [b['x'] - ex / 2, b['x'] + ex / 2]
+                ys += [b['y'] - ey / 2, b['y'] + ey / 2]
+        return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+
+    def templates(self):
+        """Template 목록 — 기본 설계(V000)마다 하나(DB 보기 templates 와 같은 뜻, 설계_DB 5절).
+
+        V000 으로 거른다 — made_by cad 로 거르면 나중에 도면 고친 cad V001 도 섞인다. 이름 · 설명은 V000 레시피의 template 칸
+        (레시피 초안 1절 — name = 화면 모양 카드 이름, description = AI 가 Template 을 고를 때 읽음). 이름이 비면 Template ID 를
+        그대로 둔다(지어내지 않는다). 출력: [{요약 칸(list_designs 와 같음), template_id, name, description}] — design_id 순.
+        """
+        out = []
+        for row, d in self._rows():
+            if row['version'] != 'V000':
+                continue
+            template_id = row['design_id'][:-len('_V000')]
+            t = (d.get('recipe') or {}).get('template') or {}
+            out.append({**row, 'template_id': template_id, 'name': t.get('name') or template_id,
+                        'description': t.get('description') or ''})
+        return sorted(out, key=lambda r: r['design_id'])
+
+    def base_recipe(self, template):
+        """check_design 요청에 싣는 base_recipe — 그 Template 기본 설계(V000)의 레시피 통째(recipe/3.0, 10/13 PL · IRD 4.2).
+
+        웹은 속을 읽지 않고 그대로 싣는다(21번 검사가 template.composition 의 count · revision 을 읽음). 부모가 V001 이어도 V000 것이다.
+        모르는 Template 은 ValueError(요청을 만들지 않는다).
+        """
+        self._check_template(template)
+        return self.get_design(f'{template}_V000')['recipe']
 
     def _rows(self, family=None, template=None):
         """(요약, 설계 전체) 짝 목록 — family · design_id 순. 읽거나 요약할 수 없는 설계는 로그만 남기고 건너뛴다.
@@ -172,9 +249,9 @@ class DesignStore:
         for path in sorted(self.designs_dir.glob('*.json')):
             try:
                 d = self.get_design(path.stem)
-                blocks = d['blocks']['blocks']
+                parts = d['parts']['parts']
                 row = {k: d.get(k) for k in ('design_id', 'family', 'version', 'parent_id', 'made_by')}
-                row.update(block_count=len(blocks), size_mm=self._size_mm(blocks),
+                row.update(block_count=len(parts), size_mm=self._size_mm(parts),
                            last_build=build_summary(last[d['design_id']]) if d.get('design_id') in last else None)
             except (OSError, ValueError, KeyError, TypeError) as e:
                 log.warning('[저장소] %s 건너뜀: %s', path.name, e)
@@ -185,7 +262,7 @@ class DesignStore:
         return sorted(out, key=lambda rd: (rd[0]['family'] or '', rd[0]['design_id']))
 
     def _builds(self):
-        """저장된 build/1 전부(run_id 가 글자인 것만). 읽을 수 없는 파일은 건너뛴다."""
+        """저장된 build/2 전부(run_id 가 글자인 것만). 읽을 수 없는 파일은 건너뛴다."""
         out = []
         for path in self.builds_dir.glob('*.json'):
             try:
@@ -197,20 +274,20 @@ class DesignStore:
                 out.append(b)
         return out
 
-    def _size_mm(self, blocks):
-        """blocks/2.0 블록들의 바깥 크기 [x, y, z] mm. 방향 코드를 모르면 ValueError."""
+    def _size_mm(self, parts):
+        """parts/3.0 블록들의 바깥 크기 [x, y, z] mm. 방향 코드를 모르면 ValueError."""
         lo, hi = [float('inf')] * 3, [float('-inf')] * 3
-        for b in blocks:
+        for b in parts:
             ex, ey, ez = self.extent[b['ori']]
             box = ((b['x'] - ex / 2, b['x'] + ex / 2), (b['y'] - ey / 2, b['y'] + ey / 2), (b['z'], b['z'] + ez))
             for i, (a, c) in enumerate(box):
                 lo[i], hi[i] = min(lo[i], a), max(hi[i], c)
-        return [round(hi[i] - lo[i], 1) for i in range(3)] if blocks else [0, 0, 0]
+        return [round(hi[i] - lo[i], 1) for i in range(3)] if parts else [0, 0, 0]
 
     # ---------- 새 설계 ----------
     def new_design_id(self, template, parent_id=None):
         """새 설계의 (design_id, version) 을 정한다 — 저장하지 않는다. **검사 전에** 부른다: 변환기 ①이 이 ID 로 레시피 model_id ·
-        block_id 를 만들기 때문(IRD 2장 — 블록 이름 앞에 설계 ID).
+        part_id 를 만들기 때문(IRD 2장 — 블록 이름 앞에 설계 ID).
 
         규칙(10/10 E-84 · IRD 2장 · SDD 6.8): <Template ID>_V<3자리>, 번호 = 그 Template 에 저장된 가장 큰 V + 1(만든 차례 — 부모와 상관없음).
         Template = 기본 설계 4개 이름(그 _V000 이 등록돼 있어야 함) — AI 생성은 사용자가 확인한 Template, 스캔은 부모의 Template.
@@ -228,30 +305,37 @@ class DesignStore:
             raise ValueError(f'{template} 의 번호가 V999 를 넘는다')
         return f'{template}_V{n:03d}', f'V{n:03d}'
 
-    def save_design(self, blocks, recipe, placements, parent_id, made_by, prompt=None, check=None):
+    def save_design(self, parts, recipe, placements, parent_id, made_by, prompt=None, check=None,
+                    ai_template=None, ai_reason=None, gen_log=None):
         """검사를 통과해 사람이 고른 설계 하나를 저장한다(SDD 6.8 · IRD 8.3 ⑥ · 8.4 ⑦). 저장한 설계는 고치지 않는다(E-55 ①).
 
-        입력: blocks(blocks/2.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 blocks 로 check_design 이 돌려준 것) ·
-              parent_id · made_by(web · voice · scan) · prompt(요청 문장) · check(check_result/2.0 — ok · min_margin_mm · errors).
-        출력: 저장한 기록 = design/2.0(version = ID 의 V 번호, family = Template 에서) + prompt · check · created(DB designs 칸, FR-D02).
+        입력: parts(parts/3.0 — design_id 는 new_design_id 로 정한 것) · recipe · placements(그 parts 로 check_design 이 돌려준 것) ·
+              parent_id · made_by(web · voice · scan) · prompt(요청 문장) · check(check_result/3.0 — ok · min_margin_mm · errors) ·
+              ai_template · ai_reason(AI 판단 기록 — AI 가 고른 Template ID 또는 'NONE', 그 까닭. 비우면 빈칸) ·
+              gen_log(그 생성의 AI 호출 기록 이름 — 저장하면 그 기록에 design_id 를 적음, 설계_DB #14).
+        출력: 저장한 기록 = design/3.0(version = ID 의 V 번호, family = Template 에서) + prompt · check · created ·
+              ai_template · ai_reason · template_changed(최종 Template ≠ AI 가 고른 것 — 'NONE' 도 다름으로 셈, ai_template 이 비면 빈칸)
+              (DB designs 칸, FR-D02 · 설계_DB 1절). parts 에 base_recipe 가 붙어 와도 떼고 저장한다(검사 요청에만 싣는 것, 10/13 PL).
         실패(ValueError — 저장하지 않음): 검사 불합격(SR-09 — AI 설계는 검사 통과 없이 로봇에 가지 않는다) · made_by · 형식 ·
               ID 꼴(E-84 — V000 은 기본 설계 몫) · 모르는 Template · family 다름 · 레시피 짝(model_id · recipe_sha256 — 로봇이 못 읽는 레시피) ·
-              부모 없음 · 부모가 다른 Template(마지막 방어선 — 앞에서 list_designs(template=…)로 거름) · 같은 ID 가 이미 있음.
+              부모 없음 · 부모가 다른 Template(마지막 방어선 — 앞에서 list_designs(template=…)로 거름) · 같은 ID 가 이미 있음 ·
+              ai_template 이 Template ID 꼴도 'NONE' 도 아님.
         """
         if made_by not in MADE_BY_NEW:
             raise ValueError(f'made_by 는 {MADE_BY_NEW} 중 하나다: {made_by!r}')
         if not isinstance(check, dict) or check.get('ok') is not True:
             raise ValueError('검사에 합격한 설계만 저장한다(check.ok 가 true 가 아니다)')
-        if not isinstance(blocks, dict) or not same_major(blocks.get('schema'), SCHEMA_BLOCKS):
-            raise ValueError(f'blocks 형식이 {SCHEMA_BLOCKS} 가 아니다')
-        design_id = blocks.get('design_id')
+        if not isinstance(parts, dict) or not same_major(parts.get('schema'), SCHEMA_PARTS):
+            raise ValueError(f'parts 형식이 {SCHEMA_PARTS} 가 아니다')
+        if ai_template is not None and ai_template != AI_NONE and self._template_or_none(f'{ai_template}_V000') is None:
+            raise ValueError(f'ai_template 은 Template ID 또는 {AI_NONE!r} 이다: {ai_template!r}')
+        parts = {k: v for k, v in parts.items() if k != 'base_recipe'}
+        design_id = parts.get('design_id')
         template, number = split_design_id(design_id)
         if number == 0:
             raise ValueError(f'{design_id}: V000 은 기본 설계(도면) 몫이다 — new_design_id 로 다음 번호를')
         self._check_template(template)
         family = family_of(template)
-        if blocks.get('family') != family:
-            raise ValueError(f'blocks family {blocks.get("family")!r} 가 Template {template} 의 {family} 가 아니다')
         RecipeDocument(recipe, placements)          # 형식 · model_id 짝 · recipe_sha256 — 로봇(작업 판단)과 같은 확인. 틀리면 ValueError
         if recipe.get('model_id') != design_id:
             raise ValueError(f'레시피 model_id {recipe.get("model_id")!r} 가 {design_id} 가 아니다 — 이 ID 로 다시 검사')
@@ -261,8 +345,10 @@ class DesignStore:
             if self._template_or_none(parent_id) != template:
                 raise ValueError(f'부모 {parent_id} 는 Template {template} 이 아니다 — 같은 Template 만 부모로 둔다(E-84)')
         record = {'schema': SCHEMA_DESIGN, 'design_id': design_id, 'family': family, 'version': f'V{number:03d}',
-                  'parent_id': parent_id, 'made_by': made_by, 'recipe': recipe, 'placements': placements, 'blocks': blocks,
+                  'parent_id': parent_id, 'made_by': made_by, 'recipe': recipe, 'placements': placements, 'parts': parts,
                   'prompt': prompt, 'check': {k: check.get(k) for k in ('ok', 'min_margin_mm', 'errors')},
+                  'ai_template': ai_template, 'ai_reason': ai_reason,
+                  'template_changed': None if ai_template is None else ai_template != template,   # DB 에서는 생성 칸
                   'created': round(time.time(), 3)}
         path = self._design_path(design_id)
         with self._lock:
@@ -270,7 +356,23 @@ class DesignStore:
                 raise ValueError(f'{design_id} 가 이미 있다 — 저장한 설계는 고치지 않는다(new_design_id 부터 다시)')
             self._write(path, record)
         log.info('[저장소] 새 설계 %s (부모 %s, %s)', design_id, parent_id, made_by)
+        if gen_log:
+            self._mark_gen_log(gen_log, design_id)
         return record
+
+    def _mark_gen_log(self, name, design_id):
+        """AI 호출 기록 하나에 실제로 저장된 design_id 를 적는다(설계_DB #14 — 고른 후보를 저장할 때만 채움).
+
+        생성 때 붙였던 번호는 안 고르면 다음 생성이 다시 쓰므로 그때는 적지 않는다(붙였던 번호는 기록의 result 에 남음).
+        기록이 없거나 못 쓰면 로그만 — 설계 저장은 이미 끝났고, 기록 때문에 저장을 실패로 돌리지 않는다.
+        """
+        try:
+            path = self.gen_logs_dir / self._safe(name)
+            rec = json.loads(path.read_text(encoding='utf-8'))
+            rec['design_id'] = design_id
+            self._write(path, rec)
+        except (OSError, ValueError) as e:
+            log.warning('[저장소] AI 기록 %s 에 %s 를 못 적음: %s', name, design_id, e)
 
     def _check_template(self, template):
         """Template 확인 — 기본 설계 4개 이름 꼴이고 그 _V000 이 등록돼 있어야 한다(E-84 ② Template 은 기본 4개로 고정). 아니면 ValueError."""
@@ -297,13 +399,20 @@ class DesignStore:
 
     # ---------- 조립 기록 ----------
     def save_build(self, build):
-        """build/1 하나를 builds/<run_id>.json 으로 저장한다. 반환: 새로 저장했으면 True, 같은 run_id 가 이미 있으면 False.
+        """build/2 하나를 builds/<run_id>.json 으로 저장한다. 반환: 새로 저장했으면 True, 같은 run_id 가 이미 있으면 False.
 
         작업 관리자는 저장이 확인될 때까지 같은 요약을 다시 보낸다(timeout.service_s 간격) — 그래서 두 번째부터는 쓰지 않고 성공으로 본다.
-        실패: 형식이 build/1 이 아니거나 run_id 가 파일 이름으로 못 쓰는 글자면 ValueError.
+        실패: 형식이 build/2 이 아니거나 · run_id 가 파일 이름으로 못 쓰는 글자거나 · 저장소에 없는 설계의 기록이면 ValueError
+        (다시 보내도 저장될 수 없음 — DB 에서는 builds.design_id 외래 키, 설계_DB 2절).
         """
         if not isinstance(build, dict) or not same_major(build.get('schema'), SCHEMA_BUILD):
             raise ValueError(f'형식이 {SCHEMA_BUILD} 가 아니다(받은 schema: {build.get("schema") if isinstance(build, dict) else None!r})')
+        try:
+            known = self._design_path(build.get('design_id')).is_file()
+        except KeyError:
+            known = False
+        if not known:
+            raise ValueError(f'저장소에 없는 설계의 조립 기록이다: {build.get("design_id")!r}')
         path = self.builds_dir / f'{self._safe(build.get("run_id"))}.json'
         if path.exists():
             return False
@@ -321,7 +430,7 @@ class DesignStore:
 
     # ---------- 로봇이 부름(MQTT — MqttClient.serve) ----------
     def answer_get_design(self, body):
-        """/d2/hmi/get_design 요청 {"design_id"} → 응답 dict(success · reason + design/2.0 칸). 없거나 틀리면 success false · ERROR."""
+        """/d2/hmi/get_design 요청 {"design_id"} → 응답 dict(success · reason + design/3.0 칸). 없거나 틀리면 success false · ERROR."""
         design_id = body.get('design_id')
         try:
             return {'success': True, 'reason': '', **self.get_design(design_id)}
@@ -330,12 +439,20 @@ class DesignStore:
             return {'success': False, 'reason': 'ERROR', 'message': f'{design_id} 설계를 못 꺼냄'}
 
     def answer_save_build(self, body):
-        """/d2/hmi/save_build 요청(build/1 + req_id) → {success, reason, ok}. ok = 저장됨(같은 run_id 두 번째도 true, IRD 4.2)."""
+        """/d2/hmi/save_build 요청(build/2 + req_id) → {success, reason, ok}. ok = 저장됨(같은 run_id 두 번째도 true, IRD 4.2).
+
+        다시 보내도 저장될 수 없는 기록(형식 · run_id 틀림 · 없는 설계 — ValueError)은 retry: false = 영구 거절(10/13 PL, IRD 4.2 —
+        작업 관리자는 다시 보내지 않고 기록 폴더 rejected/ 로 옮김). 디스크 · DB 끊김 같은 일시 실패(OSError)는 retry 없이 ok false
+        (작업 관리자가 다시 보냄). 바깥 영향: data_dir/builds 에 파일 쓰기.
+        """
         build = {k: v for k, v in body.items() if k != 'req_id'}
         try:
             fresh = self.save_build(build)
-        except (ValueError, OSError) as e:
-            log.warning('[저장소] save_build 실패: %s', e)
+        except ValueError as e:
+            log.warning('[저장소] save_build 영구 거절: %s', e)
+            return {'success': True, 'reason': '', 'ok': False, 'retry': False, 'message': str(e)}
+        except OSError as e:
+            log.warning('[저장소] save_build 실패(다시 보내면 됨): %s', e)
             return {'success': True, 'reason': '', 'ok': False, 'message': str(e)}
         log.info('[저장소] save_build %s %s', build.get('run_id'), '저장' if fresh else '이미 있음')
         return {'success': True, 'reason': '', 'ok': True}

@@ -1,12 +1,16 @@
 'use client';
 // 메인 페이지 — 위 띠(제목 · 연결 점 · 진행도 가운데 · 다크 모드) · 끊김 배너 · 왼쪽(로봇 패널 · 손목 카메라) ·
-// 오른쪽(AI 설계 만들기 W112 · 설계 3D) · 기록(접어 둠 — 마지막 한 줄만). 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임). 스캔 비교(W116)는 뒤에 붙는다.
+// 오른쪽(설계 3D — 목록에서 고르고 [조립] · 그 아래 고른 설계를 바탕으로 AI 설계 만들기, 10/13 PL) · 스캔 비교(SCAN_REVIEW 때만 — W112) ·
+// 기록(접어 둠 — 마지막 한 줄만).
+// 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임).
 import { useEffect, useState } from 'react';
 import { ConnectionBanners, ConnectionDots } from '@/components/ConnectionBadge';
 import DesignView from '@/components/DesignView';
 import GeneratePanel from '@/components/GeneratePanel';
 import ProgressTop from '@/components/ProgressTop';
 import RobotPanel from '@/components/RobotPanel';
+import ScanReview from '@/components/ScanReview';
+import ScanRecommend from '@/components/ScanRecommend';
 import ThemeToggle from '@/components/ThemeToggle';
 import WristCamera from '@/components/WristCamera';
 import * as api from '@/lib/api';
@@ -56,18 +60,19 @@ export default function Home() {
             <WristCamera robot={robot} />
           </div>
           <div className="col">
-            <GeneratePanel robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
             <DesignView robot={robot} viewId={picked ?? robotDesign} rules={rules} dark={dark} onPick={setPicked} onLog={addLog} />
+            <GeneratePanel robot={robot} baseId={picked ?? robotDesign} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
           </div>
         </div>
 
         {robot.state?.state === 'SCAN_REVIEW' && robot.scan && (
-          <section className="panel">
-            <h2>스캔 결과</h2>
-            <p title="비교 화면과 [그대로 저장]은 W116 에서 붙어요 — 지금은 [다시 스캔] · [취소]만">
-              블록 {robot.scan.blocks.blocks.length}개 · 가려져 추정한 블록 {robot.scan.inferred_count}개
-            </p>
-          </section>
+          <>
+            <ScanReview robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
+            <section className="panel">
+              <h2 title="저장된 설계 중 스캔과 가장 비슷한 것 — GPT 없이 바로 조립(플랜 B)">추천 설계</h2>
+              <ScanRecommend robot={robot} onView={setPicked} onLog={addLog} />
+            </section>
+          </>
         )}
 
         <details className="panel log-panel">

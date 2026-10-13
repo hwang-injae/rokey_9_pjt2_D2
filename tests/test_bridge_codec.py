@@ -76,8 +76,8 @@ def test_string_fields_defaults_and_rejects_non_text():
 
 
 def test_query_request_drops_req_id_keeps_rest():
-    """check_design 요청: req_id 만 빼고 blocks/2.0 객체 그대로(한글 포함)."""
-    body = {'req_id': '9a', 'schema': 'blocks/2.0', 'design_id': '001_CHAIR_BENCH_V001', 'family': 'chair',
+    """check_design 요청: req_id 만 빼고 parts/3.0 객체 그대로(한글 포함)."""
+    body = {'req_id': '9a', 'schema': 'parts/3.0', 'design_id': '001_CHAIR_BENCH_V001', 'family': 'chair',
             'blocks': [{'order': 1, 'role': 'LEG'}], 'note': '의자'}
     assert json.loads(bc.query_request_json(body)) == {k: v for k, v in body.items() if k != 'req_id'}
     assert '의자' in bc.query_request_json(body)
@@ -90,9 +90,9 @@ def test_typed_response():
 
 def test_query_response_spreads_object():
     """JsonQuery 응답 = ROS 칸 + response_json 객체를 펼침(IRD 10.2 check_design 예시)."""
-    rj = json.dumps({'schema': 'check_result/2.0', 'ok': True, 'min_margin_mm': 12.5, 'errors': []})
+    rj = json.dumps({'schema': 'check_result/3.0', 'ok': True, 'min_margin_mm': 12.5, 'errors': []})
     out = json.loads(bc.query_response('9a', True, '', rj))
-    assert out == {'req_id': '9a', 'success': True, 'reason': '', 'schema': 'check_result/2.0', 'ok': True,
+    assert out == {'req_id': '9a', 'success': True, 'reason': '', 'schema': 'check_result/3.0', 'ok': True,
                    'min_margin_mm': 12.5, 'errors': []}
 
 
@@ -111,8 +111,8 @@ def test_query_response_bad_json_is_error(rj):
 
 
 def test_robot_called_round_trip_keeps_two_layers():
-    """save_build: 요청 = build/1 객체 + req_id, 응답의 ok 는 response_json 에 그대로(두 층 — IRD 4.2)."""
-    build = {'schema': 'build/1', 'run_id': 'R20261010_143512_a3f9', 'result': 'DONE'}
+    """save_build: 요청 = build/2 객체 + req_id, 응답의 ok 는 response_json 에 그대로(두 층 — IRD 4.2)."""
+    build = {'schema': 'build/2', 'run_id': 'R20261010_143512_a3f9', 'result': 'DONE'}
     req = json.loads(bc.query_mqtt_request('c2', json.dumps(build)))
     assert req == {**build, 'req_id': 'c2'}
     success, reason, rj = bc.query_from_mqtt_response({'req_id': 'c2', 'success': True, 'reason': '', 'ok': False,
@@ -133,7 +133,7 @@ def test_robot_called_rejects_non_object_and_reads_failure():
 
 def test_scan_files_reads_paths_cloud_optional():
     """scan_result 에서 run_id · 사진 · 점군 경로를 읽는다. cloud_path 는 선택 칸 — 없거나 null 이면 ''(IRD 6장 · 10.5)."""
-    full = {'schema': 'scan_result/1.2', 'run_id': 'R1', 'image_path': '/d/R1/color.png', 'cloud_path': '/d/R1/cloud.ply'}
+    full = {'schema': 'scan_result/2.0', 'run_id': 'R1', 'image_path': '/d/R1/color.png', 'cloud_path': '/d/R1/cloud.ply'}
     assert bc.scan_files(json.dumps(full)) == ('R1', '/d/R1/color.png', '/d/R1/cloud.ply')
     assert bc.scan_files(json.dumps({**full, 'cloud_path': None})) == ('R1', '/d/R1/color.png', '')
     assert bc.scan_files(json.dumps({'run_id': 'R2', 'image_path': ''})) == ('R2', '', '')
