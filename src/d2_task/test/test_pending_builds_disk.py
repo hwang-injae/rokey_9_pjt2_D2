@@ -263,3 +263,212 @@ def test_보관한_요약의_칸은_build_2_그대로(tmp_path):
     assert set(saved) == {'schema', 'run_id', 'design_id', 'result', 'placed', 'total', 'duration_s', 'stop_count', 'parts'}
     assert saved['parts'][0].keys() == {'part_id', 'dz_m', 'dx_m', 'dy_m'}
     assert saved['parts'][0]['dx_m'] is None
+
+
+# ---------- 영구 거절(save_build 답 ok:false · retry:false, IRD 4.2) ----------
+REJECT = '{"ok": false, "retry": false, "message": "거절"}'
+
+
+def rejected(tmp_path):
+    """rejected 폴더의 파일 이름들(없으면 빈 목록)."""
+    folder = tmp_path / 'rejected'
+    return sorted(os.listdir(folder)) if folder.is_dir() else []
+
+
+def test_retry_false면_재전송없이_rejected에_원기록이_남고_재시작에도_안_돌아온다(tmp_path):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    orig = (tmp_path / 'pending_builds' / f'{a}.json').read_text(encoding='utf-8')
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, REJECT) is False                 # True 는 DB 저장 확인 뜻이라 거절은 False
+    assert log.flush(5.0)
+    assert m.pending_builds == {} and m.builds_to_send(100.0, RETRY_S) == []
+    assert files(tmp_path) == [] and rejected(tmp_path) == [f'{a}.json']
+    assert (tmp_path / 'rejected' / f'{a}.json').read_text(encoding='utf-8') == orig
+    assert make(tmp_path)[0].pending_builds == {}
+
+
+@pytest.mark.parametrize('body', ['{"ok": false}', '{"ok": false, "retry": true}', '{"ok": false, "retry": 0}',
+                                  '{"ok": false, "retry": "false"}', '{"ok": false, "retry": null}', '{"ok": 0, "retry": false}'])
+def test_retry가_명시_false가_아니면_재전송을_유지한다(tmp_path, body):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, body) is False
+    assert log.flush(5.0) and rejected(tmp_path) == [] and files(tmp_path) == [f'{a}.json']
+    assert [r for r, _ in m.builds_to_send(RETRY_S, RETRY_S)] == [a]
+
+
+@pytest.mark.parametrize('success,body', [(False, REJECT), ('true', REJECT), (None, REJECT), (True, '깨진'), (True, '[]')])
+def test_service_실패나_깨진_답은_거절로_보지_않는다(tmp_path, success, body):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, success, body) is False
+    assert log.flush(5.0) and rejected(tmp_path) == [] and a in m.pending_builds
+
+
+def test_ok_true면_retry_false가_있어도_저장_성공이다(tmp_path):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, '{"ok": true, "retry": false}') is True
+    assert log.flush(5.0) and files(tmp_path) == [] and rejected(tmp_path) == []
+
+
+def test_모르는_run과_중복_콜백은_다른_run을_건드리지_않는다(tmp_path):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    b = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result('R_없음', True, REJECT) is False
+    assert m.build_result(a, True, REJECT) is False
+    assert m.build_result(a, True, REJECT) is False                 # 중복 콜백
+    assert m.build_result(a, True, OK_JSON) is False                # 늦은 성공 답도 이미 정리된 run 은 못 바꾼다
+    assert log.flush(5.0)
+    assert list(m.pending_builds) == [b] and files(tmp_path) == [f'{b}.json'] and rejected(tmp_path) == [f'{a}.json']
+
+
+def test_늦은_저장이_거절_뒤에_pending을_되살리지_않는다(tmp_path):
+    gate = threading.Event()
+    m, io, log = make(tmp_path, gated_opener(gate, 'w'))
+    try:
+        a = assemble(m, io)                                         # 저장은 gate 에 막혀 큐 맨 앞에서 대기
+        m.builds_to_send(RETRY_S * 3, RETRY_S)
+        assert m.build_result(a, True, REJECT) is False             # 저장이 아직 안 끝난 채 거절 도착
+    finally:
+        gate.set()
+    assert log.flush(5.0)
+    assert files(tmp_path) == [] and rejected(tmp_path) == [f'{a}.json']
+
+
+def test_pending이_없으면_메모리_요약으로_원자적으로_보존한다(tmp_path):
+    def opener(path, mode='r', **kw):
+        if mode == 'w' and 'pending_builds' in str(path):
+            raise OSError('저장 실패')                                # pending 저장은 실패
+        return open(path, mode, **kw)
+
+    m, io, log = make(tmp_path, opener)
+    a = assemble(m, io)
+    assert log.flush(5.0) and files(tmp_path) == []
+    expect = json.loads(json.dumps(m.pending_builds[a]))
+    m.builds_to_send(0.0, RETRY_S)
+    m.build_result(a, True, REJECT)
+    assert log.flush(5.0)
+    assert json.loads((tmp_path / 'rejected' / f'{a}.json').read_text(encoding='utf-8')) == expect
+    assert not [n for n in os.listdir(tmp_path / 'rejected') if n.endswith('.tmp')]
+    assert m._rejected_unsaved == {}
+
+
+def test_기존_거절_자료는_다른_내용으로_덮어쓰지_않는다(tmp_path, capsys):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    (tmp_path / 'rejected').mkdir()
+    (tmp_path / 'rejected' / f'{a}.json').write_text('{"old": 1}', encoding='utf-8')
+    m.builds_to_send(0.0, RETRY_S)
+    m.build_result(a, True, REJECT)
+    assert log.flush(5.0)
+    assert (tmp_path / 'rejected' / f'{a}.json').read_text(encoding='utf-8') == '{"old": 1}'
+    assert files(tmp_path) == [f'{a}.json'] and '덮어쓰지 않고' in capsys.readouterr().err
+    assert a in m._rejected_unsaved                                 # 실제 보관은 안 됐으니 메모리 요약을 유지한다
+    assert make(tmp_path)[0].pending_builds == {}                   # rejected 에 있는 run 은 다시 보내지 않는다
+
+
+@pytest.mark.parametrize('has_pending', [True, False])
+@pytest.mark.parametrize('old_text', ['DIFFERENT', '{깨진'])
+def test_기존_거절_자료가_다르거나_읽을_수_없으면_메모리_요약을_지우지_않는다(tmp_path, capsys, has_pending, old_text):
+    import copy
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    current = copy.deepcopy(m.pending_builds[a])
+    if old_text == 'DIFFERENT':
+        old_text = json.dumps(dict(current, duration_s=current['duration_s'] + 1))
+    (tmp_path / 'rejected').mkdir()
+    old_path = tmp_path / 'rejected' / f'{a}.json'
+    old_path.write_text(old_text, encoding='utf-8')
+    if not has_pending:
+        os.remove(tmp_path / 'pending_builds' / f'{a}.json')        # pend_save 실패를 흉내
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, REJECT) is False
+    assert log.flush(5.0)
+    assert old_path.read_text(encoding='utf-8') == old_text         # 기존 거절 자료는 그대로
+    assert m._rejected_unsaved == {a: current}                      # 현재 요약은 메모리에 남는다
+    assert files(tmp_path) == ([f'{a}.json'] if has_pending else [])
+    assert '덮어쓰지 않고' in capsys.readouterr().err
+    assert m.builds_to_send(100.0, RETRY_S) == [] and a not in m.pending_builds   # 네트워크 재송신 없음
+    m._clock = lambda: 1e9
+    m.builds_to_send(100.0, RETRY_S)                                # 보관 재시도는 이어진다
+    assert log.flush(5.0) and a in m._rejected_unsaved and old_path.read_text(encoding='utf-8') == old_text
+
+
+def test_이미_같은_내용으로_보관돼_있으면_성공으로_처리하고_pending을_정리한다(tmp_path):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    (tmp_path / 'rejected').mkdir()
+    (tmp_path / 'rejected' / f'{a}.json').write_text(json.dumps(m.pending_builds[a]), encoding='utf-8')
+    m.builds_to_send(0.0, RETRY_S)
+    m.build_result(a, True, REJECT)
+    assert log.flush(5.0) and m._rejected_unsaved == {} and files(tmp_path) == [] and rejected(tmp_path) == [f'{a}.json']
+
+
+@pytest.mark.parametrize('body', ['{"ok": false, "retry": false, "x": NaN}', '{"ok": false, "retry": false, "x": Infinity}',
+                                  '{"ok": false, "retry": false, "x": -Infinity}'])
+def test_비표준_JSON_상수가_든_응답은_영구_거절로_오인하지_않는다(tmp_path, body):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, body) is False
+    assert log.flush(5.0) and rejected(tmp_path) == [] and a in m.pending_builds and m._rejected_unsaved == {}
+
+
+def test_rename이_실패하면_네트워크_재전송_없이_자료를_보존하고_복구뒤_보관한다(tmp_path, monkeypatch, capsys):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    real = os.replace
+
+    def broken(*_a):
+        raise OSError('rename 실패')
+
+    monkeypatch.setattr(os, 'replace', broken)
+    m.builds_to_send(0.0, RETRY_S)
+    m.build_result(a, True, REJECT)
+    assert log.flush(5.0)
+    assert files(tmp_path) == [f'{a}.json'] and a in m._rejected_unsaved and '거절 보관' in capsys.readouterr().err
+    assert m.builds_to_send(100.0, RETRY_S) == []                   # 보관 재시도는 하되 네트워크로는 안 보낸다
+    monkeypatch.setattr(os, 'replace', real)
+    m._clock = lambda: 1e9                                          # retry_s 가 지난 것으로
+    assert m.builds_to_send(300.0, RETRY_S) == []
+    assert log.flush(5.0)
+    assert rejected(tmp_path) == [f'{a}.json'] and files(tmp_path) == [] and m._rejected_unsaved == {}
+
+
+def test_큐가_가득해도_재전송하지_않고_복구뒤_보관한다(tmp_path, monkeypatch):
+    m, io, log = make(tmp_path)
+    a = assemble(m, io)
+    assert log.flush(5.0)
+    monkeypatch.setattr(log, 'reject_pending', lambda *_a: False)   # 큐 가득
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, REJECT) is False
+    assert a in m._rejected_unsaved and m.builds_to_send(100.0, RETRY_S) == [] and files(tmp_path) == [f'{a}.json']
+    monkeypatch.undo()
+    m._clock = lambda: 1e9
+    assert m.builds_to_send(100.0, RETRY_S) == []
+    assert log.flush(5.0) and rejected(tmp_path) == [f'{a}.json'] and m._rejected_unsaved == {}
+
+
+def test_log_dir이_비면_파일_성공이라_하지_않고_경고하며_메모리에_둔다(capsys):
+    io = FakeIO()
+    m = TaskManager(CFG, io, RunLogger(''))
+    io.manager = m
+    m.on_safety(SAFE_OK)
+    m.on_gripper({'grasped': False})
+    a = assemble(m, io)
+    m.builds_to_send(0.0, RETRY_S)
+    assert m.build_result(a, True, REJECT) is False
+    assert a in m._rejected_unsaved and '보존하지 못한다' in capsys.readouterr().err
+    assert m.builds_to_send(100.0, RETRY_S) == []

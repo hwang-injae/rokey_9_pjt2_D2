@@ -225,11 +225,35 @@ class RunLogger:
             except queue.Full:
                 LOG.warning('기록 쓰기가 밀려 %s 의 보관 파일을 못 지웠다 — 다음 시작 때 다시 전송될 수 있다', run_id)
 
+    @property
+    def rejected_dir(self):
+        """영구 거절된 요약 폴더(log_dir/rejected). log_dir 이 비어 있으면 빈 글자."""
+        return os.path.join(self.log_dir, 'rejected') if self.log_dir else ''
+
+    def reject_pending(self, run_id, summary, on_done):
+        """웹이 영구 거절(retry:false)한 요약을 log_dir/rejected/<run_id>.json 으로 옮기라고 쓰기 스레드에 맡긴다(기다리지 않는다).
+
+        반환: 맡겼으면 True(끝나면 쓰기 스레드가 on_done(ok) — ok = 거절 보관본이 디스크에 있다). 파일 기록이 꺼져 있거나
+        큐가 가득 차 못 맡기면 False(on_done 안 불림, 부르는 쪽이 메모리 요약을 들고 다시 맡긴다). 네트워크는 쓰지 않는다.
+        저장 요청(pend_save)과 같은 큐라서 늦게 끝난 저장이 거절 뒤에 pending 파일을 되살리지 못한다.
+        """
+        if not self.enabled:
+            return False
+        with self._lock:
+            self._ensure_thread()
+            try:
+                self._queue.put_nowait(('pend_reject', run_id, summary, on_done))
+                return True
+            except queue.Full:
+                LOG.warning('기록 쓰기가 밀려 거절된 요약 %s 을 디스크에 못 맡긴다 — 메모리에 보관하고 다시 시도한다', run_id)
+                return False
+
     def load_pending(self):
         """시작할 때 한 번: 보관된 미전송 요약을 읽는다. 반환: [(run_id, 요약 dict)] (파일 이름순).
 
         완성본(<run_id>.json)만 읽고 임시 파일(.tmp)은 무시한다. schema · run_id(파일 이름과 같음) · 필수 칸 · 자료형이 틀린 파일은
         지우지 않고 경고만 남기고 건너뛴다. 폴더가 없거나 log_dir 이 비어 있으면 빈 목록(파일 I/O 오류도 경고 뒤 빈 목록).
+        rejected/ 에 같은 run_id 가 이미 있으면(거절 보관은 끝났는데 pending 삭제가 남은 경우) 다시 보내지 않고 건너뛴다(지우지 않음).
         """
         found = []
         folder = self.pending_dir
@@ -250,19 +274,74 @@ class RunLogger:
                 why = _invalid_summary(summary, name[:-len('.json')])
             except (OSError, ValueError) as e:
                 why = f'읽을 수 없다: {e!r}'
+            if not why and os.path.exists(os.path.join(self.rejected_dir, name)):
+                why = '이미 영구 거절되어 rejected/ 에 있다 — 다시 보내지 않는다'
             if why:
                 LOG.warning('미전송 요약 파일을 건너뛴다(지우지 않음) %s — %s', path, why)
             else:
                 found.append((summary['run_id'], summary))
         return found
 
+    def _write_atomic(self, final, summary):
+        """(쓰기 스레드) summary 를 같은 폴더 임시 파일에 쓰고 flush · fsync 한 뒤 os.replace 로 final 을 만든다. 실패하면 임시 파일을 지우고 예외."""
+        tmp = final + '.tmp'
+        try:
+            f = self._opener(tmp, 'w', encoding='utf-8')
+            try:
+                f.write(json.dumps(summary, ensure_ascii=False, allow_nan=False))
+                f.flush()
+                if hasattr(f, 'fileno'):
+                    os.fsync(f.fileno())
+            finally:
+                f.close()
+            os.replace(tmp, final)
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+
+    def _reject_op(self, run_id, summary):
+        """(쓰기 스레드) pending/<run_id>.json 을 rejected/ 로 옮긴다. 반환: **이 summary 의** 거절 보관본이 디스크에 있으면 True.
+
+        pending 파일이 있으면 그대로 os.replace 로 옮겨 원기록을 보존한다. 없으면(저장 실패 · 큐 가득) 메모리 summary 를 원자적으로 쓴다.
+        rejected/ 에 같은 run 의 자료가 이미 있으면 덮어쓰지 않는다 — 내용이 같으면 이미 보관된 것이라 pending 만 정리하고 True.
+        내용이 다르거나 읽을 수 없으면 경고하고 기존 자료 · pending 을 그대로 둔 채 **False** — 이 summary 는 아직 보관되지 않았으니
+        부르는 쪽이 메모리 요약을 계속 들고 있어야 한다(다시 보내는 것은 load_pending 이 rejected/ 존재로 막는다).
+        """
+        src = os.path.join(self.pending_dir, f'{run_id}.json')
+        dst = os.path.join(self.rejected_dir, f'{run_id}.json')
+        os.makedirs(self.rejected_dir, exist_ok=True)
+        if os.path.exists(dst):
+            try:
+                with open(dst, encoding='utf-8') as f:
+                    same = json.loads(f.read()) == summary
+            except (OSError, ValueError):
+                same = False
+            if not same:
+                LOG.warning('같은 run %s 의 거절 자료가 다른 내용이거나 읽을 수 없다 — 덮어쓰지 않고 기존 자료와 pending 을 보존한다(%s)', run_id, dst)
+                return False        # 이 요약은 아직 보관되지 않았다 — 부르는 쪽이 메모리 요약을 지우면 원자료를 잃는다
+            try:
+                os.remove(src)
+            except FileNotFoundError:
+                pass
+            return True
+        if os.path.exists(src):
+            os.replace(src, dst)
+        else:
+            self._write_atomic(dst, summary)
+        return True
+
     def _pending_op(self, item):
-        """(쓰기 스레드) 미전송 요약 파일 저장 · 삭제. 실패해도 CSV 쪽 상태는 건드리지 않는다."""
+        """(쓰기 스레드) 미전송 요약 파일 저장 · 삭제 · 거절 보관. 실패해도 CSV 쪽 상태는 건드리지 않는다."""
         ok = False
         try:
             folder = self.pending_dir
             final = os.path.join(folder, f'{item[1]}.json')
-            if item[0] == 'pend_save':
+            if item[0] == 'pend_reject':
+                ok = self._reject_op(item[1], item[2])
+            elif item[0] == 'pend_save':
                 os.makedirs(folder, exist_ok=True)
                 tmp = final + '.tmp'
                 try:
@@ -289,9 +368,11 @@ class RunLogger:
                     pass
                 ok = True
         except Exception as e:   # noqa: BLE001
-            LOG.warning('미전송 요약 파일 %s 실패(run %s) — %r%s', '저장' if item[0] == 'pend_save' else '삭제', item[1], e,
-                        ' — 재시작 복구를 보장하지 않는다' if item[0] == 'pend_save' else ' — 다음 시작 때 다시 전송될 수 있다')
-        if item[0] == 'pend_save':
+            what = {'pend_save': '저장', 'pend_reject': '거절 보관'}.get(item[0], '삭제')
+            tail = {'pend_save': ' — 재시작 복구를 보장하지 않는다',
+                    'pend_reject': ' — 원본(pending 파일 또는 메모리)을 보존하고 다시 시도한다'}.get(item[0], ' — 다음 시작 때 다시 전송될 수 있다')
+            LOG.warning('미전송 요약 파일 %s 실패(run %s) — %r%s', what, item[1], e, tail)
+        if item[0] in ('pend_save', 'pend_reject'):
             try:
                 item[3](ok)
             except Exception:   # noqa: BLE001
@@ -337,7 +418,7 @@ class RunLogger:
             item = self._queue.get()
             try:
                 kind = item[0]
-                if kind in ('pend_save', 'pend_del'):
+                if kind in ('pend_save', 'pend_del', 'pend_reject'):
                     self._pending_op(item)
                 elif kind == 'barrier':
                     item[1].set()
