@@ -268,7 +268,8 @@ class PickPlaceNode(Node):
     def scene_attach(self, part_id, attach, held=None, placed=None):
         """장면 관리 노드에 쥔 블록 붙이기(attach=True)·떼기를 부탁한다. 장면은 그 노드만 고친다. 반환: 성공하면 True.
 
-        held = 붙이기 때 쥔 블록 상자 {'size_m', 'offset_m'}(TCP 기준 m, pick_place_tcp 가 실제 집은 자세로 계산),
+        held = 붙이기 때 쥔 블록 상자 {'size_m', 'offset_m'[, 'quat']}(TCP 기준 m, pick_place_tcp 가 실제 집은 자세로 계산 — 'quat' 는
+        TCP 기준 상자 방향 xyzw, 공구를 기울여 잡아 블록 축이 TCP 축과 어긋날 때만 · 없으면 TCP 축과 나란함, 10/13 PL held_quat),
         placed = 떼기 때 실제로 놓은 블록 (중심 m, 쿼터니언 xyzw)(base_link). 둘 다 보내 장면 관리가 레시피 없이도 그린다
         (AI · 스캔 설계, 흩뿌림, 다시 집기 — 10/9 PL E-76). None 이면 칸을 비워 장면 관리가 레시피로 계산한다.
         """
@@ -278,6 +279,8 @@ class PickPlaceNode(Node):
         req = SceneAttach.Request(part_id=part_id, attach=attach)
         if held is not None:
             req.held_size_m, req.held_offset_m = [float(v) for v in held['size_m']], [float(v) for v in held['offset_m']]
+            if held.get('quat') is not None:
+                req.held_quat = [float(v) for v in held['quat']]
         if placed is not None:
             req.placed_center_m, req.placed_quat = [float(v) for v in placed[0]], [float(v) for v in placed[1]]
         res = self.exe.wait_future(self.attach_cli.call_async(req), 5.0)

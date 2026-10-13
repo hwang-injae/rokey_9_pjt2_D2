@@ -169,7 +169,8 @@ class SceneManagerNode(Node):
     def _on_attach(self, req, res):
         """쥔 블록 붙이기 (attach=True: TCP 에 상자) / 떼기 (False: 쥔 상자를 지우고 놓인 블록으로).
 
-        붙이기: 요청에 held_size_m · held_offset_m(각 3개)이 있으면 그 상자를 쓴다 — 집기·놓기가 실제로 집은 자세로 계산한 값이라
+        붙이기: 요청에 held_size_m · held_offset_m(각 3개)이 있으면 그 상자를 쓴다(held_quat 4개가 있으면 그 방향, 없으면 TCP 축과 나란함 —
+        세우기처럼 기울여 잡은 블록, 10/13 PL) — 집기·놓기가 실제로 집은 자세로 계산한 값이라
         레시피 파일에 없는 설계(AI · 스캔) · 흩뿌림 · 다시 집기도 맞다(10/9 PL E-76). 없으면 설치된 레시피로 계산하고,
         레시피에도 없는 part_id 면 success=false, reason UNKNOWN_BLOCK.
         붙이기 때 같은 블록이 놓인 블록(blk_<part_id>)으로 장면에 있으면 같은 변경에서 지운다(다시 집기).
@@ -178,6 +179,7 @@ class SceneManagerNode(Node):
         """
         b = self.parts.get(req.part_id)
         held_given = len(req.held_size_m) == 3 and len(req.held_offset_m) == 3
+        held_quat = tuple(req.held_quat) if held_given and len(req.held_quat) == 4 else (0.0, 0.0, 0.0, 1.0)
         placed_given = len(req.placed_center_m) == 3 and len(req.placed_quat) == 4
         if req.attach and not held_given and b is None:
             res.success, res.reason = False, 'UNKNOWN_BLOCK'
@@ -192,7 +194,7 @@ class SceneManagerNode(Node):
             aco.object.header.frame_id = tcp
             aco.object.operation = CollisionObject.ADD
             aco.object.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in held['size_m']])]
-            aco.object.primitive_poses = [make_pose(held['offset_m'])]
+            aco.object.primitive_poses = [make_pose(held['offset_m'], held_quat)]
             aco.touch_links = FINGER_LINKS + [tcp]      # 손가락이 쥔 블록에 닿는 것은 충돌이 아니다
             sc.object_colors = [self._color(HELD, HELD_RGBA)]
             # 장면에 '놓인 블록'으로 남은 같은 블록을 다시 집으면(다시 집기 W135 · 세우기 W131 · 3동작 시험) 쥔 상자와 겹쳐

@@ -147,7 +147,8 @@ class MoveItExecutor:
     def _state(self, q, finger=None, held=None):
         """관절값 q 의 RobotState. is_diff 라서 주지 않은 그리퍼 관절·쥔 블록은 지금 장면 그대로 쓴다.
 
-        finger = 손가락 관절 각 (rad, 주면 그 각으로), held = 쥔 블록 상자 {'size_m', 'offset_m'} (TCP 기준, 주면 이 상태에만 붙임).
+        finger = 손가락 관절 각 (rad, 주면 그 각으로), held = 쥔 블록 상자 {'size_m', 'offset_m'[, 'quat']} (TCP 기준, 주면 이 상태에만 붙임 —
+        'quat' 가 있으면 그 방향, 장면 관리 held_quat 와 같음).
         둘 다 계획 요청 안에서만 쓰고 장면은 바꾸지 않는다(장면은 장면 관리 노드만 고친다).
         """
         st = RobotState()
@@ -158,7 +159,7 @@ class MoveItExecutor:
             box = CollisionObject(id='held_check', operation=CollisionObject.ADD)
             box.header.frame_id = self.tcp
             box.primitives = [SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in held['size_m']])]
-            box.primitive_poses = [make_pose(held['offset_m'])]
+            box.primitive_poses = [make_pose(held['offset_m'], held.get('quat') or (0.0, 0.0, 0.0, 1.0))]
             st.attached_collision_objects = [AttachedCollisionObject(link_name=self.tcp, object=box,
                                                                      touch_links=FINGER_LINKS + [self.tcp])]
         return st
