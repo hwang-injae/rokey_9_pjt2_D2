@@ -142,6 +142,24 @@ def test_to_template_recipe_filters_new_tree_without_mutating():
     assert out['template'] == {'composition': {'LEG': {'label': '다리', 'count': 1, 'parts': {'LEG_001': [kept]}}}}
 
 
+@pytest.mark.parametrize('role,label,expected', [
+    ('LEG', None, '다리'), ('LEG', '', '다리'),
+    ('LEG_WHEEL', None, '다리'), ('UNKNOWN', None, 'UNKNOWN'),
+    ('LEG', '사용자 이름', '사용자 이름'),
+])
+def test_to_template_recipe_completes_optional_label(role, label, expected):
+    """새 생산자의 label 생략·빈 값은 역할 이름표로 보완하며 기존 값과 입력 원본을 보존한다. 바깥 영향 없음."""
+    comp = {'count': 0, 'parts': {}}
+    if label is not None:
+        comp['label'] = label
+    built = {'schema': 'recipe/3.0', 'model_id': 'X', 'source_cad': None,
+             'template': {'composition': {role: comp}}}
+    before = copy.deepcopy(built)
+    out = make_converter().to_template_recipe(built)
+    assert out['template']['composition'][role] == {'label': expected, 'count': 0, 'parts': {}}
+    assert built == before
+
+
 # to_template_recipe 는 입력(builder 출력)을 바꾸지 않는다
 def test_to_template_recipe_does_not_mutate(bench):
     converter = make_converter()
