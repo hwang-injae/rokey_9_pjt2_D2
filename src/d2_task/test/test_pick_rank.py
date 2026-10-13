@@ -205,3 +205,14 @@ def test_띄우기는_입력을_바꾸지_않는다():
     before = copy.deepcopy(parts)
     spread_parts(parts, CFG)
     assert [p['center'] for p in parts] == [p['center'] for p in before]
+
+
+def test_더미_위_블록은_눕힘이고_확신도가_넉넉할_때만():
+    """10/13 004: 더미 위에 비스듬히 걸친 눕힌 블록을 '옆으로 섬'(확신도 0.59)으로 보고 집어 받침 위 약 12 mm 에서 놓임 —
+    더미 위(overlap top)는 눕힘 · 확신도 STACK_CONF_MIN 이상만 후보. 덮이지 않은 블록(none)은 확신도와 상관없이 그대로."""
+    edge_on_top = blk(0.40, 0.20, up='WIDTH', ov='top', confidence=0.9)
+    low_on_top = blk(0.40, 0.20, ov='top', confidence=PickRanker.STACK_CONF_MIN - 0.01)
+    ok_on_top = blk(0.40, 0.20, ov='top', confidence=PickRanker.STACK_CONF_MIN)
+    low_alone = blk(0.40, 0.20, confidence=0.3)
+    assert rank([edge_on_top])[0] == [] and rank([low_on_top])[0] == []
+    assert rank([ok_on_top])[0] and rank([low_alone])[0]

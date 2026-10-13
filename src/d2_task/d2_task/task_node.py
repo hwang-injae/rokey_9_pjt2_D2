@@ -490,7 +490,8 @@ class TaskNode(Node):
             self._w144_ctx['ctx'] = {}
 
     def w144_finish(self, completed):
-        """조립이 끝나거나 멈춰 기록을 닫는다: run_end 이벤트 → rosbag 정상 종료(SIGINT, metadata 확인 — 아니면 incomplete) → 촬영 ZIP.
+        """조립이 끝나거나 멈춰 기록을 닫는다: run_end 이벤트 → rosbag 정상 종료(SIGINT, metadata 확인 — 아니면 incomplete)
+        → 정상 bag 이면 줄이기 프로세스(w144_reduce, 초당 2장 · 색 PNG — 확인 뒤 원본 지움) → 촬영 ZIP.
         덜 된 기록도 보존한다(one_pick finally · INTEGRATION.md 5). 두 번 불러도 한 번만 한다. 기록이 없으면 아무것도 안 함."""
         rec, tr = getattr(self, '_w144', None), getattr(self, '_w144_trace', None)
         self._w144 = self._w144_trace = None
@@ -503,6 +504,8 @@ class TaskNode(Node):
                 bag_ok = tr.stop_bag('' if completed else '조립이 끝나지 않고 멈춤(정지 · 오류 · Ctrl+C)')
                 done = done and bag_ok
                 self.get_logger().info(f'[W144] bag {tr.manifest["bag"].get("status")}: {tr.bag_dir}')
+                if tr.start_reduce():          # 정상 bag 만 — 초당 2장 · 색 PNG 로 줄인 뒤 원본을 지운다(따로 도는 프로세스)
+                    self.get_logger().info(f'[W144] bag 줄이기 시작 → {tr.bag_dir}_2hz (기록 {tr.folder / "bag_reduce.log"})')
             self.get_logger().info(f'[W144] 촬영 ZIP: {rec.finish(done)} (다 놓고 다 찍음 · 녹화 정상: {done})')
         except Exception as e:
             self.get_logger().warn(f'[W144] 기록 마무리 실패: {e!r}')

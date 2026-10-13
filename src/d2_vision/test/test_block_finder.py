@@ -284,14 +284,18 @@ def test_stacked_cross():
 
 
 def test_clipped_at_tape_edge():
-    """테이프(supply_area_m) 위 변(y 312.3 mm)을 걸친 눕힌 블록(y 297.5 ~ 322.5) → 영역 밖으로 이어지니 under(집지 않음, 10/11).
-    같은 블록을 테이프 안(y 280)으로 옮기면 none. 영역을 끄면(area_m None) 걸친 블록도 none — 영상 테두리 탓이 아님을 본다."""
+    """테이프(supply_area_m) 위 변(y 312.3 mm)을 걸친 눕힌 블록(y 297.5 ~ 322.5): 잘림 판정 영역은 손가락 여유(clip_margin_m)만큼 넓어
+    none(10/13 004 실기 — 윤곽이 다 보이는데 귀퉁이 3 mm 가 테이프 밖이라 빠져 공급 대기). 여유를 0 으로 두면 예전처럼(10/11) 영역 밖으로
+    이어지니 under(집지 않음). 테이프 안(y 280)은 none, 영역을 끄면(area_m None) 걸친 블록도 none — 영상 테두리 탓이 아님을 본다."""
     depth, idx = render([block(383, 310, 0)])
+    assert CFG['clip_margin_m'] > 0.0125
     on_edge = blocks_from_masks([idx == 0], depth, INTR, T_B2C, CFG)
+    no_margin = blocks_from_masks([idx == 0], depth, INTR, T_B2C, {**CFG, 'clip_margin_m': 0.0})
     no_area = blocks_from_masks([idx == 0], depth, INTR, T_B2C, {**CFG, 'area_m': None})
     depth2, idx2 = render([block(383, 280, 0)])
     inside = blocks_from_masks([idx2 == 0], depth2, INTR, T_B2C, CFG)
-    assert on_edge[0]['overlap'] == 'under' and on_edge[0]['confidence'] <= 0.2, on_edge
+    assert on_edge[0]['overlap'] == 'none', on_edge
+    assert no_margin[0]['overlap'] == 'under' and no_margin[0]['confidence'] <= 0.2, no_margin
     assert no_area[0]['overlap'] == 'none', no_area
     assert inside[0]['overlap'] == 'none', inside
 

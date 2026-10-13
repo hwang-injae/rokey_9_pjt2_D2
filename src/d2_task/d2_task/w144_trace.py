@@ -16,6 +16,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -128,6 +129,19 @@ class W144Trace:
             if not left or time.monotonic() > end or (self.proc is not None and self.proc.poll() is not None):
                 return left
             sleep(0.2)
+
+    def start_reduce(self, popen=subprocess.Popen):
+        """정상으로 닫힌 bag 을 줄이는 프로세스(d2_task.w144_reduce — 카메라 초당 2장 · 색 PNG, 확인되면 원본 지움)를 따로 띄운다.
+        녹화 중에 솎지 않는 것은 색 · 깊이 짝 시각이 어긋나지 않게(10/13 한석형 허락 · 박진용: 56 GB → 1 GB). 노드가 꺼져도 끝까지 돈다(새 세션).
+        반환: 띄운 명령(목록) 또는 None(bag 이 complete 가 아님). 결과는 <bag>_2hz/reduce_note.json · manifest 'bag_reduced'."""
+        if self.manifest['bag'].get('status') != 'complete':
+            return None
+        cmd = [sys.executable, '-m', 'd2_task.w144_reduce', str(self.bag_dir), '--delete-source', '--manifest', str(self.folder / 'manifest.json')]
+        log = open(self.folder / 'bag_reduce.log', 'w')
+        popen(cmd, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        self.manifest['bag_reduce_started'] = {'command': cmd, 'unix_ns': time.time_ns()}
+        self.save_manifest()
+        return cmd
 
     def stop_bag(self, reason=''):
         """녹화를 정상 종료(SIGINT → 기다림)하고 상태를 manifest 에 남긴다. 반환: complete 인가.

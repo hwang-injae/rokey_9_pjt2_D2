@@ -83,7 +83,7 @@ def finder_cfg(robot):
 
     입력: robot = robot.yaml dict (block_actual_m 또는 block_size_m · table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m ·
     supply_area_m {x_m: [최소, 최대], y_m: [최소, 최대]} — 흩뿌린 공급 영역(빨간 테이프) 안쪽 직사각형 m, 10/11 박진용 교시 · 민범진 확인).
-    출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m}.
+    출력: {'size_m': (길이, 폭, 두께) m, 'table_z_m', 'min_gap_mm', 'grasp_depth_m', 'finger_width_m', 'area_m': ((x0,x1),(y0,y1)) m, 'clip_margin_m': 잘린 윤곽 판정 영역 여유 m(손가락 여유, 키가 없으면 0)}.
     실패: 키가 없으면 KeyError, supply_area_m 의 x_m · y_m 이 두 수가 아니거나 최소 ≥ 최대면 ValueError (설정 오류 — 노드가 시작할 때 드러나게).
     """
     size = robot.get('block_actual_m') or robot['block_size_m']    # 실측 치수가 있으면 그것(쌓는 높이 · 장면 상자와 같은 값)
@@ -94,6 +94,10 @@ def finder_cfg(robot):
         'grasp_depth_m': float(robot['grasp_depth_m']),
         'finger_width_m': float(robot['finger']['width_m']),
         'area_m': _area_rect(robot['supply_area_m']),
+        # 잘린 윤곽 판정(_clipped)만 영역을 손가락 여유(가장 넓게 연 폭/2 + 손가락 두께)만큼 넓혀 본다 — 10/13 004 실기: 윤곽이 다 보이는
+        # 블록이 귀퉁이 3 mm 가 테이프 안쪽 직사각형 밖이라 '잘림 → 덮임'으로 빠져 공급 대기. 높이 지도(height_grid.supply_map_area)와 같은 여유
+        'clip_margin_m': max(float(v) for v in robot['grasp_open_pick_m'].values()) / 2 + float(robot['finger']['thickness_m'])
+        if 'grasp_open_pick_m' in robot and 'finger' in robot and 'thickness_m' in robot['finger'] else 0.0,
     }
 
 
@@ -311,7 +315,7 @@ def _refine_top(blk, cfg):
 
 
 def _clipped(mask, P, h_mm, h_c, cfg):
-    """윤곽이 잘렸나(bool): 영상 테두리 BORDER_PX 안에 닿음 · 마스크 픽셀이 흩뿌릴 영역 밖(CLIP_OUT_FRAC 넘게) ·
+    """윤곽이 잘렸나(bool): 영상 테두리 BORDER_PX 안에 닿음 · 마스크 픽셀이 흩뿌릴 영역(손가락 여유 clip_margin_m 만큼 넓힌 것) 밖(CLIP_OUT_FRAC 넘게) ·
     마스크 바로 바깥(CLIP_RING_PX)에 영역 밖이면서 내 높이 h_c(mm)의 CLIP_H_FRAC 이상인 픽셀이 있음(블록이 영역 밖으로 이어짐 —
     예비 마스크는 영역 안에서만 만들어져 경계에서 잘려 나온다)."""
     b = BORDER_PX
@@ -323,7 +327,9 @@ def _clipped(mask, P, h_mm, h_c, cfg):
     v0, v1, u0, u1 = win
     m = mask[v0:v1, u0:u1]
     Pw = P[v0:v1, u0:u1]
-    inside = _in_area(Pw, cfg)
+    mg = float(cfg.get('clip_margin_m') or 0.0)
+    (x0, x1), (y0, y1) = cfg['area_m']
+    inside = _in_area(Pw, dict(cfg, area_m=((x0 - mg, x1 + mg), (y0 - mg, y1 + mg))))
     known = np.isfinite(Pw[..., 0])
     if (m & known & ~inside).sum() > CLIP_OUT_FRAC * max(m.sum(), 1):
         return True

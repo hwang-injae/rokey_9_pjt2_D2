@@ -105,3 +105,13 @@ def test_구독_확인은_로그의_토픽_이름으로(tmp_path):
 
 def test_jsonable_은_튜플_숫자_NaN_을_기본형으로():
     assert jsonable({'a': (1, 2.5, float('inf'))}) == {'a': [1, 2.5, None]}
+
+
+def test_줄이기는_정상_bag_일_때만_따로_띄운다(tmp_path):
+    t = make(tmp_path)
+    seen = []
+    assert t.start_reduce(popen=lambda cmd, **kw: seen.append((cmd, kw))) is None and seen == []      # 녹화 안 함 — not_started
+    t.manifest['bag'] = {'status': 'complete'}
+    cmd = t.start_reduce(popen=lambda cmd, **kw: seen.append((cmd, kw)))
+    assert cmd[1:3] == ['-m', 'd2_task.w144_reduce'] and '--delete-source' in cmd and str(t.bag_dir) in cmd
+    assert seen[0][1]['start_new_session'] and json.loads((t.folder / 'manifest.json').read_text())['bag_reduce_started']['command'] == cmd

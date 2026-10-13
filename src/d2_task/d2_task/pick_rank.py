@@ -55,6 +55,8 @@ class PickRanker:
     GRASP_ORDER = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG')
     POS_ERR_M = 0.002          # 위치 오차 여유 e — 옆 블록 사각형을 이만큼 키운다(robot.yaml find.min_gap_mm = 2e + 18.2 의 e)
     GAIN_NEAR_M = 0.12         # 치운 블록에서 이 안의 블록만 '새로 잡히나' 따진다(블록 길이 + 손가락 자리)
+    STACK_CONF_MIN = 0.7       # 더미 위(overlap top) 블록을 집는 확신도 최소 — 10/13 004 실기: 더미 위에 비스듬히 걸친 눕힌 블록을 '옆으로 섬'(확신도 0.59)으로
+                               # 보고 집어 받침 위 약 12 mm 에서 놓임(로봇은 계획대로, 자세 판단이 틀림). 그 장면 다른 더미 위 블록은 0.74 ~ 0.83
     COVER_MIN_FREE = 2         # 남을 덮은 블록을 1칸으로 올리는 '치우면 열리는 수' 최소 — 곧게 잡히는 블록이 드러나거나 2개 이상 열림(10/13 박진용 · 안 B)
     SAME_M = 0.015             # 실패한 시도와 블록 위치가 이 안이면 같은 시도로 보고 다시 고르지 않는다
     STACK_TOL_M = 0.004        # 얹힌 블록의 잰 높이가 층 높이와 이 안이면 층 높이로 잡는다(비전 높이 판정 허용과 같은 크기)
@@ -242,7 +244,8 @@ class PickRanker:
     def rank(self, blocks, failed=(), pts=None):
         """집기 시도 후보를 해 볼 순서대로 [(번호, 잡기, 각도 °, 옮김 m, 꼬리표)]와 거른 수 {'깊이': n, '블록': {번호(1부터)}}.
 
-        거르기: 덮인 블록 · 값이 틀린 블록(BlockPicker.is_valid) · 실패한 시도(failed) · 기울어진 옆으로 선 · 선 블록 ·
+        거르기: 덮인 블록 · 값이 틀린 블록(BlockPicker.is_valid) · 더미 위(overlap top)인데 눕힘이 아니거나 확신도가 STACK_CONF_MIN 미만인 블록 ·
+        실패한 시도(failed) · 기울어진 옆으로 선 · 선 블록 ·
         center_top_z_m 이 없거나 손가락 자리가 막힌 기울어진 블록 · pts 가 있으면 깊이로 손가락 자리가 막힌 후보.
         잡기 'TILT' = 기울어진 눕힌 블록을 공구를 기울여 좁은 폭으로 집기. blocks 가 목록이 아니면 ValueError(부르는 쪽 실수).
         """
@@ -253,6 +256,8 @@ class PickRanker:
         for i, b in enumerate(blocks):
             if not BlockPicker.is_valid(b) or b.get('overlap') == 'under':
                 continue
+            if b.get('overlap') == 'top' and (b['up'] != 'THICKNESS' or float(b.get('confidence', 1.0)) < self.STACK_CONF_MIN):
+                continue                  # 더미 위 블록은 눕힘 · 확신도 STACK_CONF_MIN 이상만 — 자세를 잘못 보면 손 안 위치가 틀려 놓을 때 높이 어긋남
             if b.get('tilted'):
                 if not (b['up'] == 'THICKNESS' and 'center_top_z_m' in b and 'tilt_tip_z_m' in b and not self.tilt_fingers_hit(blocks, i)):
                     continue

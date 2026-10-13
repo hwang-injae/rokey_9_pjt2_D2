@@ -477,8 +477,10 @@ class PickPlaceNode(Node):
         """잡기 CENTER_<FLAT_SHORT|FLAT_LONG>(받침 맞추기, one_pick center_at_p1 그대로): 받침 위 눕힌 블록(pick_pose)을 그 폭으로 물었다
         바로 놓을 위 자세 · 내려가는 직선. 손가락이 닫히는 축은 쥘 때 손 가운데로 맞춰지므로, 레시피 잡기와 반대 폭으로 한 번 물면
         레시피 잡기가 맞춰 주지 않는 축이 잰 중심으로 온다(11:59 실기 W144: 닫히지 않는 축만 ±2 ~ 3 mm → 옆 위판을 밂).
-        손목 대칭 두 방향 중 IK · 직선이 되는 첫 방향, 손가락 가운데 비킴(finger_center_close_m)은 집기와 같이 보정.
-        반환: {'grasp', 'qa', 'down'} 또는 None. 바깥 영향: 계획만 한다."""
+        손목 대칭 두 방향을 다 풀어(지금 관절값에 가까운 ±360° 값으로) 지금 자세에서 관절이 덜 도는 쪽부터 — 10/13 실기 001 SEAT_001_01 ·
+        004 BASE_001_01: IK 가 먼저 풀린 쪽만 써서 받침 촬영 자세에서 가는 길을 40 s 못 찾고(BiTRRT 시간 초과) 맞추기를 건너뜀.
+        손가락 가운데 비킴(finger_center_close_m)은 집기와 같이 보정.
+        반환: [{'grasp', 'qa', 'down', 'turn_deg'}](덜 도는 순) 또는 None. 바깥 영향: 계획만 한다."""
         gc = g.grasp[len(CENTER_PREFIX):]
         p, o = g.pick_pose.position, g.pick_pose.orientation
         try:
@@ -490,28 +492,41 @@ class PickPlaceNode(Node):
         fc = self.cfg['gripper'].get('finger_center_close_m') or 0.0
         scale = self.cfg['speed_scale'] * LINE_SCALE * m.get('pick_speed_ratio', 1.0)
         now = self.exe.current()
+        out = []
         for q in (qt, flip_about_z(qt)):
             ycol = [r[1] for r in matrix_from_quat(q)]
             low = tuple(v - fc * c for v, c in zip(xyz, ycol))
             qa = self._ik_exact((low[0], low[1], low[2] + m['approach_m']), q, now)
-            down = None if qa is None else self.exe.plan_line(low, q, scale, start_q=qa)[0]
+            if qa is None:
+                continue
+            qa = self._unwrap(qa, now)
+            down = self.exe.plan_line(low, q, scale, start_q=qa)[0]
             if down is not None:
-                return {'grasp': gc, 'qa': qa, 'down': down}
-        self.get_logger().warn(f'{g.part_id}: 맞추기({gc}) IK · 직선이 안 나옴')
-        return None
+                out.append({'grasp': gc, 'qa': qa, 'down': down,
+                            'turn_deg': max(abs(math.degrees(a - b)) for a, b in zip(qa, now))})
+        if not out:
+            self.get_logger().warn(f'{g.part_id}: 맞추기({gc}) IK · 직선이 안 나옴')
+            return None
+        return sorted(out, key=lambda c: c['turn_deg'])
 
     def _center(self, g, halted, step, finish):
         """받침 맞추기 실행: 위로 → 그 폭으로 열기 → 내려가기 → 닫기 → 열기 → 내려온 길로 올라오기 → 활짝. 블록은 들지 않는다.
         움직이기 전에 길이 안 나오면 PLAN_FAILED(팔 안 움직임 — 작업 관리자는 맞추기 없이 다시 집기로 간다). 반환: finish 결과."""
-        c = self._center_targets(g)
-        if c is None:
+        cands = self._center_targets(g)
+        if cands is None:
             return finish(False, 'PLAN_FAILED')
-        open_pick = pick_open_width(self.cfg, c['grasp'], g.open_width_m)
+        open_pick = pick_open_width(self.cfg, cands[0]['grasp'], g.open_width_m)
         if open_pick is None:
             return finish(False, 'PLAN_FAILED')
-        approach = self.plan_free(c['qa'], self.down_level(self.exe.current(), c['qa']), None, None, [])
-        if approach is None or not self.line_clear(c['down'], 'center', finger=open_finger_angle(self.cfg, open_pick),
-                                                   ignore=f'blk_{g.part_id}'):
+        c, approach = None, None
+        for cand in cands:                      # 덜 도는 손목 방향부터 — 길이 안 나오면 대칭 다른 쪽
+            approach = self.plan_free(cand['qa'], self.down_level(self.exe.current(), cand['qa']), None, None, [])
+            if approach is not None and self.line_clear(cand['down'], 'center', finger=open_finger_angle(self.cfg, open_pick),
+                                                        ignore=f'blk_{g.part_id}'):
+                c = cand
+                break
+            self.get_logger().warn(f'{g.part_id}: 맞추기 손목 방향(관절 최대 {cand["turn_deg"]:.0f}°) 길 없음')
+        if c is None:
             return finish(False, 'PLAN_FAILED')
         step('approach')
         ok, why = self.exe.execute(approach, halted)
