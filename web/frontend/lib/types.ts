@@ -175,7 +175,9 @@ export interface TemplateChoice {
   success: boolean;
   template?: string | null; // null = 의자 · 책상 밖이거나 맞는 모양 없음
   reason?: string;
-  templates?: { id: string; label: string }[];
+  templates?: { id: string; name: string; label: string }[]; // name = V000 레시피 template.name(카드 이름)
+  ai_template?: string; // AI 판단 기록 — 생성 요청에 그대로 돌려보냄('NONE' = 못 고름 · 실패)
+  ai_reason?: string;
   code?: string;
   message?: string;
 }

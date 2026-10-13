@@ -87,9 +87,9 @@ async function postJson<T>(path: string, body: unknown, timeoutMs = AI_TIMEOUT_M
 
 /** 요청 문장 → AI 가 고른 모양(Template) + 이유 + 고를 수 있는 목록 */
 export const chooseTemplate = (text: string) => postJson<TemplateChoice>('/api/designs/template', { text });
-/** 후보 3개 만들기 시작 → {job_id}(한 번에 하나 — 이미 만드는 중이면 error) */
-export const startGenerate = (text: string, template: string) =>
-  postJson<{ job_id: string }>('/api/designs/generate', { text, template }, 10000);
+/** 후보 3개 만들기 시작 → {job_id}(한 번에 하나 — 이미 만드는 중이면 error). ai = 모양 고르기 답의 AI 판단 기록(그대로 돌려보냄) */
+export const startGenerate = (text: string, template: string, ai?: { ai_template?: string; ai_reason?: string }) =>
+  postJson<{ job_id: string }>('/api/designs/generate', { text, template, ...ai }, 10000);
 /** 생성 작업 하나의 지금 모습. 없으면 null */
 export const getGenJob = (jobId: string) => getJson<GenJob>('/api/designs/generate/' + encodeURIComponent(jobId));
 /** 고른 후보 저장 → {design_id, version, parent_id, index}. 떨어진 후보 · 이미 저장이면 error */

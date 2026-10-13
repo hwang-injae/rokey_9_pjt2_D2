@@ -82,7 +82,7 @@ export default function GeneratePanel({ robot, rules, dark, onSaved, onLog }: Pr
     setBusy(true);
     setError('');
     const t = text.trim();
-    const r = await api.startGenerate(t, template);
+    const r = await api.startGenerate(t, template, { ai_template: choice?.ai_template, ai_reason: choice?.ai_reason });
     setBusy(false);
     if (!r.data) return setError(r.error ?? '웹 서버 답이 없어요');
     setJob({ job_id: r.data.job_id, state: 'running', text: t, template, candidates: [] });

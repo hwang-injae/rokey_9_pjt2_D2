@@ -20,7 +20,7 @@ for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_task', ROOT / 'src' / 'd2
 
 from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
-from design_gen import MAX_REGEN, DesignGenerator, GenError  # noqa: E402
+from design_gen import MAX_REGEN, DesignGenerator, GenError, scan_actions  # noqa: E402
 from design_store import DesignStore  # noqa: E402
 
 RECIPES = ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
@@ -99,28 +99,35 @@ def make(store, replies, check=None):
 
 
 def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
-    """도구로 참고 설계를 읽고(부모) → 후보 3개에 새 ID → 진짜 검사 → 합격 후보 1개만 저장. 진행 표시 · 기록(NFR-17)도."""
-    gen, client = make(store, [tool_call(BENCH), answer([good, bad, good])])
+    """도구로 참고 설계를 읽고(부모) → 후보 3개에 새 ID → 진짜 검사 → 합격 후보 1개만 저장. 진행 표시 · 기록(NFR-17)도.
+    검사 요청에는 V000 레시피 통째(base_recipe — 10/13 PL)를 싣고, 후보 · 저장 설계에는 안 넣는다. 저장하면 AI 판단 기록 · AI 기록 번호(#14)."""
+    sent, check = [], real_check()
+    gen, client = make(store, [tool_call(BENCH), answer([good, bad, good])], check=lambda req: sent.append(req) or check(req))
     events = []
     r = gen.generate('벤치를 만들어 줘', TEMPLATE, on_progress=lambda stage, info: events.append(stage))
     assert r['design_id'] == '001_CHAIR_BENCH_V001' and r['parent_id'] == BENCH and r['reference'] == [BENCH]
     assert [c['check']['ok'] for c in r['candidates']] == [True, False, True]
     assert r['candidates'][1]['check']['errors'] and r['candidates'][0]['parts']['design_id'] == '001_CHAIR_BENCH_V001'
+    assert len(sent) == 3 and all(req['base_recipe'] == store.get_design(BENCH)['recipe'] for req in sent)
+    assert all('base_recipe' not in c['parts'] for c in r['candidates'])
     assert events == ['reading', 'candidates', 'checked', 'checked', 'checked']
     first, second = client.calls
     assert first['model'] == 'gpt-4o' and first['temperature'] == 0 and first['tool_choice'] == 'required'
     assert first['parallel_tool_calls'] is False and first['response_format']['json_schema']['strict'] is True
     assert first['tools'][0]['function']['parameters']['properties']['design_id']['enum'] == [BENCH]   # 이 Template 설계만
     assert second['messages'][-1]['role'] == 'tool' and '"parts"' in second['messages'][-1]['content']
-    rec = gen.save(r, 0)
+    rec = gen.save(r, 0, ai_template='002_CHAIR_BACK', ai_reason='등받이가 있을 것 같아서')    # 사람이 확인 화면에서 바꾼 경우
     assert rec['design_id'] == '001_CHAIR_BENCH_V001' and rec['parent_id'] == BENCH and rec['made_by'] == 'web'
     assert rec['prompt'] == '벤치를 만들어 줘' and rec['recipe']['model_id'] == '001_CHAIR_BENCH_V001'
+    assert (rec['ai_template'], rec['ai_reason'], rec['template_changed']) == ('002_CHAIR_BACK', '등받이가 있을 것 같아서', True)
+    assert 'base_recipe' not in rec['parts'] and 'revision' not in json.dumps(rec['recipe'])   # AI 레시피 = composition 만(레시피 초안 6절)
     with pytest.raises(ValueError):
         gen.save(r, 1)                                       # 떨어진 후보는 못 고름
     logs = list(store.gen_logs_dir.glob('*_generate.json'))
-    assert len(logs) == 1
+    assert len(logs) == 1 and r['gen_log'] == logs[0].name
     log = json.loads(logs[0].read_text(encoding='utf-8'))
     assert log['messages'][0]['role'] == 'system' and len(log['calls']) == 2 and log['result']['design_id'] == '001_CHAIR_BENCH_V001'
+    assert log['design_id'] == '001_CHAIR_BENCH_V001'        # 고른 후보를 저장할 때 채움(설계_DB #14)
     assert 'sk-' not in logs[0].read_text(encoding='utf-8')
 
 
@@ -206,6 +213,8 @@ def test_classify_template_or_none(store):
     assert gen.classify('소파') == {'template': None, 'reason': '소파는 없어요'}
     call = client.calls[0]
     assert call['model'] == 'gpt-4o'                     # 팀 키는 gpt-4o · whisper-1 만(10/10)
+    bench = store.get_design(BENCH)['recipe']['template']   # 설명 = V000 레시피 template 칸(코드 표 없음, 10/13 PL)
+    assert f"- {TEMPLATE}: {bench['name']} — {bench['description']} (" in call['messages'][0]['content']
     assert call['response_format']['json_schema']['schema']['properties']['template']['enum'] == \
         ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL', 'NONE']
 
@@ -236,3 +245,99 @@ def test_no_credit_message(store):
         gen.classify('벤치')
     assert e.value.code == 'GEN_FAILED' and '크레딧' in e.value.message
 
+
+
+# ---------- 스캔 [저장](IRD 8.4 ⑦) — scan_fill 은 W177(민범진) 자리라 시험에서는 정해 둔 답으로 ----------
+RUN = 'R20261013_100000_a1b2'
+
+
+def scan_of(parts, nearest=BENCH):
+    """설계를 스캔한 것처럼 — blocks/2(scan_num · 위치 · 방향)만, AI 칸 없음. 순서는 일부러 뒤집음(scan_num 은 쌓는 순서가 아님)."""
+    blocks = [{'scan_num': i + 1, **{k: p[k] for k in ('x', 'y', 'z', 'ori')}} for i, p in enumerate(reversed(parts))]
+    return {'schema': 'scan_result/2.0', 'run_id': RUN, 'inferred_count': 0, 'nearest_base': nearest,
+            'blocks': {'schema': 'blocks/2', 'blocks': blocks}}
+
+
+def fills(gen, *answers):
+    """gen.scan_fill 을 정해 둔 답(dict 또는 예외)으로 바꾼다. 반환: 받은 feedback 목록(부를 때마다 하나)."""
+    got = []
+
+    def fill(scan_result, feedback=None):
+        got.append(feedback)
+        a = answers[len(got) - 1]
+        if isinstance(a, Exception):
+            raise a
+        return a
+    gen.scan_fill = fill
+    return got
+
+
+def filled(parts, parent=BENCH, ai=TEMPLATE, reason='다리 둘 위 좌판'):
+    """scan_fill 답 모양(W177 약속)."""
+    return {'parts': copy.deepcopy(parts), 'parent_id': parent, 'ai_template': ai, 'ai_reason': reason}
+
+
+def test_scan_fill_is_the_w177_slot(store, good):
+    """scan_fill 은 아직 비어 있다(W177 민범진) — 스캔 저장은 GEN_FAILED, 화면 버튼은 [다시 스캔] · [취소]."""
+    gen, _ = make(store, [])
+    with pytest.raises(GenError) as e:
+        gen.save_scan(scan_of(good))
+    assert e.value.code == 'GEN_FAILED' and 'W177' in e.value.message
+    assert scan_actions(e.value.detail) == ['rescan', 'cancel']
+
+
+def test_save_scan_checks_with_base_recipe_and_saves_as_scan(store, good):
+    """채움 → 부모 Template 의 다음 V → 검사(base_recipe = V000 레시피 통째) → 저장(made_by scan · AI 판단 기록, base_recipe 없음)."""
+    sent, check = [], real_check()
+    gen, _ = make(store, [], check=lambda req: sent.append(req) or check(req))
+    fills(gen, filled(good))
+    events = []
+    rec = gen.save_scan(scan_of(good), on_progress=lambda stage, info: events.append(stage))
+    assert rec['design_id'] == '001_CHAIR_BENCH_V001' and rec['made_by'] == 'scan' and rec['parent_id'] == BENCH
+    assert (rec['ai_template'], rec['ai_reason'], rec['template_changed']) == (TEMPLATE, '다리 둘 위 좌판', False)
+    assert sent[0]['base_recipe'] == store.get_design(BENCH)['recipe'] and 'base_recipe' not in rec['parts']
+    assert events == ['filled', 'checked']
+
+
+def test_save_scan_refills_when_ai_moved_parts_or_filled_wrong(store, good):
+    """AI 가 위치를 바꾸면(E-79) 검사 전에 떨어뜨리고 피드백으로 다시 채운다(ai_fields). 다시 채우기는 최대 2번 → 그래도면 CHECK_FAILED."""
+    moved = copy.deepcopy(good)
+    moved[0]['x'] += 25
+    gen, _ = make(store, [])
+    got = fills(gen, filled(moved), filled(good))
+    rec = gen.save_scan(scan_of(good))
+    assert rec['made_by'] == 'scan' and got[0] is None and got[1][0]['kind'] == 'ai_fields'
+    gen, _ = make(store, [])
+    got = fills(gen, filled(moved), filled(moved), filled(moved))
+    with pytest.raises(GenError) as e:
+        gen.save_scan(scan_of(good))
+    assert e.value.code == 'CHECK_FAILED' and len(got) == 3 and scan_actions(e.value.detail) == ['rescan', 'cancel']
+
+
+def test_save_scan_stops_at_position_and_scope(store, good, bad):
+    """놓인 자리 실패(position — 공중 등)는 다시 채우지 않고 바로 [다시 스캔] · [취소], 블록 수 초과(scope)는 [취소]만."""
+    gen, _ = make(store, [])
+    got = fills(gen, filled(bad), filled(bad))
+    with pytest.raises(GenError) as e:
+        gen.save_scan(scan_of(bad))
+    assert len(got) == 1 and any(x.get('kind') == 'position' for x in e.value.detail)
+    assert scan_actions(e.value.detail) == ['rescan', 'cancel']
+    many = [dict(p, z=p['z'] + 90 * k) for k in range(5) for p in good]       # 55개 > 54(robot.yaml check.max_blocks)
+    gen, _ = make(store, [])
+    got = fills(gen, filled(many), filled(many))
+    with pytest.raises(GenError) as e:
+        gen.save_scan(scan_of(many))
+    assert len(got) == 1 and e.value.code == 'OUT_OF_SCOPE' and scan_actions(e.value.detail) == ['cancel']
+
+
+def test_four_bases_pass_real_check_with_their_base_recipe(store):
+    """W163 완료 기준(기본 4개 통과): 기본 설계 4개를 새 ID 로 검사 요청하면 각자 V000 레시피(base_recipe)로 진짜 검사 묶음(21번 포함)을 통과한다.
+    다른 Template 의 base_recipe 를 실으면 REQUEST_INVALID(웹 쪽 잘못 — 21번이 model_id 로 대조)."""
+    gen, _ = make(store, [])
+    for t in ('001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL'):
+        design_id, _ = store.new_design_id(t, f'{t}_V000')
+        parts = {**store.get_design(f'{t}_V000')['parts'], 'design_id': design_id}
+        chk = gen._check(parts)
+        assert chk['ok'] and chk['recipe']['model_id'] == design_id and 'revision' not in json.dumps(chk['recipe']), (t, chk['errors'])
+    wrong = real_check()({**parts, 'base_recipe': store.base_recipe('001_CHAIR_BENCH')})
+    assert wrong['ok'] is False and [e['reason'] for e in wrong['errors']] == ['REQUEST_INVALID']

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 for p in (ROOT / 'web' / 'backend', ROOT / 'src' / 'd2_bridge', ROOT / 'src' / 'd2_task'):
     sys.path.insert(0, str(p))
 
-from design_gen import GenError  # noqa: E402
+from design_gen import DesignGenerator, GenError  # noqa: E402
 from mqtt_client import MqttClient  # noqa: E402
 
 # app.py 는 불러오는 순간 저장소를 열고 기본 설계를 등록한다 — 시험이 실제 web/backend/data(웹 PC 데이터)를 바꾸지 않게 임시 폴더로
@@ -189,7 +189,7 @@ class FakeMqtt:
     def __init__(self, bridge=True):
         self.calls, self.bridge, self.on_event = [], bridge, None
         self.host, self.port = 'localhost', 1883
-        self.handlers, self.blobs = {}, {}
+        self.handlers, self.blobs, self.scan = {}, {}, None
 
     def serve(self, name, fn):
         self.handlers[name] = fn
@@ -205,7 +205,7 @@ class FakeMqtt:
         return self.bridge
 
     def snapshot(self):
-        return {'state': {'state': 'IDLE'}, 'bridge_alive': self.bridge, 'broker': True}
+        return {'state': {'state': 'IDLE'}, 'bridge_alive': self.bridge, 'broker': True, 'scan_result': self.scan}
 
     def start(self):
         pass
@@ -241,7 +241,10 @@ class FakeGen:
         return {'template': '001_CHAIR_BENCH', 'reason': '벤치 모양'}
 
     def templates(self):
-        return {'001_CHAIR_BENCH': '벤치', '002_CHAIR_BACK': '등받이 의자'}
+        return {'001_CHAIR_BENCH': {'name': '벤치', 'description': '', 'label': '벤치'},
+                '002_CHAIR_BACK': {'name': '등받이 의자', 'description': '', 'label': '등받이 의자'}}
+
+    ai_judgment = staticmethod(DesignGenerator.ai_judgment)    # 규칙은 진짜 것 그대로(못 고름 · 실패 = 'NONE')
 
     def generate(self, text, template, on_progress=None):
         self.release.wait(2)
@@ -255,10 +258,17 @@ class FakeGen:
         return {'text': text, 'template': template, 'design_id': '001_CHAIR_BENCH_V001', 'parent_id': '001_CHAIR_BENCH_V000',
                 'reference': ['001_CHAIR_BENCH_V000'], 'candidates': [cand, bad], 'attempts': 1, 'elapsed_s': 1.0}
 
-    def save(self, result, index, made_by='web'):
+    def save_scan(self, scan_result, on_progress=None):
+        self.release.wait(2)
+        on_progress('filled', {'attempt': 1, 'design_id': '001_CHAIR_BENCH_V001', 'parent_id': '001_CHAIR_BENCH_V000'})
+        if scan_result.get('fail'):
+            raise GenError('OUT_OF_SCOPE', '블록이 너무 많아 저장할 수 없어요', [{'part': None, 'reason': 'OUT_OF_SCOPE', 'kind': 'scope'}])
+        return {'design_id': '001_CHAIR_BENCH_V001', 'version': 'V001', 'parent_id': '001_CHAIR_BENCH_V000'}
+
+    def save(self, result, index, made_by='web', ai_template=None, ai_reason=None):
         if not result['candidates'][index]['check']['ok']:
             raise ValueError('검사에 떨어진 후보는 고를 수 없다')
-        self.saved.append((index, made_by))
+        self.saved.append((index, made_by, ai_template, ai_reason))
         return {'design_id': result['design_id'], 'version': 'V001', 'parent_id': result['parent_id']}
 
 
@@ -270,17 +280,27 @@ def make_client(store, bridge=True, gen=None):
 
 
 def test_generate_routes_job_flow(store):
-    """Template 고르기 → 생성 시작(job, 한 번에 하나) → 진행 · 결과 조회(레시피는 화면에 안 보냄) → 고르기 저장 → 다시 고르기 거절."""
+    """Template 고르기 → 생성 시작(job, 한 번에 하나) → 진행 · 결과 조회(레시피는 화면에 안 보냄) → 고르기 저장 → 다시 고르기 거절.
+    AI 판단 기록(ai_template · ai_reason)은 /template 답 → /generate 요청 → 저장까지 그대로 간다(못 고름 · 실패 = 'NONE', 설계_DB 1절)."""
     gen = FakeGen()
     client, _ = make_client(store, gen=gen)
     assert client.post('/api/designs/template', json={'text': '벤치'}).json() == \
         {'success': True, 'template': '001_CHAIR_BENCH', 'reason': '벤치 모양',
-         'templates': [{'id': '001_CHAIR_BENCH', 'label': '벤치'}, {'id': '002_CHAIR_BACK', 'label': '등받이 의자'}]}
+         'templates': [{'id': '001_CHAIR_BENCH', 'name': '벤치', 'label': '벤치'},
+                       {'id': '002_CHAIR_BACK', 'name': '등받이 의자', 'label': '등받이 의자'}],
+         'ai_template': '001_CHAIR_BENCH', 'ai_reason': '벤치 모양'}
     assert client.post('/api/designs/template', json={'text': '  '}).status_code == 400
+    gen.classify = lambda text: {'template': None, 'reason': '의자 · 책상이 아님'}
+    none = client.post('/api/designs/template', json={'text': '자동차'}).json()
+    assert none['template'] is None and (none['ai_template'], none['ai_reason']) == ('NONE', '의자 · 책상이 아님')
     gen.classify = lambda text: (_ for _ in ()).throw(GenError('GEN_FAILED', 'OpenAI 크레딧이 없어요'))
     fail = client.post('/api/designs/template', json={'text': '벤치'}).json()
     assert fail['success'] is False and '크레딧' in fail['message'] and len(fail['templates']) == 2     # 사람이 직접 고르게
-    job = client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH'}).json()['job_id']
+    assert (fail['ai_template'], fail['ai_reason']) == ('NONE', '실패: GEN_FAILED')
+    assert client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH',
+                                                      'ai_template': '999_SOFA'}).status_code == 400       # 생성 전에 거름
+    job = client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH',
+                                                     'ai_template': 'NONE', 'ai_reason': '실패: GEN_FAILED'}).json()['job_id']
     assert client.post('/api/designs/generate', json={'text': '또', 'template': '001_CHAIR_BENCH'}).status_code == 409   # 하나씩
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 아직 도는 중
     gen.release.set()
@@ -295,9 +315,38 @@ def test_generate_routes_job_flow(store):
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 1}).status_code == 409                      # 떨어진 후보
     saved = client.post(f'/api/designs/generate/{job}/pick', json={'index': 0, 'made_by': 'voice'}).json()
     assert saved == {'design_id': '001_CHAIR_BENCH_V001', 'version': 'V001', 'parent_id': '001_CHAIR_BENCH_V000', 'index': 0}
-    assert gen.saved == [(0, 'voice')] and client.get(f'/api/designs/generate/{job}').json()['state'] == 'saved'
+    assert gen.saved == [(0, 'voice', 'NONE', '실패: GEN_FAILED')] and client.get(f'/api/designs/generate/{job}').json()['state'] == 'saved'
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 한 번만
     assert client.get('/api/designs/generate/nope').status_code == 404
+
+
+def test_scan_save_route_job(store):
+    """스캔 [그대로 저장](IRD 8.4 ⑦): 마지막 scan_result 의 run_id 가 맞아야 시작(옛 스캔 저장 막음) · 생성과 한 번에 하나 ·
+    결과는 job — 저장한 설계 또는 실패 code · message · 화면 버튼(scope = [취소]만)."""
+    gen = FakeGen()
+    client, fake = make_client(store, gen=gen)
+    run = 'R20261013_100000_a1b2'
+    assert client.post('/api/designs/scan/save', json={'run_id': run}).status_code == 409          # 스캔 결과 없음
+    fake.scan = {'schema': 'scan_result/2.0', 'run_id': run, 'blocks': {'schema': 'blocks/2', 'blocks': [{}]}}
+    assert client.post('/api/designs/scan/save', json={'run_id': 'R20261013_090000_0000'}).status_code == 409   # 다른 스캔
+    job = client.post('/api/designs/scan/save', json={'run_id': run}).json()['job_id']
+    assert client.post('/api/designs/generate', json={'text': '벤치', 'template': '001_CHAIR_BENCH'}).status_code == 409  # 하나씩
+    gen.release.set()
+    for _ in range(100):
+        view = client.get(f'/api/designs/scan/save/{job}').json()
+        if view['state'] != 'running':
+            break
+        threading.Event().wait(0.02)
+    assert view['state'] == 'saved' and view['saved']['design_id'] == '001_CHAIR_BENCH_V001' and view['run_id'] == run
+    fake.scan = {**fake.scan, 'fail': True}
+    job = client.post('/api/designs/scan/save', json={'run_id': run}).json()['job_id']
+    for _ in range(100):
+        view = client.get(f'/api/designs/scan/save/{job}').json()
+        if view['state'] != 'running':
+            break
+        threading.Event().wait(0.02)
+    assert view['state'] == 'failed' and view['code'] == 'OUT_OF_SCOPE' and view['actions'] == ['cancel']
+    assert client.get('/api/designs/scan/save/nope').status_code == 404
 
 
 def test_command_stop_resume_map_to_ird_names(store):
@@ -435,6 +484,31 @@ def test_save_design_keeps_record_and_never_overwrites(store):
     assert store.answer_get_design({'design_id': '001_CHAIR_BENCH_V001'})['placements']['model_id'] == '001_CHAIR_BENCH_V001'
     with pytest.raises(ValueError):                        # 같은 ID 두 번째(다른 요청이 먼저 저장한 경우)
         store.save_design(got['parts'], got['recipe'], got['placements'], BENCH, 'web', check={'ok': True})
+
+
+def test_templates_and_base_recipe_from_v000_and_save_drops_base_recipe(store):
+    """Template 이름 · 설명 = V000 레시피 template 칸(10/13 PL — 코드 표 없음), base_recipe = V000 레시피 통째(부모가 V001 이어도).
+    저장할 때 base_recipe 는 떼고 AI 판단 기록 3칸을 남긴다 — template_changed = 최종 ≠ AI 선택('NONE' 도 다름), 비우면 빈칸(설계_DB 1절)."""
+    t = {x['template_id']: x for x in store.templates()}
+    assert list(t) == ['001_CHAIR_BENCH', '002_CHAIR_BACK', '003_DESK_STAND', '004_DESK_PEDESTAL']
+    bench = store.get_design(BENCH)['recipe']
+    assert (t['001_CHAIR_BENCH']['name'], t['001_CHAIR_BENCH']['description']) == \
+        (bench['template']['name'], bench['template']['description'])
+    v1 = derived(store)
+    assert (v1['ai_template'], v1['ai_reason'], v1['template_changed']) == (None, None, None)
+    assert store.base_recipe('001_CHAIR_BENCH') == bench and len(store.templates()) == 4      # 파생(V001)은 Template 이 아님
+    design_id, _ = store.new_design_id('001_CHAIR_BENCH', v1['design_id'])
+    parts, recipe, placements = as_new(store, BENCH, design_id)
+    rec = store.save_design({**parts, 'base_recipe': bench}, recipe, placements, v1['design_id'], 'voice', check={'ok': True},
+                            ai_template='NONE', ai_reason='실패: GEN_FAILED')
+    assert 'base_recipe' not in rec['parts'] and 'base_recipe' not in store.get_design(design_id)['parts']
+    assert (rec['ai_template'], rec['ai_reason'], rec['template_changed']) == ('NONE', '실패: GEN_FAILED', True)
+    design_id, _ = store.new_design_id('001_CHAIR_BENCH', BENCH)
+    parts, recipe, placements = as_new(store, BENCH, design_id)
+    with pytest.raises(ValueError):                         # ai_template 은 Template ID 또는 'NONE'
+        store.save_design(parts, recipe, placements, BENCH, 'web', check={'ok': True}, ai_template='sofa')
+    with pytest.raises(ValueError):
+        store.base_recipe('005_SOFA_LONG')
 
 
 @pytest.mark.parametrize('broken', ['not_ok', 'cad', 'sha', 'v000', 'old_name', 'parent_template', 'no_parent'])
