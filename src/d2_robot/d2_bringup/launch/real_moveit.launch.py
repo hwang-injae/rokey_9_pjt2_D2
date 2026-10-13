@@ -115,12 +115,9 @@ def generate_launch_description():
 
     grip_virtual = Node(package='m0609_rg2_bringup', executable='gripper_virtual_node.py',
                         name='gripper_virtual_node', output='screen', condition=IfCondition(is_virtual))
-    # 드라이버는 상태를 50 Hz 로 읽는데 한 번이라도 읽기가 실패하면(응답 없음 · 1 s 시간 초과) 예외로 꺼진다(오류 처리 없음 —
-    # comModbusTcp.getStatus 의 .registers). 10/11 16:41 · 10/12 09:24 브링업 3초 뒤 exit 1 → 그리퍼 서비스가 사라져 GRIPPER_NO_RESPONSE.
-    # 다시 띄우면 정상(10/12 확인)이라, 꺼지면 2초 뒤 저절로 다시 띄운다
     grip_real = Node(
         package='onrobot_rg_control', executable='OnRobotRGControllerServer', name='OnRobotRGControllerServer',
-        output='screen', condition=IfCondition(is_real), respawn=True, respawn_delay=2.0,
+        output='screen', condition=IfCondition(is_real),
         parameters=[{'/onrobot/control': 'modbus', '/onrobot/ip': LaunchConfiguration('gripper_ip'),
                      '/onrobot/port': 502, '/onrobot/changer_addr': 65, '/onrobot/gripper': 'rg2',
                      '/onrobot/offset': 5}],
