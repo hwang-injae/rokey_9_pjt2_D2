@@ -9,14 +9,14 @@
 | 어디 | 무엇 | 쓰는 데이터 | 언제 |
 |---|---|---|---|
 | **공통 띠**(모든 페이지 위, `ConnectionBadge` · `RobotPanel` — W047 ✅ ①②③⑤) | ① 상태 알림 줄: `state` 한글 + `message` + 정지 때 **누가 · 왜**(`safety_state.reason` = `STOP_WEB` · `STOP_KEY` · `STOP_TASK` · `ROBOT_ALARM:<상태>` · `CTRL_C`, E-62) ② **로봇 PC 끊김 배너**(`bridge/alive` 3초 없음 → 크게, [조립] · [스캔] 막음, "정지는 키 · 펜던트") ③ 그리퍼 표시(폭 · 잡힘) ④ 음성 의도 표시("음성: 출발") ⑤ [정지] · [다시 시작] — 늘 보임 | `task/state` · `safety/state` · `bridge/alive` · `gripper/state` · `hmi/intent` | W047 |
-| **메인** `app/page.tsx` | ⑥ 설계 3D 칸의 [설계 목록] → **열 보기**(`DesignTree` — Miller columns, 10/9 황인재가 고른 CodePen 모양: 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**. 고른 설계에서 두 갈래(10/13 PL): **[조립]** 한 번 = `select_design` → 이어서 `start`(이 누름이 출발 확인 SR-09, 옆에 '작업 영역에 사람 없음 확인') · **AI 생성** = 그 아래 패널에서 고른 설계를 바탕(부모)으로 글 [AI 생성] 또는 마이크(문장이 오면 바로 생성). AI 모양 추천(classify)은 없앰 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼(왼쪽, 로봇 설계 표시 아래) [계속] [스캔] [취소]([출발]은 설계 3D 의 [조립]으로 합침) — 켜짐은 3장 ⑩ 글상자 + 마이크 + [AI 생성](`GeneratePanel` — 마이크 → 음성 `request_design` 문장이 오면 글 창에 넣고 바로 생성, 사람 확인 단계 없음 — 10/13 PL) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 — 위 설계 3D 에서 [조립]" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/3.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
+| **메인** `app/page.tsx` | ⑥ 설계 3D 칸의 [설계 목록] → **열 보기**(`DesignTree` — Miller columns, 10/9 황인재가 고른 CodePen 모양: 가구 → 기본 설계 → 파생 → 그 파생 … 을 왼쪽에서 오른쪽 열로, `parent_id` · `version` · `made_by`). 누르면 3D로 **보기만**. 고른 설계에서 두 갈래(10/13 PL): **[조립]** 한 번 = `select_design` → 이어서 `start`(이 누름이 출발 확인 SR-09, 옆에 '작업 영역에 사람 없음 확인') · **AI 생성** = 그 아래 패널에서 고른 설계를 바탕(부모)으로 글 [AI 생성] 또는 마이크(문장이 오면 바로 생성). AI 모양 추천(classify)은 없앰 ⑦ 3D 보기(`DesignView` + `Preview3D`, E-40 — 오른쪽 큰 칸, 평소 역할별 색) ⑧ **진행도**: 위 띠 가운데(놓은 블록 / 전체 = %) + 3D에서 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색 ⑨ 버튼(왼쪽, 로봇 설계 표시 아래) [계속] [스캔] [취소]([출발]은 설계 3D 의 [조립]으로 합침) — 켜짐은 3장 ⑩ 글상자 + 마이크 + [AI 생성](`GeneratePanel` — 마이크 → 음성 `request_design` 문장이 오면 글 창에 넣고 바로 생성, 사람 확인 단계 없음 — 10/13 PL) ⑪ 생성 중 → **"디자인을 고르세요"**(후보 3개 3D 나란히 + 검사 결과 · `min_margin_mm`, 불합격 회색) → **"설계도 만드는 중"** → "저장됨 — 위 설계 3D 에서 [조립]" / `GEN_FAILED` 이유 + 기본 설계 권함 / `OUT_OF_SCOPE` 안내 + "AI가 참고한 설계"(E-72) ⑫ 상태 로그 패널(시각 · state · message) | `design/4.0.blocks` · `task/progress` · `/ws` 생성 이벤트 | ⑥~⑨ ⑫ ✅ W047 · W111 최소형(10/9) · ⑩ ⑪ W112 |
 | **설계 상세** `app/designs/page.tsx?id=…` | 미리보기 · 검사 결과 · 버전 트리 · 조립 기록(builds: 결과 · 놓은 수/전체 · 시간 · 정지 횟수 · 블록별 dz) | `/api/designs` | W112 |
 | **스캔 비교** `app/scan/page.tsx`(`SCAN_REVIEW`일 때 자동, `ScanCompare`) | 실물 사진(`scan_image`) ↔ 추론 설계 3D(`inferred` 블록 반투명) + 추정 블록 수 · **점군 창**(`scan_cloud` PLY, 닫을 수 있음, E-35 — `cloud_path`가 없거나 빈 글자면 점군 창만 안 띄움) · 버튼 [그대로 저장] [다시 스캔] [취소]([AI로 고치기]는 10/14 이후 — 10/10 PL 보류). **촬영 자세 수는 정해 두지 않는다**(`poses_used` · 점군 미리보기 `index` · `pose_id` 그대로 — W166 움직이며 작업공간 전체 스캔이면 3개보다 많다, 10/10 PL) | `task/scan_result` · `vision/scan_image` · `vision/scan_cloud` | W116 |
 | 메인 왼쪽 아래 | **손목 카메라 검출 화면**(`WristCamera`) — 비전이 YOLO-seg 결과를 그려 보낸 JPEG를 그대로(겹쳐 그리기 없음). `wrist_block`은 `find_blocks` 때마다 그림을 내므로 공급 칸(`slots`) 방식에서는 그림이 없다 | `vision/wrist_image` | ✅ 화면 · 다리(10/9) — 실물은 W150 |
 | 위 띠 오른쪽 | **다크 모드 토글**(`ThemeToggle` — 코드펜 해 · 달 모양). 이 브라우저에만 기억(`localStorage`), 처음엔 운영체제 설정 | — | ✅ 10/9 |
 
 - **설계 상세는 `designs/[id]`가 아니라 `designs?id=…`:** Next.js 정적 내보내기(`output: 'export'`)는 동적 경로를 빌드 때 아는 ID만 만든다 — AI가 새로 만든 설계가 열리지 않는다(SDD 3.1.1 고칠 것, 8장).
-- 3D 블록 크기 = `robot.yaml` `block_size_m`(backend가 `GET /api/designs/rules`로 줌 — 10/9 PL 결정 ①). `parts/3.0`(저장 설계) · `blocks/2`(스캔 추론, 위치 · 방향 + `inferred`) 둘 다 같은 칸(`x` · `y` · `z` · `ori`)으로 같은 `Preview3D`가 그린다.
+- 3D 블록 크기 = `robot.yaml` `block_size_m`(backend가 `GET /api/designs/rules`로 줌 — 10/9 PL 결정 ①). `parts/4.0`(저장 설계) · `blocks/2`(스캔 추론, 위치 · 방향 + `inferred`) 둘 다 같은 칸(`x` · `y` · `z` · `ori`)으로 같은 `Preview3D`가 그린다.
 - 진행도 색은 `progress/2.0.parts[].state`(`present` 초록 · `occluded` · `unknown` 주황 · 그 밖 = 아직, 흐린 회색) + 지금 블록(`state/2.part_id`) 노랑 — 조립 전에는 모든 블록이 `absent`라 빨강은 쓰지 않는다(경고로 읽혀서, 10/9). 블록 이름 ↔ 3D 블록은 `placements.steps[].sequence` = `blocks[].order`로 잇는다. 진행도 색은 `state/2.run_id`와 `progress.run_id`가 같을 때만. **판정은 하지 않는다**(dx · dy는 측정값만 — 지금은 NaN). % = `present` 수 / 설계 블록 수, `DONE`이면 100 %.
 - 카메라 표시기는 넣지 않는다 — `camera_status`는 MQTT로 넘기지 않는다(IRD 10.1).
 
@@ -80,7 +80,7 @@ curl -s http://172.17.0.1:8790/health                    # {"ok": true, "claude"
 | 설계 규칙 숫자 | `GET /api/designs/rules` | — | — (backend가 `robot.yaml`을 읽음, 10/9 ①) |
 | 설계 생성 | `POST /api/designs/generate {text, design_id}`(design_id = 사람이 고른 설계 = 부모, 없으면 404 — 10/13 PL, 옛 `/template` 없앰) → `{job_id}`(한 번에 하나 — 409), 진행은 `/ws` `{type: gen, job_id, stage: reading · candidates · checked · retry · done · failed · saved, …}` · `GET /api/designs/generate/{job_id}` ✅(10/10 W108 — 화면은 W112) | 검사만 `d2/task/check_design/req` × 3 | `/d2/task/check_design` |
 | 후보 고르기 → 저장 | `POST /api/designs/generate/{job_id}/pick {index, made_by}` → `{design_id, version, parent_id, index}`(떨어진 후보 · 이미 저장 409) ✅ | — (검사 결과를 이미 받아 둠) | — |
-| 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/3.0`, 없으면 404) ✅ | — | — |
+| 설계 목록(트리) · 1개 | `GET /api/designs`(요약 — 트리는 화면이 `parent_id`로 만듦, `/tree`는 두지 않음) · `GET /api/designs/{id}`(`design/4.0`, 없으면 404) ✅ | — | — |
 | 조립 기록 | `GET /api/designs/{id}/builds`(build/2 전부, 최근 것 먼저 · 설계가 없으면 404) ✅(10/10) — 목록 요약에도 `last_build` 한 줄 | — | — |
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
 | 스캔 [AI로 고치기](10/14 이후 — 10/10 PL 보류, 지금 안 만듦) | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
@@ -122,7 +122,7 @@ curl -s http://172.17.0.1:8790/health                    # {"ok": true, "claude"
 ②  바탕(10/13 PL): 고른 설계 = 새 설계의 parent_id, Template = 그 앞부분. 요청 글에 고른 설계의 블록 목록을 넣고,
     같은 Template 의 다른 설계는 store.list_designs 요약 + 도구 get_design(최대 2번, 읽기는 골라서 — tool_choice auto)으로 참고만(E-72)
     → 화면 "바탕 … · 참고한 설계 …". 도구 단계가 실패하면 examples_for(template)(바탕 설계는 뺌). 다른 설계가 없으면 도구 없이 바로
-③  Claude 1번 호출 → 후보 3개(parts/3.0 — 부품마다 order · x · y · z · ori + role · group · stage · grasp, 구조화 출력 candidates[3])
+③  Claude 1번 호출 → 후보 3개(parts/4.0 — 부품마다 order · x · y · z · ori + role · group · stage · grasp, 구조화 출력 candidates[3])
     프롬프트: 역할 · 옵션 목록(src/d2_task/d2_task/roles.json) · 잡기 규칙(SDD 6.6) · 설계 규칙 숫자(robot.yaml — 10/9 ①) · RAG 예시
     칸이 빠지거나 틀리면 check_design이 CHECK_FAILED — 코드가 대신 채우지 않음(E-69 ②). OUT_OF_SCOPE → 안내, 끝
 ④  화면에 3개 3D + "디자인을 고르세요" — 동시에 check_design × 3(차례로, 각 3초 목표) → 오는 대로 합격 · min_margin / 불합격 회색 + detail
@@ -134,10 +134,10 @@ curl -s http://172.17.0.1:8790/health                    # {"ok": true, "claude"
 
 - 시간: LLM(Claude, 10/13 — 고르기 · 읽기 각 3초쯤 + 후보 작성 1 ~ 2분 반, 호출당 제한 260초 — 중계는 240초에 먼저 끊음) + 검사 3번(≈ 10초). 후보는 backend 메모리(`job_id`)에만 — 새로고침하면 사라져도 된다(저장 전).
 - `design_id` = `<Template ID>_V<3자리>`(10/10 E-84 · IRD 2장): Template = 기본 설계 4개 이름(`001_CHAIR_BENCH` …), 기본 = `_V000`, AI · 음성 · 스캔 = 같은 Template의 다음 번호(그 Template의 가장 큰 V + 1 — 부모와 상관없이 만든 차례). 부모 · 만든 방법은 `parent_id` · `made_by`에만, `version` = V 번호(`V001`). 저장 설계는 바뀌지 않는다(E-55 — 고치면 다음 번호). `gen_path` 칸 없음(E-71).
-- **ID는 검사 전에 정한다**(10/10, W111): 변환기 ①이 그 ID로 레시피 `model_id` · `part_id`를 만들기 때문. ③ 전에 `store.new_design_id(template, parent_id)`(AI = 고른 설계의 Template, 스캔 = 부모의 Template) → 후보 3개를 같은 ID로 `check_design` → 고른 1개만 `save_design`. 저장 때 다른 요청이 먼저 같은 ID를 쓰면 거절 → ID부터 다시 · 검사도 다시.
+- **ID는 검사 전에 정한다**(10/10, W111): 변환기 ①이 그 ID로 레시피 `design_id` · `part_id`를 만들기 때문. ③ 전에 `store.new_design_id(template, parent_id)`(AI = 고른 설계의 Template, 스캔 = 부모의 Template) → 후보 3개를 같은 ID로 `check_design` → 고른 1개만 `save_design`. 저장 때 다른 요청이 먼저 같은 ID를 쓰면 거절 → ID부터 다시 · 검사도 다시.
 - **참고 설계는 그 Template 안에서만**(E-84 ③): GPT 목록 요약 · 도구 `get_design` 허용 목록 = `store.list_designs(template=…)`, 자동 전환 = `store.examples_for(template)`(그 V000 + 최근 파생 3). 다른 Template 설계를 읽고 만든 후보는 저장에서 거절되기 때문.
-- `save_design`이 거절하는 것(저장하지 않음, 마지막 방어선): 검사 불합격(SR-09) · `made_by`가 web · voice · scan 아님 · ID가 E-84 꼴이 아님 · V000(기본 설계 몫) · 모르는 Template · 레시피 짝(`model_id` · `recipe_sha256` — 로봇 작업 판단과 같은 `RecipeDocument` 확인) · 부모 없음 · 부모가 다른 Template. 저장 칸 = `design/3.0` + `prompt` · `check`(ok · min_margin_mm · errors) · `created`(FR-D02).
-- 검사 요청 · 응답은 IRD 그대로(`parts/3.0`만 → `check_result/3.0`). **형식 버전 규칙(IRD 6장):** 앞자리 같으면 받고 모르는 칸 무시, 다르면 거절(이유에 받은 schema). 형식 이름 상수는 `design_store.py` 한 곳. 옛 `cad_structure/1.0` · `cad_recipe/1.0` · `blocks/2` 설계는 거절(변환 안 함, E-69 ⑧).
+- `save_design`이 거절하는 것(저장하지 않음, 마지막 방어선): 검사 불합격(SR-09) · `made_by`가 web · voice · scan 아님 · ID가 E-84 꼴이 아님 · V000(기본 설계 몫) · 모르는 Template · 레시피 짝(`model_id` · `recipe_sha256` — 로봇 작업 판단과 같은 `RecipeDocument` 확인) · 부모 없음 · 부모가 다른 Template. 저장 칸 = `design/4.0` + `prompt` · `check`(ok · min_margin_mm · errors) · `created`(FR-D02).
+- 검사 요청 · 응답은 IRD 그대로(`parts/4.0`만 → `check_result/3.0`). **형식 버전 규칙(IRD 6장):** 앞자리 같으면 받고 모르는 칸 무시, 다르면 거절(이유에 받은 schema). 형식 이름 상수는 `design_store.py` 한 곳. 옛 `cad_structure/1.0` · `cad_recipe/1.0` · `blocks/2` 설계는 거절(변환 안 함, E-69 ⑧).
 
 ### 4-B. 스캔 → [AI로 고치기] (W125 챌린지, 10/9 PL ③ — **10/10 PL: 10/14 이후로 보류, 지금 만들지 않음**)
 
@@ -152,7 +152,7 @@ scan_result/1.x 의 blocks/2(위치 · 방향 + inferred, family = 추론기 값
    → 고른 설계 = parent_id, family = GPT 판단
 → 코드 규칙: 부모는 같은 family만 — 다르거나 도구 실패면 nearest_base(추론기 값)를 부모로, family도 그것을 따름
    (nearest_base 는 선택 칸 — 없으면 같은 family 기본 설계 중 블록 수가 가장 가까운 것)
-→ parts/3.0 → check_design → 저장(made_by scan) → select_design → READY
+→ parts/4.0 → check_design → 저장(made_by scan) → select_design → READY
 ```
 
 ## 5. backend 파일 (SDD 3.1.1)
@@ -176,7 +176,7 @@ web/backend/
 │                     W111 ✅(10/9 · 10/10): register_bases · list_designs(+ last_build) · children · get_design · builds_for · examples_for ·
 │                     new_design_id · save_design(E-84 이름) · save_build(같은 run_id 한 번) + 로봇 get_design · save_build 답.
 │                     기본 설계는 도면에서 온 것이라 등록 때 check_design 을 부르지 않는다(로봇 PC 없이도 목록이 떠야 함)
-├── prompts/          design_system.txt(설계 직접 작성 + 역할 목록 + 잡기 규칙 · 스캔 채우기 절) · blocks_schema.json(parts/3.0 후보 3개)
+├── prompts/          design_system.txt(설계 직접 작성 + 역할 목록 + 잡기 규칙 · 스캔 채우기 절) · blocks_schema.json(parts/4.0 후보 3개)
 ├── voice.py          VoiceListener — 호스트(마이크 → Whisper → 의도 → MQTT d2/hmi/intent)
 ├── mock_robot.py     가짜 로봇 PC(W126 ✅, MQTT 만): 다리 연결 신호 · 처음 상태 · 가짜 조립(블록마다 progress) · 정지 · 스캔(→ SCAN_REVIEW +
 │                     scan_result, 추정 2개) · check_design 늘 합격(벤치). 실행 python3 web/backend/mock_robot.py --step 1.0
