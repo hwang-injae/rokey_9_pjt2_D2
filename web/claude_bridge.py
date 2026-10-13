@@ -9,7 +9,8 @@
 Claude 는 도구 · MCP · 슬래시 명령 없이, 빈 임시 폴더에서 부른다(파일 · 명령 실행 없음). 대화 기록은 남기지 않는다.
 키는 쓰지 않는다(로그인 계정의 구독 한도를 쓴다). 들어온 Authorization 은 보지 않는다.
 
-실행(웹 PC 호스트): python3 web/claude_bridge.py [--host 172.17.0.1] [--port 8790] [--model opus]
+실행(웹 PC 호스트): python3 web/claude_bridge.py --host 172.17.0.1 [--port 8790] [--model opus]
+  ↑ 웹 PC 는 꼭 --host 172.17.0.1(docker0) — 기본 127.0.0.1 이면 웹 컨테이너가 중계에 닿지 못한다
 준비 점검(웹 PC 호스트): python3 web/claude_bridge.py --check [--host 172.17.0.1] [--no-call] — 항목마다 ✅ · ❌(할 일) · ⏭, 다 되면 종료 코드 0
 """
 import argparse
@@ -29,8 +30,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 log = logging.getLogger('claude_bridge')
 MODELS = ('opus', 'sonnet')   # 10/13 설계 생성으로 시험한 claude --model 별칭. 그 밖은 'claude-' 로 시작하는 전체 ID 만 넘긴다
-RUN_TIMEOUT_S = 300                              # claude 한 번 상한 — design_gen 호출 제한(CALL_TIMEOUT_S)보다 길게(먼저 끊는 쪽은 design_gen)
+RUN_TIMEOUT_S = 240                              # claude 한 번 상한 — design_gen 호출 제한(260초)보다 짧게: 중계가 먼저 끊어야
+                                                 # claude 가 혼자 남지 않고 화면에 진짜 까닭(504)이 간다(10/13 PL)
 ROLE_KO = {'user': '사용자', 'assistant': 'AI 답(이전)', 'tool': '도구 결과'}
+
+
+def is_usage_limit(text):
+    """claude 오류 글이 구독 사용 한도인지 — 중계 응답(429)과 준비 점검(--check ③)이 같은 판단을 쓴다."""
+    return 'limit' in (text or '').lower()
 
 
 class BridgeError(Exception):
@@ -56,7 +63,8 @@ class ClaudeBridge:
 
     입력: claude(실행 파일 경로), default_model(요청 model 이 별칭 · claude- ID 가 아닐 때), run(시험용 — (argv, stdin) → stdout 글자).
     바깥 영향: claude 프로세스 실행(로그인 계정 구독 사용량). 파일 · 명령 실행은 막아 둔다(--tools "").
-    실패: BridgeError(400 = 요청 모양 틀림, 502 = claude 실패 · 시간 초과 · 사용 한도).
+    실패: BridgeError(400 = 요청 모양 틀림, 504 = claude 시간 초과, 429 = 구독 사용 한도, 502 = 그 밖 claude 실패).
+          웹(design_gen)은 이 코드로 다시 부를지 가른다(504 · 429 는 다시 부르지 않음 — 10/13 PL).
     """
 
     def __init__(self, claude, default_model='opus', run=None, timeout_s=RUN_TIMEOUT_S):
@@ -133,22 +141,25 @@ class ClaudeBridge:
         except ValueError as e:
             raise BridgeError(502, f'claude 출력이 JSON 이 아니다: {raw[:200]}') from e
         if env.get('is_error'):
-            raise BridgeError(502, f"claude 실패: {str(env.get('result') or env.get('subtype'))[:300]}")
+            why = str(env.get('result') or env.get('subtype'))
+            raise BridgeError(429 if is_usage_limit(why) else 502, f'claude 실패: {why[:300]}')
         structured = env.get('structured_output')
         if schema is not None and structured is None:
             raise BridgeError(502, f"claude 가 정해진 형식으로 답하지 않았다: {str(env.get('result'))[:200]}")
         return {'structured': structured, 'text': env.get('result') or '', 'usage': env.get('usage') or {}}
 
     def _run(self, argv, prompt):
-        """claude 를 빈 임시 폴더에서 실행(저장소 CLAUDE.md · 파일이 끼어들지 않게) → stdout. 시간 초과 · 실패는 BridgeError(502)."""
+        """claude 를 빈 임시 폴더에서 실행(저장소 CLAUDE.md · 파일이 끼어들지 않게) → stdout.
+        시간 초과는 BridgeError(504, subprocess.run 이 claude 를 끝낸다), 출력 없는 실패는 429(사용 한도) · 502."""
         with tempfile.TemporaryDirectory(prefix='claude_bridge_') as cwd:
             try:
                 p = subprocess.run(argv, input=prompt, text=True, capture_output=True, cwd=cwd, timeout=self.timeout_s,
                                    check=False)
             except subprocess.TimeoutExpired as e:
-                raise BridgeError(502, f'claude 가 {self.timeout_s}초 안에 답하지 않았다') from e
+                raise BridgeError(504, f'claude 가 {self.timeout_s}초 안에 답하지 않았다') from e
         if p.returncode != 0 and not p.stdout.strip():
-            raise BridgeError(502, f'claude 종료 코드 {p.returncode}: {p.stderr.strip()[-300:]}')
+            err = p.stderr.strip()[-300:]
+            raise BridgeError(429 if is_usage_limit(err) else 502, f'claude 종료 코드 {p.returncode}: {err}')
         return p.stdout
 
     @staticmethod
@@ -192,6 +203,9 @@ def make_handler(bridge):
                 self._send(e.status, {'error': {'message': e.message, 'type': 'claude_bridge'}})
             except ValueError as e:
                 self._send(400, {'error': {'message': f'요청 JSON 이 틀렸다: {e}'}})
+            except Exception as e:   # noqa: BLE001 — 답 없이 끊으면 화면이 '중계가 꺼져 있어요'로 잘못 알린다(10/13 PL)
+                log.exception('[중계] 안 오류 %.1fs', time.time() - t0)
+                self._send(502, {'error': {'message': f'중계 안 오류: {type(e).__name__}: {e}', 'type': 'claude_bridge'}})
 
         def _send(self, status, body):
             """JSON 응답."""
@@ -276,7 +290,7 @@ class SetupCheck:
         except (BridgeError, ValueError, KeyError) as e:
             text = getattr(e, 'message', str(e))
             low = text.lower()
-            todo = ('구독 사용 한도 — 풀릴 때까지 기다리거나 시연 계정을 바꾼다' if 'limit' in low else
+            todo = ('구독 사용 한도 — 풀릴 때까지 기다리거나 시연 계정을 바꾼다' if is_usage_limit(text) else
                     '그 PC 에서 claude 를 한 번 실행해 로그인한다(또는 데스크톱 앱 로그인)' if 'log' in low or 'auth' in low else
                     f'--model {"sonnet" if self.model != "sonnet" else "opus"} 로 다시 점검해 보고, 되면 web/.env 의 D2_LLM_MODEL 을 바꾼다'
                     if 'model' in low else '위 오류를 보고 claude 를 직접 한 번 실행해 본다')
@@ -316,8 +330,12 @@ class SetupCheck:
         if code == 0 and '"ok": true' in out:
             return ('ok', '웹 컨테이너에서', f'{name} → host.docker.internal:{self.port} 보임', '')
         last = (out.strip().splitlines() or [''])[-1]          # 파이썬 오류는 마지막 줄만(이유)
+        # 웹 컨테이너는 docker0(172.17) 이 아니라 compose 네트워크 web_default(보통 172.18 이상)에서 온다(10/13 PL)
+        code, sub = self.cmd(['docker', 'network', 'inspect', 'web_default', '--format', '{{(index .IPAM.Config 0).Subnet}}'], 10)
+        net = sub.strip() if code == 0 and sub.strip() else \
+            "docker network inspect web_default --format '{{(index .IPAM.Config 0).Subnet}}' 로 본 대역"
         return ('fail', '웹 컨테이너에서', f'{name} 에서 안 보임: {last[-120:]}',
-                f'방화벽(sudo ufw status)이 docker(172.17.0.0/16)에서 {self.port} 를 막는지 본다(PL 확인 뒤 허용) · '
+                f'방화벽(sudo ufw status)이 웹 컨테이너 대역({net})에서 {self.port} 를 막는지 본다(PL 확인 뒤 허용) · '
                 'compose 의 extra_hosts host.docker.internal:host-gateway 확인')
 
     @staticmethod
@@ -353,7 +371,7 @@ def main():
     """인자를 읽고 서버를 띄운다(--check 면 준비 점검만 하고 끝). claude 를 못 찾으면 시작하지 않는다."""
     ap = argparse.ArgumentParser(description='OpenAI 형식 → claude -p 중계(설계 생성용)')
     ap.add_argument('--host', default='127.0.0.1',
-                    help='듣는 주소. compose 의 web 컨테이너가 부르면 docker0 주소(보통 172.17.0.1) — LAN 에는 열지 않는다')
+                    help='듣는 주소. 웹 PC 는 꼭 docker0 주소(보통 172.17.0.1) — 기본 127.0.0.1 이면 웹 컨테이너가 못 닿는다. LAN 에는 열지 않는다')
     ap.add_argument('--port', type=int, default=8790)
     ap.add_argument('--model', default=os.environ.get('D2_LLM_MODEL') or 'opus', help='요청 model 이 별칭이 아닐 때 쓸 모델')
     ap.add_argument('--check', action='store_true', help='웹 PC 준비 점검만 하고 끝(중계는 켜지 않음) — 다 되면 종료 코드 0')
