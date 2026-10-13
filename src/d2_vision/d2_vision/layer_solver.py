@@ -44,7 +44,7 @@ EXPLAIN_PAD = 2         # 점 설명률: 블록 상자를 x · y 로 이만큼(�
 
 
 def ori_extents(block_mm):
-    """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). d2_task.recipe_to_blocks.ori_extents 와 같은 표. 바깥 영향 없음."""
+    """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). d2_task.recipe_to_parts.ori_extents 와 같은 표. 바깥 영향 없음."""
     L, W, T = block_mm
     return {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
 

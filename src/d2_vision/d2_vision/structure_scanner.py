@@ -438,7 +438,7 @@ def scan_response(result, image_path, cloud_path):
     if cloud_path is not None:
         body['cloud_path'] = str(cloud_path)
     nearest = result.get('nearest_base')
-    if nearest:                                   # infer() 는 계산해 두는데 응답에서 빠져 화면 · GPT 힌트까지 안 가던 것(10/13 W177)
+    if nearest:                                   # infer() 는 계산해 두는데 응답에서 빠져 화면 · AI 힌트까지 안 가던 것(10/13 W177)
         body['nearest_base'] = str(nearest)
     return True, '', body
 

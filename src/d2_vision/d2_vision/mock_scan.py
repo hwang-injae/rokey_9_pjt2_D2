@@ -5,7 +5,7 @@ IRD 4.2 `/d2/vision/scan_capture` · `scan_infer` · `find_blocks`(JsonQuery) �
 - scan_infer 의 blocks/2 는 레시피 두 파일(구조 `<id>_recipe.json` recipe/3.0 + 조립 방법 `<id>_placements.csv` placements/3.0, E-69)에서
   직접 만든다(load_recipe_files — 형식 이름 · 짝 해시 recipe_sha256 확인은 motion_math.load_recipe 와 같다).
   d2_task 의 변환기 ②(RecipeToParts)를 import 하지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣고,
-  d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(order = sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
+  d2_task 의존을 package.xml 에 새로 더하지 않으려고. 같은 규칙(scan_num = 조립 방법 sequence, x · y = 중심, z = 아랫면, ori = 회전 + 크기)이며
   결과가 같은지는 시험(test_mock_scan.py)이 d2_task 가 있을 때 비교한다.
 - image_path · cloud_path 는 실제 파일을 쓴다(다리가 읽어 보낼 수 있게): `<임시 폴더>/d2_scan/<run_id>/color.png` · `cloud.ply`.
   PNG 는 표준 라이브러리(zlib)로, PLY 는 글자(ASCII)로 쓴다 — cv2 · open3d 없이(CI 에 없음, 가짜라 가볍게).
@@ -114,7 +114,7 @@ def structure_to_blocks(recipe, placements, design_id, family, inferred_count):
 
     구조 = 맨 위 자재 stocks[](stock_id · size_mm) + template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
     부품 이름 = '<그룹>_<part>' 예 LEG_001_01(10/13 PL — stocks 되살림, motion_math.recipe_parts 와 같은 읽기).
-    order = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
+    scan_num = 조립 방법 sequence, x · y = 블록 중심, z = 아랫면 높이(중심 − z 방향 길이 / 2), ori = |R| · 부품 크기가 맞는 방향 코드.
     inferred_count: 앞 순서(아래층)부터 이 수만큼 inferred: true — 스캔에서 가려진 블록 흉내(0 ~ 블록 수로 자른다).
     실패: 칸이 없거나 블록 · 부품 이름이 안 맞거나 방향을 못 고르면 KeyError · ValueError · TypeError."""
     sizes = {s['stock_id']: [float(v) for v in s['size_mm']] for s in recipe['stocks']}
