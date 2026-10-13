@@ -25,7 +25,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 log = logging.getLogger('claude_bridge')
-MODELS = ('sonnet', 'opus', 'haiku', 'fable')   # claude --model 별칭. 그 밖은 'claude-' 로 시작하는 전체 ID 만 넘긴다
+MODELS = ('opus', 'sonnet')   # 10/13 설계 생성으로 시험한 claude --model 별칭. 그 밖은 'claude-' 로 시작하는 전체 ID 만 넘긴다
 RUN_TIMEOUT_S = 300                              # claude 한 번 상한 — design_gen 호출 제한(CALL_TIMEOUT_S)보다 길게(먼저 끊는 쪽은 design_gen)
 ROLE_KO = {'user': '사용자', 'assistant': 'AI 답(이전)', 'tool': '도구 결과'}
 
@@ -101,8 +101,6 @@ class ClaudeBridge:
         for m in messages:
             role = m.get('role')
             text = m.get('content') or ''
-            if isinstance(text, list):   # [{type: text, text}] 모양도 받는다
-                text = '\n'.join(p.get('text', '') for p in text if isinstance(p, dict))
             for tc in m.get('tool_calls') or []:
                 fn = tc.get('function') or {}
                 text += f"\n(도구 {fn.get('name')} 호출: {fn.get('arguments')})"
@@ -111,16 +109,11 @@ class ClaudeBridge:
 
     @staticmethod
     def _forced_tool(tools, choice):
-        """도구를 꼭 불러야 하는 요청이면 그 도구 정의. 'required'(도구 하나일 때) · {'type': 'function', 'function': {'name'}}만."""
-        if not tools:
-            return None
+        """도구를 꼭 불러야 하는 요청(tool_choice 'required')이면 그 도구 정의 — design_gen 은 도구 get_design 하나만 쓴다."""
         if choice == 'required' and len(tools) == 1:
             return tools[0]
-        if isinstance(choice, dict):
-            name = (choice.get('function') or {}).get('name')
-            return next((t for t in tools if (t.get('function') or {}).get('name') == name), None)
         if choice == 'required':
-            raise BridgeError(400, '도구가 여럿일 때 required 는 아직 못 한다')
+            raise BridgeError(400, 'required 는 도구가 하나일 때만 받는다')
         return None
 
     def _ask(self, model, system, prompt, schema):
@@ -182,7 +175,7 @@ def make_handler(bridge):
 
         def do_POST(self):
             """chat.completions → claude. 걸린 시간 · 모델만 로그에 남긴다(프롬프트 · 답은 design_gen 기록에 있다)."""
-            if self.path.rstrip('/') not in ('/v1/chat/completions', '/chat/completions'):
+            if self.path.rstrip('/') != '/v1/chat/completions':
                 self._send(404, {'error': {'message': 'not found'}})
                 return
             t0 = time.time()

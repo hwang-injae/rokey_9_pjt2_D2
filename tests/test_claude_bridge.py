@@ -79,9 +79,10 @@ def test_forced_tool_returns_tool_call_with_parameter_schema():
 
 
 def test_model_alias_or_default():
-    """gpt-4o 같은 모르는 이름은 기본 모델, 별칭 · claude- 전체 ID 는 그대로."""
+    """gpt-4o 같은 모르는 이름(시험 안 한 haiku 포함)은 기본 모델, 별칭 · claude- 전체 ID 는 그대로."""
     b = ClaudeBridge('claude', 'sonnet', lambda *_: '')
-    assert b.model_of('gpt-4o') == 'sonnet' and b.model_of('opus') == 'opus' and b.model_of('claude-opus-5-5') == 'claude-opus-5-5'
+    assert b.model_of('gpt-4o') == 'sonnet' and b.model_of('haiku') == 'sonnet'
+    assert b.model_of('opus') == 'opus' and b.model_of('claude-opus-5-5') == 'claude-opus-5-5'
 
 
 @pytest.mark.parametrize('reply, words', [
