@@ -98,31 +98,26 @@ def test_claude_failure_is_502(reply, words):
 
 
 def test_design_gen_runs_through_bridge(tmp_path):
-    """진짜 생성기 → (HTTP 대신 바로) 중계 → 가짜 claude: 도구 읽기 → 후보 → 진짜 검사 → 저장까지. 생성기 코드는 그대로."""
-    import yaml
-    from d2_task.blocks_to_recipe import BlocksToRecipe
-    from d2_task.design_checker import DesignChecker
+    """진짜 생성기 → (HTTP 대신 바로) 중계 → 가짜 claude 로 끝까지. 생성기 코드는 그대로.
+    ① 설계 생성(바탕 = 고른 V000 — 다른 설계가 없어 도구 없이 바로 후보) → 진짜 검사 합격
+    ② 스캔 [저장] 채우기 scan_fill(W177 — 첫 호출은 도구 강제 required → 중계가 도구 호출 모양으로) → 읽은 설계 · 칸 채움 → 진짜 검사 합격."""
     from design_gen import DesignGenerator
     from design_store import DesignStore
-    from test_design_gen import RECIPES, RULES, BENCH, TEMPLATE
+    from test_design_gen import BENCH, RECIPES, RULES, real_check, scan_of
 
-    cfg = yaml.safe_load((ROOT / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml').read_text(encoding='utf-8'))
-    checker = DesignChecker(cfg)
-    checker.blocks_to_recipe = BlocksToRecipe(checker.grasp_options, [v * 1000 for v in cfg['block_size_m']]).convert
-
-    def check(blocks):
-        ok, reason, rj = checker.handle_json(json.dumps(blocks, ensure_ascii=False))
-        return {'success': ok, 'reason': reason, **json.loads(rj)}
-
-    store = DesignStore(tmp_path, RECIPES, [v * 1000 for v in cfg['block_size_m']])
+    store = DesignStore(tmp_path, RECIPES, [75, 25, 15])
     store.register_bases()
-    bench = store.get_design(BENCH)['blocks']['blocks']
-    answers = iter([{'design_id': BENCH},
-                    {'out_of_scope': False, 'reason': '', 'candidates': [{'idea': '그대로', 'plan': 'p', 'blocks': bench}] * 3}])
+    bench = store.get_design(BENCH)['parts']['parts']
+    n = len(bench)
+    fill = [{'scan_num': n - p['order'] + 1, **{k: p[k] for k in ('order', 'role', 'group', 'stage', 'grasp')}} for p in bench]
+    answers = iter([
+        {'out_of_scope': False, 'reason': '', 'candidates': [{'idea': '그대로', 'plan': 'p', 'parts': bench}] * 3},   # ① 후보
+        {'design_id': BENCH},                                                                                            # ② 도구 읽기
+        {'parent_id': BENCH, 'reason': '같은 벤치', 'plan': 'p', 'parts': fill}])                                         # ② 채우기
 
     def run(argv, prompt):
         return json.dumps({'is_error': False, 'structured_output': next(answers), 'usage': {'output_tokens': 1}})
-    bridge = ClaudeBridge('claude', 'sonnet', run)
+    bridge = ClaudeBridge('claude', 'opus', run)
 
     def create(**kw):   # OpenAI 라이브러리 대신 — 요청 dict 를 중계에 그대로, 응답 dict 를 속성 모양으로
         res = json.loads(json.dumps(bridge.complete(json.loads(json.dumps(kw)))))
@@ -131,8 +126,13 @@ def test_design_gen_runs_through_bridge(tmp_path):
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=m['content'], refusal=None, tool_calls=calls))],
                                usage=SimpleNamespace(total_tokens=res['usage']['total_tokens']))
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-    r = DesignGenerator(store, check, RULES, client=client).generate('벤치', TEMPLATE)
-    assert r['reference'] == [BENCH] and r['attempts'] == 1 and all(c['check']['ok'] for c in r['candidates'])
+    gen = DesignGenerator(store, real_check(), RULES, client=client)
+    r = gen.generate('벤치', BENCH)
+    assert r['parent_id'] == BENCH and r['attempts'] == 1 and r['candidates'] and all(c['check']['ok'] for c in r['candidates'])
+    f = gen.scan_fill(scan_of(bench))
+    assert f['parent_id'] == BENCH and f['ai_reason'] == '같은 벤치'
+    design_id, _ = store.new_design_id('001_CHAIR_BENCH', BENCH)
+    assert gen._check({'schema': 'parts/3.0', 'design_id': design_id, 'parts': f['parts']})['ok']
 
 
 # ---------- 웹 PC 준비 점검(--check, 10/13) — claude · 네트워크 · docker 는 모두 가짜 ----------
