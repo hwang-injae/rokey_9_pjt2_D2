@@ -266,6 +266,28 @@ def test_tilted_on_other_block():
     assert a['overlap'] == 'under' and not a['tilted'] and a['up'] == 'THICKNESS', (a, info['detail'])
 
 
+def _sideways(x_mm, y_mm, deg):
+    """긴 축(x) 둘레로 deg 만큼 옆으로 기운 눕힌 블록 — 아래쪽 긴 모서리가 작업면에 닿음(폭 축이 +y 로 올라감)."""
+    th = math.radians(deg)
+    c, s = math.cos(th), math.sin(th)
+    rx = np.array([[1.0, 0, 0], [0, c, -s], [0, s, c]])
+    W, T = SIZE[1], SIZE[2]
+    return (np.array([x_mm / 1000, y_mm / 1000, TABLE + (W / 2) * s + (T / 2) * c]), rx, np.array(SIZE) / 2)
+
+
+def test_sideways_tilt_caught_by_angle():
+    """옆으로 8° 기운 눕힌 블록 — 25 mm 폭에서 높이 차는 약 3.5 mm(5 mm 미만)라 예전엔 반듯하다고 봤다. 윗면 각도 ≥ 5° 로 tilted(10/14 PL B1).
+    3° 는 반듯(보통 집기 한계 5° 안). 각도 기준은 눕힌 넓은 윗면에서만 쓴다."""
+    out, info, by = run_truth([_sideways(420, 210, 8.0)])
+    check_schema(out)
+    b = by[0]
+    assert b['tilted'] and b['up'] == 'THICKNESS', (b, info['detail'])
+    nz = b['normal'][2]
+    assert abs(math.degrees(math.acos(nz)) - 8.0) <= 1.5, b['normal']
+    out, info, by = run_truth([_sideways(420, 210, 3.0)])
+    assert not by[0]['tilted'], (by[0], info['detail'])
+
+
 def test_stacked_cross():
     """포개짐: A 위에 B 가 90° 엇갈려 얹힘 → B up THICKNESS · top · 윗면 = 두께 2개, A under(보이는 큰 조각만 마스크 — E-66)."""
     T = SIZE[2] * 1000

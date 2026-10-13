@@ -20,7 +20,8 @@
     clear.<축> = gap_mm ≥ find.min_gap_mm.
   - overlap: none · top(다른 블록 위에 올라앉음 · 걸침) · under(다른 블록에 덮임 — 보이는 면이 작거나 위에 걸친 블록이 맞닿음,
     또는 모양이 블록 하나와 안 맞는 덩어리 — 어느 쪽이든 집지 않고 틈 · 장애물로만 쓴다).
-  - tilted: 윗면 평면의 양 끝 높이 차 ≥ TILT_MM(5 mm, E-43).
+  - tilted: 윗면 평면의 양 끝 높이 차 ≥ TILT_MM(5 mm, E-43) **또는** 윗면 기울기 ≥ TILT_DEG(5°, 10/14 PL B1 — 윗면이 넓은 눕힌 면에서만,
+    TILT_DEG_MIN_SHORT_MM). mm 기준만이면 옆으로 5 ~ 11° 기운 눕힌 블록(25 mm 폭에서 5 mm 미만)을 못 걸렀다.
   - tilted 가 true 인 블록에만 두 칸을 더한다(10/13): center_top_z_m = 윗면 가운데 평면 높이(m) · normal = 윗면 단위 법선 [nx, ny, nz]
     (위쪽, 평면 맞춤에서). 기울지 않은 블록은 위 칸 그대로.
 단위: 이 파일 안 좌표는 m(base_link), 치수 · 틈 · 높이 비교는 mm. 높이 지도는 block_checker.height_map(스캔 추론기와 같은 함수)을 쓴다.
@@ -40,6 +41,8 @@ DIM = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}       # size_m 안 순서 (robot
 
 Z_MIN_M, Z_MAX_M = 0.1, 1.0   # 깊이 유효 범위 — block_checker.depth_to_base_points 기본값과 같게(픽셀 ↔ 점 순서를 맞추려고)
 TILT_MM = 5.0             # 양 끝 높이 차 이상이면 tilted (IRD · E-43)
+TILT_DEG = 5.0            # 윗면 기울기 각이 이 이상이어도 tilted — 집기 노드 보통 집기 한계(motion_math.LEVEL_TOL_DEG 5°)와 같게(10/14 PL B1)
+TILT_DEG_MIN_SHORT_MM = 20.0   # 각도 기준은 윗면 짧은 변이 이 이상(눕힌 75 × 25 면)일 때만 — 세움 · 옆세움의 15 mm 윗면은 깊이 잡음 1 mm 로도 각이 4° 튄다
 TABLE_WINDOW_MM = 6.0     # 작업면 높이 다시 재기: robot.yaml table_z 근처 ±이 안의 점 중앙값 (10/8 실측 장면이 yaml 값과 1.5 mm 다름)
 TOP_MIN_MM = 4.0          # 작업면 위 이보다 낮은 점은 윗면 후보에서 뺀다(깊이 잡음 ±2~3 mm)
 MAX_SLOPE = 0.6           # 이웃 픽셀 사이 높이 기울기(dz/dxy)가 이보다 크면 옆면 · 가장자리 튐 — 윗면에서 뺀다(31°보다 가파름)
@@ -245,7 +248,8 @@ def _measure(mask, P, slope, table_z, depth_m, intr, cfg, score):
     z_lo, z_hi = np.percentile(zp, [2, 98])
     z_c = float(center @ coef[:2] + coef[2])
     tilt_mm = float((z_hi - z_lo) * 1000.0)
-    tilted = tilt_mm >= TILT_MM
+    tilt_deg = math.degrees(math.atan(math.hypot(coef[0], coef[1])))   # 평면 z = a·x + b·y + c 의 기울기 각
+    tilted = tilt_mm >= TILT_MM or (short_mm >= TILT_DEG_MIN_SHORT_MM and tilt_deg >= TILT_DEG)
     h_c = (z_c - table_z) * 1000.0
     h_ref = (z_lo - table_z) * 1000.0 if tilted else h_c   # 기울어진 블록은 낮은 끝(바닥에 닿은 쪽)으로 받침을 본다
     up, cost, base_mm, mismatch = _classify(long_mm, short_mm, h_ref, cfg)
@@ -256,7 +260,7 @@ def _measure(mask, P, slope, table_z, depth_m, intr, cfg, score):
     base_conf = score * min(1.0, top.sum() / max(sel.sum(), 1))
     return {
         'mask': mask, 'top': top, 'coef': coef, 'center': center, 'u': u, 'v': v,
-        'z_c': z_c, 'z_hi': float(z_hi), 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'up': up, 'base_mm': base_mm,
+        'z_c': z_c, 'z_hi': float(z_hi), 'h_c': h_c, 'h_ref': h_ref, 'tilted': tilted, 'tilt_mm': tilt_mm, 'tilt_deg': tilt_deg, 'up': up, 'base_mm': base_mm,
         'long_mm': long_mm, 'short_mm': short_mm, 'vis_area': vis_area, 'cost': cost, 'mismatch': mismatch,
         'base_conf': base_conf, 'under': False, 'top_of': False, 'on': [],
     }
