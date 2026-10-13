@@ -91,9 +91,11 @@ class PlacementRecorder:
         subprocess.run([sys.executable,str(Path(__file__).with_name('capture.py')),
                         '--out',str(destination),'--label',destination.name,'--frames','1'],check=True,timeout=40)
 
-    def after_place(self, block_id, target_center_m, target_quaternion_xyzw, *, action_id=None,
+    def after_place(self, part_id, target_center_m, target_quaternion_xyzw, *, action_id=None,
                     evidence=None):
         """배치 성공 뒤에만 호출: 목표 저장→observe 이동→촬영. 실패는 정지 콜백 후 다시 예외를 낸다.
+
+        part_id = 전체 부품 이름(용어 B — 10/14 PL B6, 옛 칸 이름 block_id).
 
         목표는 실제 블록의 설계 배치 중심(m), 쿼터니언xyzw이며 틀기/옮김 그리퍼 목표가 아니다.
         반환은 촬영폴더, 외부 영향은 이동콜백·촬영·파일쓰기. 기존 실행기는 실패 후 다음 집기를 금지한다.
@@ -104,12 +106,12 @@ class PlacementRecorder:
         snapshot=json.loads(json.dumps(evidence or {},allow_nan=False))
         if action_id is not None:
             trace=self._attempt(action_id)
-            if (trace['state']!='started' or trace['part_id']!=block_id
+            if (trace['state']!='started' or trace['part_id']!=part_id
                     or trace['target_center_m']!=list(target_center_m)
                     or trace['target_quaternion_xyzw']!=list(target_quaternion_xyzw)):
                 raise ValueError('촬영을 연결할 배치 시도/목표 불일치')
             trace.update(state='placed',finished_unix_ns=time.time_ns(),result_evidence=snapshot)
-        row=dict(sequence=len(self.rows)+1,block_id=block_id,target_center_m=list(target_center_m),
+        row=dict(sequence=len(self.rows)+1,part_id=part_id,target_center_m=list(target_center_m),
                  target_quaternion_xyzw=list(target_quaternion_xyzw),view='observe',captured=False)
         row.update(action_id=action_id,trace_available=trace is not None)
         self.rows.append(row)
