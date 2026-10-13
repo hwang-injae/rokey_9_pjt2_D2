@@ -85,6 +85,7 @@ def test_wrong_transform_and_mismatched_resolution_are_rejected():
     bad=t.copy();bad[0,0]=2
     with pytest.raises(ValueError):detector.frame(frame['rgb'],frame['depth'],info,bad)
     with pytest.raises(ValueError):detector.frame(frame['rgb'],frame['depth'][:100],info,t)
+    with pytest.raises(ValueError):detector.frame(frame['rgb'],np.ones(frame['depth'].shape,np.uint16),info,t)
 
 
 def test_camera_motion_is_registered_before_scene_difference():

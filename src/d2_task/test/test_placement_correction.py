@@ -120,3 +120,10 @@ def test_missing_pose_support_scene_blocks_goal(changes,decision):
     """방향/받침/주변 상태를 목표 자세로 대신 채워 재집기하지 않는다."""
     result=PlacementCorrection(.003,2).prepare_goal('a',([0,0,0],[0,0,0,1]),observation(**changes),'FLAT_SHORT',0)
     assert result['decision']==decision and result['goal'] is None
+
+
+def test_bad_target_rotation_is_not_pass_even_with_zero_offset():
+    """위치가 맞아도 잘못된 목표 자세는 PASS로 처리하지 않는다."""
+    row=observation(center_m=[0,0,0])
+    result=PlacementCorrection(.003,2).prepare_goal('a',([0,0,0],[0,0,0,0]),row,'FLAT_SHORT',0)
+    assert result['decision']=='UNMEASURED' and result['reason']=='INVALID_TARGET_POSE'

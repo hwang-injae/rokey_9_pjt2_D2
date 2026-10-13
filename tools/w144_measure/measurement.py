@@ -72,6 +72,7 @@ class PlacementMeasurement:
         t=self.validate_transform(transform)
         if (rgb.dtype!=np.uint8 or rgb.ndim!=3 or rgb.shape[2]!=3
                 or depth.shape!=rgb.shape[:2] or depth.ndim!=2
+                or not np.issubdtype(depth.dtype,np.floating)
                 or depth.shape!=(info['height'],info['width'])):
             raise ValueError('RGB/깊이/내참수 크기·형식 불일치')
         v,u=np.indices(depth.shape)

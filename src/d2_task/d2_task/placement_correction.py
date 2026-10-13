@@ -79,10 +79,10 @@ class PlacementCorrection:
         if not isinstance(target_pose,(list,tuple)) or len(target_pose)!=2:
             return dict(decision='UNMEASURED',reason='INVALID_TARGET_POSE',goal=None)
         center,quaternion=target_pose
+        if not self._finite_vector(center,3) or not self._quaternion(quaternion):
+            return dict(decision='UNMEASURED',reason='INVALID_TARGET_POSE',goal=None)
         assessment=self.assess(part_id,center,observation)
         if assessment['decision']!='CORRECT':return dict(assessment,goal=None)
-        if not self._quaternion(quaternion):
-            return dict(assessment,decision='UNMEASURED',reason='INVALID_TARGET_POSE',goal=None)
         actual_q=observation.get('quaternion_xyzw')
         if not self._quaternion(actual_q) or observation.get('pose_confirmed') is not True:
             return dict(assessment,decision='UNMEASURED',reason='ACTUAL_POSE_UNKNOWN',goal=None)
