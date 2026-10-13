@@ -69,7 +69,7 @@ export default function Home() {
           <>
             <ScanReview robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
             <section className="panel">
-              <h2>추천 설계</h2>
+              <h2 title="저장된 설계 중 스캔과 가장 비슷한 것 — GPT 없이 바로 조립(플랜 B)">추천 설계</h2>
               <ScanRecommend robot={robot} onView={setPicked} onLog={addLog} />
             </section>
           </>

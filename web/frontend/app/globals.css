@@ -255,6 +255,7 @@ button.mitem.selected .tag.ok { color: #fff; border-color: #fff; }
 .gen-input button.mic { min-width: 96px; }
 .cands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 /* 스캔 비교(W112 · W116) — 사진 · 점군 · 추론 설계를 나란히, 좁으면 한 줄씩 */
+.scan-recommend { display: flex; flex-direction: column; gap: 8px; } /* 스캔 추천 설계(플랜 B) — 이름 · 일치율 · 버튼 · 문구 */
 .scan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 8px 0 12px; }
 .scan-grid figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .scan-grid figcaption { font-size: 14px; font-weight: 600; }

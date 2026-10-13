@@ -69,16 +69,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
   async function assemble() {
     if (!design) return;
     setSending(true);
-    let step = '출발';
-    let r: CmdResult = { success: true, reason: '' };
-    if (!(onRobot && st?.state === 'READY')) {
-      step = '설계 선택';
-      r = await api.command('select_design', design.design_id);
-    }
-    if (r.success) {
-      step = '출발';
-      r = await api.command('start', design.design_id);
-    }
+    const { step, r } = await api.assemble(design.design_id, onRobot && st?.state === 'READY');
     setSending(false);
     setSent(r);
     onLog('button', `조립(${design.design_id}) → ${r.success ? '출발' : `${step} 거절`}${r.reason ? ' ' + r.reason : ''}${r.message ? ' — ' + r.message : ''}`);
