@@ -9623,7 +9623,7 @@ AcDbText
  40
 2.5
   1
-FLAT_SHORT
+FLAT_LONG
 100
 AcDbAttribute
   2
@@ -10657,7 +10657,7 @@ AcDbText
  40
 2.5
   1
-FLAT_SHORT
+FLAT_LONG
 100
 AcDbAttribute
   2
