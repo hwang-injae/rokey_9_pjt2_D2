@@ -57,6 +57,7 @@ export function stopReasonKo(reason: string): string {
   const ko: Record<string, string> = {
     STOP_WEB: '화면의 정지 버튼으로 멈췄어요', STOP_KEY: '로봇 PC 키로 멈췄어요', STOP_TASK: '작업 관리자가 멈췄어요',
     TIMEOUT: '시간 초과 — 작업 관리자가 먼저 세웠어요', CTRL_C: '프로그램 종료로 멈췄어요',
+    VISION_LOST: '카메라 신호가 끊겨 멈췄어요',   // IRD 7장 · SDD — 정지 노드 연결은 나중이지만 이름은 정함(10/14 PL A4 ②). STOP_VOICE 는 음성 '멈춰'(W046)와 같이
   };
   return ko[reason] ?? '멈췄어요';
 }
