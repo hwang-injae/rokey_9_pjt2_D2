@@ -13,7 +13,7 @@ import copy
 import math
 import threading
 
-from d2_motion.motion_math import column, half_height, quat_from_axes, rot_z, rpy_matrix
+from d2_motion.motion_math import TILT_DEG as NODE_TILT_DEG, column, half_height, quat_from_axes, rot_z, rpy_matrix
 
 from d2_task.block_picker import BlockPicker, grasp_target
 
@@ -21,7 +21,9 @@ SUPPLY_SCATTER = 'scatter'
 # 받침 경유 1단계에서 고르는 잡기 — 모든 잡기(one_pick 과 같음). 옆으로 선 · 선 블록은 그 자세로 받침에 세워 놓고 받침에서 눕힌다(잡기 TIP)
 SPARE_GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG', 'TILT')
 SIZE_KEYS = ('LENGTH', 'WIDTH', 'THICKNESS')
-TILT_DEG = (3.0, None)                     # 기울여 집는 윗면 기울기 아래 끝 (°) — 위 끝은 robot.yaml motion.tool_tilt_max_deg(실기 30 ~ 35° 넘으면 안전 모드)
+# 기울여 집는 윗면 기울기 범위 (°) — 위 끝은 집기 노드 기울여 집기 계산과 같은 motion_math.TILT_DEG(45°). 10/13 PL: tool_tilt_max_deg(30) 키를
+# 지움(30 ~ 35° 안전 모드는 충돌 민감도 오설정 탓). 위 끝 값은 석형님 확인
+TILT_DEG = (3.0, NODE_TILT_DEG[1])
 # 세우기(E-37 · E-77): 목표 자세(위 축) → 눕힌 블록을 집을 잡기 (10/11 16:50 PL — 세움 FLAT_SHORT · 옆세움 FLAT_LONG)
 REORIENT_GRASP = {'LENGTH': 'FLAT_SHORT', 'WIDTH': 'FLAT_LONG'}
 # 받침 경유 세우기(W131 교시 동작, 10/13): 목표 자세(위 축) → (집기 노드 잡기 이름, 교시 동작 이름). 블록 방향 yaw 는 세운 뒤
@@ -509,7 +511,7 @@ class ScatterFlow:
             b.pop('center_top_z_m', None)
             return b
         tilt = math.degrees(math.acos(max(-1.0, min(1.0, n[2]))))
-        if not TILT_DEG[0] <= tilt <= float(self.cfg['motion']['tool_tilt_max_deg']):
+        if not TILT_DEG[0] <= tilt <= TILT_DEG[1]:
             b.pop('center_top_z_m', None)
             return b
         b['tilt_tip_z_m'] = top - self.cfg['block_actual_m'][2] / 2 * n[2]

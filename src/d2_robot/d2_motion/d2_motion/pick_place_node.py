@@ -144,14 +144,10 @@ class PickPlaceNode(Node):
         return None
 
     def down_level(self, *qs):
-        """관절값들이 모두 '공구 아래' 제약 안이면 True(평소 15°), 아니면 모두 공구 최대 기울기(robot.yaml motion.tool_tilt_max_deg) 안이면
-        그 각(숫자), 그것도 아니면 False(제약 없음). 실기에서 공구가 30 ~ 35° 넘게 기울면 안전 모드가 걸려(10/12) 기울여 집기 앞뒤 이동도 묶는다."""
-        if all(self.exe.valid(q, self.exe.down_constraint())[0] for q in qs):
-            return True
-        tmax = self.cfg['motion'].get('tool_tilt_max_deg')
-        if tmax is not None and all(self.exe.valid(q, self.exe.down_constraint(tmax))[0] for q in qs):
-            return float(tmax)
-        return False
+        """관절값들이 모두 '공구 아래' 제약 안이면 True(평소 15°), 아니면 False(자세 제약 없이 계획 — 기울여 집기 앞뒤 등).
+        10/13 PL: 공구 최대 기울기 키(tool_tilt_max_deg 30)를 지움 — 10/12 '30 ~ 35° 넘으면 안전 모드'는 충돌 민감도 100 % 오설정
+        탓이었고, 기본값 + 공구 무게 1.43 kg 뒤로는 정상(세우기 50.58° · 45° 교시). 충돌 검사는 그대로다."""
+        return all(self.exe.valid(q, self.exe.down_constraint())[0] for q in qs)
 
     def go_free(self, goal, halted, keep_down=True, skip_slot=None, scale=None, obstacles=None, structure=None):
         """지금 자세 -> 관절 목표 goal 로 MoveIt 경로를 찾아 간다(plan_free). 반환: (성공, 실패 이유).
@@ -163,8 +159,7 @@ class PickPlaceNode(Node):
             # 출발 자세가 이미 '공구 아래'를 어기면(예: 관절 0° 로 선 자세) 제약을 걸면 출발부터 실패한다 -> 이번 이동만 제약 없이
             down = keep_down and self.down_level(self.exe.current())
             if keep_down and down is not True:
-                self.get_logger().info(f'출발 자세가 공구 아래가 아니라 공구 기울기 {down:.0f}° 안으로 계획한다' if down
-                                       else '출발 자세가 공구 최대 기울기도 넘어 자세 제약 없이 계획한다')
+                self.get_logger().info('출발 자세가 공구 아래(15°)가 아니라 자세 제약 없이 계획한다')
             jt = self.plan_free(goal, down, skip_slot, scale, obstacles, structure)
             if jt is not None:
                 return self.exe.execute(jt, halted)

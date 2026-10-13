@@ -386,7 +386,7 @@ class MoveItExecutor:
             JointConstraint(joint_name=j, position=v, tolerance_above=1e-4, tolerance_below=1e-4, weight=1.0)
             for j, v in zip(JOINTS, goal)])]
         if keep_down:
-            # True = 평소(TILT_TOL_DEG), 숫자 = 그 각까지(기울여 집기 앞뒤 — robot.yaml motion.tool_tilt_max_deg)
+            # True = 평소(TILT_TOL_DEG), 숫자 = 그 각까지(부르는 쪽이 정함 — 10/13 tool_tilt_max_deg 키는 지움)
             req.path_constraints = self.down_constraint() if keep_down is True else self.down_constraint(float(keep_down))
         extra = ()
         if pad_m > 0:
