@@ -193,7 +193,9 @@ class BlockChecker:
                 continue
             top = float(np.median(z))
             dz = top - blk['top_z']
-            tol = blk['height'] * TOL_FRACTION
+            # 허용 = 블록 두께(가장 작은 치수)의 절반 — 놓인 세로 길이로 하면 세운 블록(75 mm)은 ±37 mm 가 되어, 위 블록에 덮여
+            # 16 mm 높게 보이는 다리를 '가려짐'이 아니라 '16 mm 어긋남'으로 냈다(10/13 003 실기 · 박진용)
+            tol = 2 * float(np.min(blk['half'])) * TOL_FRACTION
             if abs(dz) <= tol:
                 out.append(dict(part_id=bid, state='present', top_z_m=top, dz_m=dz, dx_m=NAN, dy_m=NAN))
             elif dz < 0:

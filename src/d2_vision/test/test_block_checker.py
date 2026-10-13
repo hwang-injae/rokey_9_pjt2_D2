@@ -104,6 +104,30 @@ def test_complete_bench(checker, blocks):
     assert math.isnan(res[0]['top_z_m']) and math.isnan(res[0]['dz_m'])    # 1층 벽은 가려져서 높이를 못 잼
 
 
+def test_standing_legs_under_beam_are_covered():
+    """세운 다리 둘 위에 보를 얹으면 다리 자리에서 보이는 높이는 보 윗면 — 다리는 '가려진 present'(높이 NaN)여야 한다.
+    허용을 놓인 세로 길이(75 mm)의 절반으로 하면 +16 mm 를 '있음 · 16 mm 어긋남'으로 냈다(10/13 003 실기). 허용 = 두께 절반."""
+    L = SIZE[0]
+    R_stand = [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]    # 길이 축이 위(세움), 폭 축 x
+    yaw = math.radians(ORIGIN['yaw_deg'])
+    c, s = math.cos(yaw), math.sin(yaw)
+
+    def at(x_mm, z, R, bid):
+        x = x_mm / 1000.0
+        return {'part_id': bid, 'rot': rot_z(R, yaw), 'center': (ORIGIN['x_m'] + c * x, ORIGIN['y_m'] + s * x, ORIGIN['z_m'] + z)}
+    legs = [at(-25.0, L / 2, R_stand, 'LEG_1'), at(25.0, L / 2, R_stand, 'LEG_2')]
+    beam = at(0.0, L + T / 2, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], 'BEAM')
+    chk = BlockChecker(legs + [beam], (ORIGIN['x_m'], ORIGIN['y_m']), HALF_M, SIZE)
+    res = chk.check(scene_points(legs + [beam], {'LEG_1', 'LEG_2', 'BEAM'}), ['LEG_1', 'LEG_2', 'BEAM'])
+    assert [r['state'] for r in res] == ['present'] * 3
+    assert all(math.isnan(r['dz_m']) and math.isnan(r['top_z_m']) for r in res[:2])       # 덮인 다리는 높이를 안 잰다
+    assert abs(res[2]['dz_m']) < 0.001
+    # 보 없이 서 있으면 다리 윗면을 잰다 — scene_points 는 눕힌 블록 윗면만 그리므로 세운 다리는 축에 맞춘 상자(extra)로 그린다
+    leg_box = [((x, y, z), (SIZE[1] / 2, SIZE[2] / 2, L / 2)) for x, y, z in (legs[0]['center'], legs[1]['center'])]
+    alone = chk.check(scene_points([], set(), extra=leg_box), ['LEG_1'])
+    assert alone[0]['state'] == 'present' and abs(alone[0]['dz_m']) < 0.001
+
+
 def test_extra_block_on_top_is_occluded(checker, blocks):
     """좌판 위에 설계에 없는 블록을 하나 더 놓으면 그 아래 좌판은 occluded (설계에 없는 높이)."""
     top = ORIGIN['z_m'] + 5 * T
