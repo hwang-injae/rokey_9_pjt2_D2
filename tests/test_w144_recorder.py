@@ -40,3 +40,61 @@ def test_capture_requests_exactly_one_pair(tmp_path,monkeypatch):
     r._capture(tmp_path/'capture')
     assert len(calls)==1
     assert calls[0][calls[0].index('--frames')+1]=='1'
+
+
+def test_attempt_links_grasp_release_and_retry_to_separate_images(tmp_path):
+    """같은 부품의 재배치도 별도 시도로 보존해 파지와 사진을 혼동하지 않는다."""
+    def capture(path):
+        """촬영 대역은 한 쌍의 저장 폴더만 만든다."""
+        path.mkdir()
+    r=PlacementRecorder(tmp_path/'run',lambda:True,lambda:None,capture)
+    target=[.4,0,.01];q=[0,0,0,1]
+    source={'grasp':{'face':'long','tcp_center_m':[.1,.2,.3]}}
+    first=r.begin_attempt('PART_A',1,target,q,evidence=source)
+    source['grasp']['face']='changed'
+    r.after_place('PART_A',target,q,action_id=first,evidence={'release':{'success':True}})
+    second=r.begin_attempt('PART_A',1,target,q,retry_of=first,evidence={'grasp':{'face':'short'}})
+    r.after_place('PART_A',target,q,action_id=second)
+    archive=r.finish(True)
+    traces=json.loads((r.folder/'attempts.json').read_text())
+    assert traces[0]['evidence']['grasp']['face']=='long'
+    assert traces[0]['result_evidence']['release']['success'] is True
+    assert traces[1]['retry_of']==first
+    assert [t['sequence'] for t in traces]==[1,1]
+    assert [t['capture_folder'] for t in traces]==['01_observe','02_observe']
+    assert [row['action_id'] for row in r.rows]==[first,second]
+    assert archive.is_file()
+
+
+def test_failed_pick_is_preserved_without_photo(tmp_path):
+    """잡기 실패는 촬영 없이 시도 기록으로 남겨 다음 시도와 구분한다."""
+    events=[]
+    r=PlacementRecorder(tmp_path/'run',lambda:events.append('move'),lambda:None,
+                        lambda path:events.append('capture'))
+    action=r.begin_attempt('PART_A',1,[.4,0,.01],[0,0,0,1])
+    r.failed_attempt(action,'gripper_failed',evidence={'width_m':.03})
+    assert events==[] and r.rows==[]
+    assert r.attempts[0]['state']=='place_failed'
+    assert r.attempts[0]['result_evidence']=={'width_m':.03}
+    with pytest.raises(ValueError):
+        r.after_place('PART_A',[.4,0,.01],[0,0,0,1],action_id=action)
+
+
+def test_trace_mismatch_rejected_before_observe(tmp_path):
+    """잘못된 부품과 사진을 연결하려 하면 관측 이동 전에 거절한다."""
+    events=[]
+    r=PlacementRecorder(tmp_path/'run',lambda:events.append('move'),lambda:None)
+    action=r.begin_attempt('PART_A',1,[.4,0,.01],[0,0,0,1])
+    with pytest.raises(ValueError):
+        r.after_place('PART_B',[.4,0,.01],[0,0,0,1],action_id=action)
+    assert events==[] and r.rows==[] and r.attempts[0]['state']=='started'
+    with pytest.raises(ValueError):
+        r.begin_attempt('PART_A',1,[.4,0,.01],[0,0,0,1],retry_of=action)
+
+
+def test_invalid_trace_json_cannot_begin_pick(tmp_path):
+    """NaN 증거를 정상 기록으로 만들지 않고 집기 전에 거절한다."""
+    r=PlacementRecorder(tmp_path/'run',lambda:True,lambda:None)
+    with pytest.raises(ValueError):
+        r.begin_attempt('PART_A',1,[.4,0,.01],[0,0,0,1],evidence={'z_m':float('nan')})
+    assert r.attempts==[]
