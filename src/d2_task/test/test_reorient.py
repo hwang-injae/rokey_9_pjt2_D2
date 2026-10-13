@@ -44,8 +44,9 @@ def test_세움_목표는_FLAT_SHORT로_집어_설정의_빈_자리에_세우는
     req, spot = r['request'], CFG['spare_spots'][0]
     assert (req['part_id'], req['supply_slot'], req['grasp'], req['reorient']) == (STAND['part_id'], '', 'FLAT_SHORT', True)
     assert req['pick_pose'] == block_pose(CFG, 'THICKNESS', c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
+    # 바닥 = 빈 자리 z_m(받침 윗면, 없으면 작업면) — 10/13 새 받침 윗면 80 mm
     assert req['place_pose'] == block_pose(CFG, 'LENGTH', spot['yaw_deg'], spot['x_m'], spot['y_m'],
-                                           CFG['table_z_m'] + CFG['block_actual_m'][0])
+                                           spot.get('z_m', CFG['table_z_m']) + CFG['block_actual_m'][0])
 
 
 def test_옆세움_목표는_FLAT_LONG으로_집어_폭이_위로_세운다():
@@ -53,7 +54,7 @@ def test_옆세움_목표는_FLAT_LONG으로_집어_폭이_위로_세운다():
     spot = CFG['spare_spots'][0]
     assert r['status'] == 'REORIENT' and r['request']['grasp'] == 'FLAT_LONG'
     assert r['request']['place_pose'] == block_pose(CFG, 'WIDTH', spot['yaw_deg'], spot['x_m'], spot['y_m'],
-                                                    CFG['table_z_m'] + CFG['block_actual_m'][1])
+                                                    spot.get('z_m', CFG['table_z_m']) + CFG['block_actual_m'][1])
 
 
 @pytest.mark.parametrize('up, side', [('LENGTH', 1), ('WIDTH', 0)])
@@ -76,9 +77,11 @@ def test_빈_자리는_robot_yaml_설정에서_읽는다():
 
 
 def test_첫_빈_자리가_차_있으면_다음_자리에_세운다():
-    s1 = CFG['spare_spots'][0]
+    # 빈 자리 두 곳을 이 시험에서 직접 준다 — robot.yaml spare_spots 는 10/13 새 받침 한 곳이 됐다(받침 수와 상관없이 '다음 자리' 규칙만 본다)
+    cfg = dict(copy.deepcopy(CFG), spare_spots=[{'x_m': 0.30, 'y_m': 0.15, 'yaw_deg': 0.0}, {'x_m': 0.40, 'y_m': 0.15, 'yaw_deg': 30.0}])
+    s1 = cfg['spare_spots'][0]
     occupied = blk(x=s1['x_m'], y=s1['y_m'], length=5, width=5)       # 틈이 좁아 집을 후보는 아니지만 자리를 차지한다
-    r = flow().prepare(STAND, response(lying(), occupied), allow_reorient=True)
+    r = flow(cfg).prepare(STAND, response(lying(), occupied), allow_reorient=True)
     assert r['status'] == 'REORIENT' and r['spot'] == 1
 
 

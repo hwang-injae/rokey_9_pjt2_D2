@@ -18,14 +18,12 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import ColorRGBA, String
 
-from d2_motion.executor import make_pose
+from d2_motion.executor import FINGER_LINKS, make_pose
 from d2_motion.motion_math import layout_designs, load_recipe, pick_place_tcp, recipe_files, slot_block_pose, tcp_target
 
 HELD = 'held'
 TABLE_THICK_M = 0.02
 PLACED_SHRINK_M = 0.0005     # 놓인 블록 상자를 면마다 줄인다 — 면끼리 맞닿은 블록(좌판 틈 0 mm)을 충돌로 보지 않게
-FINGER_LINKS = ['rg2_base_link', 'rg2_left_outer_knuckle', 'rg2_left_inner_knuckle', 'rg2_left_inner_finger',
-                'rg2_right_outer_knuckle', 'rg2_right_inner_knuckle', 'rg2_right_inner_finger']
 PLACED_RGBA, HELD_RGBA = (0.85, 0.65, 0.3, 1.0), (0.25, 0.5, 0.95, 1.0)
 PROGRESS_QOS = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                           history=HistoryPolicy.KEEP_LAST, depth=1)   # IRD 6장 progress/1 (10/4 확정)
@@ -101,15 +99,26 @@ class SceneManagerNode(Node):
         return ObjectColor(id=oid, color=ColorRGBA(r=rgba[0], g=rgba[1], b=rgba[2], a=rgba[3]))
 
     def reset(self):
-        """장면을 처음 상태로: 작업대 (로봇 바닥 둘레만 비움) 를 넣고, 지난 실행의 놓인 블록·쥔 블록을 지운다."""
+        """장면을 처음 상태로: 작업대 (로봇 바닥 둘레만 비움) · 임시 적재 받침을 넣고, 지난 실행의 놓인 블록·쥔 블록을 지운다."""
         tb = self.cfg['table']
         (x0, x1), (y0, y1), h, z = tb['x_m'], tb['y_m'], tb['base_clear_m'], self.cfg['table_z_m']
         sc = PlanningScene()
-        for i, (a, b, c, d) in enumerate([(x0, -h, y0, y1), (h, x1, y0, y1), (-h, h, h, y1), (-h, h, y0, -h)]):
+        hb = tb.get('base_clear_back_m', h)       # 뒤쪽(y−)만 따로 — 로봇 바닥 모델의 선 부분이 y −322 mm 까지 나옴(W175)
+        for i, (a, b, c, d) in enumerate([(x0, -h, y0, y1), (h, x1, y0, y1), (-h, h, h, y1), (-h, h, y0, -hb)]):
             if b > a and d > c:
                 # 0.5 mm 아래로: 작업대 윗면에 놓인 블록·손가락 끝 보정점이 작업대와 겹쳐 보이지 않게
                 sc.world.collision_objects.append(self._box(
                     f'table_{i}', (b - a, d - c, TABLE_THICK_M), make_pose(((a + b) / 2, (c + d) / 2, z - TABLE_THICK_M / 2 - 0.0005))))
+        # 임시 적재 받침 판(spare_base_m, 작업대 ~ spare_spots z_m)과 그 위 물건(spare_items_m) — 10/12 손목 카메라 실측
+        top = self.cfg.get('spare_spots', [{}])[0].get('z_m', z)
+        boxes = []
+        if self.cfg.get('spare_base_m') and top > z + 0.001:
+            boxes.append(('spare_base', self.cfg['spare_base_m'], z, top))
+        boxes += [(f'spare_item_{k}', it, top, it['top_z_m']) for k, it in enumerate(self.cfg.get('spare_items_m', []), start=1)]
+        for oid, r, lo, hi in boxes:
+            (a, b), (c, d) = r['x_m'], r['y_m']
+            # 윗면은 작업대처럼 0.5 mm 아래로: 판 위에 놓인 블록 · 손가락 끝 보정점이 판과 겹쳐 보이지 않게
+            sc.world.collision_objects.append(self._box(oid, (b - a, d - c, hi - lo), make_pose(((a + b) / 2, (c + d) / 2, (lo + hi) / 2 - 0.0005))))
         # 지난 실행의 블록·쥔 블록은 지금 장면에 있는 것만 지운다: 없는 물체를 지우라고 하면 MoveIt 이 변경 전체를 실패로 답한다
         world, attached = self._current_objects()
         sc.world.collision_objects += [self._remove(oid) for oid in world if oid.startswith('blk_') or oid == HELD]

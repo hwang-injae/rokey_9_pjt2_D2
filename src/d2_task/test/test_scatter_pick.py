@@ -459,8 +459,8 @@ def test_시계를_섞으면_믿지_않는다():
     assert grasped_now({'stamp': wall, 'grasped': False}, wall - 1, wall + 1, 3.0) is False       # 같은 시계면 믿는다
 
 
-def test_robot_yaml_공급_방식_스위치_기본은_slots():
-    assert CFG['supply_mode'] == 'slots' and CFG['supply_mode'] in ('slots', 'scatter')       # E-55
+def test_robot_yaml_공급_방식_스위치_기본은_scatter():
+    assert CFG['supply_mode'] == 'scatter'       # E-55 스위치, 10/13 PL: 공급 칸 없앰 → 기본 scatter
 
 
 # ---------- 장애물 (W142, E-53 B) ----------

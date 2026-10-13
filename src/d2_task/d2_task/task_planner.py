@@ -123,7 +123,7 @@ class TaskPlanner:
                 'pick_pose': (center, quat_from_axes(*(column(rot, k) for k in range(3)))),
                 'place_pose': t['place_pose']}
 
-    def judge(self, expect_present=()):
+    def judge(self, expect_present=(), placed_dz_m=None, strict=False):
         """진행표에서 확실히 어긋난 블록을 찾는다(IRD 7장 OFFSET_OVER). 문제가 없으면 빈 목록.
 
         입력: expect_present = 지금 있어야 하는 part_id 들(방금 놓은 블록). 반환: [{'part_id', 'reason', 'detail'}].
@@ -133,6 +133,8 @@ class TaskPlanner:
         ±2 mm 판정 · 위층 보정은 하지 않는다(E-20, 오차는 측정값만). '설계 밖 블록'은 check_progress 가 설계 블록만
         묻기 때문에 여기서 표현할 수 없다(W121 확인 사항).
         없는 part_id 를 넘기면 ValueError.
+        받침 경유(10/13, one_pick placed_check): placed_dz_m 을 주면 expect_present 블록의 높이 기준을 그 값으로(5 mm), strict 면 expect_present 블록이
+        present 가 아닌 것(occluded · unknown)도 문제로 본다 — 방금 놓은 블록을 확인 못 한 채 다음 블록을 얹지 않는다.
         """
         for part_id in expect_present:
             if part_id not in self.progress:
@@ -140,15 +142,19 @@ class TaskPlanner:
         limit = self.cfg['block_actual_m'][2] / 2
         problems = []
         for part_id in expect_present:
-            if self.progress[part_id]['state'] == 'absent':
+            state = self.progress[part_id]['state']
+            if state == 'absent':
                 problems.append({'part_id': part_id, 'reason': 'OFFSET_OVER', 'detail': '놓은 블록이 없다'})
+            elif strict and state != 'present':
+                problems.append({'part_id': part_id, 'reason': 'OFFSET_OVER', 'detail': f'놓은 블록을 확인 못 했다({state})'})
         for b in self.parts:
             row = self.progress[b['part_id']]
             if row['state'] != 'present':
                 continue
-            if not math.isnan(row['dz_m']) and abs(row['dz_m']) > limit:
+            lim = placed_dz_m if placed_dz_m is not None and b['part_id'] in expect_present else limit
+            if not math.isnan(row['dz_m']) and abs(row['dz_m']) > lim:
                 problems.append({'part_id': b['part_id'], 'reason': 'OFFSET_OVER',
-                                 'detail': f'높이가 {row["dz_m"] * 1000:.1f} mm 어긋났다(기준 ±{limit * 1000:.1f} mm)'})
+                                 'detail': f'높이가 {row["dz_m"] * 1000:.1f} mm 어긋났다(기준 ±{lim * 1000:.1f} mm)'})
             lost = [s for s in b['supports'] if self.progress[s]['state'] == 'absent']
             if lost:
                 problems.append({'part_id': b['part_id'], 'reason': 'OFFSET_OVER',

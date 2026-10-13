@@ -14,8 +14,9 @@ NEEDS_BRIDGE = ('start', 'scan')   # 로봇 PC 가 끊겼으면 막는 명령(IR
 
 
 class Command(BaseModel):
-    """화면 명령(IRD 2장 cmd). start 는 WAIT_SUPPLY · WAIT_HMI 에서 [계속]과 같다. mode 는 auto 고정(칸만 둠)."""
-    cmd: Literal['select_design', 'start', 'scan', 'cancel']
+    """화면 명령(IRD 2장 cmd). start 는 WAIT_SUPPLY · WAIT_HMI 에서 [계속]과 같다. mode 는 auto 고정(칸만 둠).
+    open_gripper 는 ERROR · STOPPED 에서 사람이 블록을 받친 뒤 그리퍼를 활짝 연다(10/13 받침 경유 — 작업 관리자가 상태를 보고 거절한다)."""
+    cmd: Literal['select_design', 'start', 'scan', 'cancel', 'open_gripper']
     design_id: str = ''
     mode: str = 'auto'
 

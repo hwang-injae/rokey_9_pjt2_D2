@@ -1,6 +1,6 @@
 // 화면이 받는 JSON 꼴 — IRD 6장 칸 그대로(정본은 IRD). backend 는 MQTT 로 받은 JSON 을 고치지 않고 넘긴다.
 
-export type Cmd = 'select_design' | 'start' | 'scan' | 'cancel';
+export type Cmd = 'select_design' | 'start' | 'scan' | 'cancel' | 'open_gripper';
 
 /** state/2 — 작업 관리자 상태(IRD 2장 state · message_id) */
 export interface TaskState {

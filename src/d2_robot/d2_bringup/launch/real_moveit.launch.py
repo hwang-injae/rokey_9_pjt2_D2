@@ -9,6 +9,7 @@ MoveIt 으로 로봇을 움직이는 우리 노드에는 이 브링업을 쓴다
   - 그리퍼: real = OnRobot RG2 드라이버 (Modbus), virtual = 가상 그리퍼. 둘 다 /onrobot/sendCommand
             실기 손가락 각은 /onrobot_joint_states 로 이름을 바꿔 내보낸다 (로봇 joint_states 와 섞이지 않게)
   - MoveIt: 모델 = description/m0609_rg2_tcp.urdf.xacro (수업 모델 + 손가락 끝 rg2_tcp, 플랜지에서 228 mm)
+  - IK 계산기: KDL 제한 시간 50 ms (config/kinematics.yaml — 두산 기본 15 ms 를 덮어씀, 10/11)
   - 카메라 노드는 띄우지 않는다 (비전 파트가 띄운다).
 
 실행:
@@ -85,6 +86,8 @@ def generate_launch_description():
         .joint_limits(file_path=os.path.join(SHARE, 'config', 'joint_limits.yaml'))   # 6번 관절 속도를 제어기에 맞춤
         .planning_pipelines(pipelines=['ompl', 'chomp', 'pilz_industrial_motion_planner'],
                             default_planning_pipeline='ompl', load_all=False)
+        # IK 계산기: KDL 제한 시간 15 → 50 ms(config/kinematics.yaml — 손목을 꺾은 자세를 15 ms 로는 자주 못 풂, 10/11 가상)
+        .robot_description_kinematics(file_path=os.path.join(SHARE, 'config', 'kinematics.yaml'))
         .to_moveit_configs()
     )
     # 두산 MoveIt 설정의 모델 대신 손가락 끝(rg2_tcp)이 든 우리 모델을 쓴다
@@ -112,9 +115,12 @@ def generate_launch_description():
 
     grip_virtual = Node(package='m0609_rg2_bringup', executable='gripper_virtual_node.py',
                         name='gripper_virtual_node', output='screen', condition=IfCondition(is_virtual))
+    # 드라이버는 상태를 50 Hz 로 읽는데 한 번이라도 읽기가 실패하면(응답 없음 · 1 s 시간 초과) 예외로 꺼진다(오류 처리 없음 —
+    # comModbusTcp.getStatus 의 .registers). 10/11 16:41 · 10/12 09:24 브링업 3초 뒤 exit 1 → 그리퍼 서비스가 사라져 GRIPPER_NO_RESPONSE.
+    # 다시 띄우면 정상(10/12 확인)이라, 꺼지면 2초 뒤 저절로 다시 띄운다
     grip_real = Node(
         package='onrobot_rg_control', executable='OnRobotRGControllerServer', name='OnRobotRGControllerServer',
-        output='screen', condition=IfCondition(is_real),
+        output='screen', condition=IfCondition(is_real), respawn=True, respawn_delay=2.0,
         parameters=[{'/onrobot/control': 'modbus', '/onrobot/ip': LaunchConfiguration('gripper_ip'),
                      '/onrobot/port': 502, '/onrobot/changer_addr': 65, '/onrobot/gripper': 'rg2',
                      '/onrobot/offset': 5}],

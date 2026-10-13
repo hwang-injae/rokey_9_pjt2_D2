@@ -36,7 +36,7 @@ async function post(path: string, body?: unknown): Promise<CmdResult> {
   }
 }
 
-/** /d2/hmi/command — 설계 선택 · 출발([계속]) · 스캔 · 취소. 자동으로 다시 보내지 않는다(IRD 10.1) */
+/** /d2/hmi/command — 설계 선택 · 출발([계속]) · 스캔 · 취소 · 그리퍼 열기(ERROR · STOPPED). 자동으로 다시 보내지 않는다(IRD 10.1) */
 export const command = (cmd: Cmd, designId = '') => post('/api/robot/command', { cmd, design_id: designId, mode: 'auto' });
 /** [조립] 한 번(10/13 PL): select_design → 받으면 이어서 start. 이미 그 설계로 출발 대기(READY)면 start 만.
  *  설계 3D(DesignView) · 스캔 추천 설계(ScanRecommend)가 같이 쓴다. 반환: 마지막으로 보낸 단계와 그 답(거절이면 그 단계에서 멈춤).

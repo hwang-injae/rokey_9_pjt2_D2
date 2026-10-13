@@ -10,6 +10,7 @@ TaskManager 의 SELECT 안에서(공개 상태를 늘리지 않고) 쓰려고 �
 open_width_m 은 task 노드가 0 으로 넘긴다 — PickPlace 에서 0 은 '잡기마다 robot.yaml grasp_open_pick_m 을 쓴다'이므로 목표 블록의 잡기가 바뀌어도 폭이 맞는다.
 """
 import copy
+import math
 import threading
 
 from d2_motion.motion_math import column, half_height, quat_from_axes, rot_z, rpy_matrix
@@ -17,6 +18,10 @@ from d2_motion.motion_math import column, half_height, quat_from_axes, rot_z, rp
 from d2_task.block_picker import BlockPicker, grasp_target
 
 SUPPLY_SCATTER = 'scatter'
+# 받침 경유 1단계에서 고르는 잡기 — 모든 잡기(one_pick 과 같음). 옆으로 선 · 선 블록은 그 자세로 받침에 세워 놓고 받침에서 눕힌다(잡기 TIP)
+SPARE_GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG', 'TILT')
+SIZE_KEYS = ('LENGTH', 'WIDTH', 'THICKNESS')
+TILT_DEG = (3.0, None)                     # 기울여 집는 윗면 기울기 아래 끝 (°) — 위 끝은 robot.yaml motion.tool_tilt_max_deg(실기 30 ~ 35° 넘으면 안전 모드)
 # 세우기(E-37 · E-77): 목표 자세(위 축) → 눕힌 블록을 집을 잡기 (10/11 16:50 PL — 세움 FLAT_SHORT · 옆세움 FLAT_LONG)
 REORIENT_GRASP = {'LENGTH': 'FLAT_SHORT', 'WIDTH': 'FLAT_LONG'}
 
@@ -226,7 +231,7 @@ class ScatterFlow:
             epoch, halted = state_fn()
             if halted or ticket != (self._token, epoch):
                 return False
-            if result.get('status') in ('PICK', 'REORIENT'):
+            if result.get('status') in ('PICK', 'REORIENT', 'SPARE', 'SPARE_TIP', 'SPARE_CENTER'):
                 self.candidate = {'request': copy.deepcopy(result['request']), 'candidate': copy.deepcopy(result['candidate']),
                                   'gap_mm': result['gap_mm']}
             else:
@@ -288,6 +293,186 @@ class ScatterFlow:
                    'open_width_m': self.open_width_m, 'obstacles': obstacles}
         return {'status': 'PICK', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm']}
 
+    # ---------- 받침 경유(10/13 박진용 — one_pick 실기 레시피 4 · 1 끝까지, PL 10시 지시로 정식 흐름에) ----------
+    @property
+    def via_spare(self):
+        """robot.yaml scatter.via_spare 가 참이면 흩뿌림 집기를 받침 경유로 한다(아니면 지금 흐름 그대로)."""
+        return bool((self.cfg.get('scatter') or {}).get('via_spare'))
+
+    def spare_spot(self):
+        """받침 자리 = robot.yaml spare_spots 첫 자리 {x_m, y_m, z_m(받침 윗면), yaw_deg}. 형식이 틀리면 ValueError."""
+        spots = self._spare_spots(self.cfg.get('spare_spots', []))
+        if not spots or not _finite(spots[0].get('z_m', self.cfg['table_z_m'])):
+            raise ValueError('robot.yaml spare_spots 첫 자리가 없거나 z_m 이 숫자가 아니다')
+        return spots[0]
+
+    def prepare_spare(self, target, response, failed=()):
+        """받침 경유 1단계 — 공급에서 집기 쉬운 블록을 BlockPicker.rank 순서로 골라 받침에 눕혀 놓는 요청을 준비한다(계산만).
+
+        입력: target {part_id, grasp, place_pose}(레시피 목표 — 2단계에서 씀), response = find_blocks 응답(height_map 칸이 있으면 손가락 자리를
+        깊이로 미리 거른다), failed = 이번 블록에서 안 된 시도 [(x_m, y_m, grasp, dyaw_deg, slide_m)](같은 후보를 다시 고르지 않게).
+        잡기는 집기 쉬운 것(틀기 · 옮기기 · 기울여 집기 TILT 포함) — 받침에서 다시 재서 레시피 잡기로 곧게 다시 잡으므로 여기 잡기는 조립과 상관없다.
+        옆으로 선 · 선 블록(EDGE_* · STAND_*)은 그 자세 그대로 받침에 세워 놓는다(one_pick — 받침에서 다시 재고 잡기 TIP 으로 눕힌다).
+        옆으로 섬은 긴 축이 받침 방향(spot yaw_deg), 섬은 넘어지는 쪽(yaw + 90°)이 받침 긴 변(support_long_yaw)이 되게 — 짧은 변으로 넘기면
+        넘기기 전 세운 자리가 받침 밖(가운데에서 44.6 mm).
+        반환 status: SPARE(request — 받침에 놓는 PickPlace 칸 + 내부 표시 'via_spare': True, attempt = failed 에 넣을 꼴, tag = 고른 이유)
+        · EMPTY · NO_MATCH(counts · message) · NOT_CONFIGURED · LOOKUP_FAILED · BLOCKED. 바깥 영향 없음.
+        """
+        if not self.configured:
+            return {'status': 'NOT_CONFIGURED'}
+        if not isinstance(response, dict) or response.get('ok') is not True or not isinstance(response.get('blocks'), list):
+            return {'status': 'LOOKUP_FAILED', 'reason': 'BAD_RESPONSE'}
+        try:
+            spot = self.spare_spot()
+        except ValueError as e:
+            return {'status': 'BLOCKED', 'reason': 'INVALID_SPARE_SPOTS', 'guide': 'CHECK_BLOCKS', 'message': str(e)}
+        blocks = [self._with_tilt(b) for b in response['blocks']]
+        if not blocks:
+            return {'status': 'EMPTY', 'guide': 'REFILL'}
+        if grasp_target(target['grasp'], self.cfg)[0] != 'THICKNESS':
+            return {'status': 'STAND_NOT_READY'}           # 받침에서 세우는 동작이 아직 없다 — 공급에서 옮기기 전에 막는다
+        pts = height_points(response.get('height_map'))
+        ranked, cut = self.picker.rank(blocks, list(failed), pts)
+        # 깊이를 못 받으면 기울여 집기는 뺀다 — 손가락 자리 · 윗면 평면을 깊이로 못 본 채 기울여 내려가지 않는다(one_pick NO_DEPTH)
+        ranked = [r for r in ranked if r[1] in SPARE_GRASPS and (pts is not None or r[1] != 'TILT')]
+        if not ranked:
+            n = len(blocks)
+            return {'status': 'NO_MATCH', 'guide': 'CHECK_BLOCKS', 'counts': {'no_clear': n},
+                    'message': f'손가락이 들어갈 자리가 있는 블록이 없음(블록 {n}개 · 깊이로 거른 후보 {cut.get("깊이", 0)}개)'}
+        i, grasp, dyaw, slide, tag = ranked[0]
+        b = blocks[i]
+        obstacles = self._obstacles(response['blocks'], i)
+        if isinstance(obstacles, dict):
+            return obstacles
+        thick = self.cfg['block_actual_m'][2]
+        if grasp == 'TILT':
+            # 기울여 집기: 윗면 법선 방향으로 두께 절반만 문다(10/12 실기 — 평소 깊이로 대각선으로 들어가 밑 블록을 찍음). 노드는 윗면에서
+            # grasp_depth_m 을 무니 집기 자세를 법선 방향으로 그 차이만큼 올리고, 얕게 문 만큼 블록이 손 아래로 더 나와 놓는 자리도 그만큼 올린다
+            center, quat, normal = tilt_block_pose(b, thick)
+            shift = self.cfg['grasp_depth_m'] - thick / 2
+            pick_pose = (tuple(c + n * shift for c, n in zip(center, normal)), quat)
+        else:
+            shift = 0.0
+            pick_pose = self._grasp_pose(b, grasp, dyaw, slide)
+        up = 'THICKNESS' if grasp == 'TILT' else b['up']
+        yaw = self.support_long_yaw() - 90.0 if up == 'LENGTH' else spot['yaw_deg']
+        size = dict(zip(SIZE_KEYS, self.cfg['block_actual_m']))[up]
+        sc, sq = block_pose(self.cfg, up, yaw, spot['x_m'], spot['y_m'], spot.get('z_m', self.cfg['table_z_m']) + size)
+        request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': grasp, 'pick_pose': pick_pose,
+                   'place_pose': ((sc[0], sc[1], sc[2] + shift), sq), 'open_width_m': self.open_width_m,
+                   'obstacles': obstacles, 'via_spare': True}
+        return {'status': 'SPARE', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(response['blocks'][i]), 'gap_mm': None,
+                'attempt': (b['x_m'], b['y_m'], grasp, dyaw, slide), 'tag': tag}
+
+    def support_long_yaw(self):
+        """받침 긴 변 방향 (°) — robot.yaml spare_base_m 의 x 범위가 y 범위보다 길면 0, 아니면 90(세운 블록을 넘기는 쪽, one_pick 과 같음)."""
+        sb = self.cfg.get('spare_base_m') or {'x_m': [0.0, 1.0], 'y_m': [0.0, 0.0]}
+        return 0.0 if sb['x_m'][1] - sb['x_m'][0] >= sb['y_m'][1] - sb['y_m'][0] else 90.0
+
+    def reseen_request(self, goal, cand, response):
+        """헛잡음 뒤 다시 찍은 find_blocks 응답에서 그 블록(cand 자리 40 mm 안 · 같은 자세 · 확신도 0.5 이상 · 덮이지 않음 — one_pick see_block)을 찾아
+        같은 잡기 · 각도 틀기 · 손가락 옮김(goal['attempt'])으로 pick_pose 만 고친 요청. 못 찾으면 None. 바깥 영향 없음."""
+        if not isinstance(response, dict) or response.get('ok') is not True or not isinstance(response.get('blocks'), list) or not cand:
+            return None
+        near = [b for b in response['blocks'] if b.get('up') == cand.get('up') and b.get('overlap') != 'under'
+                and (b.get('confidence') or 0.0) >= 0.5 and BlockPicker.is_valid(b)
+                and math.hypot(b['x_m'] - cand['x_m'], b['y_m'] - cand['y_m']) < 0.04]
+        if not near:
+            return None
+        b = min(near, key=lambda o: math.hypot(o['x_m'] - cand['x_m'], o['y_m'] - cand['y_m']))
+        _x, _y, grasp, dyaw, slide = goal['attempt']
+        req = {k: v for k, v in goal.items() if k not in ('status', 'regrasp')}
+        req['pick_pose'], req['seen'] = self._grasp_pose(b, grasp, dyaw, slide), copy.deepcopy(b)
+        obstacles = self._obstacles(response['blocks'], response['blocks'].index(b))
+        if isinstance(obstacles, dict):
+            return None
+        req['obstacles'] = obstacles
+        return copy.deepcopy(req)
+
+    def prepare_from_spare(self, target, response, centered=False):
+        """받침 경유 2단계 — 받침 위 블록(find_blocks area 'spare' — 깊이로 잰 블록 하나)을 보고 다음 요청을 준비한다(계산만, one_pick 과 같은 순서).
+        받침은 공급 영역 밖 블록 하나뿐인 자리라 장애물 없음.
+
+        ① 옆으로 선 · 선 블록이면 SPARE_TIP — 잡기 TIP 으로 받침 가운데에 눕힌다(누울 자리 yaw: 옆으로 섬 = spot yaw_deg, 섬 = 받침 긴 변).
+           눕힌 뒤 받침을 다시 잰다. ② 레시피 잡기가 FLAT_SHORT · FLAT_LONG 이고 centered 가 거짓이면 SPARE_CENTER — 반대 폭으로 물었다 놓아
+           (CENTER_<반대 잡기>) 레시피 잡기가 맞춰 주지 않는 축을 잰 중심으로 맞춘 뒤, 다시 재지 않고 같은 잰 값으로 집는다(request['then']).
+        ③ 그 밖은 PICK — 잰 중심 · 방향에서 레시피 잡기로 곧게 다시 집어 조립 자리(target place_pose)에 놓는다.
+        세움 · 옆세움 레시피(STAND_* · EDGE_*)는 받침에서 세우는 동작이 정식 흐름에 아직 없어 STAND_NOT_READY(사람).
+        반환 status: SPARE_TIP · SPARE_CENTER · PICK(request · candidate) · SPARE_EMPTY(받침에 블록이 안 보임) · STAND_NOT_READY
+        · SPARE_BLOCKED(받침 둘레 손가락 자리에 높은 점 — message)
+        · SPARE_NOT_FLAT(자세를 모름 — block) · NOT_CONFIGURED · LOOKUP_FAILED. 바깥 영향 없음.
+        """
+        if not self.configured:
+            return {'status': 'NOT_CONFIGURED'}
+        if not isinstance(response, dict) or response.get('ok') is not True or not isinstance(response.get('blocks'), list):
+            return {'status': 'LOOKUP_FAILED', 'reason': 'BAD_RESPONSE'}
+        if not response['blocks']:
+            return {'status': 'SPARE_EMPTY'}
+        b = response['blocks'][0]
+        try:
+            spot = self.spare_spot()
+        except ValueError as e:
+            return {'status': 'LOOKUP_FAILED', 'reason': str(e)}
+        size = dict(zip(SIZE_KEYS, self.cfg['block_actual_m']))
+        base = b.get('base_z_m', spot.get('z_m', self.cfg['table_z_m']))
+        thick = size['THICKNESS']
+        if b.get('up') in ('WIDTH', 'LENGTH'):
+            # 받침에 그 자세로 세워 둔 블록 — 높이는 받침 윗면 + 그 자세 높이(잰 높이 흔들림을 버림)
+            pick_pose = block_pose(self.cfg, b['up'], b['yaw_deg'], b['x_m'], b['y_m'], base + size[b['up']])
+            yaw = self.support_long_yaw() if b['up'] == 'LENGTH' else spot['yaw_deg']
+            land = block_pose(self.cfg, 'THICKNESS', yaw, spot['x_m'], spot['y_m'], base + thick)
+            request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': 'TIP', 'pick_pose': pick_pose, 'place_pose': land,
+                       'open_width_m': self.open_width_m, 'obstacles': [], 'spare_tip': True}
+            return {'status': 'SPARE_TIP', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(b), 'gap_mm': None}
+        if b.get('up') != 'THICKNESS':
+            return {'status': 'SPARE_NOT_FLAT', 'block': copy.deepcopy(b)}
+        if grasp_target(target['grasp'], self.cfg)[0] != 'THICKNESS':
+            return {'status': 'STAND_NOT_READY'}
+        # 윗면 = 받침 윗면 + 두께(잰 높이는 1 ~ 2 mm 흔들려 그대로 물면 손 안에서 매달려 놓을 때 받침을 누른다 — 10/11 실기)
+        pick_pose = block_pose(self.cfg, 'THICKNESS', b['yaw_deg'], b['x_m'], b['y_m'], base + thick)
+        request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': target['grasp'], 'pick_pose': pick_pose,
+                   'place_pose': copy.deepcopy(target['place_pose']), 'open_width_m': self.open_width_m, 'obstacles': []}
+        # 받침 둘레 손가락 자리를 깊이로 본다(응답에 height_map 이 있을 때 — one_pick p1_to_recipe). 막히면 사람이 비운다
+        pts = height_points(response.get('height_map'))
+        if pts is not None and len(pts):
+            from d2_task.pick_rank import PickRanker
+            ranker = PickRanker(self.cfg)
+            fingers, tip_z = ranker.candidate_fingers(dict(b, top_z_m=base + thick), target['grasp'], 0, 0.0)
+            hit = ranker.fingers_blocked(fingers, tip_z, pts)
+            if hit:
+                return {'status': 'SPARE_BLOCKED', 'message': ', '.join(f'{k}번 손가락 {f * 100:.0f} %' for k, f in hit)}
+        if not centered and target['grasp'] in ('FLAT_SHORT', 'FLAT_LONG'):
+            other = 'FLAT_LONG' if target['grasp'] == 'FLAT_SHORT' else 'FLAT_SHORT'
+            center = dict(request, grasp='CENTER_' + other, place_pose=pick_pose, spare_center=True, then=copy.deepcopy(request))
+            return {'status': 'SPARE_CENTER', 'request': copy.deepcopy(center), 'candidate': copy.deepcopy(b), 'gap_mm': None}
+        return {'status': 'PICK', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(b), 'gap_mm': None}
+
+    def _grasp_pose(self, b, grasp, dyaw, slide):
+        """블록 b 를 이 잡기 · 그리퍼 각도 틀기(dyaw °) · 손가락 옮김(slide m)으로 집는 pick_pose — 튼 만큼 블록 방향을 그렇게 보고 집는다.
+        옮김은 눕힌 블록만(좁은 폭은 길이 방향, 넓은 폭은 폭 방향). 윗면은 층 높이(PickRanker.top_of — 카메라 높이 흔들림을 버림)."""
+        x, y = b['x_m'], b['y_m']
+        if slide:
+            axis = math.radians(b['yaw_deg'] if grasp == 'FLAT_SHORT' else b['yaw_deg'] + 90)
+            x, y = x + slide * math.cos(axis), y + slide * math.sin(axis)
+        return block_pose(self.cfg, b['up'], b['yaw_deg'] + dyaw, x, y, self.picker.top_of(b))
+
+    def _with_tilt(self, b):
+        """기울어진 눕힌 블록에 기울여 집기 후보용 tilt_tip_z_m(두께 절반 무는 손끝 높이)을 붙인 복사본. find_blocks 가 준 center_top_z_m · normal 이
+        없거나 기울기가 TILT_DEG 밖이면 붙이지 않는다(그 블록은 후보에서 빠진다 — BlockPicker.rank 규칙). 반듯한 블록은 그대로."""
+        b = dict(b)
+        if not (b.get('tilted') is True and b.get('up') == 'THICKNESS'):
+            return b
+        n, top = b.get('normal'), b.get('center_top_z_m')
+        if not (isinstance(n, (list, tuple)) and len(n) == 3 and all(_finite(v) for v in n) and _finite(top)):
+            b.pop('center_top_z_m', None)
+            return b
+        tilt = math.degrees(math.acos(max(-1.0, min(1.0, n[2]))))
+        if not TILT_DEG[0] <= tilt <= float(self.cfg['motion']['tool_tilt_max_deg']):
+            b.pop('center_top_z_m', None)
+            return b
+        b['tilt_tip_z_m'] = top - self.cfg['block_actual_m'][2] / 2 * n[2]
+        return b
+
     def _reorient(self, target, blocks, up):
         """눕힌 블록 하나를 빈 자리에 세우는 요청(REORIENT) 또는 None(세울 수 없음 → 부르는 쪽이 NO_MATCH).
 
@@ -319,8 +504,9 @@ class ScatterFlow:
             return obstacles
         c = picked['block']
         pick_pose = block_pose(self.cfg, c['up'], c['yaw_deg'], c['x_m'], c['y_m'], c['top_z_m'])
+        # 바닥 = 빈 자리 z_m(받침 윗면, 없으면 작업면) — 10/13 새 받침은 윗면 80 mm 라 작업면 기준이면 80 mm 낮게 놓는다
         place_pose = block_pose(self.cfg, up, spot['yaw_deg'], spot['x_m'], spot['y_m'],
-                                self.cfg['table_z_m'] + self.cfg['block_actual_m'][UP_INDEX[up]])
+                                spot.get('z_m', self.cfg['table_z_m']) + self.cfg['block_actual_m'][UP_INDEX[up]])
         request = {'part_id': target['part_id'], 'supply_slot': '', 'grasp': grasp, 'pick_pose': pick_pose, 'place_pose': place_pose,
                    'open_width_m': self.open_width_m, 'obstacles': obstacles, 'reorient': True}
         return {'status': 'REORIENT', 'request': copy.deepcopy(request), 'candidate': copy.deepcopy(c), 'gap_mm': picked['gap_mm'],
@@ -408,3 +594,35 @@ class ScatterFlow:
         """흩뿌림 대기(WAIT_SUPPLY)에서 [계속](start)을 받았을 때: 다시 관측하고 조회한다. 공급 칸은 초기화하지 않는다."""
         self.invalidate()
         return {'reobserve': True, 'reset_supply_slots': False}
+
+
+def height_points(hm):
+    """find_blocks height_map 칸 {x0_m, y0_m, res_m, nx, ny, z_m(행 우선, 빈 칸 null)} → 칸 가운데 점 [(x, y, z)] m. 없거나 형식이 틀리면 None
+    (그러면 BlockPicker.rank 가 깊이로 미리 거르지 않는다 — 노드가 내려가기 전에 다시 보지 않으므로 응답에 이 칸을 꼭 요청한다)."""
+    try:
+        import numpy as np
+        x0, y0, res, nx, ny = float(hm['x0_m']), float(hm['y0_m']), float(hm['res_m']), int(hm['nx']), int(hm['ny'])
+        z = np.array([np.nan if v is None else float(v) for v in hm['z_m']], dtype=float)
+        if z.size != nx * ny or res <= 0:
+            return None
+    except (KeyError, TypeError, ValueError):
+        return None
+    iy, ix = np.divmod(np.arange(nx * ny), nx)
+    pts = np.stack([x0 + (ix + 0.5) * res, y0 + (iy + 0.5) * res, z], axis=1)
+    return pts[~np.isnan(pts[:, 2])]
+
+
+def tilt_block_pose(b, thick):
+    """기울어진 눕힌 블록 b(find_blocks center_top_z_m · normal · yaw_deg)의 중심 자세 — 회전 열 = 길이 · 폭 · 윗면 법선(집기 노드 TILT 가
+    두께 축을 윗면 법선으로 본다). 반환: (중심 xyz m, 쿼터니언 xyzw, 법선)."""
+    n = [float(v) for v in b['normal']]
+    yaw = math.radians(b['yaw_deg'])
+    u0 = (math.cos(yaw), math.sin(yaw), 0.0)
+    d = sum(a * c for a, c in zip(u0, n))
+    u = [a - d * c for a, c in zip(u0, n)]
+    norm = math.sqrt(sum(a * a for a in u))
+    u = [a / norm for a in u]
+    w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]]
+    top = (b['x_m'], b['y_m'], b['center_top_z_m'])
+    center = tuple(t - c * thick / 2 for t, c in zip(top, n))
+    return center, quat_from_axes(u, w, n), n

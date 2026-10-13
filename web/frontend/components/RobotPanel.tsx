@@ -95,6 +95,12 @@ export default function RobotPanel({ robot, onLog }: Props) {
             {label('다시 시작', '다시 시작')}
           </button>
         )}
+        {has(['STOPPED', 'ERROR'], st) && (
+          <button className="secondary" disabled={!!busy} title="블록을 쥔 채 멈췄을 때 — 블록을 손으로 받친 뒤 누르세요(그리퍼를 활짝 엶)"
+            onClick={() => send('그리퍼 열기', () => api.command('open_gripper'))}>
+            {label('그리퍼 열기', '그리퍼 열기')}
+          </button>
+        )}
       </div>
 
       {last && !last.r.success && (

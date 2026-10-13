@@ -26,6 +26,19 @@ GRASP_AXIS = {'FLAT_SHORT': 'WIDTH', 'FLAT_LONG': 'LENGTH', 'EDGE_SHORT': 'THICK
 # 위를 향하는 블록 축 -> 바닥 상태 이름 (눕힘 15 · 옆으로 세움 25 · 위로 세움 75 mm 높이)
 STATE_OF_UP = {'THICKNESS': 'FLAT', 'WIDTH': 'EDGE', 'LENGTH': 'STAND'}
 LEVEL_TOL_DEG = 5.0       # 잡는 축이 수평에서 이만큼까지 기울어도 위에서 집을 수 있다고 본다
+# 기울여 집기(잡기 TILT, 챌린지 A1 · W180): 폭 · 닫기 · 놓기 값은 FLAT_SHORT 것을 쓴다(윗면에 수직으로 좁은 폭을 문다)
+TILT = 'TILT'
+TILT_AS = 'FLAT_SHORT'
+TILT_DEG = (3.0, 45.0)              # 기울여 집는 윗면 기울기 범위 (°) — 10/11 가상 45° · 실기 15.3°
+TILT_LESS_DEG = (0, 5, 10, 15, 20)  # 손이 안 닿으면 블록 기울기보다 이만큼 덜 기울여 집는다 (°) — 남은 기울기는 놓을 때 넘어가며 눕는다
+# 받침 눕히기(잡기 TIP, 10/13 실기 옆으로 섬 3번 · 섬 1번 — 시험 도구 one_pick tip_plan 을 옮김)
+TIP = 'TIP'
+TIP_DEG = {'WIDTH': 35.0, 'LENGTH': 20.0}   # 놓는 기울기 (°) — 넘어가는 각 atan(두께/높이) 31° · 11° 보다 크게
+TIP_GRASP = {'WIDTH': 'EDGE_LONG', 'LENGTH': 'STAND_LONG'}   # 손가락 닫는 축 = 돌림축이어야 손가락 없는 쪽(두께 면)으로 넘어진다
+TIP_LIFT_M = 0.04                   # 문 뒤 들기 · 기울여 놓기 위 높이 (m)
+FLOOR_CLEAR_M = 0.003               # 가장 낮은 손가락 모서리 ↔ 받침 윗면 여유 (m)
+# 받침 맞추기(잡기 CENTER_FLAT_SHORT · CENTER_FLAT_LONG, 10/13 one_pick center_at_p1) — 그 폭으로 물었다 바로 놓아 반대 축을 손 가운데로
+CENTER_PREFIX = 'CENTER_'
 
 
 # ---------------- 회전 ----------------
@@ -157,11 +170,25 @@ def slot_block_pose(cfg, slot):
 RG2_L1, RG2_L3, RG2_TH1, RG2_TH3, RG2_DY, RG2_DZ = 0.108505, 0.055, 1.41371, 0.76794, -0.0144, 0.1095 + 0.0427
 
 
+def rg2_finger_angle(display_width_m):
+    """그리퍼 표시(피드백) 폭 (m) -> 손가락 관절 각 (rad). 드라이버 finger_joint = URDF rg2_finger_joint(브링업이 이름만 바꿔 넘김)."""
+    c = (display_width_m / 2 - RG2_DY - RG2_L1 * math.cos(RG2_TH1)) / RG2_L3
+    return math.acos(max(-1.0, min(1.0, c))) - RG2_TH3
+
+
 def rg2_tip_height_m(display_width_m):
     """그리퍼 표시(피드백) 폭 (m) -> 그리퍼 바닥에서 손가락 끝까지 높이 (m)."""
-    c = (display_width_m / 2 - RG2_DY - RG2_L1 * math.cos(RG2_TH1)) / RG2_L3
-    a = math.acos(max(-1.0, min(1.0, c))) - RG2_TH3
-    return RG2_L3 * math.sin(a + RG2_TH3) + RG2_DZ
+    return RG2_L3 * math.sin(rg2_finger_angle(display_width_m) + RG2_TH3) + RG2_DZ
+
+
+def held_finger_angle(cfg, grasp):
+    """잡기 grasp 로 블록을 물었을 때 손가락 관절 각 (rad) — 쥔 상태로 미리 계획해 볼 때 MoveIt 손가락 자세로 쓴다."""
+    return rg2_finger_angle(_grip_display_m(cfg, grasp))
+
+
+def open_finger_angle(cfg, width_m):
+    """손가락 사이 실제 폭 width_m (m) 로 열었을 때 손가락 관절 각 (rad) — 집기 전 연 폭으로 미리 충돌을 볼 때 쓴다."""
+    return rg2_finger_angle(width_m + cfg['gripper']['feedback_offset_m'])
 
 
 def _grip_display_m(cfg, grasp):
@@ -292,6 +319,127 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
         place_xyz = (place_xyz[0], place_xyz[1], place_xyz[2] + delta)
         held['offset_m'][2] += delta
     return pick_xyz, pick_q, place_xyz, place_q, held
+
+
+def tilt_pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, less_deg):
+    """기울어진(걸친) 눕힌 블록을 윗면에 수직으로 기울인 공구로 FLAT_SHORT 폭으로 물어 눕혀 놓는 TCP 목표 (잡기 TILT).
+
+    입력: pick_center · pick_rot = 기울어진 블록 중심 (m) · 회전(열 = 길이 · 폭 · 두께 축, 두께 축이 윗면 법선),
+          place_center · place_rot = 눕혀 놓을 자리, less_deg = 블록 기울기보다 덜 기울일 각 (°, 손이 안 닿을 때).
+    반환: (grips, place_xyz, place_q, held) — grips = [(TCP xyz, quat, 접근 축 단위 벡터)] 카메라(공구 −x)가 위로 가는 쪽 먼저.
+          덜 기울일 게 없으면(less > 기울기) None. 눕힌 블록이 아니거나 기울기가 TILT_DEG 밖이면 ValueError.
+    공구 축은 윗면 법선과 연직 사이 평면에서 연직으로부터 (기울기 − less), 닫는 방향 = 블록 폭 ± — 옆면 두 쪽을 문다.
+    손 안에 남는 기울기 d 만큼 쥔 상자를 키우고, 놓을 때는 낮은 끝이 다른 블록처럼 place_up 위에 오게 TCP 를 올린다 —
+    놓으면 남은 기울기만큼 넘어가 눕는다(10/11 가상 45° · 실기 15.3°, 시험 도구 one_pick 에서 옮김).
+    """
+    if up_axis(pick_rot) != 'THICKNESS' or up_axis(place_rot) != 'THICKNESS':
+        raise ValueError('기울여 집기는 눕힌 블록을 눕혀 놓을 때만')
+    n = column(pick_rot, 2)
+    if n[2] < 0:
+        n = [-v for v in n]
+    w = column(pick_rot, 1)
+    tilt = math.acos(max(-1.0, min(1.0, n[2])))
+    if not TILT_DEG[0] <= math.degrees(tilt) <= TILT_DEG[1]:
+        raise ValueError(f'기울기 {math.degrees(tilt):.1f}° 가 {TILT_DEG[0]:.0f} ~ {TILT_DEG[1]:.0f}° 밖')
+    if less_deg and math.radians(less_deg) > tilt:
+        return None
+    L, W, T = cfg['block_actual_m']
+    tip = _tcp_z_for_tip(cfg, 0.0, 'FLAT_SHORT')          # 문 손가락 끝 → rg2_tcp 공구 축 거리 (수직 집기 높이 식과 같은 값)
+    top = [c + v * T / 2 for c, v in zip(pick_center, n)]
+    hlen = math.hypot(n[0], n[1])
+    phi = tilt - math.radians(less_deg)
+    a = [0.0, 0.0, 1.0] if hlen < 1e-9 else [n[0] / hlen * math.sin(phi), n[1] / hlen * math.sin(phi), math.cos(phi)]
+    tcp = [t - v * cfg['grasp_depth_m'] + av * tip for t, v, av in zip(top, n, a)]
+    grips = []
+    for sgn in (1, -1):
+        z = [-v for v in a]
+        y = [sgn * v for v in w]
+        dot = sum(p * q for p, q in zip(y, z))
+        y = [p - dot * q for p, q in zip(y, z)]
+        ny = math.sqrt(sum(v * v for v in y))
+        y = [v / ny for v in y]
+        x = [y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]]
+        grips.append((-x[2], (tuple(tcp), quat_from_axes(x, y, z), tuple(a))))
+    grips.sort(key=lambda g: -g[0])
+    d = tilt - phi
+    held = {'size_m': [L * math.cos(d) + T * math.sin(d), W, L * math.sin(d) + T * math.cos(d)],
+            'offset_m': [0.0, 0.0, tip + T / 2 - cfg['grasp_depth_m']]}
+    place_xyz, place_q, _ = tcp_target(cfg, place_center, place_rot, 'FLAT_SHORT')
+    place_xyz = (place_xyz[0], place_xyz[1], place_xyz[2] + L / 2 * math.sin(d) + T / 2 * (math.cos(d) - 1))
+    return [g for _, g in grips], place_xyz, place_q, held
+
+
+def _rot_axis(axis, ang):
+    """단위 축 axis 둘레 ang (rad) 회전 행렬 (Rodrigues)."""
+    x, y, z = axis
+    c, s, v = math.cos(ang), math.sin(ang), 1 - math.cos(ang)
+    return [[c + x * x * v, x * y * v - z * s, x * z * v + y * s],
+            [y * x * v + z * s, c + y * y * v, y * z * v - x * s],
+            [z * x * v - y * s, z * y * v + x * s, c + z * z * v]]
+
+
+def _mul(a, b):
+    """3x3 행렬 곱."""
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _apply(m, v):
+    """3x3 행렬 x 벡터."""
+    return [sum(m[i][k] * v[k] for k in range(3)) for i in range(3)]
+
+
+def _transpose(m):
+    """3x3 전치."""
+    return [[m[j][i] for j in range(3)] for i in range(3)]
+
+
+def tip_place_tcp(cfg, pick_center, pick_rot, land_center, flip):
+    """받침에 옆으로 · 세워 놓은 블록을 손가락 축 둘레로 기울여 놓아 눕히는 TCP 목표 (잡기 TIP, 시험 도구 one_pick tip_plan 과 같은 식).
+
+    입력: pick_center · pick_rot = 받침 위 선 블록 중심 (m) · 회전(열 = 길이 · 폭 · 두께 축), land_center = 넘어져 누울 블록 중심 (m — z 는
+          받침 윗면 + 두께/2), flip = 공구를 수직축 180° 돌린 쪽(대칭 두 손목 방향 중 하나).
+    잡기 = TIP_GRASP[위 축](옆으로 섬 EDGE_LONG · 섬 STAND_LONG). 공구를 닫는 축 둘레로 TIP_DEG 만큼, 블록 윗부분이 로봇 반대쪽(base → 받침
+    방향)으로 가게 기울이고, 블록의 가장 낮은 모서리가 받침 + place_up_m 에 오게 둔다. 그 모서리를 축으로 넘어진 블록 중심이 land_center 에
+    오게 모서리 자리 = land_center − 넘어지는 방향 × 높이/2.
+    반환: (dict(grasp, tcp0 · q0 = 집는 TCP, tcp1 · q1 = 기울여 놓는 TCP, held, phi_deg, d), '') 또는 (None, 이유 글자) — 손가락 끝이
+    받침 + FLOOR_CLEAR_M 아래면 None. 눕힌 블록이면 ValueError. 바깥 영향 없음.
+    """
+    up = up_axis(pick_rot)
+    if up not in TIP_GRASP:
+        raise ValueError('눕히기(TIP)는 옆으로 선 · 선 블록만')
+    grasp = TIP_GRASP[up]
+    L, W, T = cfg['block_actual_m']
+    H = {'WIDTH': W, 'LENGTH': L}[up]
+    xyz, qt, held = tcp_target(cfg, pick_center, pick_rot, grasp)
+    rt = matrix_from_quat(qt)
+    if flip:
+        rt = [[-r[0], -r[1], r[2]] for r in rt]              # 공구 z 축 둘레 180°: x · y 열 부호 바꿈
+    rn = math.hypot(land_center[0], land_center[1])
+    radial = (land_center[0] / rn, land_center[1] / rn)
+    a = column(rt, 1)                                         # 손가락 닫는 축(수평)
+    d = [a[1], -a[0], 0.0]                                    # a x z — 양(+)으로 돌리면 윗부분이 가는 방향
+    sgn = 1 if d[0] * radial[0] + d[1] * radial[1] > 0 else -1
+    phi = math.radians(TIP_DEG[up]) * sgn
+    d = [v * sgn for v in d]
+    rr = _rot_axis(a, phi)
+    rb1, rt1 = _mul(rr, pick_rot), _mul(rr, rt)
+    corners = [_apply(rb1, [i * L / 2, j * W / 2, k * T / 2]) for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)]
+    zmin = min(c[2] for c in corners)
+    lows = [c for c in corners if c[2] < zmin + 1e-6]
+    low = [sum(c[i] for c in lows) / len(lows) for i in range(3)]       # 가장 낮은 모서리(꼭짓점 둘) 가운데
+    support_z = land_center[2] - T / 2
+    pivot = [land_center[0] - d[0] * H / 2, land_center[1] - d[1] * H / 2, support_z + cfg['motion']['place_up_m']]
+    c1 = [p - v for p, v in zip(pivot, low)]
+    rel = _apply(_mul(rt1, _transpose(rt)), [t - c for t, c in zip(xyz, pick_center)])
+    tcp1 = [c + v for c, v in zip(c1, rel)]
+    reach, half = _tcp_z_for_tip(cfg, 0.0, grasp), cfg['finger']['width_m'] / 2
+    z1, x1 = column(rt1, 2), column(rt1, 0)
+    tip = min(tcp1[2] + z1[2] * reach + x1[2] * k * half for k in (1, -1))
+    if tip < support_z + FLOOR_CLEAR_M:
+        return None, f'손가락 끝이 받침 위 {(tip - support_z) * 1000:.1f} mm'
+    return {'grasp': grasp, 'tcp0': tuple(xyz), 'q0': quat_from_axes(*[column(rt, i) for i in range(3)]),
+            'tcp1': tuple(tcp1), 'q1': quat_from_axes(*[column(rt1, i) for i in range(3)]), 'held': held,
+            'phi_deg': math.degrees(phi), 'd': d}, ''
 
 
 # ---------------- 설계도(레시피) ----------------
