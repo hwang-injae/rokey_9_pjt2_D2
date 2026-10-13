@@ -377,12 +377,12 @@ class TaskManager:
             return self._lookup_then(design_id, 'select')
         if cmd == 'start':
             return self._lookup_then(design_id, 'start')
-        if cmd == 'open_gripper':
+        if cmd == 'gripper_open':
             with self._lock:
                 allowed = self.state in ('ERROR', 'STOPPED') and getattr(self.io, 'open_gripper', None) is not None
             if not allowed:
                 return self._reject(self._busy_reason(), '그리퍼 열기는 오류 · 정지 상태에서 사람이 블록을 받친 뒤에만')
-            self.logger.log('command', self.part_id, 'open_gripper')
+            self.logger.log('command', self.part_id, 'gripper_open')
             ok, why = self.io.open_gripper()      # 잠금 밖에서 기다린다(그리퍼가 다 움직인 뒤 답함)
             return (True, '') if ok else self._reject(why, f'그리퍼를 못 열었다({why})')
         with self._lock:

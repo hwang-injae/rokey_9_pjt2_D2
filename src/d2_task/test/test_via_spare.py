@@ -294,9 +294,9 @@ def test_그리퍼_열기는_오류_정지_상태에서만_받는다():
     m, io = make()
     opened = []
     io.open_gripper = lambda: (opened.append(1) or True, '')
-    assert m.command('open_gripper')[0] is False and not opened                 # 대기 · 조립 중에는 안 받음
+    assert m.command('gripper_open')[0] is False and not opened                 # 대기 · 조립 중에는 안 받음
     m._to_error('시험')
-    assert m.command('open_gripper') == (True, '') and opened == [1]
+    assert m.command('gripper_open') == (True, '') and opened == [1]
 
 
 class W144IO(SpareIO):

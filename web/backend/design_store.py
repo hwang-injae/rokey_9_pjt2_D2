@@ -134,7 +134,7 @@ class DesignStore:
         """설계 요약 목록(화면 트리 · RAG 목록 요약, E-72). 읽을 수 없는 파일은 건너뛴다.
 
         template 을 주면 그 Template 의 설계만 — AI 생성은 사용자가 확인한 Template 안에서만 참고 설계를 고르게(E-84 ③,
-        GPT 목록 요약 · 도구 get_design 허용 목록). 다른 Template 설계를 읽고 만든 후보는 save_design 에서 거절되기 때문.
+        AI 목록 요약 · 도구 get_design 허용 목록). 다른 Template 설계를 읽고 만든 후보는 save_design 에서 거절되기 때문.
         출력: [{design_id, family, version, parent_id, made_by, block_count, size_mm[x, y, z], last_build}] — family · design_id 순.
         size_mm = 바깥 크기(블록이 차지하는 x · y · z 범위, mm). last_build = 가장 최근 조립 한 줄(build_summary) 또는 None.
         """
@@ -150,10 +150,10 @@ class DesignStore:
                       key=lambda b: b['run_id'], reverse=True)
 
     def examples_for(self, template, n=3):
-        """RAG 자동 전환용 예시(E-72 — GPT 가 도구 get_design 으로 못 골랐을 때): 이 Template 의 기본 설계(V000) + 최근 파생 n 개.
+        """RAG 자동 전환용 예시(E-72 — AI 가 도구 get_design 으로 못 골랐을 때): 이 Template 의 기본 설계(V000) + 최근 파생 n 개.
 
         출력: [{요약 칸(list_designs 와 같음), 'parts': parts/3.0}] — 기본 설계 먼저, 파생은 저장 시각 최신순.
-        프롬프트에는 parts 만 넣는다(recipe · placements 는 GPT 가 쓰지 않음). 모르는 Template 이면 ValueError.
+        프롬프트에는 parts 만 넣는다(recipe · placements 는 AI 가 쓰지 않음). 모르는 Template 이면 ValueError.
         """
         self._check_template(template)
         rows = self._rows(template=template)

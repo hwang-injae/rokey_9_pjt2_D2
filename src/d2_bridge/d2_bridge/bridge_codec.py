@@ -13,6 +13,11 @@ SEEN_KEEP = 256     # 기억하는 req_id 개수. 요청은 사람이 버튼을 
 ROS_RESPONSE_KEYS = ('req_id', 'success', 'reason')   # JsonQuery 응답의 ROS 칸 — 나머지 칸은 response_json 객체를 펼친 것
 SCAN_IMAGE_TOPIC = 'd2/vision/scan_image'   # 스캔 사진 JPEG 바이트 — scan_result 의 image_path 파일 내용(IRD 10.1 · 10.5)
 SCAN_CLOUD_TOPIC = 'd2/vision/scan_cloud'   # 스캔 점군 PLY 바이트 — scan_result 의 cloud_path 파일 내용
+SCAN_PREVIEW_TOPIC = 'd2/vision/scan_preview'              # 스캔 중 점군 미리보기 JSON scan_preview/1.0(E-82 — IRD 10.1)
+SCAN_PREVIEW_CLOUD_TOPIC = 'd2/vision/scan_preview_cloud'  # 그 미리보기의 PLY 바이트 — JSON 바로 뒤에 보낸다(IRD 10.5)
+# 미리보기 kind 별 (PLY 상한, MQTT QoS) — capture = 자세마다 모은 누적본(복셀 3 mm · ≤ 2 MB), live = 지금 보이는 것(5 mm · ≤ 500 KB,
+# 1~2 Hz 라 하나 잃어도 곧 다음 것 — QoS 0). IRD 6장 scan_preview/1.0 · 10.1
+PREVIEW_KINDS = {'capture': (2_000_000, 1), 'live': (500_000, 0)}
 SCAN_IMAGE_MAX_BYTES = 500_000      # IRD 10.5 · E-67 사진 상한. 넘으면 아래 순서로 줄여 다시 만든다
 SCAN_CLOUD_MAX_BYTES = 2_000_000    # IRD 10.5 · E-67 점군 상한 = 스캔 추론기 CLOUD_MAX_BYTES. 넘는 파일은 보내지 않는다(점군 창만 안 뜸)
 # (배율, JPEG 품질)을 이 순서로 해 보고 상한 안에 든 첫 것을 쓴다. 손목 D435i 컬러 1280×720 은 원래 크기 90 에서 대개 끝난다
@@ -138,6 +143,27 @@ def scan_files(payload):
             raise ValueError(f'scan_result {key} 가 글자가 아니다')
         out.append(value)
     return tuple(out)
+
+
+def preview_file(payload):
+    """scan_preview JSON 글자 → (run_id, kind, index, cloud_path, PLY 상한 B, MQTT QoS) — 다리가 그 PLY 파일을 읽어 보낼 때 쓴다(E-82).
+
+    kind = capture · live(IRD 6장). 판단은 하지 않고 모양만 본다. 실패: 깨진 JSON · 객체 아님 · 모르는 kind · run_id/cloud_path 가
+    글자 아님 · index 가 정수 아님 → ValueError(JSON 은 그대로 옮기고 PLY 만 안 보낸다 — 화면은 그 미리보기만 빠짐).
+    """
+    body = json.loads(payload)
+    if not isinstance(body, dict):
+        raise ValueError('scan_preview 가 JSON 객체가 아니다')
+    kind = body.get('kind')
+    if kind not in PREVIEW_KINDS:
+        raise ValueError(f'scan_preview kind 를 모른다: {kind!r}')
+    run_id, cloud_path, index = body.get('run_id'), body.get('cloud_path'), body.get('index')
+    if not isinstance(run_id, str) or not isinstance(cloud_path, str) or not cloud_path:
+        raise ValueError('scan_preview run_id · cloud_path 가 글자가 아니다')
+    if not isinstance(index, int) or isinstance(index, bool):
+        raise ValueError('scan_preview index 가 정수가 아니다')
+    max_bytes, qos = PREVIEW_KINDS[kind]
+    return run_id, kind, index, cloud_path, max_bytes, qos
 
 
 def fit_jpeg(encode, max_bytes=SCAN_IMAGE_MAX_BYTES, tries=JPEG_TRIES):

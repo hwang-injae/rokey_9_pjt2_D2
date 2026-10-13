@@ -120,6 +120,26 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
       </div>
       {pickerOpen && <DesignTree picked={viewId} onRobot={robotDesign} onPick={onPick} />}
       {body}
+      {design && (
+        <div className="legend">
+          {running ? (
+            <>
+              <span><i style={{ background: PROG.present }} />놓음</span>
+              <span><i style={{ background: PROG.current }} />지금 블록</span>
+              <span><i style={{ background: PROG.unsure }} />확인 못 함</span>
+              <span><i className="ghost" style={{ background: PROG.todo }} />아직</span>
+            </>
+          ) : (
+            roles.map((r) => (
+              <span key={r || 'none'}>
+                <i style={{ background: ROLE[r]?.color ?? OTHER }} />
+                {ROLE[r]?.ko ?? (r || '역할 없음')}
+              </span>
+            ))
+          )}
+          {!running && design.parts.parts.some((b) => b.inferred) && <span><i className="ghost" style={{ background: OTHER }} />스캔 추정</span>}
+        </div>
+      )}
       {design && !running && (
         <div className="send-row">
           <button className="primary big" disabled={!canSend} onClick={assemble}
@@ -140,26 +160,6 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
               거절{sent.reason ? ` (${sent.reason})` : ''}{sent.message ? ` — ${sent.message}` : ''}
             </span>
           )}
-        </div>
-      )}
-      {design && (
-        <div className="legend">
-          {running ? (
-            <>
-              <span><i style={{ background: PROG.present }} />놓음</span>
-              <span><i style={{ background: PROG.current }} />지금 블록</span>
-              <span><i style={{ background: PROG.unsure }} />확인 못 함</span>
-              <span><i className="ghost" style={{ background: PROG.todo }} />아직</span>
-            </>
-          ) : (
-            roles.map((r) => (
-              <span key={r || 'none'}>
-                <i style={{ background: ROLE[r]?.color ?? OTHER }} />
-                {ROLE[r]?.ko ?? (r || '역할 없음')}
-              </span>
-            ))
-          )}
-          {!running && design.parts.parts.some((b) => b.inferred) && <span><i className="ghost" style={{ background: OTHER }} />스캔 추정</span>}
         </div>
       )}
     </section>

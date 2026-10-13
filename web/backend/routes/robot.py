@@ -15,8 +15,8 @@ NEEDS_BRIDGE = ('start', 'scan')   # 로봇 PC 가 끊겼으면 막는 명령(IR
 
 class Command(BaseModel):
     """화면 명령(IRD 2장 cmd). start 는 WAIT_SUPPLY · WAIT_HMI 에서 [계속]과 같다. mode 는 auto 고정(칸만 둠).
-    open_gripper 는 ERROR · STOPPED 에서 사람이 블록을 받친 뒤 그리퍼를 활짝 연다(10/13 받침 경유 — 작업 관리자가 상태를 보고 거절한다)."""
-    cmd: Literal['select_design', 'start', 'scan', 'cancel', 'open_gripper']
+    gripper_open = [그리퍼 열기] — 작업 관리자가 ERROR · STOPPED 에서 사람이 블록을 받친 뒤 그리퍼를 활짝(0.110 m) 연다(10/13 받침 경유, 그 밖엔 거절)."""
+    cmd: Literal['select_design', 'start', 'scan', 'cancel', 'gripper_open']
     design_id: str = ''
     mode: str = 'auto'
 
@@ -66,6 +66,12 @@ def wrist(request: Request):
 def scan_image(request: Request):
     """마지막 스캔 사진(JPEG ≤ 500 KB — 다리가 image_path 파일을 읽어 보낸 것, IRD 10.5). 새 scan_result 가 오면 지워진다."""
     return _blob(request, 'scan_image', 'image/jpeg', '스캔 사진')
+
+
+@router.get('/scan_preview.ply')
+def scan_preview(request: Request, kind: Literal['capture', 'live'] = 'capture'):
+    """스캔 중 마지막 점군 미리보기(PLY, base_link m — E-82). kind = capture(자세마다 모은 누적본) · live(지금 보이는 것). 없으면 404."""
+    return _blob(request, f'scan_preview_{kind}', 'application/octet-stream', '점군 미리보기')
 
 
 @router.get('/scan_cloud.ply')

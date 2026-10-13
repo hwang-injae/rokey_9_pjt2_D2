@@ -268,7 +268,8 @@ def test_find_spare_default_and_param(tmp_path):
     assert 'height_map' not in m.find('{"run_id": "R1", "area": "spare"}')[2]
     b, = body['blocks']
     spot, T = CFG['spare_spots'][0], CFG['block_actual_m'][2]
-    assert (b['x_m'], b['y_m'], b['up'], b['base_z_m']) == (spot['x_m'], spot['y_m'], 'THICKNESS', spot['z_m'])
+    # 받침 재기 값은 0.1 mm 로 반올림한다(spare_measure) — robot.yaml 받침 자리는 0.01 mm 까지 적혀 있다(10/13 한세교 교시 값)
+    assert (b['x_m'], b['y_m'], b['up'], b['base_z_m']) == (round(spot['x_m'], 4), round(spot['y_m'], 4), 'THICKNESS', round(spot['z_m'], 4))
     assert b['top_z_m'] == round(spot['z_m'] + T, 4) and -90.0 <= b['yaw_deg'] < 90.0
     assert b['gap_mm'] == {'LENGTH': 99.0, 'WIDTH': 99.0} and b['clear'] == {'LENGTH': True, 'WIDTH': True}
     assert (b['overlap'], b['tilted'], b['confidence']) == ('none', False, 1.0)

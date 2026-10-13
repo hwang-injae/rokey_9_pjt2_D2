@@ -86,7 +86,7 @@ export default function CloudView({ url, frameKey, dark }: { url: string; frameK
       s.points?.geometry.dispose();
       (s.points?.material as THREE.Material | undefined)?.dispose();
       renderer.dispose();
-      el.removeChild(renderer.domElement);
+      renderer.domElement.remove(); // 부모가 먼저 지워졌어도 예외 없이(화면 전체가 죽지 않게)
       s3.current = null;
       framed.current = '';
     };
@@ -103,7 +103,7 @@ export default function CloudView({ url, frameKey, dark }: { url: string; frameK
   // 점군을 받아 바꿔 그린다(누적 파일이라 더해 그리지 않고 통째로 바꿈 — E-82 10/11 PL)
   useEffect(() => {
     let gone = false;
-    setNote('점군 받는 중…');
+    if (!s3.current?.points) setNote('점군 받는 중…'); // 이미 그린 점군이 있으면 안내로 가리지 않는다(실시간 미리보기는 1 ~ 2 Hz 로 바뀜)
     fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error(`웹 서버 응답 ${res.status}`);
@@ -143,7 +143,9 @@ export default function CloudView({ url, frameKey, dark }: { url: string; frameK
 
   return (
     <div className="view3d" ref={box}>
-      {note && <div className="view3d-empty">{note}</div>}
+      {/* note 가 '' 일 때 `note && …` 은 빈 글자를 그려 React 가 이 칸의 textContent 를 비운다 — 캔버스까지 지워져 점군이 안 보이고
+          닫을 때 예외로 화면이 죽었다(10/13). 그래서 삼항으로 */}
+      {note ? <div className="view3d-empty">{note}</div> : null}
     </div>
   );
 }

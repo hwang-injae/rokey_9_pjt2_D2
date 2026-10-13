@@ -29,7 +29,7 @@ for _pkg in ('d2_bridge', 'd2_task'):          # 웹 PC 에 ROS 는 없고, 이 
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from design_gen import DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
+from design_gen import LLM_URL, MODEL, DesignGenerator  # noqa: E402 — 위에서 d2_task 경로를 넣은 뒤
 from design_store import DesignStore   # noqa: E402
 from mqtt_client import MqttClient     # noqa: E402 — 위에서 d2_bridge 경로를 넣은 뒤
 from routes import designs, robot, voice, ws  # noqa: E402
@@ -39,6 +39,20 @@ FRONTEND_OUT = REPO / 'web' / 'frontend' / 'out'
 DATA_DIR = Path(os.environ.get('DATA_DIR') or REPO / 'web' / 'backend' / 'data')
 RECIPE_DIR = Path(os.environ.get('RECIPE_DIR') or REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes')
 log = logging.getLogger('web')
+
+
+class FrontendFiles(StaticFiles):
+    """frontend/out 정적 서빙 — 페이지 · 그 밖 파일에 Cache-Control: no-cache(매번 ETag 로 바뀌었나만 확인)를 붙인다.
+
+    헤더가 없으면 브라우저가 옛 index.html 을 추측으로 다시 써서, 새 빌드를 올려도 옛 화면(옛 버튼 동작)이 보였다(10/13 확인).
+    이름에 해시가 붙은 _next/static 파일은 내용이 바뀌면 이름도 바뀌므로 그대로 둔다(캐시해도 됨).
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        resp = super().file_response(full_path, stat_result, scope, status_code)
+        if '/_next/static/' not in Path(full_path).as_posix():
+            resp.headers['Cache-Control'] = 'no-cache'
+        return resp
 
 
 def load_rules(path=ROBOT_YAML):
@@ -86,8 +100,7 @@ def create_app(mqtt=None, rules=None, store=None, gen=None):
         """시작: 허브에 루프를 넣고 브로커에 붙는다 · 시작 점검을 찍는다. 끝: 연결 신호 false 를 남기고 나간다."""
         hub.bind(asyncio.get_running_loop())
         mqtt.start()
-        log.info('[웹] 브로커 %s:%s · OpenAI 키 %s · 화면 %s', mqtt.host, mqtt.port,
-                 '있음' if os.environ.get('OPENAI_API_KEY') else '없음(생성 · 음성 안 됨)',
+        log.info('[웹] 브로커 %s:%s · 설계 AI 중계 %s(%s) · 화면 %s', mqtt.host, mqtt.port, LLM_URL, MODEL,
                  '있음' if FRONTEND_OUT.is_dir() else '없음(frontend 빌드 전 — REST · /ws 만)')
         yield
         mqtt.stop()
@@ -103,7 +116,7 @@ def create_app(mqtt=None, rules=None, store=None, gen=None):
     app.include_router(voice.router)
     app.include_router(ws.router)
     if FRONTEND_OUT.is_dir():
-        app.mount('/', StaticFiles(directory=FRONTEND_OUT, html=True), name='frontend')   # 마지막에 — /api · /ws 보다 뒤
+        app.mount('/', FrontendFiles(directory=FRONTEND_OUT, html=True), name='frontend')   # 마지막에 — /api · /ws 보다 뒤
     return app
 
 

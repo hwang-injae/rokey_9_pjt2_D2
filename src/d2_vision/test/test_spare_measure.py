@@ -79,7 +79,7 @@ def test_empty_support_and_too_few_points():
 
 def test_ideal_block_matches_measure_fields():
     b = ideal_spare_block(SPOT, SIZE)
-    assert set(b) == KEYS and b['up'] == 'THICKNESS' and (b['x_m'], b['y_m']) == (SX, SY)
+    assert set(b) == KEYS and b['up'] == 'THICKNESS' and (b['x_m'], b['y_m']) == (round(SX, 4), round(SY, 4))   # 0.1 mm 반올림
     assert b['yaw_deg'] == (SPOT['yaw_deg'] + 90.0) % 180.0 - 90.0 and b['top_z_m'] == round(SZ + T, 4)
     with pytest.raises(KeyError):
         measure_on_spare(np.zeros((0, 3)), {'x_m': 0.3}, SIZE)

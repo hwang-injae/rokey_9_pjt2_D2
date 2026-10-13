@@ -1,6 +1,6 @@
 'use client';
 // 메인 페이지 — 위 띠(제목 · 연결 점 · 진행도 가운데 · 다크 모드) · 끊김 배너 · 왼쪽(로봇 패널 · 손목 카메라) ·
-// 오른쪽(설계 3D — 목록에서 고르고 [조립] · 그 아래 고른 설계를 바탕으로 AI 설계 만들기, 10/13 PL) · 스캔 비교(SCAN_REVIEW 때만 — W112) ·
+// 오른쪽(설계 3D — 목록에서 고르고 [조립] · 그 아래 고른 설계를 바탕으로 AI 설계 만들기, 10/13 PL) · 스캔 칸(스캔 중 실시간 → 결과 확인 — W112 · E-82) ·
 // 기록(접어 둠 — 마지막 한 줄만).
 // 정지 버튼이 있는 로봇 패널은 왼쪽 맨 위에 둔다(늘 보임).
 import { useEffect, useState } from 'react';
@@ -9,7 +9,7 @@ import DesignView from '@/components/DesignView';
 import GeneratePanel from '@/components/GeneratePanel';
 import ProgressTop from '@/components/ProgressTop';
 import RobotPanel from '@/components/RobotPanel';
-import ScanReview from '@/components/ScanReview';
+import ScanReview, { SCAN_STATES } from '@/components/ScanReview';
 import ScanRecommend from '@/components/ScanRecommend';
 import ThemeToggle from '@/components/ThemeToggle';
 import WristCamera from '@/components/WristCamera';
@@ -65,13 +65,18 @@ export default function Home() {
           </div>
         </div>
 
-        {robot.state?.state === 'SCAN_REVIEW' && robot.scan && (
+        {SCAN_STATES.includes(robot.state?.state ?? '') && (
           <>
             <ScanReview robot={robot} rules={rules} dark={dark} onSaved={setPicked} onLog={addLog} />
-            <section className="panel">
-              <h2 title="저장된 설계 중 스캔과 가장 비슷한 것 — GPT 없이 바로 조립(플랜 B)">추천 설계</h2>
-              <ScanRecommend robot={robot} onView={setPicked} onLog={addLog} />
-            </section>
+            {robot.state?.state === 'SCAN_REVIEW' && robot.scan && (
+              <section className="panel">
+                <div className="panel-head">
+                  <h2>추천 설계</h2>
+                  <span className="muted small">저장된 설계 중 스캔과 가장 비슷한 것 — GPT 없이 바로 조립</span>
+                </div>
+                <ScanRecommend robot={robot} onView={setPicked} onLog={addLog} />
+              </section>
+            )}
           </>
         )}
 

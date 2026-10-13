@@ -1,6 +1,6 @@
 # web — HMI 설계 노트 (10/8 · 10/9 황인재, PL 결정)
 
-> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101314.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101314.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
+> 정본은 [IRD](../docs/02_인터페이스_IRD_v3_101315.md) 2 · 4 · 6 · 8 · 10장과 [SDD](../docs/03_설계_SDD_v3_101315.md) 3.1.1 · 6.6 · 6.8 · 6.10장, 결정 E-67 · E-69 · E-70 ~ E-77이다. 이 노트는 **웹 안**(화면 · REST · WebSocket · 저장소 · AI 흐름)을 코드로 옮길 때의 세부만 적는다. ROS · MQTT 이름 · 칸은 IRD가 정본이고(E-57 '정함') 여기서 새로 정하지 않는다 — 더할 것은 8장에 모아 PL 확인 PR로 올린다. 파일 이름은 SDD 3.1.1을 따른다. [backend/README.md](backend/README.md)는 10/7 판이라 템플릿 길 · `tune_system` · `base_designs/`가 옛것(E-69)이다 — 지금 기준은 이 노트 4장.
 
 구조(E-32 · E-41): 브라우저 `frontend`(Next.js 정적 `out/`, three.js) ↔ REST + WebSocket `/ws` ↔ `backend`(FastAPI :8000, paho-mqtt) ↔ MQTT 브로커 ↔ 로봇 PC `d2_bridge`. 브라우저는 브로커 · DB · OpenAI · ROS를 모른다. DB는 10/12까지 JSON 파일 폴더, 그 뒤 PostgreSQL(W088).
 
@@ -38,6 +38,26 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 
 브라우저: `http://<웹 PC IP>:8000`. 로봇 PC 에서는 `ros2 run d2_bridge bridge --ros-args -p mqtt_host:=<웹 PC IP>`(웹 없이 로봇만 시험할 땐 `mock_bridge`).
 
+## 1-C. 설계 생성 AI 중계 `claude_bridge` (10/13 PL 승인 — GPT-4o → Claude)
+
+설계 생성(`design_gen`)은 **웹 PC에 로그인된 Claude Code**로 부른다. 컨테이너 안에는 Claude 로그인이 없으므로 웹 PC **호스트**에서 중계 `web/claude_bridge.py`를 띄우고,
+`design_gen`은 OpenAI 라이브러리 그대로 주소(`D2_LLM_URL`)만 중계로 돌린다(키는 보내지 않음). 중계는 OpenAI 형식 요청을 `claude -p --json-schema`로 바꾼다
+(도구 · MCP · 파일 접근 없이, 빈 임시 폴더에서). 음성 STT(Whisper)는 그대로 OpenAI 키를 쓴다.
+
+```bash
+# 0) 한 번: 웹 PC 에서 Claude Code 로그인(데스크톱 앱 또는 claude 명령) — 중계는 그 계정의 구독 한도를 쓴다
+# 1) 중계 켜기(호스트). compose 의 web 컨테이너가 부르므로 docker0 주소에서만 듣는다(LAN 에는 안 열림)
+python3 web/claude_bridge.py --host 172.17.0.1            # 모델은 design_gen 이 보낸다(D2_LLM_MODEL, 기본 opus)
+#    컨테이너 없이 backend 를 호스트에서 띄우면: python3 web/claude_bridge.py (127.0.0.1:8790, D2_LLM_URL 비움)
+# 2) 확인
+curl -s http://172.17.0.1:8790/health                    # {"ok": true, "claude": "...", "default_model": "opus"}
+```
+
+- 모델 고르기: `web/.env`의 `D2_LLM_MODEL`(opus · sonnet — 비우면 opus). 10/13 시험(같은 프롬프트 · 진짜 검사 묶음, 요청마다 1번): 둘 다 벤치 · 책상 후보 3/3 합격 · 다시 만들기 0번,
+  생성 시간 opus 46초(벤치) · 136초(책상), sonnet 35초 · 169초. sonnet 은 책상 후보에 블록 35 ~ 54개를 써서(조립이 너무 김) opus 가 기본.
+- 중계가 꺼져 있으면 화면에 "설계 AI 중계(claude_bridge)가 꺼져 있어요", 구독 한도면 "Claude 사용 한도에 걸렸어요" — 기본 설계 조립은 그대로 된다.
+- `claude`를 못 찾으면 `CLAUDE_BIN=<경로>`(데스크톱 앱이 깐 것은 `~/.config/Claude/claude-code/<판>/<id>/claude` — 중계가 알아서 찾는다).
+
 ## 2. 기능 ↔ 통신 대응표
 
 브라우저 → REST → backend → MQTT(`…/req`) → 다리 → ROS 서비스 → 답이 거꾸로. 상태는 MQTT retained → backend → `/ws`로 브라우저에 밀어 준다. REST는 SDD 3.1.1 `routes/` 세 파일로 나눈다(`robot.py` · `designs.py` · `ws.py`).
@@ -48,6 +68,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 출발 · [계속] | 같음 `{cmd: start, design_id, mode: auto}` | 같음 | 같음(`WAIT_SUPPLY` · `WAIT_HMI`에서 start = 계속) |
 | 스캔 · 다시 스캔 | 같음 `{cmd: scan}` | 같음 | 같음 |
 | 취소 | 같음 `{cmd: cancel}` | 같음 | 같음(`READY` · `ERROR` · `SCAN_REVIEW`) |
+| 초기화(정지 뒤) · 그리퍼 열기 | `STOPPED` · 잠김에서 [정지] 자리가 [초기화] → 한 번 더 확인 → `{cmd: cancel}` → 받으면 '블록을 치워 주세요'(잠금 유지) → [정리 끝] → `POST /api/robot/resume`. 잠김 + 그리퍼가 쥐고 있으면 [그리퍼 열기] → '블록을 손으로 받쳤나요?' → `{cmd: gripper_open}`(W183 · W184, 10/13 16시 PL) | 같음 | 작업 관리자가 STOPPED(잠김)에서 cancel 을 받아 기록만 STOPPED 로 닫고 잠금 유지(W183 한석형) → [정리 끝]의 resume 뒤 RECOVER → IDLE. gripper_open 은 STOPPED 일 때만 /d2/gripper/command(0.0865 m · 10 N). cancel 이 거절되면 잠금을 풀지 않음 |
 | 정지 | `POST /api/robot/stop` | `d2/safety/stop/req` (`source: web`, **reason 빈 값** → 정지 노드가 `STOP_WEB`) | `/d2/safety/stop` |
 | 다시 시작 | `POST /api/robot/resume` | `d2/safety/resume/req` | `/d2/safety/resume` |
 | 상태 · 진행도 · 정지 · 그리퍼 · 스캔 결과 | `GET /api/robot/state`(지금 값) + `/ws` | `d2/task/state` · `progress` · `scan_result` · `d2/safety/state` · `d2/gripper/state`(retained) | 토픽 |
@@ -64,6 +85,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | 스캔 [그대로 저장] | `POST /api/designs/from_scan {run_id}` → 4-C → check_design → 저장(`made_by scan`) → `select_design` | `check_design/req` · `hmi/command/req` | 같음 |
 | 스캔 [AI로 고치기](10/14 이후 — 10/10 PL 보류, 지금 안 만듦) | `POST /api/designs/generate {text, parent_id: <스캔 설계>}` — 4-B | 검사만 | 같음 |
 | 사진 · 점군 | `/ws` `{type: scan_image · scan_cloud, seq, stamp, bytes, run_id}` → `GET /api/robot/scan.jpg` · `/api/robot/scan_cloud.ply`(마지막 스캔 것만 메모리에, 없으면 404) ✅(10/10). `run_id` = 직전 `scan_result`의 것 — 화면은 `scan_result.run_id`와 같을 때만 보여 줌. 새 스캔이 오면 앞 것은 지움(점군 없는 스캔에 옛 점군이 안 남게) | `d2/vision/scan_image`(JPEG ≤ 500 KB) · `scan_cloud`(PLY ≤ 2 MB), QoS 1 | 다리가 `scan_result`의 `image_path`(PNG → JPEG로 줄임) · `cloud_path` 파일을 읽어 `scan_result` 바로 뒤에 보냄 ✅ |
+| 스캔 중 점군 미리보기 | `/ws` `{type: scan_preview, seq, stamp, bytes, run_id, index, kind, pose_id, points}` → `GET /api/robot/scan_preview.ply?kind=capture\|live`(kind 별 마지막 하나, 없으면 404). 화면 스캔 칸이 스캔 중 실시간으로 바꿔 그림(live 가 3초 안이면 live, 아니면 capture 누적본) — 결과 확인이 되면 같은 칸에 최종 점군 · 추론 설계(10/13). 손목 실물 RGB · 스캔 사진은 화면에 안 씀(10/13 16시 PL — 화질 · 각도) | `d2/vision/scan_preview`(JSON, QoS 1) + 바로 뒤 `scan_preview_cloud`(PLY — capture ≤ 2 MB QoS 1 · live ≤ 500 KB QoS 0), retained ✗. backend 는 바로 앞 JSON 과 짝짓고 옛 index · 새 run_id 를 거름 | 다리가 `/d2/vision/scan_preview`의 `cloud_path` 파일을 읽어 JSON 바로 뒤에 보냄(E-82, 한 쌍은 잠금 안에서) |
 | 손목 검출 화면 | `/ws` `{type: wrist_image, seq, stamp}` → `GET /api/robot/wrist.jpg?seq=`(마지막 한 장, 없으면 404) ✅ | `d2/vision/wrist_image`(JPEG 바이트, QoS 0) | `/d2/vision/wrist_image` |
 | (로봇이 부름) 설계 꺼내기 · 결과 저장 | backend가 `DesignStore`로 답함 ✅(10/9) | `d2/hmi/get_design/req` → `/res` · `d2/hmi/save_build/req` → `/res` | `/d2/hmi/get_design` · `save_build` |
 
@@ -81,7 +103,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 | `WAIT_HMI` | 계속(= start) | 웹 연결이 끊겼었어요. [계속]을 누르세요(`hmi_lost`) |
 | `SCAN_MOVE` · `SCAN_CAPTURE` · `SCAN_INFER` | (정지) | 스캔 중(`scan_running`) |
 | `SCAN_REVIEW` | 그대로 저장 · 다시 스캔 · 취소(AI로 고치기는 10/14 이후) | 비교 화면(`scan_review`) |
-| `STOPPED` | 다시 시작 | 멈췄어요 — `reason` + "로봇 작업 영역에서 손을 빼고 누르세요" |
+| `STOPPED` | 다시 시작 · 초기화([정지] 자리) | 멈췄어요 — `reason` + "로봇 작업 영역에서 손을 빼고 누르세요" |
 | `RECOVER` | (정지) | 다시 시작 중(저속) |
 | `ERROR` | 다시 시작 · 취소 | 오류 — `message`(그리퍼 응답 없음 · 피드백 없음도 여기, E-74 · E-77) |
 | `DONE` | 설계 선택 · 스캔 · 생성 | 완성(`done`) · 100 % |
@@ -100,7 +122,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 ②  바탕(10/13 PL): 고른 설계 = 새 설계의 parent_id, Template = 그 앞부분. 요청 글에 고른 설계의 블록 목록을 넣고,
     같은 Template 의 다른 설계는 store.list_designs 요약 + 도구 get_design(최대 2번, 읽기는 골라서 — tool_choice auto)으로 참고만(E-72)
     → 화면 "바탕 … · 참고한 설계 …". 도구 단계가 실패하면 examples_for(template)(바탕 설계는 뺌). 다른 설계가 없으면 도구 없이 바로
-③  GPT-4o 1번 호출 → 후보 3개(parts/3.0 — 부품마다 order · x · y · z · ori + role · group · stage · grasp, 구조화 출력 candidates[3])
+③  Claude 1번 호출 → 후보 3개(parts/3.0 — 부품마다 order · x · y · z · ori + role · group · stage · grasp, 구조화 출력 candidates[3])
     프롬프트: 역할 · 옵션 목록(src/d2_task/d2_task/roles.json) · 잡기 규칙(SDD 6.6) · 설계 규칙 숫자(robot.yaml — 10/9 ①) · RAG 예시
     칸이 빠지거나 틀리면 check_design이 CHECK_FAILED — 코드가 대신 채우지 않음(E-69 ②). OUT_OF_SCOPE → 안내, 끝
 ④  화면에 3개 3D + "디자인을 고르세요" — 동시에 check_design × 3(차례로, 각 3초 목표) → 오는 대로 합격 · min_margin / 불합격 회색 + detail
@@ -110,7 +132,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 ⑦  설계 3D 의 [조립] → hmi/command select_design → 작업 관리자가 get_design → READY → 이어서 hmi/command start(한 번 누름 — 10/13 PL)
 ```
 
-- 시간: LLM(≤ 30초 — 후보 3개 × 칸 9개라 늘 수 있음, W108에서 잼) + 검사 3번(≈ 10초) → 60초 목표. 후보는 backend 메모리(`job_id`)에만 — 새로고침하면 사라져도 된다(저장 전).
+- 시간: LLM(Claude, 10/13 — 고르기 · 읽기 각 3초쯤 + 후보 작성 1 ~ 2분 반, 호출당 제한 260초 — 중계는 240초에 먼저 끊음) + 검사 3번(≈ 10초). 후보는 backend 메모리(`job_id`)에만 — 새로고침하면 사라져도 된다(저장 전).
 - `design_id` = `<Template ID>_V<3자리>`(10/10 E-84 · IRD 2장): Template = 기본 설계 4개 이름(`001_CHAIR_BENCH` …), 기본 = `_V000`, AI · 음성 · 스캔 = 같은 Template의 다음 번호(그 Template의 가장 큰 V + 1 — 부모와 상관없이 만든 차례). 부모 · 만든 방법은 `parent_id` · `made_by`에만, `version` = V 번호(`V001`). 저장 설계는 바뀌지 않는다(E-55 — 고치면 다음 번호). `gen_path` 칸 없음(E-71).
 - **ID는 검사 전에 정한다**(10/10, W111): 변환기 ①이 그 ID로 레시피 `model_id` · `part_id`를 만들기 때문. ③ 전에 `store.new_design_id(template, parent_id)`(AI = 고른 설계의 Template, 스캔 = 부모의 Template) → 후보 3개를 같은 ID로 `check_design` → 고른 1개만 `save_design`. 저장 때 다른 요청이 먼저 같은 ID를 쓰면 거절 → ID부터 다시 · 검사도 다시.
 - **참고 설계는 그 Template 안에서만**(E-84 ③): GPT 목록 요약 · 도구 `get_design` 허용 목록 = `store.list_designs(template=…)`, 자동 전환 = `store.examples_for(template)`(그 V000 + 최근 파생 3). 다른 Template 설계를 읽고 만든 후보는 저장에서 거절되기 때문.
@@ -125,7 +147,7 @@ cd web/frontend && NEXT_PUBLIC_BACKEND=http://localhost:8000 npm run dev
 
 ```text
 scan_result/1.x 의 blocks/2(위치 · 방향 + inferred, family = 추론기 값) + nearest_base(추론기가 고른 기본 설계, 선택 칸 — 8장)
-→ design_gen이 GPT-4o 1번 호출: 4-A ②와 같은 RAG(DB 목록 요약 + 도구 get_design) → 가장 비슷한 설계를 골라 읽음
+→ design_gen이 Claude 1번 호출: 4-A ②와 같은 RAG(DB 목록 요약 + 도구 get_design) → 가장 비슷한 설계를 골라 읽음
    → 그 설계를 참고해 role · group · order · stage · grasp만 채움(inferred는 '추측' 힌트). 블록 위치 · 방향은 바꾸지 않는다(복제가 목적)
    → 고른 설계 = parent_id, family = GPT 판단
 → 코드 규칙: 부모는 같은 family만 — 다르거나 도구 실패면 nearest_base(추론기 값)를 부모로, family도 그것을 따름
@@ -149,7 +171,7 @@ web/backend/
 ├── mqtt_client.py    MqttClient(W126 ✅) — 브로커와 통신 한 곳: req/res(req_id · req_timeout_s, 자동 재전송 없음) · 상태 마지막 값 ·
 │                     d2/web/alive 1초(LWT false) · 다리 연결 신호 3초 끊김 · serve()로 등록한 함수가 get_design · save_build 답함
 │                     (토픽 이름 · req/res 짝은 d2_bridge/bridge_codec.py 를 같이 씀)
-├── design_gen.py     DesignGenerator — GPT-4o 호출 한 곳(4-A · 4-C)
+├── design_gen.py     DesignGenerator — LLM(Claude) 호출 한 곳(4-A · 4-C) — 주소는 중계 D2_LLM_URL
 ├── design_store.py   DesignStore — 저장 한 곳(JSON 폴더 → PostgreSQL) + 형식 이름 상수 · 기본 설계 등록(d2_task 변환기 ② import, E-59)
 │                     W111 ✅(10/9 · 10/10): register_bases · list_designs(+ last_build) · children · get_design · builds_for · examples_for ·
 │                     new_design_id · save_design(E-84 이름) · save_build(같은 run_id 한 번) + 로봇 get_design · save_build 답.

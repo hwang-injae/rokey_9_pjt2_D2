@@ -511,7 +511,7 @@ class TaskNode(Node):
             self.get_logger().warn(f'[W144] 기록 마무리 실패: {e!r}')
 
     def open_gripper(self):
-        """그리퍼를 활짝(0.110 m) 연다 — ERROR 에서 사람이 블록을 받친 뒤 화면 명령 open_gripper 로만(one_pick open_hand). 반환: (성공, reason)."""
+        """그리퍼를 활짝(0.110 m) 연다 — ERROR 에서 사람이 블록을 받친 뒤 화면 명령 gripper_open 으로만(one_pick open_hand). 반환: (성공, reason)."""
         if not self.grip_cli.wait_for_service(timeout_sec=self.service_s):
             return False, 'GRIPPER_NO_RESPONSE'
         res, why = self._call(self.grip_cli, GripperCommand.Request(width_m=0.110, force_n=float(self.grip_force_n)), lambda: False, 15.0)

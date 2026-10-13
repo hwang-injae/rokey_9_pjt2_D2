@@ -21,6 +21,7 @@ services:
       MQTT_HOST: mosquitto               # .env 보다 우선
       MQTT_PORT: "1883"
       DATA_DIR: /data
+      D2_LLM_URL: http://host.docker.internal:8790/v1   # 설계 생성 Claude 중계(호스트 claude_bridge — docker0 주소에서 듣는다, 10/13)
     volumes:
       - ./backend/app.py:/repo/web/backend/app.py:ro
       - ./backend/design_gen.py:/repo/web/backend/design_gen.py:ro
@@ -38,6 +39,8 @@ services:
     command: ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "127.0.0.1:8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 호스트(claude_bridge)를 부르는 이름
     depends_on:
       - mosquitto
     restart: unless-stopped

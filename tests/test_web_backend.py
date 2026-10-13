@@ -171,6 +171,48 @@ def test_scan_image_cloud_paired_with_scan_result_and_cleared_on_new_scan(mc):
     assert mc.blob('scan_cloud') is None                       # R2 는 점군 없음 — 옛 R1 점군을 내주지 않는다
 
 
+def test_scan_preview_paired_latest_index_and_cleared_on_new_run(mc):
+    """점군 미리보기(E-82): JSON 바로 뒤 PLY 를 짝지어 kind 별 마지막 하나만 들고 /ws scan_preview 로 알린다(번호 · run_id · index · kind).
+    같은 kind 의 옛 index 가 늦게 오면 버리고(최신 index 로만 바꿔 그림), 새 run_id 면 앞 미리보기를 지운다. 짝 없는 PLY · 틀린 JSON 은 버린다."""
+    def preview(run_id, index, kind='capture'):
+        return {'schema': 'scan_preview/1.0', 'run_id': run_id, 'pose_id': 'observe_front', 'index': index, 'kind': kind,
+                'cloud_path': f'/d/{run_id}/preview_{index}.ply', 'points': 100 * index}
+    mc._on_connect(mc.client, None, None, 0)
+    assert {'d2/vision/scan_preview', 'd2/vision/scan_preview_cloud'} <= set(mc.client.subs)
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply orphan'))      # 짝 없음 — 버림
+    assert mc.blob('scan_preview_capture') is None and 'scan_preview' not in mc.snapshot()
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', preview('R1', 1)))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply 1'))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', preview('R1', 3, 'live')))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply live 3'))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', preview('R1', 2)))
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply 2'))
+    assert mc.blob('scan_preview_capture') == b'ply 2' and mc.blob('scan_preview_live') == b'ply live 3'
+    ev = [e['data'] for e in mc.events if e['type'] == 'scan_preview']
+    assert [(e['kind'], e['index'], e['seq']) for e in ev] == [('capture', 1, 1), ('live', 3, 1), ('capture', 2, 2)]
+    assert ev[-1]['run_id'] == 'R1' and ev[-1]['points'] == 200 and ev[-1]['bytes'] == len(b'ply 2')
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', preview('R1', 1)))          # 늦게 온 옛 index — 버림
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply 1 late'))
+    assert mc.blob('scan_preview_capture') == b'ply 2' and mc.snapshot()['scan_preview']['index'] == 2
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', {**preview('R1', 9), 'kind': 'full'}))   # 모르는 kind — 버림
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply bad'))
+    assert mc.blob('scan_preview_capture') == b'ply 2'
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview', preview('R2', 1)))          # 새 스캔 — 앞 것 지움
+    assert mc.blob('scan_preview_capture') is None and mc.blob('scan_preview_live') is None and 'scan_preview' not in mc.snapshot()
+    mc._on_message(mc.client, None, msg('d2/vision/scan_preview_cloud', b'ply R2'))
+    assert mc.snapshot()['scan_preview']['run_id'] == 'R2' and mc.blob('scan_preview_capture') == b'ply R2'
+
+
+def test_scan_preview_route(store):
+    """GET /api/robot/scan_preview.ply?kind=capture|live — 들고 있는 마지막 미리보기 PLY, 없으면 404 · 모르는 kind 는 422."""
+    client, fake = make_client(store)
+    assert client.get('/api/robot/scan_preview.ply').status_code == 404
+    fake.blobs['scan_preview_live'] = b'ply live'
+    r = client.get('/api/robot/scan_preview.ply', params={'kind': 'live'})
+    assert r.status_code == 200 and r.content == b'ply live' and r.headers['cache-control'] == 'no-store'
+    assert client.get('/api/robot/scan_preview.ply', params={'kind': 'full'}).status_code == 422
+
+
 def test_voice_listen_publishes_once_not_retained(mc):
     """마이크 버튼 → d2/hmi/voice/listen {schema voice_listen/1, stamp} QoS 1 · retained 아님(늦게 붙은 voice.py 가 옛 누름으로
     녹음하지 않게). 브로커가 없으면 보내지 않고 success false."""
@@ -316,6 +358,15 @@ def test_generate_routes_job_flow(store):
     assert gen.saved == [(0, 'voice')] and client.get(f'/api/designs/generate/{job}').json()['state'] == 'saved'
     assert client.post(f'/api/designs/generate/{job}/pick', json={'index': 0}).status_code == 409                      # 한 번만
     assert client.get('/api/designs/generate/nope').status_code == 404
+
+
+def test_gripper_open_command_passes_through(store):
+    """[그리퍼 열기](W183 · 10/13 PL): cmd gripper_open 을 hmi/command 로 그대로(다리는 cmd 칸을 옮김 — 받을지는 작업 관리자가 STOPPED 로 정함).
+    모르는 cmd 는 422(보내지 않음)."""
+    client, fake = make_client(store)
+    assert client.post('/api/robot/command', json={'cmd': 'gripper_open'}).json() == {'success': True, 'reason': ''}
+    assert fake.calls == [('/d2/hmi/command', {'cmd': 'gripper_open', 'design_id': '', 'mode': 'auto'})]
+    assert client.post('/api/robot/command', json={'cmd': 'open_everything'}).status_code == 422 and len(fake.calls) == 1
 
 
 def test_voice_listen_route(store):
@@ -623,3 +674,17 @@ def test_designs_rest_and_robot_handlers(store):
     assert res.content == b'\xff\xd8scan' and res.headers['content-type'] == 'image/jpeg'
     res = client.get('/api/robot/scan_cloud.ply')
     assert res.content == b'ply\n' and res.headers['cache-control'] == 'no-store'
+
+
+def test_frontend_pages_are_not_reused_from_cache(store, tmp_path, monkeypatch):
+    """화면 페이지는 Cache-Control: no-cache(새 빌드를 올리면 바로 보이게 — 10/13 옛 화면이 보였던 일), 해시 이름 _next/static 은 그대로."""
+    import app as web_app
+    out = tmp_path / 'out'
+    (out / '_next' / 'static' / 'chunks').mkdir(parents=True)
+    (out / 'index.html').write_text('<html>새 화면</html>', encoding='utf-8')
+    (out / '_next' / 'static' / 'chunks' / 'a1b2.js').write_text('1', encoding='utf-8')
+    monkeypatch.setattr(web_app, 'FRONTEND_OUT', out)
+    client = TestClient(web_app.create_app(mqtt=FakeMqtt(True), rules=RULES, store=store, gen=FakeGen()))
+    page = client.get('/')
+    assert page.status_code == 200 and '새 화면' in page.text and page.headers['cache-control'] == 'no-cache'
+    assert 'cache-control' not in client.get('/_next/static/chunks/a1b2.js').headers

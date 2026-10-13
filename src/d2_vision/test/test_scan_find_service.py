@@ -138,7 +138,8 @@ def test_scan_response_ok_matches_task_checks():
     """ok: IRD 칸만 · 파이썬 기본형 · NaN 없음 · order int · inferred bool(task_manager._scan_infer 검사와 같은 조건)."""
     success, reason, body = scan_response(_infer_result(), '/tmp/x/color.png', '/tmp/x/cloud.ply')
     assert (success, reason) == (True, '')
-    assert set(body) == {'ok', 'blocks', 'inferred_count', 'image_path', 'cloud_path'}
+    assert set(body) == {'ok', 'blocks', 'inferred_count', 'image_path', 'cloud_path', 'nearest_base'}
+    assert body['nearest_base'] == '001_CHAIR_BENCH_V000'          # E-79 선택 칸 — infer() 가 고른 값이 응답까지 간다
     text = json.dumps(body, allow_nan=False)
     back = json.loads(text)
     rows = back['blocks']['blocks']
@@ -153,6 +154,15 @@ def test_scan_response_without_cloud_and_failed():
     assert body['ok'] is True and 'cloud_path' not in body and body['image_path'] == ''
     success, reason, body = scan_response(_infer_result(ok=False), '', None)
     assert (success, reason, body['ok'], body['reason']) == (True, '', False, 'SCAN_FAILED') and '설명률' in body['detail']
+
+
+def test_scan_response_without_nearest_base():
+    """추론기가 기본 설계를 못 골랐으면(None · 빈 글자) nearest_base 칸을 뺀다(IRD 4.2 '못 고르면 뺀다')."""
+    for none in (None, ''):
+        r = _infer_result()
+        r['nearest_base'] = none
+        _, _, body = scan_response(r, '', None)
+        assert body['ok'] is True and 'nearest_base' not in body
 
 
 def test_family_of_and_bases_from_recipes():

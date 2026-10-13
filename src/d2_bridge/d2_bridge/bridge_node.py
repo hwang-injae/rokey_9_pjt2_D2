@@ -24,6 +24,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from d2_bridge.bridge_codec import (SCAN_CLOUD_MAX_BYTES, SCAN_CLOUD_TOPIC, SCAN_IMAGE_MAX_BYTES, SCAN_IMAGE_TOPIC,
+                                    SCAN_PREVIEW_CLOUD_TOPIC, SCAN_PREVIEW_TOPIC, preview_file,
                                     PendingReplies, SeenIds, alive_payload, fit_jpeg, mqtt_topic, parse_request,
                                     query_from_mqtt_response, query_mqtt_request, query_request_json, query_response,
                                     req_topic, res_topic, scan_files, string_fields, typed_response)
@@ -86,6 +87,7 @@ class MqttBridge(Node):
 
     로봇 → 웹: 상태 토픽 5개 → MQTT retained, 손목 검출 그림 → JPEG 바이트(QoS 0), 연결 신호 d2/bridge/alive(alive_s 마다, LWT alive false),
                scan_result 가 오면 그 image_path · cloud_path 파일 → d2/vision/scan_image(JPEG ≤ 500 KB) · scan_cloud(PLY ≤ 2 MB).
+               스캔 중 /d2/vision/scan_preview → d2/vision/scan_preview(JSON) + scan_preview_cloud(PLY — capture ≤ 2 MB · live ≤ 500 KB, E-82).
     웹 → 로봇: d2/hmi/intent → /d2/hmi/intent, d2/web/alive → /d2/hmi/alive, …/req → 서비스 호출 → …/res(req_id 그대로).
     로봇이 부름: /d2/hmi/get_design · save_build 를 제공하고, MQTT …/req 로 웹에 묻고 …/res 를 req_timeout_s 동안 기다린다.
     실패: 브로커가 없으면 혼자 다시 붙는다. 서비스가 안 떠 있거나 요청이 틀리면 success false 로 답한다(자동 재시도 없음).
@@ -104,12 +106,15 @@ class MqttBridge(Node):
         self.last_state = {}         # MQTT 토픽 → (payload, qos). 다시 붙으면 다시 보낸다 — 브로커가 재시작해 retained 를 잃어도 화면이 상태를 받게
         self.last_media = []         # 마지막 스캔의 [(토픽, 바이트)] — 사진 · 점군은 retained 가 아니라서(IRD 10.1) 다시 붙을 때 직접 다시 보낸다
         self._lock = threading.Lock()
+        self._preview_lock = threading.Lock()   # 미리보기 JSON · PLY 한 쌍을 붙여 보낸다(웹이 바로 앞 JSON 과 짝지음)
         cb = ReentrantCallbackGroup()   # get_design · save_build 응답을 기다리는 동안 상태 전달 · 연결 신호가 막히지 않게
 
         for name, ros_qos, mqtt_qos in STATE_TOPICS:
             self.create_subscription(String, name, partial(self._on_state, mqtt_topic(name), mqtt_qos), ros_qos,
                                      callback_group=cb)
         self.create_subscription(CompressedImage, WRIST_IMAGE, self._on_wrist_image, 10, callback_group=cb)
+        # 스캔 중 점군 미리보기(E-82) — 손목 비전이 VOLATILE 로 내므로 기본 QoS 로 받는다(TRANSIENT_LOCAL 이면 못 받음, IRD 4.1)
+        self.create_subscription(String, '/d2/vision/scan_preview', self._on_scan_preview, 10, callback_group=cb)
         self.intent_pub = self.create_publisher(String, INTENT, 10)
         self.alive_pub = self.create_publisher(String, HMI_ALIVE, 10)
         self.calls = {}              # MQTT 요청 토픽 → (ROS 이름, 클라이언트, 형식, 요청 칸, 응답 칸)
@@ -243,6 +248,29 @@ class MqttBridge(Node):
         except OSError as e:
             self.get_logger().warn(f'[다리] 스캔 점군 {path} 못 읽음: {e}')
             return None
+
+    def _on_scan_preview(self, msg):
+        """스캔 중 점군 미리보기(E-82): JSON 을 그대로 d2/vision/scan_preview 로(QoS 1 · retained 아님), 바로 뒤에 cloud_path 의 PLY 바이트를
+        d2/vision/scan_preview_cloud 로(capture QoS 1 · live QoS 0 — IRD 10.1). 웹은 PLY 를 바로 앞 JSON 과 짝지어 최신 index 로 바꿔 그린다 —
+        그래서 JSON · PLY 한 쌍은 잠금 안에서 붙여 보낸다(capture · live 를 내는 노드가 둘이라 콜백이 겹칠 수 있음).
+        PLY 를 못 읽음 · 상한 넘음 · 모양 틀림이면 JSON 만 보내고 경고 — 보기 전용이라 스캔 흐름은 그대로 간다. 다시 붙을 때 다시 보내지 않는다
+        (스캔 중 잠깐 보는 것 — 끝나면 scan_result 의 사진 · 점군이 남는다)."""
+        data, qos = None, self.qos
+        try:
+            run_id, kind, index, path, max_bytes, qos = preview_file(msg.data)
+            if os.path.getsize(path) > max_bytes:
+                self.get_logger().warn(f'[다리] 미리보기 점군 {path} 이 {max_bytes} B 를 넘음 — 안 보냄')
+            else:
+                with open(path, 'rb') as f:
+                    data = f.read()
+        except (ValueError, OSError) as e:
+            self.get_logger().warn(f'[다리] scan_preview 점군을 안 보냄: {e}')
+        with self._preview_lock:
+            self._publish(SCAN_PREVIEW_TOPIC, msg.data, self.qos)
+            if data is not None:
+                self._publish(SCAN_PREVIEW_CLOUD_TOPIC, data, qos)
+        if data is not None and kind == 'capture':        # live 는 1~2 Hz 라 로그를 남기지 않는다
+            self.get_logger().info(f'[다리] 스캔 미리보기 {run_id} #{index}: 점군 {len(data)} B 보냄')
 
     def _on_wrist_image(self, msg):
         """손목 검출 그림 JPEG 바이트를 그대로 옮긴다. QoS 0 · retained 아님 — 하나 잃어도 다음 검출 때 새로 오고, 옛 그림을 남기지 않게(IRD 10.1)."""
