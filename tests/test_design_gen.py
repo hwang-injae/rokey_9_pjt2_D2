@@ -124,6 +124,7 @@ def test_generate_reads_reference_checks_and_saves_chosen(store, good, bad):
     assert [c['check']['ok'] for c in r['candidates']] == [True, True, True] and r['attempts'] == 2   # 통과한 것만 화면에
     assert r['candidates'][0]['parts']['design_id'] == '001_CHAIR_BENCH_V002'
     assert len(sent) == 4 and all(req['base_recipe'] == store.get_design(BENCH)['recipe'] for req in sent)
+    assert all('made_by' not in req for req in sent)      # AI 생성 검사 요청에는 made_by 를 싣지 않는다(10/14 PL A1)
     assert all('base_recipe' not in c['parts'] for c in r['candidates'])
     assert events == ['reading', 'candidates', 'checked', 'checked', 'checked', 'retry', 'candidates', 'checked']
     assert '후보 2개는 통과해 남겨 둔다' in client.calls[2]['messages'][-1]['content'] and '새 후보 1개만' in client.calls[2]['messages'][-1]['content']
@@ -375,6 +376,7 @@ def test_save_scan_checks_with_base_recipe_and_saves_as_scan(store, good):
     assert rec['design_id'] == '001_CHAIR_BENCH_V001' and rec['made_by'] == 'scan' and rec['parent_id'] == BENCH
     assert (rec['ai_template'], rec['ai_reason'], rec['template_changed']) == (TEMPLATE, '다리 둘 위 좌판', False)
     assert sent[0]['base_recipe'] == store.get_design(BENCH)['recipe'] and 'base_recipe' not in rec['parts']
+    assert sent[0]['made_by'] == 'scan' and 'made_by' not in rec['parts']   # 스캔 [저장]만 21번 건너뜀 표시(E-106 · 10/14 PL A1)
     assert events == ['filled', 'checked']
 
 

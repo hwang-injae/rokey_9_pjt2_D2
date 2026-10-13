@@ -443,7 +443,7 @@ class DesignGenerator:
             progress('filled', {'attempt': attempt, 'design_id': design_id, 'parent_id': parent})
             moved = self._moved(scan['blocks'], fill.get('parts'))
             chk = ({'ok': False, 'service_failed': False, 'reason': '', 'min_margin_mm': None, 'errors': [moved]}
-                   if moved else self._check(parts))
+                   if moved else self._check(parts, made_by='scan'))
             progress('checked', {'attempt': attempt, 'check': {k: chk[k] for k in ('ok', 'reason', 'min_margin_mm', 'errors')}})
             if chk['ok']:
                 return self.store.save_design(parts, chk['recipe'], chk['placements'], parent, 'scan',
@@ -570,16 +570,20 @@ class DesignGenerator:
             raise GenError('GEN_FAILED', 'AI 답이 객체가 아니에요')
         return data
 
-    def _check(self, parts):
+    def _check(self, parts, made_by=None):
         """check_design 한 번 → {ok, service_failed, reason, message, min_margin_mm, errors, recipe, placements}.
 
         요청 = parts/3.0 + base_recipe(설계 ID 앞부분 Template 의 V000 레시피 통째 — 10/13 PL, IRD 4.2). parts 자체에는 붙이지 않는다
-        (저장하는 설계에 섞이지 않게). ok = 서비스 성공 + 합격 + recipe · placements 둘 다(IRD 4.2). 서비스 실패(ERROR · TIMEOUT —
-        로봇 PC · 다리 · 변환기 고장)는 AI 탓이 아니라 service_failed 로 나눠 다시 만들지 않는다. 부르는 함수가 예외를 내도 ERROR 로 바꾼다.
+        (저장하는 설계에 섞이지 않게). made_by 를 주면 요청 선택 칸 made_by 로 싣는다 — 스캔 [저장]만 "scan"(검사기가 21번만 건너뜀,
+        E-106 · 10/14 PL A1), AI 생성은 넘기지 않는다. ok = 서비스 성공 + 합격 + recipe · placements 둘 다(IRD 4.2). 서비스 실패(ERROR ·
+        TIMEOUT — 로봇 PC · 다리 · 변환기 고장)는 AI 탓이 아니라 service_failed 로 나눠 다시 만들지 않는다. 부르는 함수가 예외를 내도 ERROR 로 바꾼다.
         """
         try:
             template = split_design_id(parts['design_id'])[0]
-            res = self.check({**parts, 'base_recipe': self.store.base_recipe(template)})
+            request = {**parts, 'base_recipe': self.store.base_recipe(template)}
+            if made_by:
+                request['made_by'] = made_by
+            res = self.check(request)
         except Exception as e:   # noqa: BLE001 — 검사 경로 고장도 화면에 알릴 실패로
             res = {'success': False, 'reason': 'ERROR', 'message': f'{type(e).__name__}: {e}'}
         served = res.get('success') is True
