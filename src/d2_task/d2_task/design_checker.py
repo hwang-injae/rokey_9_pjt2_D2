@@ -64,6 +64,8 @@ class DesignChecker:
         reason: REQUEST_INVALID(요청 오류) · OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · TEMPLATE_SHAPE · TEMPLATE_RANGE(21번) · ERROR(변환기 ① 실패).
         kind(실패 종류): position(위치·방향·작업영역) · ai_fields(역할·그룹·단계·잡기·잡을 면) · template(21번) · scope(블록 수 초과) — 웹이 재시도 방법을 고르는 데 쓴다.
         입력을 바꾸지 않는다. 변환기 ①에는 base_recipe 를 뗀 사본을 준다(저장·응답에 Template 이 섞이지 않게).
+        made_by(선택 칸, E-106 · 10/13 PL): 정확히 글자 "scan" 이면 21번(Template 모양 · 범위 · 관계) 검사만 건너뛴다. 요청 확인(base_recipe · design_id 모양 —
+        공통)과 1~20번 물리 검사 · 변환기 ①은 그대로다. 없거나 다른 값(대소문자 · 앞뒤 빈칸 포함)은 지금처럼 21번까지 본다.
         """
         detail = self._envelope(request)
         if detail:
@@ -85,7 +87,8 @@ class DesignChecker:
         errors += self._grasp_errors(boxes)
         errors += self._workspace(boxes)
         try:
-            errors += self.template_checker.check(rules, parts)
+            if request.get('made_by') != 'scan':    # 스캔으로 저장하는 설계(정확히 글자 "scan")는 21번만 건너뛴다(E-106) — 요청 확인 · 1~20번 · 변환기 ①은 그대로
+                errors += self.template_checker.check(rules, parts)
         except RequestInvalid as e:         # 규칙의 식이 이 설계로 계산되지 않는다(0 으로 나눔 등) = 잘못된 규칙이지 AI 설계 탓이 아니다
             return self._request_invalid(e)
         if errors:
