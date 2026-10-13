@@ -16,7 +16,7 @@
   - yaw_deg: 윗면의 긴 변이 base x 와 평행하면 0, 반시계 +, −90 ≤ yaw < 90 (motion_math.wrap_half 와 같은 경계).
     세움(up LENGTH)은 윗면 25 mm 변(WIDTH) 기준(10/8 E-62).
   - gap_mm · clear 의 키 = 블록의 수평인 두 축(눕힘 LENGTH · WIDTH, 옆세움 LENGTH · THICKNESS, 세움 WIDTH · THICKNESS — E-55 ③).
-    gap_mm.<축> = 그 축 방향으로 손가락이 닫힐 때(블록 양끝 바깥으로 손가락이 내려갈 때) 양쪽 틈 중 좁은 쪽(mm), 최대 GAP_SEARCH_MM.
+    gap_mm.<축> = 그 축 방향으로 손가락이 닫힐 때(블록 양끝 바깥으로 손가락이 내려갈 때) 양쪽 틈 중 좁은 쪽(mm). GAP_SEARCH_MM 안에 막는 게 없으면 OPEN_GAP_MM(99).
     clear.<축> = gap_mm ≥ find.min_gap_mm.
   - overlap: none · top(다른 블록 위에 올라앉음 · 걸침) · under(다른 블록에 덮임 — 보이는 면이 작거나 위에 걸친 블록이 맞닿음,
     또는 모양이 블록 하나와 안 맞는 덩어리 — 어느 쪽이든 집지 않고 틈 · 장애물로만 쓴다).
@@ -75,7 +75,8 @@ NONMASK_MIN_MM = 10.0     # 어느 마스크에도 없는 점(못 찾은 블록�
                           # (W114 s04_002 실측: 면 밖 0~15 mm 에 높이 5~13 mm 비탈)과 종이 주름(~8 mm)을 빼려고. 블록 윗면은 실측 ≥ 10 mm
 STEEP_ABOVE_MM = 3.0      # 마스크 밖의 가파른 점도 내 윗면 + 이 값보다 높으면 장애물 — 옆에 선 · 포갠 높은 블록의 옆면(윗면은 작아 완만한 점이 적다)
 GAP_CELL_M = 0.002        # 틈 계산 높이 지도 셀 — 8 mm 틈을 ±1.4 mm 로 재려고 5 mm 대신 2 mm
-GAP_SEARCH_MM = 60.0      # 이 거리 안에 장애물이 없으면 틈 = 이 값(충분히 넓음, 22.2 mm 기준의 2.7배)
+GAP_SEARCH_MM = 60.0      # 손가락 자리 둘레를 이 거리까지 본다(22.2 mm 기준의 2.7배)
+OPEN_GAP_MM = 99.0        # 찾는 거리 안에 막는 게 없으면 내는 '넉넉함' 틈 — 받침 재기(spare_measure)와 같은 값 한 곳(10/14 PL B3, 박진용 실기 값)
 STRIP_MARGIN_MM = 2.0     # 손가락 폭(finger.width_m) 양옆 여유 — 손가락이 지나갈 띠의 반폭 = 폭/2 + 이 값
 OBST_MIN_MM = 5.0         # 작업면 위 이보다 낮은 것(테이프 · 잡음)은 장애물이 아니다
 FINGER_Z_MARGIN_MM = 5.0  # 손가락 끝 높이(윗면 − grasp_depth)보다 이만큼 아래까지 장애물로 본다(세운 블록은 더 깊게 문다 — robot.yaml 공급 칸)
@@ -412,7 +413,7 @@ def _gaps(blk, P, h_mm, valid, slope, others, cfg):
         side = []
         for s in (1.0, -1.0):
             dist = (s * a[in_strip & (s * a > 0)] - half) * 1000.0
-            side.append(float(np.clip(dist.min(), 0.0, GAP_SEARCH_MM)) if len(dist) else GAP_SEARCH_MM)
+            side.append(float(max(dist.min(), 0.0)) if len(dist) and dist.min() < GAP_SEARCH_MM else OPEN_GAP_MM)
         out[axis] = round(min(side), 1)
     return out
 

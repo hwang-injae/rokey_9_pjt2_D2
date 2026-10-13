@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from d2_vision.block_finder import TOP_AXES, wrap_deg
+from d2_vision.block_finder import OPEN_GAP_MM, TOP_AXES, wrap_deg
 
 NEAR_RADIUS_M = 0.07       # 받침 가운데에서 이 수평 거리 안 점만 본다 — 블록 반길이 37 mm + 놓기 어긋남 여유(받침 폭 80 mm 안)
 ABOVE_SUPPORT_M = 0.004    # 받침 윗면 + 이 값보다 높은 점만 블록 — 받침 윗면 깊이 잡음(±2~3 mm)을 빼려고
@@ -19,7 +19,6 @@ MIN_PTS_FLAT = 200         # 눕힘 윗면(길이 × 폭)에 있어야 할 최�
 TOP_PCT = 98               # 블록 높이 = near 점 z 의 이 백분위 − 받침 윗면(가장 높은 몇 점의 튐을 빼려고)
 TOP_BAND_M = 0.005         # 윗면 점 = 높이 − 이 값보다 높은 점(옆면 · 받침 가장자리를 빼려고)
 EDGE_PCT = (2, 98)         # 윗면 양 끝 = 주축 투영의 이 백분위(가장자리 튐을 빼려고) — 가운데 = 두 끝의 가운데
-OPEN_GAP_MM = 99.0         # 받침 위 블록은 둘레에 다른 블록이 없다 — 틈은 이 값(find.min_gap_mm 22.2 보다 넉넉히)
 
 UP_DIM = {'LENGTH': 0, 'WIDTH': 1, 'THICKNESS': 2}   # block_actual_m 안 순서 [길이, 폭, 두께]
 
