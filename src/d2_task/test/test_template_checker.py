@@ -672,3 +672,72 @@ def test_기본_4종의_부품_접촉은_묶음_상자_접촉과_같은_상대�
         run = tcm._Measure(checker, checker.read_base(req), req['parts'])
         groups = [g for gs in run.by_role.values() for g in gs]
         assert all(run.touches(a, b) == bbox_touches(run, a, b) for a in groups for b in groups if a is not b), model_id
+
+
+def support_case(support, positions):
+    """독립 받침 그룹들과 보 한 그룹을 만든다. 위치 mm, ROS/로봇 영향 없음."""
+    composition={'LEG':{'count':len(positions),'revision':{}},
+                 'BEAM':{'count':1,'revision':{'support':support}}}
+    parts=[put(i,x,0,0,'zy','LEG',i) for i,x in enumerate(positions,1)]
+    parts.append(put(len(parts)+1,0,0,75,'x','BEAM',1))
+    return composition,parts
+
+
+@pytest.mark.parametrize('positions,ok',[([-25,25],True),([0,100],False),([-25,0,25],False)])
+def test_per_group는_정확한_받침_그룹_개수(positions,ok):
+    """정확히2개면 통과, T자1개/초과3개면 SHAPE template. 물리 안정성 검사와 독립 확인."""
+    composition,parts=support_case({'to':'LEG','per_group':2},positions)
+    errors=measure(composition,parts)
+    assert (errors==[])==ok
+    if not ok:
+        assert all((e['reason'],e['kind'])==('TEMPLATE_SHAPE','template') for e in errors)
+        assert '정확히 2개' in errors[0]['detail']
+
+
+def test_목록_support는_역할_그룹_전부():
+    """3개 중2개 받침만 닿으면 목록은 실패하고 per_group2는 통과한다."""
+    composition,parts=support_case(['LEG'],[-25,25,100])
+    errors=measure(composition,parts)
+    assert len(errors)==1 and '전부 3개' in errors[0]['detail'] and '실제 2개' in errors[0]['detail']
+    composition['BEAM']['revision']['support']={'to':'LEG','per_group':2}
+    assert measure(composition,parts)==[]
+
+
+def test_받침_부품_여럿과_상층_부품을_그룹_수로_세지_않는다():
+    """한 받침 그룹 부품2개는1그룹, 보 상층은 받침에 직접 닿을 필요 없다."""
+    composition,parts=support_case({'to':'LEG','per_group':2},[-25,25])
+    parts.extend([put(4,-10,0,0,'zy','LEG',1),put(5,0,0,90,'x','BEAM',1)])
+    composition['BEAM']['revision']['lay']='FLAT_STACK'
+    assert measure(composition,parts)==[]
+
+
+def test_받침_개수는_각_받쳐지는_그룹에서_따로_확인한다():
+    """첫 보가2개 위라도 둘째 보가1개 위면 둘째만 실패한다."""
+    composition={'LEG':{'count':4,'revision':{}},
+                 'BEAM':{'count':2,'revision':{'support':{'to':'LEG','per_group':2}}}}
+    parts=[put(1,-25,-50,0,'zy','LEG',1),put(2,25,-50,0,'zy','LEG',2),
+           put(3,-25,50,0,'zy','LEG',3),put(4,100,50,0,'zy','LEG',4),
+           put(5,0,-50,75,'x','BEAM',1),put(6,0,50,75,'x','BEAM',2)]
+    errors=measure(composition,parts)
+    assert len(errors)==1 and '그룹 2' in errors[0]['detail'] and '실제 1개' in errors[0]['detail']
+
+
+@pytest.mark.parametrize('support',[{'to':'LEG','per_group':v} for v in (True,0,-1,1.5,'2',None)]+
+                         [{'to':'TABLE','per_group':2},{'to':'BEAM','per_group':2},
+                          {'to':'LEG','per_part':2}])
+def test_불량_받침_객체는_REQUEST_INVALID(support):
+    """불량 개수/역할/옛 제안 이름은 요청 오류이며 내부 ERROR로 바꾸지 않는다."""
+    composition,_=support_case(support,[-25,25])
+    with pytest.raises(RequestInvalid):rig(composition)
+
+
+def test_004_TOP의_XY_대칭은_좌우와_앞뒤를_확인한다():
+    """PL 추가 XY 규칙 자체가 두 방향 비대칭을 잡는지 검사한다."""
+    req=base_design('004_DESK_PEDESTAL_V000')
+    assert revision(req,'TOP')['mirror']=='XY'
+    for axis in ('x','y'):
+        shifted=copy.deepcopy(req)
+        for part in shifted['parts']:
+            if part['role']=='BASE':part[axis]+=5
+        errors=real().check(shifted)['errors']
+        assert any(e['reason']=='TEMPLATE_RANGE' and e['kind']=='template' and '대칭' in e['detail'] for e in errors)

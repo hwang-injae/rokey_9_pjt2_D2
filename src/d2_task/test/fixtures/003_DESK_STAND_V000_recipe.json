@@ -29,7 +29,7 @@
             "direction": "INWARD",
             "d_mm": [
               0,
-              "TOP.width / 2 - 15"
+              "BEAM.width / 2 - 15"
             ]
           },
           "height_mm": [
@@ -194,9 +194,10 @@
             "relation": "PERPENDICULAR",
             "to": "TOP"
           },
-          "support": [
-            "LEG"
-          ],
+          "support": {
+            "to": "LEG",
+            "per_group": 2
+          },
           "attach": {
             "to": "TOP",
             "at": "Y_ENDS",

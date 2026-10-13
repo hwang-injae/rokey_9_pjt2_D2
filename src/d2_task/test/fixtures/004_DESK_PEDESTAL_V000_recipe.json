@@ -357,7 +357,8 @@
           ],
           "material": [
             "원목"
-          ]
+          ],
+          "mirror": "XY"
         },
         "parts": {
           "TOP_001": [

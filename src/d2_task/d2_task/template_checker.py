@@ -139,9 +139,16 @@ class TemplateChecker:
             out['long_edge'] = {'relation': le['relation'], 'to': other(le.get('to'), 'long_edge.to')}
         if 'support' in rev:
             sup = rev['support']
-            if not isinstance(sup, list) or not sup:
-                raise RequestInvalid(f'{role} revision.support 가 비어 있거나 목록이 아니다')
-            out['support'] = ['TABLE' if s == 'TABLE' else other(s, 'support') for s in sup]
+            if isinstance(sup,list) and sup:
+                roles=['TABLE' if s == 'TABLE' else other(s,'support') for s in sup]
+                out['support']={'roles':roles,'per_group':None}
+            elif isinstance(sup,dict):
+                count=sup.get('per_group')
+                if isinstance(count,bool) or not isinstance(count,int) or count<1:
+                    raise RequestInvalid(f'{role} revision.support.per_group 는 1 이상의 정수여야 한다')
+                out['support']={'roles':[other(sup.get('to'),'support.to')],'per_group':count}
+            else:
+                raise RequestInvalid(f'{role} revision.support 는 비지 않은 목록 또는 to · per_group 객체여야 한다')
         if 'attach' in rev:
             at = rev['attach']
             if not isinstance(at, dict) or at.get('at') not in ATS or at.get('direction', 'INWARD') != 'INWARD':
@@ -391,19 +398,26 @@ class _Measure:
         return same_footprint and all(abs(b[2][2] - a[3][2]) <= TOL_MM for a, b in zip(boxes, boxes[1:]))
 
     def support(self, rule, group):
-        """받침: TABLE = 아랫면 z=0, 역할 = 그 역할 묶음의 윗면에 얹힘."""
-        wanted = rule['support']
-        absent = [r for r in wanted if r != 'TABLE' and r not in self.by_role]
-        for r in wanted:
-            if r == 'TABLE' and abs(group.lo[2]) <= TOL_MM:
-                return
-            if any(self.rests_on(group, h) for h in self.by_role.get(r, [])):
-                return
-        if absent:
-            return                                      # 받침 역할이 아예 없다는 이유를 이미 알렸다
-        names = ', '.join('작업면' if r == 'TABLE' else self.label(r) for r in wanted)
-        self.add('TEMPLATE_SHAPE', f'{self.who(group)} 받침이 맞지 않다 — {names} 위에 얹혀야 한다')
-        self.broken.add(group.key)
+        """각 받쳐지는 그룹이 목록 역할 전부 또는 정확히 per_group개의 서로 다른 그룹 위인지 확인한다.
+
+        TABLE은 그룹 아랫면 z=0. 실제 부품 접촉으로 세며 같은 받침의 여러 부품을 중복 세지 않는다.
+        실패는 TEMPLATE_SHAPE(kind template), 로봇/메시지 영향 없음.
+        """
+        spec=rule['support']
+        for role in spec['roles']:
+            if role=='TABLE':
+                if abs(group.lo[2])<=TOL_MM:continue
+                detail='작업면 위에 얹혀야 한다'
+            else:
+                lower=self.by_role.get(role,[])
+                if not lower:continue  # 역할 누락은 shape_roles에서 이미 실패로 보고한다.
+                have=sum(self.rests_on(group,h) for h in lower)
+                want=len(lower) if spec['per_group'] is None else spec['per_group']
+                if have==want:continue
+                qualifier='전부 ' if spec['per_group'] is None else '정확히 '
+                detail=f'{self.label(role)} {qualifier}{want}개 그룹 위에 얹혀야 한다(실제 {have}개)'
+            self.add('TEMPLATE_SHAPE',f'{self.who(group)} 받침이 맞지 않다 — {detail}')
+            self.broken.add(group.key)
 
     def long_edge(self, rule, group):
         """긴 변 방향: 짝 묶음의 긴 변과 직각 · 평행."""
