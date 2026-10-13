@@ -248,16 +248,20 @@ class DesignGenerator:
         """스캔 추론 결과에 GPT 가 AI 칸을 채우고 부모를 고른다 — **W177(민범진)이 안을 채우는 자리**(10/13 PL). 지금은 GEN_FAILED.
 
         입력: scan_result(scan_result/2.0 — blocks = blocks/2 {blocks[{scan_num, x, y, z, ori, inferred?}]} mm 설계 좌표 ·
-              nearest_base(선택 — 추론기가 본 가장 가까운 기본 설계)), feedback(앞 시도에서 떨어진 검사 errors[{part, reason, detail, kind}]
-              — 다시 채울 때만, 처음엔 None. 다시 채울 때 위치 · 방향은 그대로 두고 AI 칸만 고친다).
+              nearest_base(선택 — 추론기가 본 가장 가까운 기본 설계)), feedback(다시 채울 때만, 처음엔 None —
+              {'errors': 앞 시도의 검사 errors[{part, reason, detail, kind}], 'parts': 앞 시도에서 이 함수가 돌려준 parts 그대로}.
+              errors[].part · detail 의 'N번' = 그 parts 의 order(위치 · 방향을 바꾼 줄은 part null). 10/13 PL — 오류가 어느 부품인지
+              GPT 가 알게 같이 넘긴다. 다시 채울 때 위치 · 방향은 그대로 두고 AI 칸만 고친다).
         출력: {'parts': [{order, x, y, z, ori, role, group, stage, grasp, inferred?}] — x · y · z · ori 는 스캔 그대로(바꾸면 save_scan 이
                          검사 전에 떨어뜨림), order = 쌓는 순서(스캔 번호 scan_num 아님) · role · group · stage · grasp = 생성과 같은 규칙,
                'parent_id': 최종 부모(DB 에 있는 설계 ID — 새 설계 ID 의 Template 이 이것으로 정해짐),
                'ai_template': GPT 가 고른 부모의 Template ID(못 고르면 'NONE'), 'ai_reason': 고른 까닭 한 줄(실패면 '실패: <코드>'),
                'gen_log': 이 호출의 AI 기록 이름(_save_log 가 남긴 log['file'] — 저장하면 그 기록에 design_id 를 적음, 설계_DB #14)}.
               부모(E-79): AI 생성과 같은 방식(E-72)으로 DB 목록 요약을 주고 GPT 가 도구 get_design 으로 고름 — DB 전체 후보(기본 · 파생 ·
-              예전 스캔) · 같은 family 만. 다르거나 GPT 가 못 고르면 코드가 바꾼다(같은 family 기본 설계 · nearest_base) — 그러면 최종
-              parent_id 의 Template 과 ai_template 이 달라 template_changed 가 true 가 된다(설계_DB 1절).
+              예전 스캔) · 같은 family 만. 다르거나 GPT 가 못 고르면 코드가 바꾼다(같은 family 기본 설계 · nearest_base — 사람 고르기
+              화면 없음, 10/13 PL) — 그러면 최종 parent_id 의 Template 과 ai_template 이 달라 template_changed 가 true 가 된다(설계_DB 1절).
+              부모 고르기만 실패하고 AI 칸 채우기가 됐으면 ai_reason = '실패: <코드>' 로 적고 parts 를 돌려준다(저장은 계속 — 생성의
+              ai_judgment 와 같은 규칙). AI 칸 채우기 자체가 실패할 때만 GenError.
         바깥 영향: OpenAI 호출(gpt-4o, temperature 0, 구조화 출력) · AI 호출 기록(kind scan_fill — 설계_DB 3절). 로봇은 움직이지 않는다.
         실패: GenError(GEN_FAILED — 호출 실패 · 답 모양 틀림).
         """
@@ -267,7 +271,7 @@ class DesignGenerator:
         """스캔 [저장] 한 번(IRD 8.4 ⑦): scan_fill → 새 ID(부모 Template 의 다음 V) → check_design(base_recipe 실음) → 합격이면 저장.
 
         떨어지면 kind 로 나눈다(레시피 초안 7-1 · 10/11 PL A2 · A3): scope(블록 수 초과) · position(놓인 자리 — GPT 는 위치를 안 바꿈,
-        E-79)이 있으면 바로 끝 · ai_fields · template 만이면 errors 를 피드백으로 GPT 다시 채우기(최대 SCAN_REFILLS 번).
+        E-79)이 있으면 바로 끝 · ai_fields · template 만이면 {errors, 앞 parts} 를 피드백으로 GPT 다시 채우기(최대 SCAN_REFILLS 번).
         REQUEST_INVALID(웹 쪽 잘못) · 검사 서비스 실패(ERROR · TIMEOUT)는 다시 채우지 않는다.
         on_progress(stage, info): 'filled'(채움 끝 — attempt · design_id · parent_id) · 'checked'(검사 끝 — check) · 'retry'.
         출력: 저장한 설계 기록(design/3.0, made_by scan + AI 판단 기록). 저장 뒤 hmi/command select_design 은 화면이 보낸다(IRD 8.4 ⑧).
@@ -307,7 +311,7 @@ class DesignGenerator:
             if not errors or not kinds <= {'ai_fields', 'template'} or attempt > SCAN_REFILLS:
                 break
             progress('retry', {'attempt': attempt + 1})
-            feedback = errors
+            feedback = {'errors': errors, 'parts': fill.get('parts')}     # 오류의 'N번'(order)이 어느 부품인지 GPT 가 알게(10/13 PL)
         scope = any(e.get('kind') == 'scope' for e in errors)
         raise GenError('OUT_OF_SCOPE' if scope else 'CHECK_FAILED',
                        '블록이 너무 많아 저장할 수 없어요' if scope else '스캔한 설계가 검사를 통과하지 못했어요', errors)

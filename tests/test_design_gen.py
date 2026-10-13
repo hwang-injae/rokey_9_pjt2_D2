@@ -306,7 +306,8 @@ def test_save_scan_refills_when_ai_moved_parts_or_filled_wrong(store, good):
     gen, _ = make(store, [])
     got = fills(gen, filled(moved), filled(good))
     rec = gen.save_scan(scan_of(good))
-    assert rec['made_by'] == 'scan' and got[0] is None and got[1][0]['kind'] == 'ai_fields'
+    assert rec['made_by'] == 'scan' and got[0] is None and got[1]['errors'][0]['kind'] == 'ai_fields'
+    assert got[1]['parts'] == moved                          # 앞 답의 parts 도 같이(오류 'N번'이 어느 부품인지 — 10/13 PL)
     gen, _ = make(store, [])
     got = fills(gen, filled(moved), filled(moved), filled(moved))
     with pytest.raises(GenError) as e:
