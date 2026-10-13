@@ -43,43 +43,10 @@ class TaskPlanner:
         block_of = {st['instance_id']: b['part_id'] for st, b in zip(steps, parts)}
         self.parts = [dict(b, supports=[block_of[i] for i in st['support_instance_ids']])
                        for st, b in zip(steps, parts)]
-        self.row_long = self.unify_row_grasp(self.parts)
         # 시작 때는 아무것도 본 적이 없다. 첫 진행 확인(관측) 전에 놓으면 이미 있는 블록 위에 겹쳐 놓을 수 있다.
         self.progress = {b['part_id']: {'state': 'unknown', 'dx_m': float('nan'), 'dy_m': float('nan'),
                                          'dz_m': float('nan'), 'top_z_m': float('nan')} for b in self.parts}
         self.empty_slots = set()
-
-    def unify_row_grasp(self, parts):
-        """연짝(같은 층에 긴 면을 맞대고 나란히 놓는 눕힌 블록)은 모두 FLAT_LONG 으로 잡는다 — 설계가 어디서 왔든(CAD · AI · 스캔) 같게.
-
-        10/13 박진용: 연짝 3개가 FLAT_SHORT · FLAT_LONG · FLAT_LONG 으로 섞여 첫 블록만 손목 방향 · 닫힘 축이 달랐다 → 셋 다 FLAT_LONG.
-        두 번째부터는 옆 블록 때문에 FLAT_SHORT 손가락이 못 들어가 원래 FLAT_LONG 이고, 첫 블록도 끝면을 무니 손가락이 들어간다
-        (기본 설계 4개 검사 묶음 grasp_options 로 확인).
-        연짝 판정: 둘 다 눕힘(THICKNESS 위) · 긴 축 나란함(5° 안) · 높이 차 5 mm 안 · 폭 방향 중심 거리 = 설계 폭(±3 mm) · 길이 방향 어긋남 < 길이/2.
-        입력: parts = recipe_parts 목록(바꾼다 — grasp 만). 반환: FLAT_LONG 으로 바꾼 part_id 목록. 바깥 영향 없음.
-        """
-        L, W = self.cfg['block_size_m'][0], self.cfg['block_size_m'][1]
-        flat = [b for b in parts if b['grasp'].startswith('FLAT_') and up_axis(b['rot']) == 'THICKNESS']
-
-        def in_row(b):
-            """b 옆에 긴 면을 맞댄 나란한 눕힌 블록이 있나."""
-            lb, wb = column(b['rot'], 0), column(b['rot'], 1)
-            for o in flat:
-                if o is b or abs(o['center'][2] - b['center'][2]) > 0.005:
-                    continue
-                if abs(sum(p * q for p, q in zip(lb, column(o['rot'], 0)))) < math.cos(math.radians(5)):
-                    continue
-                d = [p - q for p, q in zip(o['center'], b['center'])]
-                along_w = abs(sum(p * q for p, q in zip(d, wb)))
-                along_l = abs(sum(p * q for p, q in zip(d, lb)))
-                if abs(along_w - W) <= 0.003 and along_l < L / 2:
-                    return True
-            return False
-        changed = [b['part_id'] for b in flat if b['grasp'] == 'FLAT_SHORT' and in_row(b)]
-        for b in flat:
-            if b['part_id'] in changed:
-                b['grasp'] = 'FLAT_LONG'
-        return changed
 
     def update_progress(self, observed):
         """관측 결과를 진행표에 넣는다. observed = {part_id: {'state', 'dx_m', 'dy_m', 'dz_m', 'top_z_m'}}.
