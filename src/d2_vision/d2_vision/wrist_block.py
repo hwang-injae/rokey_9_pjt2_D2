@@ -25,6 +25,15 @@
   `/d2/vision/find_blocks`(JsonQuery) {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) + TF 자세 × 보정 → BlockFinder(block_finder.py)
       → {"ok":true,"blocks":[…]}(IRD 4.2 칸, 윗면 높이 순). 블록 0개도 ok true(빈 목록 — 작업 관리자가 WAIT_SUPPLY).
       마스크: YOLO seg(본 방법 E-38 — 모델은 켤 때 읽는다, 아래 '켤 때 YOLO'). 예비(엣지 + 깊이, E-47)는 yolo_fallback:=true 일 때만.
+      선택 칸(10/13 — 없으면 위와 똑같이 답한다. 값 검사는 mock_scan.find_options, 틀리면 SCAN_FAILED):
+        "height_map": true → 응답에 "height_map" {"x0_m","y0_m","res_m","nx","ny","z_m"} 를 더한다 — 같은 깊이 · 자세의 base 점으로
+            공급 영역(robot.yaml supply_area_m)을 손가락 여유(가장 넓게 연 폭/2 + 손가락 두께)만큼 넓힌 영역의 셀(height_grid.HEIGHT_MAP_RES_M = 2 mm)마다
+            최고 z(m, 소수 4자리), 빈 셀 null,
+            z_m[iy·nx + ix]. 작업 관리자가 잡기 후보의 손가락 자리에 높은 셀이 있는지 본다.
+        "area": "spare" → YOLO · 마스크 없이 받침(robot.yaml spare_spots[0]) 위 블록 하나를 깊이로만 잰다(spare_measure.measure_on_spare)
+            → {"ok":true,"blocks":[b]}(b = 위 칸 + "base_z_m" 받침 윗면) 또는 빈 받침 {"ok":true,"blocks":[]}. 카메라는 작업 관리자가
+            먼저 받침 위로 옮겨 둔다. 컬러 · wrist_image 는 쓰지 않는다. 이때 height_map 은 받침 둘레(받침 가운데 ± 블록 길이/2 + 손가락 여유) 지도다.
+      기울어진 블록(tilted true)에만 "center_top_z_m"(윗면 가운데 평면 높이 m) · "normal"(윗면 단위 법선, 위쪽)을 더한다(block_finder).
   `/d2/vision/wrist_image`(sensor_msgs/CompressedImage, JPEG 품질 70, 640×480 그대로) — find_blocks 때마다 검출 결과
       (윤곽 · 번호 · up · yaw)를 그린 그림 한 장(IRD E-67 '때만 내도 됨'). 매 프레임 내지 않는다.
 
@@ -63,7 +72,7 @@
   yolo_fallback  true 면 YOLO 를 읽지 않고 예비 마스크(엣지 + 깊이, E-47)만 쓴다(기본 false — 모델 · ultralytics 가 없는 시험 · CI 용)
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
-  table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m 를 읽는다.
+  table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m · supply_area_m · spare_spots(area spare 때) 를 읽는다.
 
 바깥 영향: 서비스 답 · camera_status · wrist_image · scan_preview 발행 · get_design 조회(remote, 설계마다 · 판마다 한 번) ·
   scan_capture 미리보기 PLY · 자세 자료(사진 · 깊이 · 자세) · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
@@ -125,10 +134,12 @@ from std_msgs.msg import String
 from d2_interfaces.srv import CheckProgress, JsonQuery
 from d2_motion.motion_math import RECIPE_SUFFIXES, load_recipe, recipe_parts
 from d2_vision.block_checker import BlockChecker, depth_to_base_points, mean_depth_mm, recipe_from_design, recipe_path
-from d2_vision.block_finder import BlockFinder, draw_found, finder_cfg, masks_from_yolo
+from d2_vision.block_finder import BlockFinder, base_image, draw_found, finder_cfg, masks_from_yolo
 from d2_vision.design_cache import RunDesignCache
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/2 는 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
-from d2_vision.mock_scan import load_recipe_files, parse_request, structure_to_blocks
+from d2_vision.height_grid import height_grid, spare_map_area, supply_map_area
+from d2_vision.mock_scan import find_options, load_recipe_files, parse_request, structure_to_blocks
+from d2_vision.spare_measure import measure_on_spare
 from d2_vision.structure_scanner import StructureScanner, family_of, save_capture, save_preview, scan_response
 from d2_vision.tcp_pose import TcpPose, camera_pose_mm, default_calib_path, load_calib, load_tilt_shift
 
@@ -721,15 +732,20 @@ class WristBlock(Node):
         self.pub_image.publish(msg)
 
     def on_find_blocks(self, req, res):
-        """find_blocks 콜백: {"run_id"} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) → BlockFinder → {"ok":true,"blocks":[…]} + wrist_image 한 장.
+        """find_blocks 콜백: {"run_id"[, "height_map"][, "area"]} → 요청 뒤 컬러 · 깊이(scan_frames 장 평균) → BlockFinder
+        → {"ok":true,"blocks":[…][, "height_map":{…}]} + wrist_image 한 장. area spare 면 _find_spare(받침 위 블록 하나, 깊이만).
 
-        블록 0개도 ok true(빈 목록 → 작업 관리자 WAIT_SUPPLY). 계산 예외 → success=false ERROR. 나머지 실패는 맨 위.
-        바깥 영향: wrist_image 발행 · 로그. run_id 는 기록용(로그)."""
+        블록 0개도 ok true(빈 목록 → 작업 관리자 WAIT_SUPPLY). 선택 칸 값이 틀리면 SCAN_FAILED. 계산 예외 → success=false ERROR.
+        나머지 실패는 맨 위. 바깥 영향: wrist_image 발행 · 로그. run_id 는 기록용(로그)."""
         t0 = time.monotonic()
         try:
-            rid = parse_request(req.request_json, ('run_id',))['run_id']
+            body = parse_request(req.request_json, ('run_id',))
+            want_map, area = find_options(body)
         except ValueError as e:
             return self._answer(res, 'find_blocks', self._fail(False, 'SCAN_FAILED', str(e)), t0)
+        rid = body['run_id']
+        if area == 'spare':
+            return self._find_spare(res, rid, t0, want_map)
         snap, err = self._snapshot(self.scan_frames, need_color=True)
         if snap is None:
             return self._answer(res, 'find_blocks', err, t0)
@@ -740,13 +756,39 @@ class WristBlock(Node):
                 blocks = self.finder.find(color, depth_mm / 1000.0, self.intr, T, masks=masks, scores=scores)
                 self.publish_wrist_image(color, blocks, frame_id)
                 info = self.finder.last_info
+            out = {'ok': True, 'blocks': blocks}
+            if want_map:
+                # 찾기와 같은 깊이 · 자세로 다시 만든다(blocks_from_masks 안의 점을 꺼내 두지 않으려고 — 640×480 에 수십 ms)
+                out['height_map'] = height_grid(base_image(depth_mm / 1000.0, self.intr, T), supply_map_area(self.finder.cfg['area_m'], self.cfg))
         except Exception as e:                # 계산 예외로 노드가 죽지 않게 — 원인은 로그로
             self.get_logger().error('find_blocks %s 계산 예외: %r' % (rid, e))
             return self._answer(res, 'find_blocks', self._fail(False, 'ERROR', '찾기 계산 예외: %s' % e), t0)
         self.get_logger().info('find_blocks %s (%s): 블록 %d · 작업면 %.1f mm · 뺀 마스크 %d → %s' % (
             rid, 'YOLO' if masks is not None else '예비', len(blocks), info.get('table_z_m', NAN) * 1000, len(info.get('skipped', [])),
             [(b['up'][0], b['yaw_deg'], b['overlap'], b['confidence']) for b in blocks]))
-        return self._answer(res, 'find_blocks', (True, '', {'ok': True, 'blocks': blocks}), t0)
+        return self._answer(res, 'find_blocks', (True, '', out), t0)
+
+    def _find_spare(self, res, rid, t0, want_map=False):
+        """find_blocks area spare: 요청 뒤 깊이(scan_frames 장 평균) + TF 자세 → base 점 → measure_on_spare(받침 spare_spots[0]).
+        출력: JsonQuery 응답 res — {"ok":true,"blocks":[블록 하나]} 또는 빈 받침 {"ok":true,"blocks":[]}. YOLO · 컬러 · wrist_image 안 씀.
+        want_map 이면 같은 깊이로 받침 둘레 높이 지도(spare_area)를 "height_map" 칸에 더한다 — 다시 잡기 전 손가락 자리 확인(one_pick p1_to_recipe, #20).
+        실패: 보정값 없음 → ERROR · TF · 깊이 시간 초과 → TIMEOUT(_snapshot) · spare_spots 없음 · 계산 예외 → ERROR. 바깥 영향: 로그."""
+        snap, err = self._snapshot(self.scan_frames, need_color=False)
+        if snap is None:
+            return self._answer(res, 'find_blocks(spare)', err, t0)
+        depth_mm, _, _, T = snap
+        try:
+            pts = depth_to_base_points(depth_mm / 1000.0, self.intr, T, stride=1)
+            b = measure_on_spare(pts, self.cfg['spare_spots'][0], self.cfg['block_actual_m'])
+        except Exception as e:                # robot.yaml spare_spots 없음 · 계산 예외로 노드가 죽지 않게 — 원인은 로그로
+            self.get_logger().error('find_blocks(spare) %s 예외: %r' % (rid, e))
+            return self._answer(res, 'find_blocks(spare)', self._fail(False, 'ERROR', '받침 재기 예외: %s' % e), t0)
+        self.get_logger().info('find_blocks(spare) %s: 점 %d → %s' % (
+            rid, len(pts), '빈 받침' if b is None else (b['up'], b['x_m'], b['y_m'], b['yaw_deg'])))
+        out = {'ok': True, 'blocks': [b] if b else []}
+        if want_map:
+            out['height_map'] = height_grid(pts, spare_map_area(self.cfg))
+        return self._answer(res, 'find_blocks(spare)', (True, '', out), t0)
 
 
 def main(args=None):

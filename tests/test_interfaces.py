@@ -129,11 +129,11 @@ def test_json_query_fields():
 
 
 def test_scene_attach_fields():
-    """SceneAttach.srv(E-76) — 요청 part_id·attach + 쥔 상자(held_size_m · held_offset_m)·놓은 자리(placed_center_m · placed_quat) 배열, 응답 success·reason.
+    """SceneAttach.srv(E-76) — 요청 part_id·attach + 쥔 상자(held_size_m · held_offset_m · 10/13 held_quat 방향)·놓은 자리(placed_center_m · placed_quat) 배열, 응답 success·reason.
     배열 칸이 빠지면 장면 관리가 레시피 파일에 없는 설계(AI · 스캔)의 쥔 블록을 못 그려 집은 뒤 ERROR 로 멈춘다."""
     req, res = (fields(s) for s in sections(IFACE / 'srv' / 'SceneAttach.srv'))
     assert req.get('part_id') == 'string' and req.get('attach') == 'bool'
-    for name in ('held_size_m', 'held_offset_m', 'placed_center_m', 'placed_quat'):
+    for name in ('held_size_m', 'held_offset_m', 'held_quat', 'placed_center_m', 'placed_quat'):
         assert req.get(name) == 'float64[]', name
     assert {'success', 'reason'} <= set(res)
 

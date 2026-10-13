@@ -20,6 +20,7 @@ from d2_task.task_manager import TaskManager, wait_until
 SRC = Path(__file__).resolve().parents[2]
 ROBOT = SRC / 'd2_robot' if (SRC / 'd2_robot/d2_bringup').is_dir() else SRC
 CFG = yaml.safe_load((ROBOT / 'd2_bringup/config/robot.yaml').read_text(encoding='utf-8'))
+CFG['supply_mode'] = 'slots'     # 이 파일은 공급 칸 경로 시험 — robot.yaml 기본은 10/13 PL 부터 scatter(칸 코드 경로는 남김)
 _DOC = RecipeDocument.load(Path(__file__).parent / 'fixtures', '001_CHAIR_BENCH_V000')
 RECIPE = _DOC.recipe              # 구조(recipe/3.0)
 PLACEMENTS = _DOC.placements      # 조립 방법(placements/3.0)

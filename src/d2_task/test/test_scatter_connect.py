@@ -17,7 +17,8 @@ from d2_task.task_manager import TaskManager
 from test_block_picker import blk
 from test_task_manager import CFG, IDS, SAFE_OK, SAFE_STOP, FakeIO, drive, picks, seen
 
-SCATTER_CFG = dict(copy.deepcopy(CFG), supply_mode='scatter')
+# 이 파일 · test_reorient 는 받침 경유 전 흐름(바로 조립)을 본다 — robot.yaml scatter.via_spare(10/13 기본 켬)를 여기서 끈다. 받침 경유는 test_via_spare
+SCATTER_CFG = dict(copy.deepcopy(CFG), supply_mode='scatter', scatter=dict(CFG['scatter'], via_spare=False, max_attempts=2))   # 횟수 시험은 옛 규칙 2번
 
 
 class ScatterIO(FakeIO):

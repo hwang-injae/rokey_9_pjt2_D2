@@ -41,6 +41,8 @@ from d2_task.run_logger import RunLogger, _reject_constant
 from d2_task.scatter_pick import REOBSERVE, REPLAN_SAME, ScatterFlow, StepTracker, contact_phase, grasped_now
 from d2_task.task_planner import TaskPlanner
 
+PLAN_STREAK = 3                            # 받침 경유: 움직이기 전 길 계산 거절이 연달아 이만큼이면 사람(10/12 실기 — 장면에 남은 블록으로 20번 헛돎)
+
 RECIPE_SCHEMA = 'recipe/3.0'
 PLACEMENTS_SCHEMA = 'placements/3.0'
 DESIGN_SCHEMA = 'design/3.0'
@@ -137,8 +139,20 @@ class TaskManager:
         self.supply_mode = cfg.get('supply_mode', 'slots')
         if self.supply_mode not in ('slots', 'scatter'):
             raise ValueError(f"robot.yaml supply_mode 는 slots · scatter 중 하나다: {self.supply_mode!r}")
-        self._scatter = (ScatterFlow(cfg, BlockPicker(cfg['find']['min_gap_mm']), self.supply_mode, open_width_m)
+        self._scatter = (ScatterFlow(cfg, BlockPicker(cfg['find']['min_gap_mm'], cfg), self.supply_mode, open_width_m)
                          if self.supply_mode == 'scatter' else None)
+        # 받침 경유(robot.yaml scatter.via_spare, 10/13): 공급 → 받침에 눕힘 → 받침 위에서 깊이로 재기 → 레시피 잡기로 곧게 다시 집어 조립
+        self._spare_on = None                     # 받침에 놓아 둔 블록의 목표 part_id(있으면 다음 SELECT 가 공급 대신 받침부터 마무리한다)
+        self._spare_failed = []                   # 이번 블록에서 받침으로 옮기다 안 된 시도 [(x_m, y_m, 잡기, 각도 °, 옮김 m)] — 같은 후보를 다시 고르지 않게
+        self._plan_streak = 0                     # 움직이기 전 길 계산 거절이 연달아 몇 번(받침 경유) — PLAN_STREAK 번이면 사람
+        self._spare_empty = 0                     # 받침에 놓았는데 안 보인 수(연달아) — 1번째는 사람이 보고 [계속](다시 잼), 2번째는 비었다고 보고 공급에서
+        self._spare_seen = None                   # 받침 경유: 마지막 공급 관측 (목표, find_blocks 응답) — 움직이기 전 거절이면 다시 찍지 않고 같은 관측의 다음 후보
+        self._no_match = 0                        # 받침 경유: 연달아 후보 없음 — 1번째는 다시 찍고 2번째에 사람(찍을 때마다 판정이 조금씩 다름, one_pick)
+        self._bad_blocks = 0                      # 받침 경유: 연달아 블록 값 오류(장애물을 못 만듦) — RETRY 번까지 다시 찍고 사람
+        self._fresh = False                       # 출발 직후 첫 CHECK 인가 — 흩뿌림이면 장면 정리 · 홈부터(one_pick 시작과 같음)
+        self._hold_then = None                    # 받침 경유 사람 확인(WAIT_SUPPLY) 뒤 [계속]에 할 일: 'reset'(시도 수 비우고 이어 감) · 'verify'(다시 확인)
+        self._tally = {'sent': 0, 'ok': 0}        # 이번 조립의 집기 · 놓기 요청 수 · 성공 수(one_pick 집계와 같음 — 끝날 때 기록)
+        self._spread = None                       # 같은 층 1 mm 띄운 놓는 중심(part_id → [x, y, z] m) — 설계가 정해질 때 한 번 계산
         if self._scatter is not None:             # 흩뿌림 실패 뒤 재시도 설정(robot.yaml scatter.*) — 없거나 이상하면 만들 때 거절한다
             sc = cfg['scatter']
             self.max_attempts = sc['max_attempts']
@@ -431,7 +445,12 @@ class TaskManager:
 
     # ---------- 상태별 일 ----------
     def _check(self):
-        """CHECK: 관측 자세로 → 모든 블록을 진행 확인 → 어긋남이 있으면 ERROR, 없으면 SELECT."""
+        """CHECK: 관측 자세로 → 모든 블록을 진행 확인 → 어긋남이 있으면 ERROR, 없으면 SELECT.
+        받침 경유 출발 직후에는 먼저 장면을 정리하고 홈으로 간다(_clean_start)."""
+        if self._fresh and self._scatter is not None and self._scatter.via_spare:
+            self._fresh = False
+            if not self._clean_start():
+                return None
         ok, why = self._move_observe()
         if not ok:
             return self._failed(why, '관측 자세 이동')
@@ -441,6 +460,48 @@ class TaskManager:
         if problems:
             return self._offset_over(problems)
         self._set('SELECT', None, '')
+        return None
+
+    def _clean_start(self):
+        """흩뿌림 출발 직후(one_pick 시작과 같음): ① 장면에 남은 쥔 상자 떼기(앞 실행이 쥔 채 멈췄으면 모든 계획이 막혔다 — 10/12 실기)
+        ② 빈 진행표(parts [])를 내 장면 관리가 앞 실행의 놓인 블록을 지우게 하고 1 s 기다림 ③ 홈 자세로. 반환: 이어 가도 되나(이동 실패면 처리 뒤 False)."""
+        detach = getattr(self.io, 'scene_detach', None)
+        if detach is not None and not detach():
+            LOG.warning('출발: 장면 관리가 답하지 않아 쥔 상자를 못 뗐다 — 그대로 진행')
+        self.io.publish_progress({'schema': 'progress/2.0', 'stamp': time.time(), 'design_id': self.design_id, 'run_id': self.run_id,
+                                  'obs_stamp': time.time(), 'parts': []})
+        self._sleep(1.0)
+        ok, why = self.io.move_to('home', self.halted)
+        if not ok:
+            self._failed(why, '출발 홈 자세 이동')
+        return ok
+
+    def _move_via(self, target):
+        """받침 경유 자세 이동 — 길이 안 나오면(PLAN_FAILED) 홈을 거쳐 한 번 더(one_pick move). 반환: (ok, why)."""
+        ok, why = self.io.move_to(target, self.halted)
+        if not ok and why == 'PLAN_FAILED' and self._scatter.via_spare and not self.halted():
+            self.logger.log('fail', self.part_id, f'{target} 이동 PLAN_FAILED — 홈 거쳐 다시')
+            ok_h, why_h = self.io.move_to('home', self.halted)
+            if not ok_h:
+                return ok_h, why_h
+            ok, why = self.io.move_to(target, self.halted)
+        return ok, why
+
+    def _find_via(self, **opts):
+        """받침 경유 find_blocks — 실패하면 timeout.find_retries 번 다시(정지 · 중단이면 바로 끝). 반환: (ok, why, body)."""
+        tries = 1 + int(self.cfg['timeout'].get('find_retries', 0)) if self._scatter.via_spare else 1
+        for k in range(tries):
+            ok, why, body = self.io.find_blocks(self.run_id, self.halted, **opts)
+            if ok or self.halted() or why in STOP_REASONS:
+                return ok, why, body
+            if k + 1 < tries:
+                self.logger.log('fail', self.part_id, f'find_blocks {why} — 다시({k + 1}/{tries - 1})')
+        return ok, why, body
+
+    def _hold(self, part_id, text, then=None):
+        """받침 경유: 서지 않고 사람을 부른다(one_pick hold) — WAIT_SUPPLY + 알림 no_match_block, [계속]이면 then 을 한 뒤 이어 간다."""
+        self._hold_then = then
+        self._enter_wait_supply(part_id, ('no_match_block', text))
         return None
 
     def _move_observe(self):
@@ -504,8 +565,21 @@ class TaskManager:
         target = self.planner.next_target()
         if target['status'] != 'FOUND':
             return target
+        target = self._spread_target(target)          # 같은 층 1 mm 띄우기 — 흩뿌림이면 늘(one_pick)
         self._scatter_goal(target, pick_message)
         return None
+
+    def _spread_target(self, target):
+        """받침 경유일 때 목표의 놓는 중심을 같은 층 1 mm 띄운 값으로 바꾼 복사본(pick_rank.spread_parts — 설계 25 mm 간격에 실제 폭 24.8 mm 라
+        틈 0.2 mm 뿐이어서 놓을 때 옆 블록을 밀어 줄이 틀어졌다, 10/13 실기). 진행표 · 확인(check_progress)은 설계 중심 그대로."""
+        if self._spread is None:
+            from d2_task.pick_rank import spread_parts
+            centers = spread_parts(self.planner.parts, self.cfg)
+            self._spread = {p['part_id']: c for p, c in zip(self.planner.parts, centers)}
+        c = self._spread.get(target['part_id'])
+        if c is None:
+            return target
+        return dict(target, place_pose=(tuple(c), target['place_pose'][1]))
 
     def _scatter_goal(self, target, pick_message):
         """흩뿌린 공급에서 target 블록을 집을 후보를 고르고 결과를 적용한다: 설정 점검 → observe_supply 이동 → find_blocks → ScatterFlow 고르기.
@@ -520,15 +594,33 @@ class TaskManager:
             return
         stops_before = self._stop_count
         ticket = self._scatter.begin((self._epoch, stops_before))
-        ok, why = self.io.move_to('observe_supply', self.halted)
+        from_spare = self._scatter.via_spare and self._spare_on is not None
+        # 받침에 블록이 있으면 받침 위 촬영 자세에서 그 블록만 깊이로 잰다(받침은 공급 영역 밖이라 공급 관측으로는 안 보인다)
+        ok, why = self._move_via('observe_spare' if from_spare else 'observe_supply')
         if not ok:
-            self._failed(why, '공급 관측 자세 이동')
+            self._failed(why, '받침 위 촬영 자세 이동' if from_spare else '공급 관측 자세 이동')
             return
-        ok, why, body = self.io.find_blocks(self.run_id, self.halted)
+        if self._scatter.via_spare:
+            # 받침: 깊이로 블록 하나 / 공급: 고르기가 손가락 자리를 깊이로 미리 거르게 높이 지도도 받는다
+            opts = {'area': 'spare'} if from_spare else {'height_map': True}
+            ok, why, body = self._find_via(**opts)
+        else:
+            ok, why, body = self.io.find_blocks(self.run_id, self.halted)
         if not ok or self.halted():
+            if self._scatter.via_spare and not self.halted() and why not in STOP_REASONS:
+                # 로봇은 서 있다(찍기만 실패) — 정지 요청 없이 사람이 카메라 · 인식 노드를 보고 [계속](one_pick hold)
+                self._hold(target['part_id'], f'{"받침 위 블록" if from_spare else "공급 영역"}을 카메라로 못 쟀어요({why}) — 손목 카메라 · '
+                                              '손목 블록 인식 노드를 확인하고 [계속]을 누르면 다시 잽니다')
+                return
             self._failed('STOPPED' if self.halted() else why, 'find_blocks 조회')
             return
-        result = self._scatter.prepare(target, body, allow_reorient=self._allow_reorient and target['part_id'] not in self._reoriented)
+        if from_spare:
+            result = self._scatter.prepare_from_spare(target, body)
+        elif self._scatter.via_spare:
+            self._spare_seen = (target, body)
+            result = self._scatter.prepare_spare(target, body, self._spare_failed)
+        else:
+            result = self._scatter.prepare(target, body, allow_reorient=self._allow_reorient and target['part_id'] not in self._reoriented)
         with self._lock:
             applied = self._scatter.commit(ticket, lambda: ((self._epoch, self._stop_count), self.halted()), result)
             if applied:
@@ -540,16 +632,58 @@ class TaskManager:
     def _apply_scatter_result(self, target, result, pick_message):
         """(잠금 안) commit 이 적용된 흩뿌림 결과를 상태에 반영한다: PICK → 목표 + PICK_PLACE, 비었음 · 맞는 블록 없음 → WAIT_SUPPLY, 그 밖은 ERROR."""
         status, part_id = result['status'], target['part_id']
-        if status == 'PICK':
+        if status in ('PICK', 'SPARE', 'SPARE_TIP', 'SPARE_CENTER', 'REORIENT'):
+            self._w144_event('candidate_selected', part_id, status=status, tag=result.get('tag'), candidate=result.get('candidate'))
+        if status == 'PICK' and self._spare_on is not None:      # 받침 경유 2단계 — 받침에서 레시피 잡기로 다시 집어 조립
+            self._spare_empty = 0
+            self._start_goal(dict(result['request'], status='FOUND', from_spare=True))
+            self._set('PICK_PLACE', None, f'{part_id} 를 받침에서 다시 집어 조립합니다')
+        elif status == 'PICK':
             self._start_goal(dict(result['request'], status='FOUND'))
             self._set('PICK_PLACE', None, pick_message.format(part=part_id))
+        elif status == 'SPARE':                    # 받침 경유 1단계 — 집기 쉬운 블록을 받침에 눕힌다(조립으로 세지 않음)
+            self._no_match = self._bad_blocks = 0
+            self._start_goal(dict(result['request'], status='FOUND', attempt=result['attempt'], seen=result['candidate']))
+            self._set('PICK_PLACE', None, f'{part_id} 에 쓸 블록을 받침에 옮깁니다({result["tag"]})')
+        elif status == 'SPARE_TIP':                # 받침에 옆으로 · 세워 놓은 블록 — 잡기 TIP 으로 기울여 눕힌다(조립 아님, 눕힌 뒤 다시 잰다)
+            self._spare_empty = 0
+            self._start_goal(dict(result['request'], status='FOUND'))
+            self._set('PICK_PLACE', None, f'{part_id} 에 쓸 받침 위 블록({result["candidate"].get("up")})을 눕힙니다')
+        elif status == 'SPARE_CENTER':             # 받침 맞추기 — 반대 폭으로 물었다 놓은 뒤 같은 잰 값으로 레시피 잡기(request['then'])
+            self._spare_empty = 0
+            self._start_goal(dict(result['request'], status='FOUND'))
+            self._set('PICK_PLACE', None, f'{part_id} 를 받침에서 가운데로 맞춥니다')
+        elif status == 'SPARE_EMPTY':
+            # 방금 받침에 놓은 블록이 안 보인다 — 비었다고 보고 다음 블록을 그 위에 놓으면 부딪힌다(one_pick 10/13 가상). 사람이 본다:
+            # 1번째는 받침을 확인하고 [계속]이면 다시 잰다, 연달아 2번째면 받침 기록을 지우고 [계속]이면 공급에서 다시 고른다
+            self._spare_empty += 1
+            if self._spare_empty >= 2:
+                self.logger.log('spare', part_id, '받침이 두 번 연달아 비어 보임 — 사람 확인 뒤 공급에서 다시')
+                self._spare_on, self._spare_empty = None, 0
+                self._enter_wait_supply(part_id, ('no_match_block', '받침 위 블록이 그래도 안 보여요 — 받침이 정말 비었으면 [계속](공급에서 '
+                                                                    '다시 고름), 블록이 있으면 치운 뒤 [계속]을 누르세요'))
+            else:
+                self.logger.log('spare', part_id, '받침 위 블록이 안 보임 — 사람 확인')
+                self._enter_wait_supply(part_id, ('no_match_block', '받침에 놓은 블록이 안 보여요 — 받침을 확인하고 [계속]을 누르면 다시 잽니다'))
+        elif status == 'SPARE_BLOCKED':            # 받침 둘레 손가락 자리에 뭔가 있다(깊이) — 사람이 비우고 [계속]이면 다시 잼(one_pick p1_to_recipe)
+            self._hold(part_id, f'받침 둘레 손가락 자리에 물건이 있어요({result["message"]}) — 받침 둘레를 비우고 [계속]을 누르세요')
+        elif status == 'STAND_NOT_READY':
+            self._to_error(f'{part_id}: 세움 · 옆세움 레시피 블록은 받침에서 세우는 동작이 정식 흐름에 아직 없다(세우기 W131) — 사람이 확인해 주세요')
+        elif status == 'SPARE_NOT_FLAT':
+            self._to_error(f'{part_id}: 받침 위 블록 자세를 모른다({result["block"].get("up")}) — 받침 위 블록을 확인해 주세요')
         elif status == 'REORIENT':                 # 맞는 자세가 없어 눕힌 블록을 빈 자리에 세운다 — 보내는 순간 1회로 센다(실패해도 다시 세우지 않음)
             self._reoriented.add(part_id)
             self._start_goal(dict(result['request'], status='FOUND'))
             self._set('PICK_PLACE', None, f'{part_id} 에 맞는 자세의 블록이 없어 눕힌 블록을 빈 자리에 세웁니다')
         elif status == 'EMPTY':
             self._enter_wait_supply(part_id, ('supply_empty', '공급 영역에 블록이 없어요. 블록을 흩뿌린 뒤 [계속]을 누르세요'))
+        elif status == 'NO_MATCH' and self._scatter.via_spare and self._no_match == 0:
+            self._no_match = 1                     # 찍을 때마다 판정이 조금씩 달라 한 번은 다시 찍어 본다(one_pick)
+            self._set('SELECT', None, f'{part_id}: 손가락이 들어갈 블록이 없어 한 번 더 찍습니다')
         elif status == 'NO_MATCH':
+            self._no_match = 0
+            if self._scatter.via_spare:
+                self._spare_failed.clear()         # 사람이 흩은 뒤에는 처음 후보부터(one_pick '흩어 주세요' 뒤 failed 비움)
             counts = result['counts']
             # 기울어진 블록이 있고 제외 이유가 tilted · under 뿐이면 IRD 알림 tilted_block(E-68 — 덮인 블록이 같이 있어도 사람이 기울어진 것을 바로 놓으면 된다).
             # under 만이거나 다른 제외 이유가 섞이면 no_match_block(E-73) — 이유는 글자(message)로 같이 보낸다
@@ -558,7 +692,11 @@ class TaskManager:
             self._enter_wait_supply(part_id, ('tilted_block' if only_tilted else 'no_match_block', result['message'] + ' — 정리한 뒤 [계속]을 누르세요'))
         elif status == 'NOT_CONFIGURED':
             self._to_error('흩뿌린 공급 설정(열림 폭)이 아직 정해지지 않았다')
+        elif status == 'BLOCKED' and self._scatter.via_spare and self._bad_blocks < PLAN_STREAK - 1:
+            self._bad_blocks += 1                  # 블록 값이 잘못 나오면 다시 찍는다(one_pick — 3번째에 사람)
+            self._set('SELECT', None, f'{result["message"]} — 다시 찍습니다')
         elif status == 'BLOCKED':                  # 장애물 블록 중 형식이 틀린 것이 있다(E-68) — 일부만 보내지 않고 서서 사람을 부른다
+            self._bad_blocks = 0
             self._to_error(result['message'])
         else:                                      # LOOKUP_FAILED — 횟수 상한 정책이 정해지기 전이라 다시 시도하지 않고 사람을 부른다
             self._to_error(f'find_blocks 응답을 쓸 수 없다({result.get("reason", status)})')
@@ -569,12 +707,16 @@ class TaskManager:
         요청마다 새 번호를 만들어 피드백 step · 결과 수신 시각(time.time())을 모으고, 끝나면 self.last_pick 에 남긴다
         ({request_id, ok, reason, step, result_at} — result_at 이 None 이면 결과 없이 끝난 것). 흩뿌림 집기가 실패하면 _scatter_failed 가 step(접촉 전후)과 result_at(gripper 상태가 결과 이후인지)으로 재시도 여부를 정한다.
         """
-        if self._scatter is not None:
+        via = self._scatter is not None and self._scatter.via_spare
+        if self._scatter is not None and not via:
             part = self.goal['part_id']
             with self._lock:
                 if self._scatter_fail.get(part, 0) >= self.max_attempts:      # 복구 · 다른 실패 경로로 와도 한도를 넘는 요청은 보내지 않는다
                     return self._to_error(f'{part}: 집기 {self.max_attempts}번 시도를 이미 했다 — 사람이 확인해 주세요')
                 self._scatter_fail[part] = self._scatter_fail.get(part, 0) + 1     # 요청을 보내기 시작할 때 센다(성공 · 실패 · 시간 초과 모두 한 번)
+        aid = self._w144_before_pick()
+        if aid is False:                       # W144 시도 기록이 안 됨 — 집기를 시작하지 않는다(INTEGRATION.md)
+            return self._failed('ERROR', f'{self.goal["part_id"]} W144 시도 기록')
         self._pick_seq += 1
         rid = self._pick_seq
         self._steps.begin(rid)                 # 이 요청의 피드백 · 결과만 받는다. 이전 요청의 늦은 것은 번호가 달라 버려진다
@@ -585,6 +727,15 @@ class TaskManager:
         self.last_pick = {'request_id': rid, 'ok': ok, 'reason': why,
                           'step': self._steps.last_step(rid), 'result_at': self._steps.result_at(rid)}
         self._steps.end(rid)                   # 이 번호의 늦은 피드백이 다음 요청에 섞이지 않게 닫는다
+        self._w144_after_pick(aid, ok, why)
+        self._tally['sent'] += 1
+        self._tally['ok'] += 1 if ok else 0
+        self.logger.log('attempt', self.goal['part_id'], f'{self.goal.get("grasp")} {"성공" if ok else why}'
+                        f'{"" if ok or self.last_pick["step"] is not None else "(움직이기 전)"} · 지금까지 {self._tally["ok"]}/{self._tally["sent"]}')
+        if via:
+            handled = self._via_spare_result(ok, why)
+            if handled is not False:
+                return handled
         if ok and self.goal.get('reorient'):
             # 세우기는 조립이 아니다 — placed · 조립 기록 · VERIFY 없이 SELECT 로 돌아가 공급을 다시 보고 방금 세운 블록을 일반 선택으로 집는다
             self.logger.log('reorient', self.goal['part_id'], '눕힌 블록을 빈 자리에 세움')
@@ -617,6 +768,157 @@ class TaskManager:
             # TIMEOUT 은 정지 노드에 요청하고 상태를 확인한다. 그 밖의 정식 코드 · 모르는 코드는 공통 분기를 탄다
             self._failed(why, f'{self.goal["part_id"]} 집기·놓기', log=False)
 
+    def _via_spare_result(self, ok, why):
+        """받침 경유 PickPlace 결과 처리(10/13 — one_pick 실기 규칙). 반환: False = 처리 안 함(부르는 쪽이 평소대로 — 조립 성공 · 모르는 이유),
+        그 밖 = 이 함수가 상태를 정했다. 규칙: 팔이 움직인 실패만 센다(받침에 옮기기는 블록당 max_attempts 번 · 받침에서 다시 집기는 따로
+        max_attempts 번), 움직이기 전 길 계산 거절은 세지 않고 다음 후보로 — 연달아 PLAN_STREAK 번이면 사람을 부른다."""
+        part, goal = self.goal['part_id'], self.goal
+        moved = self.last_pick['step'] is not None
+        if goal.get('spare_center') and (ok or (why == 'PLAN_FAILED' and not moved)):
+            # 맞추기는 블록을 들지 않는다 — 됐으면, 또는 움직이기 전에 길이 안 나왔으면(맞추기 없이) 같은 잰 값으로 바로 레시피 잡기(one_pick 과 같음)
+            if not ok:
+                self.logger.log('spare', part, '받침 맞추기 길이 안 나와 건너뜀')
+            self._start_goal(dict(goal['then'], status='FOUND', from_spare=True))
+            return self._set('PICK_PLACE', None, f'{part} 를 받침에서 다시 집어 조립합니다')
+        if ok and goal.get('spare_tip'):           # 받침 위 블록을 눕힘 — 조립이 아니다. 다음 SELECT 가 받침을 다시 잰다
+            self._plan_streak = 0
+            self.logger.log('spare', part, '받침 위 블록을 눕힘')
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
+            return self._set('SELECT', None, f'{part} 에 쓸 받침 위 블록을 눕혔다. 다시 잽니다')
+        if ok and goal.get('via_spare'):           # 받침에 눕힘 — 조립이 아니다(placed · 기록 · VERIFY 없음). 다음 SELECT 가 받침을 잰다
+            self._spare_on, self._plan_streak = part, 0
+            self._spare_failed.clear()
+            self.logger.log('spare', part, '받침에 눕힘')
+            self.poll_hmi()
+            if self._hmi_pause:
+                return self._enter_wait_hmi()
+            return self._set('SELECT', None, f'{part} 에 쓸 블록을 받침에 놓았다. 받침 위에서 잽니다')
+        if ok:                                     # 받침에서 다시 집어 조립 — 평소 성공 처리(placed · VERIFY)로
+            self._spare_on, self._plan_streak = None, 0
+            return False
+        self.logger.log('fail', part, f'pick_place {why}{"" if moved else "(움직이기 전)"}')
+        if why == 'PLAN_FAILED' and not moved:
+            self._plan_streak += 1
+            if goal.get('via_spare'):
+                self._spare_failed.append(tuple(goal['attempt']))
+            if self._plan_streak >= PLAN_STREAK:
+                self._plan_streak = 0          # 팔은 안 움직였다 — 서지 않고 사람이 보고 [계속]이면 다시 찍어 이어 감(one_pick hold)
+                return self._hold(part, f'{part}: 움직이기 전 길 계산이 연달아 {PLAN_STREAK}번 거절됨 — 집기 노드 로그(놓는 자리 · 장면)를 '
+                                        '확인하고 [계속]을 누르세요')
+            if goal.get('via_spare') and self._spare_seen is not None:
+                return self._next_spare_candidate()    # 장면이 그대로라 다시 찍지 않고 같은 관측의 다음 후보(one_pick)
+            return self._set('SELECT', None, f'{part}: 길이 안 나와 다음 후보로')
+        self._plan_streak = 0
+        # 팔이 움직인 실패는 레시피 블록 하나에 합쳐 센다(공급 → 받침 · 받침에서 눕히기 · 다시 집기 모두, one_pick tries) — max_attempts 면 사람
+        if goal.get('via_spare'):
+            self._spare_failed.append(tuple(goal['attempt']))
+        self._scatter_fail[part] = self._scatter_fail.get(part, 0) + (1 if moved else 0)
+        if why in ('PLAN_FAILED', 'GRASP_FAILED', 'SLOT_EMPTY'):
+            return self._scatter_failed(why)
+        return self._failed(why, f'{part} 받침 경유 집기·놓기', log=False)
+
+    def _next_spare_candidate(self):
+        """받침 경유: 움직이기 전에 길이 안 나온 뒤 다시 찍지 않고 마지막 공급 관측(_spare_seen)에서 다음 후보를 골라 적용한다(one_pick — 장면이 그대로).
+        안 된 후보는 _spare_failed 에 이미 있다. 바깥 영향: 다음 PickPlace 목표 · 상태(로봇은 아직 안 움직임)."""
+        target, body = self._spare_seen
+        result = self._scatter.prepare_spare(target, body, self._spare_failed)
+        with self._lock:
+            ticket = self._scatter.begin((self._epoch, self._stop_count))
+            if self._scatter.commit(ticket, lambda: ((self._epoch, self._stop_count), self.halted()), result):
+                if result['status'] == 'SPARE':
+                    self._apply_scatter_result(target, result, '')
+                    return None
+                return self._set('SELECT', None, f'{target["part_id"]}: 이 관측에 남은 후보가 없어 다시 찍습니다')
+        return None
+
+    def _spare_regrasp(self, goal):
+        """받침 경유 헛잡음 뒤 그 블록을 다시 찍어 위치를 고쳐 같은 잡기로 한 번 더(one_pick try_goal · see_block): 집기 위(노드가 열고 올라온 자리)에서
+        find_blocks → 온전한 같은 자세 블록(확신도 0.5 이상 · 덮이지 않음 · 40 mm 안)이 없으면 공급 관측 자세로 가서 한 번 더.
+        반환: 적용했으면 True(PICK_PLACE), 못 찾았거나 정지 · 오류면 False(부르는 쪽이 평소대로). 바깥 영향: 팔 이동(observe_supply) · find_blocks."""
+        token = (self._epoch, self._stop_count)
+        cand = goal.get('seen') or {}                  # 고를 때 본 블록(헛잡음 판단 뒤에는 ScatterFlow 후보가 비워진다)
+        for go in (False, True):
+            if go:
+                ok, _why = self.io.move_to('observe_supply', self.halted)
+                if not ok:
+                    return False
+            ok, _why, body = self.io.find_blocks(self.run_id, self.halted, height_map=True)
+            if not ok or self.halted():
+                return False
+            req = self._scatter.reseen_request(goal, cand, body)
+            if req is not None:
+                with self._lock:
+                    if self.halted() or (self._epoch, self._stop_count) != token:
+                        return False
+                    self.logger.log('spare', goal['part_id'], '헛잡음 — 다시 찍은 자리로 같은 잡기 한 번 더')
+                    self._start_goal(dict(req, status='FOUND', regrasp=True))
+                    self._set('PICK_PLACE', None, f'{goal["part_id"]}: 헛잡음 — 다시 찍은 자리로 한 번 더 집습니다')
+                return True
+        return False
+
+    # ---------- W144 원인 추적(#140 인계 — 기록만, 집기 · 재시도 정책은 안 바꿈) ----------
+    def _w144_event(self, event, part_id, **fields):
+        """io.w144_event 가 있으면 events.jsonl 한 줄(부품의 열린 action_id · 원래 조립 순서를 붙임)."""
+        if getattr(self.io, 'w144_event', None) is None:
+            return
+        part = next((b for b in self.planner.parts if b['part_id'] == part_id), {}) if self.planner else {}
+        aid = getattr(self, '_w144_open', {}).get(part_id)
+        self.io.w144_event(event, part_id=part_id, action_id=aid, sequence=part.get('sequence'),
+                           retry_of=getattr(self, '_w144_last', {}).get(part_id) if aid else None, **fields)
+
+    def _w144_leg(self):
+        """지금 목표가 받침 경유의 어느 단계인가 — 공급→받침 · 받침 눕히기 · 받침 맞추기 · 받침→조립 · 바로 조립 · 세우기."""
+        g = self.goal
+        return ('to_spare' if g.get('via_spare') else 'spare_tip' if g.get('spare_tip') else 'spare_center' if g.get('spare_center')
+                else 'from_spare' if g.get('from_spare') else 'reorient' if g.get('reorient') else 'direct')
+
+    def _w144_before_pick(self):
+        """집기 명령 직전: 이 부품의 열린 시도가 없으면 begin_attempt(재시도면 retry_of) → pick_requested 이벤트.
+        반환: action_id · None(기록 꺼짐) · False(시도 기록 실패 — 집기를 시작하지 않는다)."""
+        if getattr(self.io, 'w144_begin', None) is None or not hasattr(self, '_w144_open'):
+            return None
+        g, part_id = self.goal, self.goal['part_id']
+        part = next((b for b in self.planner.parts if b['part_id'] == part_id), None)
+        aid = self._w144_open.get(part_id)
+        if aid is None and part is not None:
+            evidence = {'source': {'candidate': g.get('seen'), 'leg': self._w144_leg()},
+                        'grasp': {'grasp': g.get('grasp'), 'open_width_m': g.get('open_width_m')},
+                        'runtime': {'run_id': self.run_id, 'design_id': self.design_id}}
+            aid, why = self.io.w144_begin(part_id, part.get('sequence'), part['center'], part['quat'], evidence,
+                                          retry_of=self._w144_last.get(part_id))
+            if why:
+                return False
+            if aid is not None:
+                self._w144_open[part_id], self._w144_legs[aid] = aid, []
+        self._w144_event('pick_requested', part_id, leg=self._w144_leg(), grasp=g.get('grasp'), pick_pose=g.get('pick_pose'),
+                         place_pose=g.get('place_pose'), open_width_m=g.get('open_width_m'), obstacles=len(g.get('obstacles') or []),
+                         tcp_target=None, tcp_note='TCP 목표 · 실제 TCP 는 task 가 받지 않음 — 집기 노드 로그 · bag /tf 로 본다')
+        return aid
+
+    def _w144_after_pick(self, aid, ok, why):
+        """집기 · 놓기 결과: place_result 이벤트 + 단계 기록. 실패면 failed_attempt(그 시도를 닫고 다음 시도는 retry_of 로 잇는다)."""
+        if not hasattr(self, '_w144_open'):
+            return
+        part_id = self.goal['part_id']
+        leg = {'leg': self._w144_leg(), 'grasp': self.goal.get('grasp'), 'pick_pose': self.goal.get('pick_pose'),
+               'place_pose': self.goal.get('place_pose'), 'ok': ok, 'reason': why or None,
+               'last_step': self.last_pick.get('step'), 'result_unix_s': self.last_pick.get('result_at')}
+        if aid is not None:
+            self._w144_legs.setdefault(aid, []).append(leg)
+        self._w144_event('place_result', part_id, **leg)
+        if not ok and aid is not None and getattr(self.io, 'w144_fail', None) is not None:
+            part = next((b for b in self.planner.parts if b['part_id'] == part_id), {})
+            self.io.w144_fail(aid, part_id, part.get('sequence'), why, self._w144_evidence(aid))
+            self._w144_open.pop(part_id, None)
+            self._w144_last[part_id] = aid
+
+    def _w144_evidence(self, aid):
+        """after_place · failed_attempt 에 넣을 실행 증거 — 단계별 요청 블록 자세 · 결과 · 마지막 피드백 단계. TCP 는 null(task 가 받지 않음)."""
+        return {'motion': list(getattr(self, '_w144_legs', {}).get(aid, [])) if aid else [],
+                'release': None, 'tcp': None, 'tcp_note': 'TCP 목표 · 실제 TCP 는 집기 노드 로그 · bag /tf 로 본다'}
+
     def _verify(self):
         """VERIFY: 관측 자세에서 방금 놓은 블록과 그 받침만 다시 보고, 없거나 어긋났으면 ERROR."""
         ok, why = self.io.move_to('observe', self.halted)
@@ -627,11 +929,24 @@ class TaskManager:
             return None
         row = self.planner.progress[self.placed]      # 판정 전에 측정값부터 남긴다(어긋나서 ERROR 가 되어도 값은 기록)
         self.logger.record_measure(self.placed, row['dx_m'], row['dy_m'], row['dz_m'])
-        problems = self.planner.judge(expect_present=[self.placed])
+        via = self._scatter is not None and self._scatter.via_spare
+        dz = (self.cfg.get('scatter') or {}).get('place_dz_m') if via else None
+        problems = self.planner.judge(expect_present=[self.placed], placed_dz_m=dz, strict=via)
+        if problems and via:
+            # 받침 경유: 사람이 손으로 고치고 [계속]이면 다시 확인(one_pick placed_check — 서지 않음)
+            first = problems[0]
+            return self._hold(self.placed, f'{first["part_id"]}: {first["detail"]} — 손으로 바로 놓은 뒤 [계속]을 누르면 다시 확인합니다', then='verify')
         if problems:
             return self._offset_over(problems)
         if self.planner.progress[self.placed]['state'] == 'present':     # 오류가 없다는 것만으로는 부족하다 — 놓인 것이 확인된 블록의 시도 횟수만 지운다
             self._scatter_fail.pop(self.placed, None)
+        if getattr(self.io, 'w144_after_place', None) is not None:
+            # W144: 최종 자리 확인이 끝난 블록을 observe 에서 촬영(one_pick final_placed — 설계 중심 · 방향). 촬영 실패면 io 가 세우고 ERROR
+            aid = self._w144_open.pop(self.placed, None) if hasattr(self, '_w144_open') else None
+            ok, why = self.io.w144_after_place(self.placed, part['center'], part['quat'], action_id=aid, sequence=part.get('sequence'),
+                                               evidence=self._w144_evidence(aid))
+            if not ok:
+                return self._failed(why, 'W144 촬영')
         self._set('SELECT', None, '')
         return None
 
@@ -653,8 +968,16 @@ class TaskManager:
             if not self._pending_start:
                 return None
             self._pending_start = False
+        then, self._hold_then = self._hold_then, None
+        if then == 'reset':
+            self._reset_spare_tries()
+        if then == 'verify':                   # 놓은 뒤 확인이 안 됐던 블록 — 사람이 고친 뒤 다시 확인
+            self._set('VERIFY', None, f'{self.placed} 를 다시 확인합니다')
+            return None
         if self._scatter is not None:
             self._scatter.after_wait_start()        # 흩뿌림은 다시 관측하고 조회한다. 공급 칸 표시는 건드리지 않는다
+            if self._scatter.via_spare:
+                self._spare_failed.clear()          # 사람이 손본 뒤에는 처음 후보부터(one_pick)
         else:
             self.planner.supply_refilled()
         r = self._next_goal('공급을 채웠다. {part} 를 이어서 집습니다')
@@ -687,8 +1010,18 @@ class TaskManager:
         if grip is None or grip.get('grasped'):
             return self._to_error('블록을 쥐고 있거나 그리퍼 상태를 모른다. 사람이 확인한 뒤 [다시 시작]')
         self._recover_slow = True
+        if self._scatter is not None and self._scatter.via_spare:
+            # 받침 경유: 사람이 확인하고 [다시 시작]하면 시도 수 · 안 된 후보를 비우고 이어 간다(one_pick hold → Enter 와 같음).
+            # 받침 기록(_spare_on)은 남겨 받침 위 블록부터 다시 잰다
+            self._reset_spare_tries()
         self._set('CHECK', None, '진행 확인부터 다시 합니다')
         return None
+
+    def _reset_spare_tries(self):
+        """받침 경유 시도 수 · 안 된 후보 · 연달아 센 값들을 비운다(사람이 확인한 뒤 이어 갈 때)."""
+        self._scatter_fail.clear()
+        self._spare_failed.clear()
+        self._plan_streak = self._no_match = self._bad_blocks = 0
 
     def _error(self):
         """ERROR: 사람이 확인할 때까지 기다린다. 정지 확인 대기 중이면 stopped 신호 전에는 복구를 막는다.
@@ -831,17 +1164,40 @@ class TaskManager:
             if self._stale(info['request_id'], token):         # 대기 뒤 적용 직전에 다시 확인 — on_failure 도 이 안에서 부른다
                 return None
             action = self._scatter.on_failure(why, contact_phase(info['step'], why), grasped, None)
+            via = self._scatter.via_spare
+            if via and action == REPLAN_SAME:
+                action = REOBSERVE                 # 받침 경유: 팔이 움직인 뒤 실패는 같은 요청을 되풀이하지 않고 다시 찍는다(one_pick)
             n = self._scatter_fail.get(part, 0)
+            check = ' — 받침 · 손 안을 확인해 주세요' if via else ''
+            regrasp = False
             if action in (REPLAN_SAME, REOBSERVE):
                 if n >= self.max_attempts:
-                    return self._to_error(f'{part}: {why}(집기 {n}번 모두 실패 — 사람이 확인해 주세요)')
+                    if via:                    # 손은 비었다(REOBSERVE) — 서지 않고 사람이 보고 [계속]이면 시도 수를 비우고 이어 감(one_pick)
+                        return self._hold(part, f'{part}: 팔이 움직인 시도 {n}번 모두 안 됨({why}) — 블록 · 받침 · 로봇을 확인하고 [계속]을 누르세요',
+                                          then='reset')
+                    return self._to_error(f'{part}: {why}(집기 {n}번 모두 실패{check} — 사람이 확인해 주세요)')
+                if via and not self.goal.get('via_spare'):
+                    # 받침 위 블록을 옮기다(눕히기 · 맞추기 · 다시 집기) 안 됨 — 받침 · 손 안을 사람이 보고 [계속]이면 받침을 다시 잰다(one_pick 'check')
+                    return self._hold(part, f'{part}: 받침 위 블록을 옮기다 안 됨({why}) — 받침 · 손 안을 확인하고(손에 있으면 빼서 받침에 두기) '
+                                            '[계속]을 누르면 다시 잽니다')
                 req = self._scatter.reusable_request() if action == REPLAN_SAME else None
                 if req is not None:
                     self._start_goal(dict(req, status='FOUND'))
                     return self._set('PICK_PLACE', None, f'{part} 를 같은 자리로 다시 집으러 갑니다')
-                return self._set('SELECT', None, f'{part} 를 다시 보고 집으러 갑니다')
-            unknown = ' — 그리퍼 상태를 확인하지 못했다' if status == 'UNKNOWN' else ''
-            return self._to_error(f'{part}: {why}(흩뿌림 집기 실패 — {action}{unknown}, 사람이 확인해 주세요)')
+                # 받침 경유 공급 헛잡음이면 그 블록을 다시 찍어 같은 잡기로 한 번 더(one_pick try_goal) — 찍기는 잠금 밖에서
+                regrasp = (via and why == 'GRASP_FAILED' and self.goal.get('via_spare') and not self.goal.get('regrasp')
+                           and self.goal.get('grasp') != 'TILT')
+                if not regrasp:
+                    return self._set('SELECT', None, f'{part} 를 다시 보고 집으러 갑니다')
+            else:
+                unknown = ' — 그리퍼 상태를 확인하지 못했다' if status == 'UNKNOWN' else ''
+                return self._to_error(f'{part}: {why}(흩뿌림 집기 실패 — {action}{unknown}{check}, 사람이 확인해 주세요)')
+        if regrasp and self._spare_regrasp(self.goal):
+            return None
+        with self._lock:
+            if self._stale(info['request_id'], token):
+                return None
+            return self._set('SELECT', None, f'{part} 를 다시 보고 집으러 갑니다')
 
     def _stale(self, request_id, token):
         """(잠금 안) 대기 중에 정지 · 상태 변화 · 새 요청이 있었나. 있으면 이 실패 처리는 오래된 것이다."""
@@ -946,7 +1302,8 @@ class TaskManager:
             return
         if reason in STOP_REASONS:             # 정지 노드의 신호를 기다린다
             self._enter_stopped()
-        elif reason == 'BUSY':                 # 기다렸다 다시: 같은 상태에 머무르면 다음 단계가 다시 부른다
+        elif reason == 'BUSY':                 # 기다렸다 다시: 같은 상태에 머무르면 다음 단계가 다시 부른다 — 1 s 쉬고(one_pick, 쉼 없이 다시 보내지 않게)
+            self._sleep(1.0)
             return
         elif reason in ('GRIPPER_NO_RESPONSE', 'NO_FEEDBACK'):     # 코드만 보이면 사람이 뭘 해야 할지 모른다 — 코드는 괄호로 남겨 기록과 맞춘다(E-74)
             what = '그리퍼가 응답하지 않아요' if reason == 'GRIPPER_NO_RESPONSE' else '그리퍼 폭을 읽지 못했어요'
@@ -1092,8 +1449,18 @@ class TaskManager:
             return self._reject(code, f'시작 점검 실패: {text}')
         self._reobserved = False
         self._reoriented = set()                  # 새 조립에서만 비운다 — 정지 · 복구 · [계속]은 같은 조립이라 그대로 둔다
+        self._spare_on, self._spare_failed, self._plan_streak, self._spread = None, [], 0, None
+        self._spare_empty = self._no_match = self._bad_blocks = 0
+        self._fresh, self._hold_then, self._tally = True, None, {'sent': 0, 'ok': 0}
         self.placed = self.part_id = None
         self.run_id = self.logger.start_run(self.design_id, len(self.planner.parts))   # 실제 출발 때만 새 run_id
+        self._w144_open, self._w144_last, self._w144_legs = {}, {}, {}    # W144 시도: 부품 → 열린 action_id · 마지막 실패 action_id, action → 단계 기록
+        if getattr(self.io, 'w144_start', None) is not None:
+            # W144 기록(촬영 폴더 · 설정 복사 · 필수 토픽 확인 · rosbag)을 첫 find_blocks 보다 먼저 연다. 필수 자료가 없으면 움직이기 전에 오류(INTEGRATION.md)
+            ok, why = self.io.w144_start(self.design_id, self.run_id)
+            if not ok:
+                self._to_error(why)
+                return True, ''
         self._set('CHECK', None, '진행 확인을 시작합니다')
         return True, ''
 
@@ -1145,6 +1512,8 @@ class TaskManager:
             self._pending_start = False
             self.logger.count_stop()
             self._set('STOPPED', 'stopped', '멈췄어요. 원인을 없앤 뒤 [다시 시작]을 누르세요')
+            # 웹 없이 돌릴 때 사람이 칠 명령(one_pick 안내와 같음) — 잠금 해제는 사람이 직접(10/12 PL)
+            LOG.warning('정지 — 원인을 없앤 뒤 사람이 [다시 시작] 또는: ros2 service call /d2/safety/resume std_srvs/srv/Trigger')
 
     def _to_error(self, message, message_id=None):
         """ERROR 로 간다. 로봇은 서 있고 사람을 부른다. message_id 는 IRD 값만 쓰고 맞는 것이 없으면 null."""
@@ -1160,7 +1529,11 @@ class TaskManager:
 
     def _finish_run(self, result):
         """열린 CSV를 result로 닫는다. 조립만 build/2 요약을 보존하고 스캔은 DB 조립 목록에 넣지 않는다. run_id는 화면에 남긴다."""
+        if not self._scan_run and self._tally['sent']:
+            self.logger.log('tally', None, f'집기 · 놓기 요청 {self._tally["sent"]}번 중 성공 {self._tally["ok"]}번')   # one_pick 집계(W132)
         summary = self.logger.finish(result)
+        if not self._scan_run and getattr(self.io, 'w144_finish', None) is not None:
+            self.io.w144_finish(result == 'DONE')          # W144 촬영 ZIP(one_pick finally — 멈춘 조립도 덜 된 기록을 보존)
         if self._scan_run:
             return                                  # 스캔은 CSV 와 scan_result 로 남기고 조립 build/2 로 저장하지 않는다
         if summary is not None:

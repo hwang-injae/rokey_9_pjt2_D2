@@ -30,7 +30,7 @@ import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
-from d2_interfaces.srv import CheckProgress, HmiCommand, JsonQuery, MoveTo, StopRequest
+from d2_interfaces.srv import CheckProgress, HmiCommand, JsonQuery, MoveTo, SceneAttach, StopRequest
 from d2_safety.safe_stop import init_ros
 from geometry_msgs.msg import Pose
 from rclpy.action import ActionClient
@@ -85,6 +85,11 @@ class TaskNode(Node):
         self.declare_parameter('design_source', 'remote')  # remote = /d2/hmi/get_design(기본) · local = recipe_dir 파일(웹 없이 개발할 때 명시)
         self.declare_parameter('monitor_hmi', True)        # 웹 연결 신호(/d2/hmi/alive) 감시. design_source 와 따로다(E-62) — 웹 없이 개발할 때만 false 로 명시
         self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
+        # W144 촬영(one_pick 과 같음 — 최종 자리에 놓고 VERIFY 가 통과할 때마다 observe 에서 원자료 촬영, 끝나면 ZIP · 한석형 #140 촬영기).
+        # 촬영기(저장소 tools/w144_capture/placement_recorder.py)가 없으면 끈다. 기본 끔 — 카메라 없는 가상 · 가짜 로봇에서 [조립]이 바로 ERROR 가 되지 않게,
+        # A4 자료를 모을 실기 때만 -p w144_record:=true (10/13 19시 PL)
+        self.declare_parameter('w144_record', False)
+        self.declare_parameter('w144_camera_prefix', '/camera/camera')   # 손목 카메라 토픽 접두(표준 RealSense — 다르면 이 값으로, INTEGRATION.md)
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
         logger = RunLogger(self.get_parameter('log_dir').value)
@@ -108,9 +113,11 @@ class TaskNode(Node):
         self.infer_cli = self.create_client(JsonQuery, '/d2/vision/scan_infer', callback_group=cb)
         self.find_cli = self.create_client(JsonQuery, '/d2/vision/find_blocks', callback_group=cb)      # supply_mode: scatter 일 때만 쓴다
         self.stop_cli = self.create_client(StopRequest, '/d2/safety/stop', callback_group=cb)
+        self.attach_cli = self.create_client(SceneAttach, '/d2/motion/scene/attach', callback_group=cb)    # 출발 때 남은 쥔 상자 떼기(받침 경유)
         self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
         self.move_to_s = cfg['timeout']['move_to_s']
         self.pick_place_s = cfg['timeout']['pick_place_s']
+        self.find_blocks_s = cfg['timeout'].get('find_blocks_s', self.service_s)    # 높이 지도 · 받침 재기는 3 s 를 넘을 수 있다(one_pick 10 s)
         self.sender = BuildSender(self.manager, self._call_save, self.save_cli.remove_pending_request,
                                   self.save_cli.service_is_ready, self.service_s)
         self.state_pub = self.create_publisher(String, '/d2/task/state', LATCHED_QOS)
@@ -227,12 +234,14 @@ class TaskNode(Node):
             waiting.append('/d2/vision/check_progress')
         if not self.pick_cli.server_is_ready():
             waiting.append('/d2/motion/pick_place')
+        if not self.stop_cli.service_is_ready():
+            waiting.append('/d2/safety/stop')                  # 시간 초과 · Ctrl+C 때 세울 곳(one_pick 출발 점검과 같음)
         if self.manager.supply_mode == 'scatter' and not self.find_cli.service_is_ready():
             waiting.append('/d2/vision/find_blocks')
         return waiting
 
-    def _scan_query(self, client, body, should_abort, default_reason='SCAN_FAILED'):
-        """JsonQuery(스캔 · find_blocks)를 service_s 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
+    def _scan_query(self, client, body, should_abort, default_reason='SCAN_FAILED', timeout_s=None):
+        """JsonQuery(스캔 · find_blocks)를 timeout_s(없으면 service_s) 초 안에 처리한다. 단위 없음, 반환 (success, reason, 응답 dict).
 
         JSON 깨짐·객체 아님·유한하지 않은 수는 ERROR. 서버 없음은 ERROR, 정지·시간 초과는 공통 reason으로 돌려준다.
         서버가 실패하면서 이유를 안 주면 default_reason.
@@ -241,7 +250,7 @@ class TaskNode(Node):
             return False, 'ERROR', None
         req = JsonQuery.Request()
         req.request_json = json.dumps(body, allow_nan=False)
-        res, why = self._call(client, req, should_abort, self.service_s)
+        res, why = self._call(client, req, should_abort, timeout_s or self.service_s)
         if res is None:
             return False, why or 'ERROR', None
         if not res.success:
@@ -263,9 +272,242 @@ class TaskNode(Node):
         """run_id의 점군 추론을 요청한다. 결과 좌표는 blocks/1의 mm, 제한 시간·실패는 _scan_query와 같다."""
         return self._scan_query(self.infer_cli, dict(run_id=run_id), should_abort)
 
-    def find_blocks(self, run_id, should_abort):
-        """흩뿌린 공급 영역을 /d2/vision/find_blocks 로 조회한다(IRD 4.2). 반환: (성공, reason, 응답 dict). 제한 시간 · 실패는 _scan_query 와 같다."""
-        return self._scan_query(self.find_cli, dict(run_id=run_id), should_abort, default_reason='ERROR')
+    def find_blocks(self, run_id, should_abort, **opts):
+        """흩뿌린 공급 영역을 /d2/vision/find_blocks 로 조회한다(IRD 4.2). 반환: (성공, reason, 응답 dict). 제한 시간 · 실패는 _scan_query 와 같다.
+        opts = 선택 칸(받침 경유 10/13): height_map=True(공급 영역 높이 지도) · area='spare'(받침 위 블록 하나를 깊이로)."""
+        return self._scan_query(self.find_cli, dict(run_id=run_id, **opts), should_abort, default_reason='ERROR', timeout_s=self.find_blocks_s)
+
+    def scene_detach(self):
+        """출발 때 장면에 남은 쥔 상자를 뗀다(SceneAttach part_id '' · attach false — one_pick 시작과 같음). 앞 실행이 쥔 채 멈췄으면 장면 속
+        로봇에 상자가 붙어 모든 계획이 막혔다(10/12 실기 'table_1|held'). 반환: 응답이 왔나(떼기 할 것 없음도 True). 장면 관리가 없으면 False."""
+        if not self.attach_cli.wait_for_service(timeout_sec=self.service_s):
+            return False
+        res, _why = self._call(self.attach_cli, SceneAttach.Request(part_id='', attach=False), lambda: False, self.service_s)
+        return res is not None
+
+    def _w144_module(self):
+        """W144 촬영기 클래스(PlacementRecorder) 또는 None — 저장소 tools/w144_capture(설치 폴더 d2_bringup share 에서 4단계 위 = 저장소 맨 위,
+        one_pick 과 같은 찾기). 없거나 못 읽으면 None(촬영 끔, 경고 한 번)."""
+        if not bool(self.get_parameter('w144_record').value):
+            return None
+        try:
+            import sys
+            repo = Path(get_package_share_directory('d2_bringup')).resolve().parents[3]
+            path = str(repo / 'tools' / 'w144_capture')
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            from placement_recorder import PlacementRecorder
+            return PlacementRecorder
+        except Exception as e:                      # 촬영기가 없는 저장소 · 설치 — 조립은 그대로 한다
+            if not getattr(self, '_w144_warned', False):
+                self.get_logger().warn(f'[W144] 촬영기를 못 읽어 촬영을 끈다: {e!r}')
+                self._w144_warned = True
+            return None
+
+    def _ros_ns(self):
+        return self.get_clock().now().nanoseconds
+
+    def _w144_topics(self):
+        """녹화할 토픽 (필수 목록, 있으면 넣는 목록, 실제 이름 · 타입 · 발행 QoS dict) — INTEGRATION.md 표. joint_states 는 실제 발행 중인 이름을 찾는다
+        (추측 안 함). 카메라 접두는 파라미터 w144_camera_prefix(표준 RealSense /camera/camera)."""
+        cam = str(self.get_parameter('w144_camera_prefix').value).rstrip('/')
+        have = dict(self.get_topic_names_and_types())
+        joints = sorted(t for t in have if t.endswith('/joint_states'))
+        required = [cam + '/color/image_raw', cam + '/aligned_depth_to_color/image_raw', cam + '/color/camera_info', '/tf', '/tf_static',
+                    '/d2/gripper/state'] + joints
+        optional = ['/d2/task/state', '/d2/task/progress']
+        info = {}
+        for t in required + optional:
+            if t in have:
+                pubs = self.get_publishers_info_by_topic(t)
+                info[t] = {'type': have[t], 'publishers_qos': [{'node': p.node_name, 'reliability': str(p.qos_profile.reliability),
+                                                               'durability': str(p.qos_profile.durability)} for p in pubs]}
+        return required, [t for t in optional if t in have], info, joints
+
+    def _w144_wait_messages(self, topics, info, timeout_s=5.0):
+        """필수 토픽마다 메시지가 실제로 오는지 잠깐 구독해 본다(센서 best-effort · /tf_static transient-local). 반환: 안 온 토픽 목록."""
+        from rclpy.qos import qos_profile_sensor_data
+        from rosidl_runtime_py.utilities import get_message
+        got = {t: threading.Event() for t in topics}
+        subs = []
+        try:
+            for t in topics:
+                if t not in info:
+                    continue
+                if t == '/tf_static':
+                    qos = QoSProfile(depth=10, durability=DurabilityPolicy.TRANSIENT_LOCAL, reliability=ReliabilityPolicy.RELIABLE)
+                else:
+                    qos = qos_profile_sensor_data
+                subs.append(self.create_subscription(get_message(info[t]['type'][0]), t, lambda _m, e=got[t]: e.set(), qos))
+            end = time.monotonic() + timeout_s
+            while time.monotonic() < end and not all(e.is_set() for e in got.values()):
+                time.sleep(0.1)
+        finally:
+            for sub in subs:
+                self.destroy_subscription(sub)
+        return [t for t, e in got.items() if not e.is_set()]
+
+    def w144_start(self, design_id, run_id):
+        """새 조립 출발 때(첫 find_blocks 보다 먼저) W144 기록을 연다: 촬영 폴더 · 설정 복사(one_pick start_rec) · 필수 토픽 수신 확인 · rosbag 시작 ·
+        run_start 이벤트. 폴더 ~/d2_data/runs/w144_<설계>_<월일_시분초>(bag 은 그 옆 _bag). 반환: (ok, 이유).
+        촬영기가 없거나 w144_record false 면 (True, '')(기록 끔). 필수 토픽이 안 오거나 디스크 · 녹화 시작이 안 되면 (False, 이유) —
+        INTEGRATION.md: 필수 자료가 없으면 조립을 시작하지 않는다(부르는 쪽이 출발을 거절). 키 · .env 는 복사하지 않는다."""
+        cls = self._w144_module()
+        self._w144 = self._w144_trace = None
+        if cls is None:
+            return True, ''
+        try:
+            import glob
+            import shutil
+            import subprocess
+            from d2_task.w144_trace import W144Trace, sha256
+            from d2_vision.tcp_pose import default_calib_path
+            share = Path(get_package_share_directory('d2_bringup'))
+            repo = share.resolve().parents[3]
+            folder = Path.home() / 'd2_data' / 'runs' / f'w144_{design_id}_{time.strftime("%m%d_%H%M%S")}'
+            trace = {}
+
+            def move_observe():
+                tr = trace.get('t')
+                if tr:
+                    tr.event('observe_requested', **trace.get('ctx', {}))
+                ok, why = self.move_to('observe', lambda: not rclpy.ok())
+                if tr:
+                    tr.event('observe_arrived' if ok else 'observe_failed', reason=why or None, **trace.get('ctx', {}))
+                return ok
+
+            def stop_robot():
+                self.request_stop('W144 촬영 실패')
+
+            rec = cls(folder, move_observe, stop_robot)
+            tr = W144Trace(folder, run_id, self._ros_ns)
+            trace['t'] = tr
+            cfg_dir = folder / 'config'
+            cfg_dir.mkdir()
+            cal = Path(default_calib_path())
+            src = [share / 'config' / f for f in ('robot.yaml', 'tcp.json', 'tool.json')] + \
+                  [Path(f) for f in glob.glob(f'{share}/recipes/{design_id}_*')] + [cal, cal.with_suffix('.json')]
+            for f in src:
+                if f.is_file():
+                    shutil.copy2(f.resolve(), cfg_dir / f.name)
+            tr.add_files(src)
+            git = lambda *a: subprocess.run(['git', '-C', str(repo), *a], capture_output=True, text=True).stdout.strip()
+            ver = {'repo_commit': git('rev-parse', 'HEAD'), 'repo_dirty': bool(git('status', '--porcelain', '--untracked-files=no')),
+                   'task_node_sha256': sha256(__file__), 'calib': cal.name, 'calib_sha256': sha256(cal), 'run_id': run_id,
+                   'units': {'target_center_m': 'm (base_link)', 'robot.yaml': '노드끼리 m · rad'}}
+            (cfg_dir / 'versions.json').write_text(json.dumps(ver, ensure_ascii=False, indent=2))
+            tr.manifest['runtime'] = ver
+            required, optional, info, joints = self._w144_topics()
+            missing = [t for t in required if t not in info] + ([] if joints else ['joint_states(발행 중인 것 없음)'])
+            silent = self._w144_wait_messages([t for t in required if t in info], info) if not missing else []
+            tr.manifest.update(required_topics=required, optional_topics=optional, joint_states_topics=joints)
+            if missing or silent:
+                why = f'필수 토픽 없음 {missing}' if missing else f'필수 토픽에 메시지가 안 옴 {silent}'
+                tr.manifest['bag'] = {'status': 'not_started', 'reason': why}
+                tr.save_manifest()
+                tr.event('run_start', status='incomplete', reason=why)
+                self._w144, self._w144_trace = rec, tr      # 끝낼 때 ZIP 으로 불완전 기록도 보존
+                return False, f'W144 기록 준비 실패: {why} — 손목 카메라 · TF · 그리퍼 · 브링업을 확인하세요'
+            ok, why = tr.start_bag(required + optional, info)
+            if ok:
+                left = tr.wait_subscribed(required)
+                if left:
+                    ok, why = False, f'녹화가 필수 토픽을 구독하지 못함 {left}(로그 {tr.bag_log})'
+            tr.event('run_start', status='recording' if ok else 'incomplete', reason=why or None, design_id=design_id,
+                     bag_dir=str(tr.bag_dir), topics=required + optional)
+            self._w144, self._w144_trace = rec, tr
+            if not ok:
+                return False, f'W144 녹화 시작 실패: {why}'
+            self._w144_ctx = trace
+            self.get_logger().info(f'[W144] 기록 폴더: {folder} · bag: {tr.bag_dir}')
+            return True, ''
+        except Exception as e:
+            self.get_logger().error(f'[W144] 기록을 못 열었다: {e!r}')
+            return False, f'W144 기록을 못 열었다: {e!r}'
+
+    def w144_event(self, event, **fields):
+        """events.jsonl 한 줄(기록이 열려 있을 때만). 쓰기 실패는 오류 로그만(로봇 제어를 막지 않음 — 촬영 · 시도 기록 실패는 따로 막는다)."""
+        tr = getattr(self, '_w144_trace', None)
+        if tr is None:
+            return
+        try:
+            tr.event(event, **fields)
+        except Exception as e:
+            self.get_logger().error(f'[W144] events.jsonl 쓰기 실패({event}): {e!r}')
+
+    def w144_begin(self, part_id, sequence, center_m, quat_xyzw, evidence, retry_of=None):
+        """집기 명령 직전 시도 기록(촬영기 begin_attempt). 반환: (action_id 또는 None, 이유). 기록이 꺼져 있으면 (None, '').
+        실패면 (None, 'ERROR') — INTEGRATION.md: begin_attempt 가 실패하면 집기를 시작하지 않는다."""
+        rec = getattr(self, '_w144', None)
+        if rec is None or getattr(self, '_w144_trace', None) is None:
+            return None, ''
+        try:
+            from d2_task.w144_trace import jsonable
+            aid = rec.begin_attempt(part_id, int(sequence), [float(v) for v in center_m], [float(v) for v in quat_xyzw],
+                                    evidence=jsonable(evidence), retry_of=retry_of)
+            self.w144_event('attempt_started', part_id=part_id, action_id=aid, sequence=sequence, retry_of=retry_of)
+            return aid, ''
+        except Exception as e:
+            self.get_logger().error(f'[W144] 시도 기록 실패: {e!r}')
+            return None, 'ERROR'
+
+    def w144_fail(self, action_id, part_id, sequence, reason, evidence):
+        """집기 · 놓기 실패 기록(촬영기 failed_attempt + attempt_failed 이벤트). 실패는 오류 로그만(정지 · 재시도는 작업 관리자 몫)."""
+        rec = getattr(self, '_w144', None)
+        if rec is None or action_id is None:
+            return
+        try:
+            from d2_task.w144_trace import jsonable
+            rec.failed_attempt(action_id, reason or 'UNKNOWN', evidence=jsonable(evidence))
+        except Exception as e:
+            self.get_logger().error(f'[W144] 실패 기록 실패: {e!r}')
+        self.w144_event('attempt_failed', part_id=part_id, action_id=action_id, sequence=sequence, reason=reason)
+
+    def w144_after_place(self, part_id, center_m, quat_xyzw, action_id=None, sequence=None, evidence=None):
+        """최종 자리에 놓고 VERIFY 가 통과한 블록을 observe 에서 한 쌍 촬영한다(one_pick final_placed · 촬영기 after_place — 설계 중심 m · xyzw,
+        action_id 로 시도와 연결). observe_requested · observe_arrived · observation_saved(실제 색 · 깊이 stamp · 파일) 이벤트.
+        기록이 꺼져 있으면 (True, ''). 이동 · 촬영이 실패하면 촬영기가 정지를 요청하고 (False, 'ERROR') — 다음 블록을 집지 않는다."""
+        rec = getattr(self, '_w144', None)
+        if rec is None or getattr(self, '_w144_trace', None) is None:
+            return True, ''
+        ctx = {'part_id': part_id, 'action_id': action_id, 'sequence': sequence}
+        self._w144_ctx['ctx'] = ctx
+        try:
+            from d2_task.w144_trace import jsonable
+            out = Path(rec.after_place(part_id, [float(v) for v in center_m], [float(v) for v in quat_xyzw],
+                                       action_id=action_id, evidence=jsonable(evidence or {})))
+            frame = json.loads((out / 'frame_000.json').read_text()) if (out / 'frame_000.json').exists() else {}
+            self.w144_event('observation_saved', folder=out.name, depth_stamp_s=frame.get('depth_stamp_s'),
+                            color_stamp_s=frame.get('color_stamp_s'), skew_ms=frame.get('skew_ms'), **ctx)
+            self.get_logger().info(f'[W144] 촬영: {out}')
+            return True, ''
+        except Exception as e:
+            self.w144_event('observation_failed', error=repr(e), **ctx)
+            self.get_logger().error(f'[W144] 촬영 실패 — 로봇을 세웠다: {e!r}')
+            return False, 'ERROR'
+        finally:
+            self._w144_ctx['ctx'] = {}
+
+    def w144_finish(self, completed):
+        """조립이 끝나거나 멈춰 기록을 닫는다: run_end 이벤트 → rosbag 정상 종료(SIGINT, metadata 확인 — 아니면 incomplete)
+        → 정상 bag 이면 줄이기 프로세스(w144_reduce, 초당 2장 · 색 PNG — 확인 뒤 원본 지움) → 촬영 ZIP.
+        덜 된 기록도 보존한다(one_pick finally · INTEGRATION.md 5). 두 번 불러도 한 번만 한다. 기록이 없으면 아무것도 안 함."""
+        rec, tr = getattr(self, '_w144', None), getattr(self, '_w144_trace', None)
+        self._w144 = self._w144_trace = None
+        if rec is None:
+            return
+        try:
+            done = bool(completed) and bool(rec.rows) and all(r['captured'] for r in rec.rows)
+            if tr is not None:
+                tr.event('run_end', completed=done, placed=len(rec.rows), captured=sum(r['captured'] for r in rec.rows))
+                bag_ok = tr.stop_bag('' if completed else '조립이 끝나지 않고 멈춤(정지 · 오류 · Ctrl+C)')
+                done = done and bag_ok
+                self.get_logger().info(f'[W144] bag {tr.manifest["bag"].get("status")}: {tr.bag_dir}')
+                if tr.start_reduce():          # 정상 bag 만 — 초당 2장 · 색 PNG 로 줄인 뒤 원본을 지운다(따로 도는 프로세스)
+                    self.get_logger().info(f'[W144] bag 줄이기 시작 → {tr.bag_dir}_2hz (기록 {tr.folder / "bag_reduce.log"})')
+            self.get_logger().info(f'[W144] 촬영 ZIP: {rec.finish(done)} (다 놓고 다 찍음 · 녹화 정상: {done})')
+        except Exception as e:
+            self.get_logger().warn(f'[W144] 기록 마무리 실패: {e!r}')
 
     def publish_scan_result(self, body):
         """완성된 scan_result/2.0(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""
@@ -366,7 +608,7 @@ class TaskNode(Node):
             raise
         handle = sent.result()
         if not handle.accepted:
-            return False, 'ERROR'
+            return False, 'BUSY'                                # 집기 노드가 다른 목표를 하는 중 — 쉬었다 다시(one_pick 과 같음)
         with self._active_lock:
             self._active = handle
         finished = threading.Event()
@@ -435,13 +677,19 @@ def main():
             node.manager.run_once()
             time.sleep(LOOP_S)
     except KeyboardInterrupt:
-        node.manager.shutdown()                    # ① 중단 신호 → ② 진행 중인 목표 취소 요청 → ③ 기록 마무리(finally)
-        node.cancel_active()
-        ok, message = node.request_stop('CTRL_C')  # 이동 서비스는 future 를 버리는 것만으로 서지 않는다
-        if not ok:
-            node.get_logger().error(f'종료 때 정지 요청 실패: {message}')
+        node.manager.shutdown()                    # ① 중단 신호 → ② 정지 요청(먼저 세움) → ③ 진행 중인 목표 취소 → ④ 기록 마무리(finally)
+        for _ in range(3):                         # 정지 요청 중 Ctrl+C 를 또 눌러도 정지 요청 · 취소는 끝까지 보낸다(one_pick)
+            try:
+                ok, message = node.request_stop('CTRL_C')  # 목표 취소보다 먼저 — 취소를 기다리는 동안(최대 1 s) 팔이 계속 가지 않게
+                if not ok:
+                    node.get_logger().error(f'종료 때 정지 요청 실패: {message}')
+                node.cancel_active()
+                break
+            except KeyboardInterrupt:
+                node.get_logger().warn('정지 요청 중 Ctrl+C — 정지 요청부터 다시 보낸다')
     finally:
         node.manager.finalize(LOG_FLUSH_S)
+        node.w144_finish(False)                    # 조립 기록이 꺼져 있어도 W144 녹화는 닫는다(이미 닫혔으면 아무것도 안 함)
         executor.shutdown(timeout_sec=1.0)
         node.destroy_node()
         if rclpy.ok():

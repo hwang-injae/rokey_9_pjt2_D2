@@ -1,0 +1,1584 @@
+[
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 1/11 004_DESK_PEDESTAL_V000_BASE_001_01 관측 — 첫 후보 1칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.4699,
+    "y_m": 0.2135,
+    "top_z_m": 0.0443,
+    "up": "THICKNESS",
+    "yaw_deg": -88.4,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.87,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3885,
+    "y_m": 0.231,
+    "top_z_m": 0.0442,
+    "up": "THICKNESS",
+    "yaw_deg": 26.5,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.86,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4085,
+    "y_m": 0.1963,
+    "top_z_m": 0.0399,
+    "up": "WIDTH",
+    "yaw_deg": 49.0,
+    "overlap": "none",
+    "tilted": true,
+    "confidence": 0.77,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.3544,
+    "y_m": 0.2429,
+    "top_z_m": 0.030699999999999998,
+    "up": "THICKNESS",
+    "yaw_deg": 63.7,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.81,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4095,
+    "y_m": 0.15990000000000001,
+    "top_z_m": 0.0305,
+    "up": "THICKNESS",
+    "yaw_deg": 46.3,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.86,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3887,
+    "y_m": 0.2018,
+    "top_z_m": 0.0305,
+    "up": "THICKNESS",
+    "yaw_deg": 22.2,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.16,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4456,
+    "y_m": 0.1464,
+    "top_z_m": 0.030100000000000002,
+    "up": "THICKNESS",
+    "yaw_deg": 38.2,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.499,
+    "y_m": 0.2983,
+    "top_z_m": 0.0295,
+    "up": "THICKNESS",
+    "yaw_deg": 61.8,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5486,
+    "y_m": 0.2226,
+    "top_z_m": 0.0287,
+    "up": "WIDTH",
+    "yaw_deg": 18.2,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.48569999999999997,
+    "y_m": 0.14959999999999998,
+    "top_z_m": 0.0273,
+    "up": "THICKNESS",
+    "yaw_deg": 47.2,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.454,
+    "y_m": 0.2515,
+    "top_z_m": 0.016,
+    "up": "THICKNESS",
+    "yaw_deg": 55.9,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.57,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5277999999999999,
+    "y_m": 0.1721,
+    "top_z_m": 0.0154,
+    "up": "THICKNESS",
+    "yaw_deg": -81.1,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.69,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3937,
+    "y_m": 0.2773,
+    "top_z_m": 0.015099999999999999,
+    "up": "THICKNESS",
+    "yaw_deg": 57.5,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.331,
+    "y_m": 0.2068,
+    "top_z_m": 0.0146,
+    "up": "THICKNESS",
+    "yaw_deg": -61.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.85,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5498999999999999,
+    "y_m": 0.1869,
+    "top_z_m": 0.0146,
+    "up": "THICKNESS",
+    "yaw_deg": -68.8,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.21,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.452,
+    "y_m": 0.2968,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 61.8,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5153,
+    "y_m": 0.2695,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 72.9,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.68,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.34,
+    "y_m": 0.29919999999999997,
+    "top_z_m": 0.0141,
+    "up": "THICKNESS",
+    "yaw_deg": -24.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    0,
+    "FLAT_SHORT",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "FLAT_SHORT",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "FLAT_LONG",
+    0,
+    0.0024
+   ]
+  ],
+  "expected_count": 102
+ },
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 4/11 004_DESK_PEDESTAL_V000_COLUMN_001_01 관측 — 첫 후보 2칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.4092,
+    "y_m": 0.1974,
+    "top_z_m": 0.0395,
+    "up": "WIDTH",
+    "yaw_deg": 50.3,
+    "overlap": "none",
+    "tilted": true,
+    "confidence": 0.76,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.4067,
+    "y_m": 0.16140000000000002,
+    "top_z_m": 0.0303,
+    "up": "THICKNESS",
+    "yaw_deg": 42.3,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.86,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3922,
+    "y_m": 0.2266,
+    "top_z_m": 0.030100000000000002,
+    "up": "THICKNESS",
+    "yaw_deg": 76.2,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.85,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4457,
+    "y_m": 0.1463,
+    "top_z_m": 0.0298,
+    "up": "THICKNESS",
+    "yaw_deg": 39.3,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.49889999999999995,
+    "y_m": 0.298,
+    "top_z_m": 0.0292,
+    "up": "THICKNESS",
+    "yaw_deg": 61.8,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5487000000000001,
+    "y_m": 0.22240000000000001,
+    "top_z_m": 0.0289,
+    "up": "WIDTH",
+    "yaw_deg": 18.3,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.3554,
+    "y_m": 0.2422,
+    "top_z_m": 0.028399999999999998,
+    "up": "THICKNESS",
+    "yaw_deg": 66.2,
+    "overlap": "top",
+    "tilted": true,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    },
+    "center_top_z_m": 0.0223,
+    "tilt_tip_z_m": 0.015023913684026736
+   },
+   {
+    "x_m": 0.48569999999999997,
+    "y_m": 0.14930000000000002,
+    "top_z_m": 0.0273,
+    "up": "THICKNESS",
+    "yaw_deg": 45.8,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3723,
+    "y_m": 0.183,
+    "top_z_m": 0.0214,
+    "up": "THICKNESS",
+    "yaw_deg": -7.0,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.13,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4175,
+    "y_m": 0.1444,
+    "top_z_m": 0.0208,
+    "up": "WIDTH",
+    "yaw_deg": 43.4,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.5277000000000001,
+    "y_m": 0.1733,
+    "top_z_m": 0.015300000000000001,
+    "up": "THICKNESS",
+    "yaw_deg": -78.9,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.71,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5502999999999999,
+    "y_m": 0.1871,
+    "top_z_m": 0.015099999999999999,
+    "up": "THICKNESS",
+    "yaw_deg": -76.3,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.21,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.39289999999999997,
+    "y_m": 0.276,
+    "top_z_m": 0.015,
+    "up": "THICKNESS",
+    "yaw_deg": 57.8,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4551,
+    "y_m": 0.2525,
+    "top_z_m": 0.0148,
+    "up": "THICKNESS",
+    "yaw_deg": 51.8,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.75,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.33089999999999997,
+    "y_m": 0.207,
+    "top_z_m": 0.0145,
+    "up": "THICKNESS",
+    "yaw_deg": -61.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.34,
+    "y_m": 0.299,
+    "top_z_m": 0.0144,
+    "up": "THICKNESS",
+    "yaw_deg": -23.7,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4517,
+    "y_m": 0.2965,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 62.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5119,
+    "y_m": 0.26,
+    "top_z_m": 0.0141,
+    "up": "THICKNESS",
+    "yaw_deg": 72.0,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4546,
+    "y_m": 0.1938,
+    "top_z_m": 0.0136,
+    "up": "THICKNESS",
+    "yaw_deg": 36.6,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.25,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    2,
+    "FLAT_SHORT",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    2,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "FLAT_LONG",
+    0,
+    0.0024
+   ],
+   [
+    1,
+    "FLAT_LONG",
+    0,
+    -0.0024
+   ]
+  ],
+  "expected_count": 52
+ },
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 5/11 004_DESK_PEDESTAL_V000_COLUMN_001_02 관측 — 첫 후보 2칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.4085,
+    "y_m": 0.1971,
+    "top_z_m": 0.039700000000000006,
+    "up": "WIDTH",
+    "yaw_deg": 47.8,
+    "overlap": "none",
+    "tilted": true,
+    "confidence": 0.83,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.44580000000000003,
+    "y_m": 0.1462,
+    "top_z_m": 0.0298,
+    "up": "THICKNESS",
+    "yaw_deg": 40.2,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.39230000000000004,
+    "y_m": 0.22669999999999998,
+    "top_z_m": 0.0298,
+    "up": "THICKNESS",
+    "yaw_deg": 76.6,
+    "overlap": "top",
+    "tilted": false,
+    "confidence": 0.86,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4988,
+    "y_m": 0.29810000000000003,
+    "top_z_m": 0.0291,
+    "up": "THICKNESS",
+    "yaw_deg": 61.1,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5488999999999999,
+    "y_m": 0.22240000000000001,
+    "top_z_m": 0.0286,
+    "up": "WIDTH",
+    "yaw_deg": 18.1,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.3548,
+    "y_m": 0.2425,
+    "top_z_m": 0.0281,
+    "up": "THICKNESS",
+    "yaw_deg": 64.6,
+    "overlap": "top",
+    "tilted": true,
+    "confidence": 0.85,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    },
+    "center_top_z_m": 0.0219,
+    "tilt_tip_z_m": 0.014610190986454673
+   },
+   {
+    "x_m": 0.48619999999999997,
+    "y_m": 0.1499,
+    "top_z_m": 0.0272,
+    "up": "THICKNESS",
+    "yaw_deg": 45.2,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.37160000000000004,
+    "y_m": 0.183,
+    "top_z_m": 0.020300000000000002,
+    "up": "THICKNESS",
+    "yaw_deg": -6.9,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.14,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4113,
+    "y_m": 0.143,
+    "top_z_m": 0.0166,
+    "up": "THICKNESS",
+    "yaw_deg": 46.0,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.528,
+    "y_m": 0.1723,
+    "top_z_m": 0.015300000000000001,
+    "up": "THICKNESS",
+    "yaw_deg": -78.9,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.72,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.39330000000000004,
+    "y_m": 0.2764,
+    "top_z_m": 0.015099999999999999,
+    "up": "THICKNESS",
+    "yaw_deg": 58.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5501,
+    "y_m": 0.1871,
+    "top_z_m": 0.0149,
+    "up": "THICKNESS",
+    "yaw_deg": -69.3,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4517,
+    "y_m": 0.2965,
+    "top_z_m": 0.0145,
+    "up": "THICKNESS",
+    "yaw_deg": 62.1,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4355,
+    "y_m": 0.18159999999999998,
+    "top_z_m": 0.0145,
+    "up": "THICKNESS",
+    "yaw_deg": 33.8,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3311,
+    "y_m": 0.2067,
+    "top_z_m": 0.0145,
+    "up": "THICKNESS",
+    "yaw_deg": -61.1,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.45489999999999997,
+    "y_m": 0.252,
+    "top_z_m": 0.0144,
+    "up": "THICKNESS",
+    "yaw_deg": 50.4,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.72,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3401,
+    "y_m": 0.29919999999999997,
+    "top_z_m": 0.014199999999999999,
+    "up": "THICKNESS",
+    "yaw_deg": -23.4,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5121,
+    "y_m": 0.26,
+    "top_z_m": 0.014,
+    "up": "THICKNESS",
+    "yaw_deg": 72.2,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.83,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    2,
+    "FLAT_SHORT",
+    0,
+    0.0
+   ],
+   [
+    2,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    2,
+    "FLAT_LONG",
+    0,
+    0.0024
+   ],
+   [
+    2,
+    "FLAT_LONG",
+    0,
+    -0.0024
+   ],
+   [
+    15,
+    "FLAT_LONG",
+    0,
+    0.0
+   ]
+  ],
+  "expected_count": 56
+ },
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 6/11 004_DESK_PEDESTAL_V000_COLUMN_001_03 관측 — 첫 후보 2칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.4104,
+    "y_m": 0.19440000000000002,
+    "top_z_m": 0.0396,
+    "up": "WIDTH",
+    "yaw_deg": 49.8,
+    "overlap": "none",
+    "tilted": true,
+    "confidence": 0.89,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.4461,
+    "y_m": 0.1458,
+    "top_z_m": 0.03,
+    "up": "THICKNESS",
+    "yaw_deg": 40.9,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.49860000000000004,
+    "y_m": 0.29819999999999997,
+    "top_z_m": 0.0291,
+    "up": "THICKNESS",
+    "yaw_deg": 61.3,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5488999999999999,
+    "y_m": 0.22290000000000001,
+    "top_z_m": 0.0288,
+    "up": "WIDTH",
+    "yaw_deg": 17.9,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.3552,
+    "y_m": 0.24230000000000002,
+    "top_z_m": 0.0281,
+    "up": "THICKNESS",
+    "yaw_deg": 65.5,
+    "overlap": "top",
+    "tilted": true,
+    "confidence": 0.85,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4855,
+    "y_m": 0.1492,
+    "top_z_m": 0.027100000000000003,
+    "up": "THICKNESS",
+    "yaw_deg": 44.8,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.4145,
+    "y_m": 0.1435,
+    "top_z_m": 0.0169,
+    "up": "THICKNESS",
+    "yaw_deg": 40.9,
+    "overlap": "under",
+    "tilted": true,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5278999999999999,
+    "y_m": 0.1732,
+    "top_z_m": 0.0152,
+    "up": "THICKNESS",
+    "yaw_deg": -78.7,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.72,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.38680000000000003,
+    "y_m": 0.2067,
+    "top_z_m": 0.0149,
+    "up": "THICKNESS",
+    "yaw_deg": 52.3,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.83,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5501,
+    "y_m": 0.1871,
+    "top_z_m": 0.0147,
+    "up": "THICKNESS",
+    "yaw_deg": -69.1,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.21,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3312,
+    "y_m": 0.2069,
+    "top_z_m": 0.0145,
+    "up": "THICKNESS",
+    "yaw_deg": -60.8,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.82,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.45180000000000003,
+    "y_m": 0.2965,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 62.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.436,
+    "y_m": 0.1809,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 39.8,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.45430000000000004,
+    "y_m": 0.2515,
+    "top_z_m": 0.0143,
+    "up": "THICKNESS",
+    "yaw_deg": 55.2,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.74,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3403,
+    "y_m": 0.29869999999999997,
+    "top_z_m": 0.0141,
+    "up": "THICKNESS",
+    "yaw_deg": -24.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.3949,
+    "y_m": 0.2732,
+    "top_z_m": 0.0141,
+    "up": "THICKNESS",
+    "yaw_deg": 68.0,
+    "overlap": "under",
+    "tilted": false,
+    "confidence": 0.2,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   },
+   {
+    "x_m": 0.5119,
+    "y_m": 0.25989999999999996,
+    "top_z_m": 0.014,
+    "up": "THICKNESS",
+    "yaw_deg": 71.9,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.82,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "WIDTH": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "WIDTH": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    13,
+    "FLAT_LONG",
+    0,
+    0.0
+   ],
+   [
+    13,
+    "FLAT_LONG",
+    0,
+    0.0024
+   ],
+   [
+    13,
+    "FLAT_LONG",
+    0,
+    -0.0024
+   ],
+   [
+    8,
+    "FLAT_SHORT",
+    0,
+    0.0
+   ],
+   [
+    12,
+    "FLAT_LONG",
+    0,
+    0.0
+   ]
+  ],
+  "expected_count": 40
+ },
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 9/11 004_DESK_PEDESTAL_V000_TOP_001_01 관측 — 첫 후보 5칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.3851,
+    "y_m": 0.2666,
+    "top_z_m": 0.0757,
+    "up": "LENGTH",
+    "yaw_deg": 35.4,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.84,
+    "gap_mm": {
+     "WIDTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "WIDTH": true,
+     "THICKNESS": true
+    }
+   },
+   {
+    "x_m": 0.45189999999999997,
+    "y_m": 0.19519999999999998,
+    "top_z_m": 0.0235,
+    "up": "WIDTH",
+    "yaw_deg": -5.6,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.82,
+    "gap_mm": {
+     "LENGTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "LENGTH": true,
+     "THICKNESS": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    1,
+    "EDGE_SHORT",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "EDGE_LONG",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "STAND_SHORT",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "STAND_LONG",
+    0,
+    0.0
+   ],
+   [
+    1,
+    "EDGE_SHORT",
+    5,
+    0.0
+   ]
+  ],
+  "expected_count": 30
+ },
+ {
+  "설명": "10/13 11:59 실기 레시피 4번 블록 10/11 004_DESK_PEDESTAL_V000_TOP_001_02 관측 — 첫 후보 5칸 (깊이 점 없이)",
+  "blocks": [
+   {
+    "x_m": 0.3851,
+    "y_m": 0.2665,
+    "top_z_m": 0.07579999999999999,
+    "up": "LENGTH",
+    "yaw_deg": 34.3,
+    "overlap": "none",
+    "tilted": false,
+    "confidence": 0.86,
+    "gap_mm": {
+     "WIDTH": 50.0,
+     "THICKNESS": 50.0
+    },
+    "clear": {
+     "WIDTH": true,
+     "THICKNESS": true
+    }
+   }
+  ],
+  "expected_first5": [
+   [
+    0,
+    "STAND_SHORT",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "STAND_LONG",
+    0,
+    0.0
+   ],
+   [
+    0,
+    "STAND_SHORT",
+    5,
+    0.0
+   ],
+   [
+    0,
+    "STAND_SHORT",
+    -5,
+    0.0
+   ],
+   [
+    0,
+    "STAND_LONG",
+    5,
+    0.0
+   ]
+  ],
+  "expected_count": 12
+ }
+]
