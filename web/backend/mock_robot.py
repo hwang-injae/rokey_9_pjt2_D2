@@ -31,8 +31,8 @@ import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-for _pkg in ('d2_bridge', 'd2_task', 'd2_vision'):   # 같은 저장소의 ROS 없는 파일(app.py 와 같은 방식, d2_vision 은 가짜 스캔 그림만)
-    sys.path.insert(0, str(REPO / 'src' / _pkg))
+for _pkg in ('d2_bridge', 'd2_task', 'd2_vision', 'd2_robot/d2_motion'):   # 같은 저장소의 ROS 없는 파일(app.py 와 같은 방식, d2_vision 은
+    sys.path.insert(0, str(REPO / 'src' / _pkg))                         # 가짜 스캔 그림만, d2_motion 은 진행표 좌표 — 작업 판단과 같은 계산)
 
 import yaml  # noqa: E402
 from d2_bridge.bridge_codec import (SCAN_CLOUD_TOPIC, SCAN_IMAGE_TOPIC, SCAN_PREVIEW_CLOUD_TOPIC, SCAN_PREVIEW_TOPIC,  # noqa: E402
@@ -42,6 +42,8 @@ from d2_task.parts_to_recipe import PartsToRecipe  # noqa: E402
 from d2_task.design_checker import DesignChecker  # noqa: E402
 from d2_task.recipe_document import RecipeDocument  # noqa: E402
 from d2_task.recipe_to_parts import RecipeToParts  # noqa: E402
+from d2_task.task_planner import TaskPlanner  # noqa: E402
+from d2_motion.motion_math import half_height  # noqa: E402
 from mqtt_client import make_mqtt_client  # noqa: E402
 
 RECIPES = Path(os.environ.get('RECIPE_DIR') or REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes')   # app.py 와 같은 환경 변수
@@ -94,12 +96,13 @@ def fake_scan_media(blocks, origin, size_mm):
 class MockRobot:
     """로봇 PC 흉내. 상태 하나(state/1)와 잠금 하나(safety_state/1)를 들고, 명령에 따라 바꾸고 MQTT 로 방송한다.
 
-    입력: 화면 요청(…/req). 출력: 응답(…/res) · retained 상태 토픽. 실패: 모르는 설계 select 는 success false · ERROR.
+    입력: 화면 요청(…/req). 출력: 응답(…/res) · retained 상태 토픽. 실패: 모르는 설계 select · 모르는 명령은 success false · 빈 reason(진짜와 같게).
     """
 
     def __init__(self, host, port, step_s):
         """벤치 레시피를 읽어 두고(검사 응답 · 스캔 결과) MQTT 를 준비한다. step_s = 가짜 조립 · 스캔 한 단계 시간(초)."""
         cfg = yaml.safe_load(ROBOT_YAML.read_text(encoding='utf-8'))
+        self.cfg = cfg
         self.block_mm = [v * 1000 for v in cfg['block_size_m']]
         self.origin = cfg['assembly_origin']   # 가짜 점군을 base_link 로 옮길 때(진짜 점군과 같은 좌표)
         self.checker = DesignChecker(cfg)      # 로봇 PC task_node 와 같은 연결(검사 묶음 + 변환기 ① — 손가락 규칙은 검사 묶음 것)
@@ -181,14 +184,16 @@ class MockRobot:
         recovering = 다시 시작 뒤: RECOVER(쥔 블록 확인) → CHECK(진행 확인) 를 거친 뒤 남은 블록부터(진짜 작업 관리자 순서).
         """
         doc, _ = self.design(design_id)
-        steps = sorted(doc.placements['steps'], key=lambda s: s['sequence'])
-        ids = [s['part_id'] for s in steps]
+        # 진행표는 진짜 작업 판단(TaskPlanner)으로 만든다 — progress/2.0 칸 · 관측 전 unknown · center_m · quat 가 진짜와 같게(10/14 PL A5)
+        planner = TaskPlanner(self.cfg, doc.recipe, doc.placements)
+        ids = [b['part_id'] for b in planner.parts]
         if recovering:
             for state, text in (('RECOVER', '다시 시작 — 쥔 블록을 확인합니다'),
                                 ('CHECK', f'진행 확인부터 다시 합니다 — 놓인 블록 {len(placed)}개는 건너뜀')):
                 self.set_state(state, text, part_id=None)
                 if self.abort.wait(self.step_s):
                     return
+        self._observe(planner, run_id, placed)          # 진짜처럼 진행 확인(CHECK) 때 한 번 — 놓인 것 present, 나머지 absent
         for n, bid in enumerate(ids, 1):
             if bid in placed:
                 continue
@@ -201,11 +206,18 @@ class MockRobot:
                 if self.abort.wait(self.step_s):
                     return
             placed.append(bid)
-            self.pub('d2/task/progress', {'schema': 'progress/2.0', 'design_id': design_id, 'run_id': run_id,
-                                          'obs_stamp': round(time.time(), 3),
-                                          'parts': [{'part_id': b, 'state': 'present' if b in placed else 'absent',
-                                                      'by': 'robot'} for b in ids]})
+            self._observe(planner, run_id, placed)      # 놓은 뒤 확인(VERIFY) 때마다
         self.set_state('DONE', '완성했어요', 'done', part_id=None)
+
+    def _observe(self, planner, run_id, placed):
+        """가짜 관측 결과를 진행표에 넣고 progress/2.0 을 보낸다 — 놓인 블록은 present(설계 높이 그대로, dz 0), 나머지는 absent.
+
+        진짜 작업 관리자 _observe 와 같은 TaskPlanner.progress_message 를 쓴다(dx · dy 는 진짜도 안 재서 None). 바깥 영향: retained 방송.
+        """
+        size = self.cfg['block_actual_m']
+        planner.update_progress({b['part_id']: ({'state': 'present', 'dz_m': 0.0, 'top_z_m': b['center'][2] + half_height(b['rot'], size)}
+                                                if b['part_id'] in placed else {'state': 'absent'}) for b in planner.parts})
+        self.pub('d2/task/progress', planner.progress_message(run_id, time.time()))
 
     def _scan(self, run_id):
         """SCAN_MOVE · CAPTURE 를 자세 3곳 → SCAN_INFER → scan_result/2.0(벤치 blocks/2, 추정 2개) + 사진 · 점군 → SCAN_REVIEW.
@@ -270,9 +282,12 @@ class MockRobot:
     def command(self, b):
         """hmi/command 처리 → (success, reason). 실제 작업 관리자 규칙을 간단히 흉내(잠금 · 상태 · 설계)."""
         cmd, design_id, state = b.get('cmd'), b.get('design_id') or '', self.st['state']
+        if self.opening:
+            # 그리퍼가 열리는 동안은 어떤 명령이든 BUSY — 진짜 작업 관리자(#157 W183)가 정본(10/14 PL A2 ①, 옛 흉내는 STOPPED · cancel 받음)
+            return False, 'BUSY'
         if cmd == 'gripper_open':
             # [그리퍼 열기](W183 · 10/13 PL): 작업 관리자가 STOPPED(잠김)일 때만 /d2/gripper/command(0.0865 m · 10 N) — 그 밖엔 거절
-            if state != 'STOPPED' or self.opening:
+            if state != 'STOPPED':
                 return False, 'BUSY'
             self.opening = True
             self.set_state(state, '그리퍼를 여는 중이에요', 'gripper_opening')
@@ -290,7 +305,7 @@ class MockRobot:
             try:
                 self.design(design_id)
             except (OSError, ValueError):
-                return False, 'ERROR'
+                return False, ''            # 맞는 코드 없는 거절 = 빈 값(+ 진짜는 state/2 글) — IRD 7장 ERROR 는 '세우고 사람 호출'(10/14 PL A3)
             self.set_state('READY', f'{design_id} 선택 — 출발을 누르세요', 'ready_to_start', design_id=design_id)
             return True, ''
         if cmd == 'start':
@@ -314,7 +329,7 @@ class MockRobot:
                 return False, 'BUSY'
             self.set_state('IDLE', '취소했어요', design_id=None, run_id=None)
             return True, ''
-        return False, 'ERROR'
+        return False, ''                    # 모르는 명령 — 진짜 작업 관리자와 같게 빈 값(10/14 PL A3)
 
     def answer(self, name, b):
         """서비스 하나에 답할 칸을 만든다(IRD 10.1 응답 칸)."""
