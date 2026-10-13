@@ -2,6 +2,9 @@
 
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
+## 2026-10-14
+- 공통(PM — 10/13 밤 ~ 10/14 새벽 PL, E-111 · 통합 브랜치 `황인재/20261014-integrate-data-names`): **팀원끼리 다르던 데이터 · 인터페이스 하나로** — 웹 스캔 [저장]만 `made_by: scan` · 가짜 로봇 = 실제(BUSY · 빈 거절 · 진행표 9칸) · 화면 `VISION_LOST` · 비전 `tilted` 5 mm 또는 5° · `gap_mm` 99 · W144 `part_id` · 같은 표 · 규칙 정본 하나 + `tests/test_shared_tables.py` · **레시피 `model_id` → `design_id` · 설계도 `order` → `sequence` · 형식 recipe · placements · parts · design 4.0**(옛 3.0 설계 안 읽음) · `PickPlace.action` 잡기 12개 · IRD 닫는 폭 · 설명 문서 `docs/설명_데이터인터페이스_통일_v1_101408.md`. 로봇 PC 전부 다시 빌드 · 웹 backend 다시 켜기.
+
 ## 2026-10-13
 - 공통(PM — 10/14 0시대 PL, E-110): **세우기 요청 = #156 박진용 방식(잡기 이름 `STANDUP_HIGH` · `STANDUP_SIDE`) — E-87 ① · E-77(세우기) 바뀜** · 받침 키 `spare_spots` · `spare_base_m` 그대로 · 받침 상자 윗면 낮춤은 한세교 · 박진용에게 물음.
 - 공통(PM — 10/13 23시대 PL, E-109): **기능 동결 = 10/14 18시** · **문서 파일 이름 멈춤(10/16 시연까지 — 내용만 고침, `docver touch` · `major` 쓰지 않음)** — CLAUDE · AGENTS · GEMINI · 06 규칙 9 · 결정 기록 §61.
