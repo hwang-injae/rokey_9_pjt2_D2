@@ -584,10 +584,18 @@ class PickPlaceNode(Node):
 
     def _standup_line(self, xyz, quat, halted):
         """세우기 교시 MoveL 하나 — TCP 를 지금 자세에서 xyz · quat 까지 Pilz LIN 으로 계획하고, 촘촘히 나눠(dense) 지금 장면
-        (붙인 쥔 상자 포함)과 충돌을 본 뒤 실행한다. 반환: (성공, 실패 이유) — 계획 · 충돌이면 움직이지 않고 PLAN_FAILED."""
-        jt, err = self.exe.plan_line(xyz, quat, self.cfg['speed_scale'] * LINE_SCALE)
+        (붙인 쥔 상자 포함)과 충돌을 본 뒤 실행한다. 반환: (성공, 실패 이유) — 계획 · 충돌이면 움직이지 않고 PLAN_FAILED.
+        속도 scale 로 안 풀리면 그 직선만 절반 · 1/4 속도로 다시 계획한다 — 옆세움 진입 → 파지(45° 기울이며 내려감)는 0.3 에서
+        6번 관절 속도가 한계를 넘었다(10/13 실기: −1.05 > 1 rad/s, Pilz LIN FAILURE · 기울여 집기 _tilt_line 과 같은 방식)."""
+        scale = self.cfg['speed_scale'] * LINE_SCALE
+        for k in (1.0, 0.5, 0.25):
+            jt, err = self.exe.plan_line(xyz, quat, scale * k)
+            if jt is not None:
+                if k < 1.0:
+                    self.get_logger().info(f'세우기 직선: 속도 {scale:.2f} 로 안 돼 {scale * k:.3f} 로 만듦')
+                break
         if jt is None:
-            self.get_logger().error(f'세우기 직선을 못 만든다 (Pilz LIN): {err}')
+            self.get_logger().error(f'세우기 직선을 못 만든다 (Pilz LIN, 1/4 속도까지): {err}')
             return False, 'PLAN_FAILED'
         for k, q in enumerate(self.dense(self.exe.positions(jt))):
             ok, hits = self.exe.valid(q)
