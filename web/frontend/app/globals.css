@@ -84,6 +84,7 @@ p { margin: 0; }
 .small { font-size: 13px; }
 .bad-text { color: var(--bad); }
 .ok-text { color: var(--ok); }
+.warn-text { color: var(--text); font-weight: 600; } /* [조립] 옆 '사람 없음 확인' — 글자색 대비를 지키려고 굵기로 강조 */
 .hint { font-size: 13px; color: var(--muted); }
 
 /* ---------- 위 띠: 제목 · 연결 점 | 진행도(가운데) | 다크 모드 ---------- */
@@ -251,20 +252,16 @@ button.mitem.selected .tag.ok { color: #fff; border-color: #fff; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; }
 .gen-input textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; border-color: transparent; }
 .gen-input button { min-width: 110px; }
-.gen-confirm { display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--pick-soft); border-radius: 12px; }
-.gen-confirm-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
-.tpl-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.tpl { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 2px solid transparent; border-radius: 12px;
-  background: var(--panel); cursor: pointer; min-width: 0; box-shadow: var(--shadow); }
-.tpl:hover { border-color: var(--mill-sel); }
-.tpl:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
-.tpl.selected { border-color: var(--primary); }
-.tpl.disabled { opacity: 0.5; cursor: not-allowed; }
-.tpl-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.tpl .view3d { height: 120px; border: 0; }
-.tpl .view3d-empty { position: static; height: 120px; }
-.tpl small { font-size: 12px; overflow-wrap: anywhere; }
+.gen-input button.mic { min-width: 96px; }
 .cands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+/* 스캔 비교(W112 · W116) — 사진 · 점군 · 추론 설계를 나란히, 좁으면 한 줄씩 */
+.scan-recommend { display: flex; flex-direction: column; gap: 8px; } /* 스캔 추천 설계(플랜 B) — 이름 · 일치율 · 버튼 · 문구 */
+.scan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 8px 0 12px; }
+.scan-grid figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.scan-grid figcaption { font-size: 14px; font-weight: 600; }
+.scan-grid .view3d { height: 320px; }
+.scan-photo { width: 100%; height: 320px; object-fit: contain; border-radius: 12px; background: var(--canvas-bg); border: 1px solid var(--line); }
+.scan-empty { position: static; height: 320px; border: 1px dashed var(--line); border-radius: 12px; background: var(--canvas-bg); }
 .cand { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 2px solid transparent; border-radius: 12px; background: var(--panel-2); min-width: 0; }
 .cand.failed { opacity: 0.45; }
 .cand.picked { border-color: var(--ok); }
@@ -307,7 +304,6 @@ button.mitem.selected .tag.ok { color: #fff; border-color: #fff; }
 }
 @media (max-width: 900px) {
   .cands { grid-template-columns: 1fr; }
-  .tpl-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   .topbar { grid-template-columns: 1fr auto; padding: 10px 16px; }

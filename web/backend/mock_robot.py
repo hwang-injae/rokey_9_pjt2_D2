@@ -18,6 +18,7 @@
 import argparse
 import io
 import json
+import os
 import random
 import sys
 import tempfile
@@ -39,7 +40,7 @@ from d2_task.recipe_document import RecipeDocument  # noqa: E402
 from d2_task.recipe_to_parts import RecipeToParts  # noqa: E402
 from mqtt_client import make_mqtt_client  # noqa: E402
 
-RECIPES = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes'
+RECIPES = Path(os.environ.get('RECIPE_DIR') or REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'recipes')   # app.py 와 같은 환경 변수
 ROBOT_YAML = REPO / 'src' / 'd2_robot' / 'd2_bringup' / 'config' / 'robot.yaml'
 BENCH = '001_CHAIR_BENCH_V000'           # 가짜 스캔 결과 · nearest_base 에 쓰는 설계(IRD 11장 '벤치 레시피')
 SERVICES = ('/d2/hmi/command', '/d2/safety/stop', '/d2/safety/resume', '/d2/task/check_design')

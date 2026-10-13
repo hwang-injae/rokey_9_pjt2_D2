@@ -54,6 +54,17 @@ export interface ScanResult {
   poses_used?: string[];
 }
 
+/** 스캔 '추천 설계' 한 줄(GET /api/designs/scan/recommend — 10/13 플랜 B 1단계). rate = matched ÷ max(scan_count, part_count) */
+export interface ScanMatch {
+  design_id: string;
+  family: string;
+  made_by: string;
+  matched: number;
+  scan_count: number;
+  part_count: number;
+  rate: number;
+}
+
 /** intent/1 — 음성 의도 */
 export interface Intent {
   schema: string;
@@ -74,8 +85,30 @@ export type WsEvent =
   | { type: 'bridge_alive'; data: { alive: boolean } }
   | { type: 'broker'; data: { connected: boolean } }
   | { type: 'wrist_image'; data: { seq: number; stamp: number } }
+  | { type: 'scan_image' | 'scan_cloud'; data: BlobInfo }
   | { type: 'timing'; data: { req_timeout_s: number } }
-  | { type: 'gen'; data: GenEvent };
+  | { type: 'gen'; data: GenEvent }
+  | { type: 'scan_save'; data: ScanSaveJob & { stage: string } };
+
+/** 스캔 사진 · 점군 알림 — 내용은 /api/robot/scan.jpg · scan_cloud.ply(seq 로 새로 받음). run_id = 어느 스캔 것인지(IRD 10.5) */
+export interface BlobInfo {
+  seq: number;
+  stamp: number;
+  bytes: number;
+  run_id?: string;
+}
+
+/** 스캔 [그대로 저장] 작업(IRD 8.4 ⑦ — GET /api/designs/scan/save/{job_id}). 실패면 actions = 남길 버튼(scope = 취소만) */
+export interface ScanSaveJob {
+  job_id: string;
+  state: 'running' | 'saved' | 'failed';
+  run_id?: string;
+  attempt?: number;
+  code?: string;
+  message?: string;
+  actions?: ('cancel' | 'rescan')[];
+  saved?: { design_id: string; version: string; parent_id: string | null };
+}
 
 /** 버튼 응답 — 다리가 넘긴 ROS 응답 칸 그대로(명령은 success · reason, 정지 · 다시 시작은 success · message) */
 export interface CmdResult {
@@ -147,16 +180,20 @@ export interface GenJob {
   job_id: string;
   state: 'running' | 'ready' | 'failed' | 'saved';
   text: string;
-  template: string;
+  base_id?: string; // 사람이 설계 목록에서 고른 설계 = 부모(10/13 PL)
+  template: string; // base_id 앞부분
   candidates: GenCandidate[];
-  reading?: string[]; // AI 가 도구로 읽은 참고 설계(E-72)
-  attempt?: number; // 몇 번째 만들기(다 떨어지면 다시 — 최대 3)
+  reading?: string[]; // AI 가 도구로 참고만 읽은 같은 Template 의 다른 설계(E-72)
+  attempt?: number; // 몇 번째 만들기(처음 + 모자란 만큼 더 2번 — 최대 3)
+  count?: number; // 이번에 검사하는 후보 수(그림은 끝난 뒤 통과한 것만 — 10/11 PL)
+  passed?: number; // 지금까지 통과한 후보 수
+  need?: number; // 모자라서 더 만드는 수
   design_id?: string;
   parent_id?: string;
   reference?: string[];
   attempts?: number;
   elapsed_s?: number;
-  code?: string; // 실패 코드(OUT_OF_SCOPE · GEN_FAILED · ERROR · TIMEOUT)
+  code?: string; // 실패 코드(OUT_OF_SCOPE · GEN_FAILED · TEMPLATE_SHAPE · TEMPLATE_RANGE · REQUEST_INVALID · ERROR · TIMEOUT)
   message?: string;
   saved?: { design_id: string; version: string; parent_id: string | null; index: number };
 }
@@ -167,16 +204,6 @@ export interface GenEvent {
   stage: 'reading' | 'candidates' | 'checked' | 'retry' | 'done' | 'failed' | 'saved';
   state?: GenJob['state'];
   design_id?: string;
-  message?: string;
-}
-
-/** POST /api/designs/template — AI 가 고른 모양(Template) + 이유 + 고를 수 있는 목록(E-84 ③, W163) */
-export interface TemplateChoice {
-  success: boolean;
-  template?: string | null; // null = 의자 · 책상 밖이거나 맞는 모양 없음
-  reason?: string;
-  templates?: { id: string; label: string }[];
-  code?: string;
   message?: string;
 }
 
