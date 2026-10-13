@@ -13,7 +13,7 @@ import math
 import re
 from pathlib import Path
 
-RECIPE_SCHEMA = 'recipe/3.0'          # 10/11 E-84: parts → stocks(칸 이름이 바뀌어 앞자리 +1)
+RECIPE_SCHEMA = 'recipe/3.0'          # 10/13 PLM: stocks 자재 참조와 template 트리 사용, 최상위 parts 없애고 template.composition[역할].parts[그룹] 로(같은 3.0 안에서 바뀐 구조 — PL 결정)
 PLACEMENTS_SCHEMA = 'placements/3.0'
 GRASPS = ('FLAT_LONG', 'FLAT_SHORT', 'EDGE_LONG', 'EDGE_SHORT', 'STAND_LONG', 'STAND_SHORT')
 
@@ -72,8 +72,9 @@ class RecipeDocument:
     def placements_from_csv(text, model_id):
         """placements.csv 글자 → placements/3.0 객체(전달 JSON 모양). 칸 이름(머리줄)으로 읽어 열 순서에 의존하지 않는다.
 
-        쓰는 칸: block · part_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256 · schema(두 칸 다 모든 줄 같은 값 —
-        schema 는 placements/3.0 이어야 하고 아니면 받은 값을 적어 거절한다, 한세교 E-69 PR). 표시 칸(크기 · 중심 · 축 · cad_handle)은 읽지 않는다.
+        쓰는 칸: part_name · part_id · sequence · stage · grasp · grasp_axis · supports(';' 로 구분, 비면 없음) · recipe_sha256 · schema(두 칸 다 모든 줄 같은 값 —
+        schema 는 placements/3.0 이어야 하고 아니면 받은 값을 적어 거절한다, 한세교 E-69 PR). 표시 칸(크기 · 중심 · 축)은 읽지 않는다.
+        stock_id · cad_handle 칸은 placements/3.0 에서 빠졌다(있어도 읽지 않는다).
         칸이 빠졌거나 숫자가 아니면 ValueError.
         """
         rows = list(csv.DictReader(io.StringIO(text)))
@@ -125,6 +126,75 @@ class RecipeDocument:
         if not valid:
             raise ValueError(f'{label} 는 유한한 숫자 {size}개여야 한다')
 
+    def _read_composition(self, s):
+        """구조(recipe/3.0)의 template.composition[역할].parts[그룹] 부품 항목을 읽어 (stocks, instances) 를 만든다.
+
+        입력: s = recipe/3.0 dict. 역할 키 `LEG`, 그룹 키 `LEG_001`, 부품 항목 {part: '01', stock_id, center_mm, R, cad?}(mm).
+        부품 이름 = `<그룹>_<part>` (예 LEG_001_01). 구성요소는 label(글자) · count(그룹 수와 같은 정수) · parts 가 있어야 한다.
+        출력: stocks = [{stock_id, size_mm}] 와 instances = {부품 이름: {instance_id, stock_id, center_mm, R}} — 기존 motion_math 가 읽는
+        내부 표현이다. stock_id 는 최상위 stocks의 자재를 참조한다. 중복 번호·없는 참조·유한하지 않거나 양수가 아닌 크기는 거절한다.
+        `revision` · `name` · `description` · `tags` · `cad` 는 읽지 않는다(검사 21번 · 사람이 보는 칸).
+        실패: 옛 구조(최상위 parts)이거나 칸이 빠지거나 값이 틀리면 ValueError.
+        """
+        if 'parts' in s:
+            raise ValueError('옛 구조(최상위 parts)는 읽지 않는다 — template.composition[역할].parts 로 바꿔야 한다')
+        template = s.get('template')
+        composition = template.get('composition') if isinstance(template, dict) else None
+        if not isinstance(composition, dict) or not composition:
+            raise ValueError('template.composition 은 비어 있지 않은 객체여야 한다')
+        stock_list = s.get('stocks')
+        if not isinstance(stock_list, list) or not stock_list:
+            raise ValueError('stocks 는 비어 있지 않은 자재 목록이어야 한다')
+        stocks_by_id = {}
+        for stock in stock_list:
+            stock_id = stock.get('stock_id') if isinstance(stock, dict) else None
+            if not isinstance(stock_id, str) or not stock_id or stock_id in stocks_by_id:
+                raise ValueError('stock_id 는 비어 있지 않고 중복되지 않는 글자여야 한다')
+            self._vector(stock.get('size_mm'), 3, f'{stock_id} size_mm')
+            if any(v <= 0 for v in stock['size_mm']):
+                raise ValueError(f'{stock_id}: size_mm 은 양수여야 한다')
+            stocks_by_id[stock_id] = stock['size_mm']
+        instances = {}                   # 부품 이름 → 검증된 자재 참조·위치·회전
+        for role, comp in composition.items():
+            if not isinstance(role, str) or not re.fullmatch(r'[A-Z]+(?:_[A-Z]+)?', role):
+                raise ValueError(f'composition 키 {role!r} 가 역할[_옵션] 형식이 아니다')
+            groups = comp.get('parts') if isinstance(comp, dict) else None
+            if not isinstance(groups, dict) or not groups:
+                raise ValueError(f'{role}: parts 는 비어 있지 않은 그룹 객체여야 한다')
+            if not isinstance(comp.get('label'), str) or not comp['label']:
+                raise ValueError(f'{role}: label 이 없다')
+            if type(comp.get('count')) is not int or comp['count'] != len(groups):        # 2.0 · True 같은 비정수 타입은 거절
+                raise ValueError(f'{role}: count({comp.get("count")!r}) 가 실제 그룹 수({len(groups)})와 다르다')
+            for group, items in groups.items():
+                if not isinstance(group, str) or not re.fullmatch(re.escape(role) + r'_[0-9]{3}', group):
+                    raise ValueError(f'{role}: 그룹 이름 {group!r} 이 {role}_<3자리> 형식이 아니다')
+                if not isinstance(items, list) or not items:
+                    raise ValueError(f'{group}: 부품 항목은 비어 있지 않은 목록이어야 한다')
+                for item in items:
+                    if not isinstance(item, dict) or not isinstance(item.get('part'), str) or not re.fullmatch(r'[0-9]{2}', item['part']):
+                        raise ValueError(f'{group}: part 가 2자리 글자가 아니다')
+                    name = f'{group}_{item["part"]}'
+                    if name in instances:
+                        raise ValueError(f'{name}: 부품 이름이 중복이다')
+                    stock_id = item.get('stock_id')
+                    if not isinstance(stock_id, str) or stock_id not in stocks_by_id:
+                        raise ValueError(f'{name}: stock_id 가 stocks 에 없다')
+                    self._vector(item.get('center_mm'), 3, f'{name} center_mm')
+                    R = item.get('R')
+                    if not isinstance(R, list) or len(R) != 3:
+                        raise ValueError('R 은 3x3 회전이어야 한다')
+                    for row in R:
+                        self._vector(row, 3, 'R')
+                    if any(sorted(abs(v) for v in row) != [0, 0, 1] for row in R + [list(c) for c in zip(*R)]):
+                        raise ValueError('R 은 축에 맞춘 회전이어야 한다')
+                    det = sum(R[0][i] * (R[1][(i + 1) % 3] * R[2][(i + 2) % 3] -
+                                        R[1][(i + 2) % 3] * R[2][(i + 1) % 3]) for i in range(3))
+                    if det != 1:
+                        raise ValueError('R 은 거울 반사가 아닌 회전이어야 한다')
+                    instances[name] = dict(instance_id=name, stock_id=stock_id, center_mm=item['center_mm'], R=R)
+        stocks = copy.deepcopy(stock_list)
+        return stocks, dict(sorted(instances.items()))        # 이름순 — DB(JSONB)가 키 순서를 바꿔도 같은 결과
+
     def _join(self):
         """블록 이름으로 두 문서를 잇고 model/steps 를 만든다. 위치 계산은 하지 않아 기존 motion_math 를 그대로 쓴다."""
         s, r = self.recipe, self.placements             # s = 구조(recipe/3.0), r = 조립 방법(placements/3.0)
@@ -133,37 +203,10 @@ class RecipeDocument:
             raise ValueError('recipe 와 placements 의 model_id 가 다르거나 없다')
         if r.get('recipe_sha256') != recipe_sha256(s):
             raise ValueError('placements 의 recipe_sha256 이 recipe(구조)와 맞지 않는다 — 다른 구조에 대해 쓴 조립 방법이다')
-        stocks, parts, steps = s.get('stocks'), s.get('parts'), r.get('steps')
-        if not all(isinstance(items, list) and items for items in (stocks, parts, steps)):
-            raise ValueError('stocks · parts · steps 는 비어 있지 않은 목록이어야 한다')
-        sizes = {}
-        for p in stocks:
-            if not isinstance(p, dict) or not isinstance(p.get('stock_id'), str) or p['stock_id'] in sizes:
-                raise ValueError('stock_id 가 없거나 중복이다')
-            self._vector(p.get('size_mm'), 3, 'size_mm')
-            if any(v <= 0 for v in p['size_mm']):
-                raise ValueError('size_mm 은 양수여야 한다')
-            sizes[p['stock_id']] = p['size_mm']
-        instances = {}
-        for b in parts:
-            if not isinstance(b, dict) or not isinstance(b.get('part_name'), str) or not re.fullmatch(
-                    r'[A-Z]+(?:_[A-Z]+)*_[0-9]{3}_[0-9]{2}', b['part_name']) or b['part_name'] in instances:
-                raise ValueError('block 이름이 역할_부품_블록 형식이 아니거나 중복이다')
-            if not isinstance(b.get('stock_id'), str) or b['stock_id'] not in sizes:
-                raise ValueError(f'{b["part_name"]}: 없는 stock_id')
-            self._vector(b.get('center_mm'), 3, 'center_mm')
-            R = b.get('R')
-            if not isinstance(R, list) or len(R) != 3:
-                raise ValueError('R 은 3x3 회전이어야 한다')
-            for row in R:
-                self._vector(row, 3, 'R')
-            if any(sorted(abs(v) for v in row) != [0, 0, 1] for row in R + [list(c) for c in zip(*R)]):
-                raise ValueError('R 은 축에 맞춘 회전이어야 한다')
-            det = sum(R[0][i] * (R[1][(i + 1) % 3] * R[2][(i + 2) % 3] -
-                                R[1][(i + 2) % 3] * R[2][(i + 1) % 3]) for i in range(3))
-            if det != 1:
-                raise ValueError('R 은 거울 반사가 아닌 회전이어야 한다')
-            instances[b['part_name']] = dict(instance_id=b['part_name'], stock_id=b['stock_id'], center_mm=b['center_mm'], R=R)
+        steps = r.get('steps')
+        if not isinstance(steps, list) or not steps:
+            raise ValueError('steps 는 비어 있지 않은 목록이어야 한다')
+        stocks, instances = self._read_composition(s)
         sequences, rows = {}, []
         for st in steps:
             if not isinstance(st, dict) or not isinstance(st.get('part_name'), str) or st['part_name'] not in instances:

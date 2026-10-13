@@ -37,7 +37,7 @@ import time
 
 from d2_task.block_picker import BlockPicker
 from d2_task.recipe_document import same_major
-from d2_task.run_logger import RunLogger
+from d2_task.run_logger import RunLogger, _reject_constant
 from d2_task.scatter_pick import REOBSERVE, REPLAN_SAME, ScatterFlow, StepTracker, contact_phase, grasped_now
 from d2_task.task_planner import TaskPlanner
 
@@ -100,6 +100,9 @@ class TaskManager:
         self._build_last_try = {}                 # run_id → 마지막으로 보낸 시각(monotonic, 다시 보내기 간격 계산)
         self._build_ready = set()                 # 디스크 보관이 끝났거나(성공 · 실패) 보관하지 않는 run_id — 이것만 보낸다
         self._build_queued = {}                   # run_id → 대기 목록에 들어온 시각(monotonic). 디스크가 늦으면 이 시각으로 기다림을 끊는다
+        self._rejected_unsaved = {}               # run_id → 웹이 영구 거절(retry:false)했는데 rejected/ 보관이 아직 안 된 요약. 네트워크로는 다시 보내지 않는다
+        self._reject_inflight = set()             # 거절 보관을 쓰기 스레드에 맡기고 끝을 기다리는 run_id
+        self._reject_last_try = {}                # run_id → 마지막으로 보관을 맡긴 시각(monotonic, retry_s 간격)
         self._clock = clock
         self.command_s = cfg['timeout']['command_s']   # 화면 명령(선택 · 출발)을 받은 뒤 확정해야 하는 시간(s) — 넘으면 실행하지 않고 TIMEOUT
         self._epoch = 0                           # 상태가 바뀔 때마다 +1 — 설계 조회 중에 상태가 바뀌었는지 알아보는 표
@@ -224,6 +227,7 @@ class TaskManager:
         with self._lock:
             if self._shutdown:
                 return []
+            self._retry_reject_archive(self._clock(), retry_s)    # 보관 재시도 간격은 build_result 와 같은 시계(self._clock)로 잰다
             out = []
             for run_id, summary in self.pending_builds.items():
                 last = self._build_last_try.get(run_id)
@@ -239,22 +243,84 @@ class TaskManager:
     def build_result(self, run_id, success, response_json):
         """save_build 의 답을 그 요청의 run_id 에만 적용한다. 반환: 저장이 확인돼 대기 목록에서 지웠으면 True.
 
-        서비스 success 가 참이고 응답 JSON 이 객체이며 ok 가 참(true)일 때만 지운다. 그 밖(실패 · 깨진 JSON · ok 거짓)은 요약을 남긴다.
+        서비스 success 가 참이고 응답 JSON 이 객체이며 ok 가 참(true)일 때만 지운다(True 는 'DB 저장 확인' 뜻 그대로). 그 밖(실패 · 깨진 JSON · ok 거짓)은 요약을 남긴다.
+        단 success 가 참 · 응답이 객체 · ok 가 정확히 false · retry 가 정확히 false 이면 **영구 거절**이다(IRD 4.2 save_build): 대기 목록에서 빼
+        다시 보내지 않고 log_dir/rejected/<run_id>.json 에 원기록을 보존한다(파일 I/O 는 기록 스레드, 이 경우도 반환은 False).
+        retry 가 없거나 true · 0 · 'false' · null 이면 기존처럼 남겨 다시 보낸다.
         이미 지워졌거나 모르는 run_id 의 늦은 답은 아무것도 안 바꾼다 — 다른 조립의 요약은 건드리지 않는다.
         """
         with self._lock:
             self._build_inflight.discard(run_id)
             if run_id not in self.pending_builds:
                 return False
+            if self._permanently_rejected(success, response_json):
+                LOG.warning('결과 저장이 영구 거절됐다(run %s) — 다시 보내지 않고 rejected/ 에 보관한다: %.80r', run_id, response_json)
+                summary = self.pending_builds.pop(run_id)
+                self._forget_send_state(run_id)
+                self._rejected_unsaved[run_id] = summary
+                self._archive_rejected(run_id, self._clock())
+                return False
             if success is not True or not self._response_ok(response_json):
                 LOG.warning('결과 저장 실패(run %s) — 요약을 남기고 나중에 다시 보낸다: success=%r %.80r', run_id, success, response_json)
                 return False
             del self.pending_builds[run_id]
-            self._build_last_try.pop(run_id, None)
-            self._build_ready.discard(run_id)
-            self._build_queued.pop(run_id, None)
+            self._forget_send_state(run_id)
             self.logger.delete_pending(run_id)      # 저장이 확인된 그 run 의 보관 파일만 지운다(기록 스레드가)
             return True
+
+    def _forget_send_state(self, run_id):
+        """(잠금 안) 그 run_id 의 전송 상태(마지막 시도 · 보관 끝남 · 대기 시각)를 비운다."""
+        self._build_last_try.pop(run_id, None)
+        self._build_ready.discard(run_id)
+        self._build_queued.pop(run_id, None)
+
+    @staticmethod
+    def _permanently_rejected(success, response_json):
+        """success 가 True, 응답이 객체, ok 가 정확히 False, retry 가 정확히 False 일 때만 참. ok 가 True 면(저장 성공) 항상 거짓.
+
+        NaN · Infinity 같은 비표준 JSON 상수가 든 응답은 깨진 JSON 으로 보고 거절로 인정하지 않는다(재전송 유지 — 기존 payload 형식 계약)."""
+        if success is not True:
+            return False
+        try:
+            body = json.loads(response_json, parse_constant=_reject_constant)
+        except (TypeError, ValueError):
+            return False
+        return isinstance(body, dict) and body.get('ok') is False and body.get('retry') is False
+
+    def _archive_rejected(self, run_id, now):
+        """(잠금 안) 거절된 요약의 rejected/ 보관을 기록 스레드에 맡긴다. 네트워크는 쓰지 않는다.
+
+        log_dir 이 비어 있으면 파일로 보존할 수 없다 — 경고하고 요약은 메모리(_rejected_unsaved)에만 둔다(다시 시도하지 않는다).
+        큐가 가득 차 못 맡기면 다음 builds_to_send 에서 retry_s 뒤 다시 맡긴다.
+        """
+        if run_id in self._reject_inflight:
+            return
+        if not self.logger.enabled:
+            LOG.warning('log_dir 이 비어 거절된 요약 %s 을 파일로 보존하지 못한다 — 메모리에만 둔다', run_id)
+            return
+        self._reject_last_try[run_id] = now
+        if self.logger.reject_pending(run_id, copy.deepcopy(self._rejected_unsaved[run_id]),
+                                      lambda ok, r=run_id: self._reject_archived(r, ok)):
+            self._reject_inflight.add(run_id)
+
+    def _reject_archived(self, run_id, ok):
+        """(기록 스레드가 부른다) 거절 보관이 끝났다. 성공이면 메모리 요약을 놓고, 실패면 남겨 두었다가 다시 맡긴다."""
+        with self._lock:
+            self._reject_inflight.discard(run_id)
+            if ok:
+                self._rejected_unsaved.pop(run_id, None)
+                self._reject_last_try.pop(run_id, None)
+            else:
+                LOG.warning('거절된 요약 %s 의 파일 보관이 실패했다 — 메모리에 두고 다시 시도한다', run_id)
+
+    def _retry_reject_archive(self, now, retry_s):
+        """(잠금 안) 보관 못 한 거절 요약을 retry_s 간격으로 다시 맡긴다(큐 가득 · 쓰기 실패 뒤 회복). 네트워크 재전송과 따로다."""
+        if not self.logger.enabled:
+            return
+        for run_id in list(self._rejected_unsaved):
+            last = self._reject_last_try.get(run_id)
+            if run_id not in self._reject_inflight and (last is None or now - last >= retry_s):
+                self._archive_rejected(run_id, now)
 
     def _pending_persisted(self, run_id, ok):
         """(기록 스레드가 부른다) 미전송 요약의 디스크 보관이 끝났다. 성공 · 실패 모두 보낼 수 있게 한다(실패하면 메모리 재전송만)."""

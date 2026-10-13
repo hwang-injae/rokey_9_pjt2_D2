@@ -297,7 +297,7 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
 # ---------------- 설계도(레시피) ----------------
 RECIPE_SUFFIXES = ('_recipe.json',)    # 레시피 = 구조 파일 <모델ID>_recipe.json (E-69 — 옛 이름 .recipe.json 은 W139 뒤 뺌)
 PLACEMENTS_SUFFIX = '_placements.csv'  # 조립 방법 원본 — 구조 파일과 같은 폴더 · 같은 모델 ID (E-69)
-RECIPE_SCHEMA = 'recipe/3.0'          # 10/11 E-84: parts → stocks
+RECIPE_SCHEMA = 'recipe/3.0'          # 10/13 PLM: 자재 stocks + template.composition[역할].parts[그룹] 트리
 PLACEMENTS_SCHEMA = 'placements/3.0'
 
 
@@ -372,7 +372,9 @@ def recipe_parts(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
     레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
-    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks · parts[](part_name · stock_id · center_mm · R)).
+    + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks[](stock_id · size_mm) +
+    template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
+    블록 이름 = '<그룹>_<part>' 예 LEG_001_01 — 사람 칸 label · revision 은 읽지 않는다).
     part_id = 조립 방법의 part_id 칸, 없으면 '<model_id>_<블록 이름>' (예 001_CHAIR_BENCH_V000_LEG_001_01 — 노드 사이 전체 블록 이름).
     옛 한 파일 꼴(model.instances + steps)도 아직 읽는다 — task(TaskPlanner)가 두 파일을 RecipeDocument 로 이 꼴로 합쳐 넘기고
     (steps[].part_id), task 시험 예시는 이 꼴 파일이다(part_id 가 없으면 '<model_id>_B<sequence 3자리>'). task 옮기기(W141) 뒤 뺀다.
@@ -419,7 +421,8 @@ def recipe_parts(cfg, recipe):
         return out
     struct = recipe['structure']                     # 두 파일 (load_recipe 가 구조 _recipe.json 을 'structure' 칸에 붙임)
     sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
-    geo = {b['part_name']: b for b in struct['parts']}
+    geo = {f'{group}_{item["part"]}': item for comp in struct['template']['composition'].values()
+           for group, items in comp['parts'].items() for item in items}
     full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"]}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]

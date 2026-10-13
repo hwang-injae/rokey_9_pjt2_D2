@@ -29,7 +29,7 @@ class RecipeToParts:
     위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · group 은 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
-    **블록 크기를 두 곳에서 가져온다:** ① 방향 길이 계산 = 레시피 parts[].size_mm, ② 방향 코드 표 = robot.yaml block_size_m × 1000(생성자의 block_mm).
+    **블록 크기를 두 곳에서 가져온다:** ① 방향 길이 계산 = 레시피 stocks[].size_mm, ② 방향 코드 표 = robot.yaml block_size_m × 1000(생성자의 block_mm).
     두 값은 **허용 오차 없이 같아야** 길이_i 가 표 6개 중 정확히 하나와 맞아 방향이 정해진다(지금 둘 다 설계 기준값 75 · 25 · 15 mm — 젠가 하나로 고정).
     """
 
@@ -37,7 +37,7 @@ class RecipeToParts:
         """design_id · family 는 레시피에 없으므로 부르는 쪽이 정해서 넣는다(규칙을 새로 만들지 않는다).
 
         block_mm: 블록 크기 [길이, 폭, 두께] mm — robot.yaml block_size_m × 1000. 방향 코드 표를 만드는 데 쓴다.
-        레시피 parts[].size_mm 와 허용 오차 없이 같아야 한다(다르면 convert 가 방향을 못 골라 ValueError).
+        레시피 stocks[].size_mm 와 허용 오차 없이 같아야 한다(다르면 convert 가 방향을 못 골라 ValueError).
         """
         if not design_id or not family:
             raise ValueError('design_id 와 family 가 필요하다')

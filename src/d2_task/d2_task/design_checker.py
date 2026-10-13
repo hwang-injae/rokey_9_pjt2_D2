@@ -12,6 +12,7 @@ import re
 from d2_task.recipe_to_parts import ori_extents
 from d2_task.parts_to_recipe import DesignRejected
 from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
+from d2_task.template_checker import RequestInvalid, TemplateChecker
 
 SCHEMA_REQUEST = 'parts/3.0'     # check_design 요청 · 변환기 ①이 받는 형식 (IRD 6장, E-69 — 스캔 형식 blocks/2 는 위치 · 방향만이라 거절)
 SCHEMA_RESULT = 'check_result/3.0'
@@ -23,16 +24,20 @@ STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy':
 
 
 class DesignChecker:
-    """블록 JSON 하나를 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 순으로 검사해 check_result/3.0 을 만든다.
+    """요청(parts/3.0 + base_recipe) 하나를 요청 확인 → 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 → Template(21번) 순으로 검사해 check_result/3.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
-    assembly_area_half_m · table · check.margin_mm · check.max_blocks), parts/3.0 dict. 변환기 ①(parts_to_recipe)은 선택으로 받는다.
+    assembly_area_half_m · table · check.margin_mm · check.max_blocks), 요청 dict. 변환기 ①(parts_to_recipe)은 선택으로 받는다.
+    Template 검사(template_checker)는 늘 켜져 있다 — 끄는 설정은 없고, 격리 시험만 같은 모양의 대역을 template_checker 로 직접 넣는다.
     바깥 영향: 없음(계산만). 로봇 · 메시지를 건드리지 않는다.
     실패: 설계가 나쁘면 예외 없이 ok=false + errors 로 돌려준다(HMI 가 detail 을 LLM 에 되돌려 줌). cfg 에 키가 없으면 만들 때 ValueError.
     """
 
-    def __init__(self, cfg, parts_to_recipe=None):
-        """cfg 를 mm 로 바꾼다. 변환기 ①(parts_to_recipe)은 {recipe, placements} 를 반환한다(E-69 · #100 에서 task_node 가 연결). 안 붙이면 합격해도 레시피를 못 내 ERROR 로 답한다."""
+    def __init__(self, cfg, parts_to_recipe=None, template_checker=None):
+        """cfg 를 mm 로 바꾼다. 변환기 ①(parts_to_recipe)은 {recipe, placements} 를 반환한다(E-69 · #100 에서 task_node 가 연결). 안 붙이면 합격해도 레시피를 못 내 ERROR 로 답한다.
+
+        template_checker: read_base(request) → 규칙 · check(규칙, parts) → errors 를 가진 객체. 비우면 실제 TemplateChecker(블록 크기는 위 cfg 것).
+        """
         try:
             self.block_mm = [v * 1000.0 for v in cfg['block_size_m']]
             self.extent = ori_extents(self.block_mm)
@@ -47,14 +52,26 @@ class DesignChecker:
         except KeyError as e:
             raise ValueError(f'robot.yaml 에 {e.args[0]} 가 없다') from e
         self.parts_to_recipe = parts_to_recipe
+        self.template_checker = template_checker if template_checker is not None else TemplateChecker(self.extent)
 
     # ---------------- 바깥에서 부르는 곳 ----------------
     def check(self, request):
-        """parts/3.0 요청 → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail] · recipe + placements(ok 일 때 둘 다).
+        """요청(parts/3.0 + base_recipe) → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail · kind] · recipe + placements(ok 일 때 둘 다).
 
-        검사는 순서대로 하되, 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
-        reason: OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · ERROR(변환기 ① 실패).
+        요청이 틀리면(base_recipe 없음 · Template 이 design_id 와 다름 · revision 모양 틀림 …) 바로 REQUEST_INVALID 한 줄로 돌려준다(kind 없음, 재생성 안 함).
+        그 뒤 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
+        1~20번(물리·AI 칸)과 21번(Template)의 실패는 모두 모아 한 번에 돌려준다 — 물리 실패가 있어도 21번을 건너뛰지 않는다.
+        reason: REQUEST_INVALID(요청 오류) · OUT_OF_SCOPE(블록 수 초과) · CHECK_FAILED(나머지) · TEMPLATE_SHAPE · TEMPLATE_RANGE(21번) · ERROR(변환기 ① 실패).
+        kind(실패 종류): position(위치·방향·작업영역) · ai_fields(역할·그룹·단계·잡기·잡을 면) · template(21번) · scope(블록 수 초과) — 웹이 재시도 방법을 고르는 데 쓴다.
+        입력을 바꾸지 않는다. 변환기 ①에는 base_recipe 를 뗀 사본을 준다(저장·응답에 Template 이 섞이지 않게).
         """
+        detail = self._envelope(request)
+        if detail:
+            return self._request_invalid(detail)
+        try:
+            rules = self.template_checker.read_base(request)
+        except RequestInvalid as e:
+            return self._request_invalid(e)
         errors = []
         parts = self._parse(request, errors)
         if errors:
@@ -67,18 +84,22 @@ class DesignChecker:
             margin = self._stability(boxes, below, errors)
         errors += self._grasp_errors(boxes)
         errors += self._workspace(boxes)
+        try:
+            errors += self.template_checker.check(rules, parts)
+        except RequestInvalid as e:         # 규칙의 식이 이 설계로 계산되지 않는다(0 으로 나눔 등) = 잘못된 규칙이지 AI 설계 탓이 아니다
+            return self._request_invalid(e)
         if errors:
             return self._result(False, margin, errors)
         result = self._result(True, margin, [])
         if self.parts_to_recipe is not None:
             try:
-                converted = self.parts_to_recipe(request)
+                converted = self.parts_to_recipe({k: v for k, v in request.items() if k != 'base_recipe'})
                 if not isinstance(converted, dict) or 'recipe' not in converted or 'placements' not in converted:
                     raise ValueError('변환기 ① 결과에 recipe · placements 가 없다')
                 document = RecipeDocument(converted['recipe'], converted['placements'])    # schema · 짝 해시 · 블록 참조까지 검증한다
                 result.update(recipe=document.recipe, placements=document.placements)
             except DesignRejected as e:      # 변환기 ①이 찾은 AI 실수(역할 목록 · 면 맞닿음 · 잡기) — 설계 탓이므로 CHECK_FAILED 로 돌려 재생성한다
-                return self._result(False, margin, [{'part': x['part'], 'reason': 'CHECK_FAILED', 'detail': x['detail']} for x in e.errors])
+                return self._result(False, margin, [{'part': x['part'], 'reason': 'CHECK_FAILED', 'detail': x['detail'], 'kind': 'ai_fields'} for x in e.errors])
             except Exception as e:   # 그 밖의 예외는 변환기 쪽 고장이라 ERROR 로 알린다
                 return self._result(False, margin, [{'part': None, 'reason': 'ERROR', 'detail': f'변환기 ① 실패: {e}'}])
         return result
@@ -86,18 +107,24 @@ class DesignChecker:
     def handle_json(self, request_json):
         """`check_design`(JsonQuery) 한 번을 처리한다. 반환: (success, reason, response_json 글자).
 
-        요청은 parts/3.0 객체 글자 그대로(schema 가 'parts/3.0' 이어야 하고, 스캔 형식 blocks/2 는 받은 schema 를 적어 ERROR). 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
-        설계 불합격은 (True, '', ok:false + errors) — 좌표가 유한한 수가 아닌 것(NaN · Infinity · 1e999 처럼 읽으면 무한대가 되는 수)은 불합격이 아니라 요청 오류다.
+        요청은 parts/3.0 객체 + base_recipe 글자 그대로. 서비스가 처리했나(success)와 설계가 합격인가(응답 안 ok)를 나눈다:
+        설계 불합격은 (True, '', ok:false + errors).
+        봉투(envelope)가 틀린 요청 — JSON 구문 · 객체 아님 · schema 다름(스캔 형식 blocks/2 포함, 받은 schema 를 적음) · NaN · Infinity · 1e999 · design_id · parts 목록 없음/타입/빔 ·
+        base_recipe 오류 · 규칙(revision) 오류 — 은 웹 쪽 잘못이지만 서비스는 처리했으므로 (True, '', ok:false + REQUEST_INVALID, kind 없음, 재생성하지 않는다).
+        부품별 칸(x · y · z · ori · role · group · stage · grasp) 오류는 설계 불합격(CHECK_FAILED + kind)이다.
         변환기 ①이 AI 실수(DesignRejected — 역할 목록 · 면 맞닿음 · 잡기)를 찾으면 불합격 CHECK_FAILED 로 errors 에 그대로 옮긴다(재생성 대상, success true).
-        JSON 이 깨졌거나 schema 가 다르거나 안쪽 예외거나 변환기 ①이 그 밖의 예외 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
+        안쪽 예외거나 변환기 ①이 그 밖의 예외 · 잘못된 결과를 내면 (False, 'ERROR', 이유).
         변환기 ①이 안 붙은 동안은 검사에 통과해도 레시피가 없어 완성된 합격 응답이 아니므로 (False, 'ERROR') 로 답한다.
         바깥 영향: 없음(계산만). 시간 제한 5초는 부르는 쪽이 건다 — 이 함수는 계산을 중간에 끊지 못한다.
         """
         try:
-            request = json.loads(request_json, parse_constant=self._reject_constant, parse_float=self._finite_float)
+            try:
+                request = json.loads(request_json, parse_constant=self._reject_constant, parse_float=self._finite_float)
+            except (ValueError, RecursionError) as e:       # 깨진 JSON · 유한하지 않은 수 · 너무 깊은 중첩 — 입력 오류이지 프로그램 고장이 아니다
+                return self._invalid_response(f'JSON 을 읽을 수 없다: {e}')
             if not isinstance(request, dict) or not same_major(request.get('schema'), SCHEMA_REQUEST):
                 got = request.get('schema') if isinstance(request, dict) else None
-                raise ValueError(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
+                return self._invalid_response(f'요청이 schema {SCHEMA_REQUEST} 객체가 아니다(받은 schema: {got!r})')
             result = self.check(request)
             if result['ok'] and self.parts_to_recipe is None:
                 result = self._result(False, result['min_margin_mm'], [{'part': None, 'reason': 'ERROR',
@@ -107,6 +134,25 @@ class DesignChecker:
         except Exception as e:   # 어떤 예외든 서비스 실패(ERROR)로 알린다 — 검사 때문에 task 노드가 죽으면 안 된다
             err = self._result(False, None, [{'part': None, 'reason': 'ERROR', 'detail': f'검사 서비스 처리 실패: {e}'}])
             return False, 'ERROR', json.dumps(err, ensure_ascii=False, allow_nan=False)
+
+    def _invalid_response(self, detail):
+        """요청 오류 한 줄(REQUEST_INVALID)의 서비스 응답 — 서비스는 처리했으므로 success true."""
+        return True, '', json.dumps(self._request_invalid(detail), ensure_ascii=False, allow_nan=False)
+
+    def _request_invalid(self, detail):
+        """REQUEST_INVALID 한 줄짜리 check_result/3.0 (kind 없음 — 설계 탓이 아니라 웹 쪽 잘못이라 재생성하지 않는다)."""
+        return self._result(False, None, [{'part': None, 'reason': 'REQUEST_INVALID', 'detail': f'요청 오류: {detail}'}])
+
+    @staticmethod
+    def _envelope(request):
+        """요청 봉투 확인: 객체 · design_id 글자 · parts 비지 않은 목록. 틀리면 이유 글자, 맞으면 None. 부품 안쪽 칸은 _parse 가 본다."""
+        if not isinstance(request, dict):
+            return '요청이 객체가 아니다'
+        if not isinstance(request.get('design_id'), str) or not request['design_id']:
+            return f'design_id {request.get("design_id")!r} 가 글자가 아니거나 비어 있다'
+        if not isinstance(request.get('parts'), list) or not request['parts']:
+            return 'parts 가 비어 있거나 목록이 아니다'
+        return None
 
     @staticmethod
     def _reject_constant(name):
@@ -132,48 +178,50 @@ class DesignChecker:
     # ---------------- 1. 형식 ----------------
     def _parse(self, request, errors):
         """형식을 확인해 order 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
-        def bad(detail, part=None, reason='CHECK_FAILED'):
-            errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}'})
+        def bad(detail, kind, part=None, reason='CHECK_FAILED'):
+            """형식 오류 한 줄을 바깥 errors 에 쌓는다. 입력: detail = 이유 글자, kind = position · ai_fields · scope, part = 부품 order(없으면 None), reason = 실패 코드. 반환 없음. 바깥 영향은 errors 목록뿐이며 실패하지 않는다."""
+            errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}', 'kind': kind})
 
         items = request.get('parts') if isinstance(request, dict) else None
         if not isinstance(items, list) or not items:
-            bad('parts 가 비어 있거나 목록이 아니다')
+            bad('parts 가 비어 있거나 목록이 아니다', 'position')
             return []
         if len(items) > self.max_blocks:
-            bad(f'블록 {len(items)}개 > 상한 {self.max_blocks}개', reason='OUT_OF_SCOPE')
+            bad(f'블록 {len(items)}개 > 상한 {self.max_blocks}개', 'scope', reason='OUT_OF_SCOPE')
             return []
         for k, it in enumerate(items, 1):
             if not isinstance(it, dict):
-                bad(f'{k}번째 항목이 객체가 아니다')
+                bad(f'{k}번째 항목이 객체가 아니다', 'position')
                 continue
             miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp') if key not in it]
             if miss:
-                bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · group · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)')
+                bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · group · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)',
+                    'position' if set(miss) <= {'x', 'y', 'z', 'ori'} else 'ai_fields')
                 continue
             for key in ('x', 'y', 'z'):
                 if not self._num(it[key]):
-                    bad(f'{k}번째 항목의 {key} 가 숫자가 아니다')
-            if it['ori'] not in self.extent:
-                bad(f'{k}번째 항목 ori={it["ori"]!r} 는 x, y, xe, ye, zx, zy 가 아니다')
+                    bad(f'{k}번째 항목의 {key} 가 숫자가 아니다', 'position')
+            if not isinstance(it['ori'], str) or it['ori'] not in self.extent:       # 글자인지 먼저 — 목록 · 객체는 해시가 안 돼 TypeError
+                bad(f'{k}번째 항목 ori={it["ori"]!r} 는 x, y, xe, ye, zx, zy 가 아니다', 'position')
             if not isinstance(it['role'], str) or not ROLE_RE.fullmatch(it['role']):
-                bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다')
+                bad(f'{k}번째 항목 role={it["role"]!r} 는 영문 대문자 역할 한 단어 + 옵션 0~1개(예 LEG · LEG_WHEEL)가 아니다', 'ai_fields')
             for key in ('group', 'stage'):
                 if not isinstance(it[key], int) or isinstance(it[key], bool) or it[key] < 1:
-                    bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다')
+                    bad(f'{k}번째 항목 {key}={it[key]!r} 는 1 이상의 정수가 아니다', 'ai_fields')
             if it['grasp'] not in GRASPS:
-                bad(f'{k}번째 항목 grasp={it["grasp"]!r} 는 {GRASPS} 중 하나가 아니다')
+                bad(f'{k}번째 항목 grasp={it["grasp"]!r} 는 {GRASPS} 중 하나가 아니다', 'ai_fields')
             if 'inferred' in it and not isinstance(it['inferred'], bool):
-                bad(f'{k}번째 항목 inferred 가 true · false 가 아니다')
+                bad(f'{k}번째 항목 inferred 가 true · false 가 아니다', 'ai_fields')
         if errors:
             return []
         orders = [it['order'] for it in items]
         if any(not isinstance(o, int) or isinstance(o, bool) for o in orders) or sorted(orders) != list(range(1, len(items) + 1)):
-            bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다')
+            bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다', 'ai_fields')
             return []
         ordered = sorted(items, key=lambda it: it['order'])
         stages = [it['stage'] for it in ordered]
         if stages[0] != 1 or any(b - a not in (0, 1) for a, b in zip(stages, stages[1:])):
-            bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다')
+            bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다', 'ai_fields')
             return []
         return ordered
 
@@ -204,7 +252,7 @@ class DesignChecker:
                         and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > PENETRATION_MM
                         and self._gap(a['z0'], a['z1'], b['z0'], b['z1']) > PENETRATION_MM):
                     errs.append({'part': b['order'], 'reason': 'CHECK_FAILED',
-                                 'detail': f'{a["order"]}번 ↔ {b["order"]}번 겹침'})
+                                 'detail': f'{a["order"]}번 ↔ {b["order"]}번 겹침', 'kind': 'position'})
         return errs
 
     # ---------------- 3. 받침 ----------------
@@ -227,13 +275,13 @@ class DesignChecker:
                     if x1 > x0 and y1 > y0:
                         sup.append((j, (x0, x1, y0, y1)))
             if a['z0'] < 0:
-                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업면 아래(z<0)'})
+                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업면 아래(z<0)', 'kind': 'position'})
                 floating = True
             elif not sup:
                 later = [b['order'] for b in boxes[i + 1:] if b['z1'] == a['z0'] and
                          self._gap(a['x0'], a['x1'], b['x0'], b['x1']) > 0 and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > 0]
                 hint = f' (받침 {later[0]}번이 더 늦게 놓임)' if later else ''
-                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 공중{hint}'})
+                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 공중{hint}', 'kind': 'position'})
                 floating = True
             below.append(sup)
         return None if floating else below
@@ -271,7 +319,7 @@ class DesignChecker:
                     worst[b] = (mg, k)
         for b, (mg, k) in sorted(worst.items()):
             errors.append({'part': boxes[b]['order'], 'reason': 'CHECK_FAILED',
-                           'detail': f'{boxes[b]["order"]}번 위 덩어리: {boxes[k]["order"]}번까지 놓았을 때 여유 {mg:.1f} mm < {self.margin_mm}'})
+                           'detail': f'{boxes[b]["order"]}번 위 덩어리: {boxes[k]["order"]}번까지 놓았을 때 여유 {mg:.1f} mm < {self.margin_mm}', 'kind': 'position'})
         return overall
 
     @staticmethod
@@ -355,7 +403,7 @@ class DesignChecker:
         for i, a in enumerate(boxes):
             if not self._grasps(a, boxes[:i]):
                 errs.append({'part': a['order'], 'reason': 'CHECK_FAILED',
-                             'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다'})
+                             'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'ai_fields'})
         return errs
 
     # ---------------- 6. 작업영역 ----------------
@@ -371,10 +419,10 @@ class DesignChecker:
                 bx = o['x_m'] + (c * x - s * y) / 1000.0
                 by = o['y_m'] + (s * x + c * y) / 1000.0
                 if abs(bx - o['x_m']) > half or abs(by - o['y_m']) > half:
-                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업영역 밖(조립 작업공간 ± {half} m)'})
+                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업영역 밖(조립 작업공간 ± {half} m)', 'kind': 'position'})
                     break
                 if not (self.table['x_m'][0] <= bx <= self.table['x_m'][1] and self.table['y_m'][0] <= by <= self.table['y_m'][1]):
-                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업대 밖'})
+                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업대 밖', 'kind': 'position'})
                     break
         return errs
 

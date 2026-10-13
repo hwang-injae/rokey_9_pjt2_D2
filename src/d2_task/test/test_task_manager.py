@@ -443,7 +443,8 @@ def test_설계를_못_읽으면_거절():
     assert m.command('select_design', 'nope') == (False, '')
     assert m.command('select_design', '') == (False, '')
     io.recipe = copy.deepcopy(RECIPE)
-    io.recipe['stocks'][0]['size_mm'] = [80.0, 25.0, 15.0]     # robot.yaml 블록 크기와 다른 구조
+    for stock in io.recipe['stocks']:     # robot.yaml 블록 크기와 다른 자재
+        stock['size_mm'] = [80.0, 25.0, 15.0]
     io.placements = reseal(io.recipe, PLACEMENTS)               # 짝 해시는 맞춰 두고 크기 때문에 거절되는지 본다
     assert m.command('select_design', 'bench') == (False, '')
     assert m.state == 'IDLE'

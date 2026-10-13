@@ -1,16 +1,23 @@
-"""변환기 ① — AI가 쓴 설계도(parts/3.0)를 레시피(recipe/3.0) + 조립 방법(placements/3.0)으로 바꾼다 (W110, E-69).
+"""변환기 ① — AI가 쓴 설계도(parts/3.0)를 레시피(recipe/3.0 — template.composition) + 조립 방법(placements/3.0)으로 바꾼다 (W110, E-69, PLM 1단계).
 
 검사 묶음(DesignChecker)이 설계를 통과시킨 뒤 부른다. ROS · 파일 쓰기 · 로봇 · 메시지 영향 없음(계산만).
 """
+import copy
 import itertools
 import json
 import re
 from pathlib import Path
 
 from d2_task.recipe_builder import RecipeBuilder
-from d2_task.recipe_document import same_major
+from d2_task.recipe_document import recipe_sha256, same_major
 
 SCHEMA_REQUEST = 'parts/3.0'
+
+# 부품 이름 `<역할>[_<옵션>]_<그룹 3자리>_<부품 2자리>` → (역할[_옵션], 그룹, 부품). RecipeBuilder.PART_NAME 과 같은 꼴
+PART_NAME_RE = re.compile(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_([0-9]{2})')
+
+# 구성요소 label = 화면 이름표(names.ts ROLE)와 같은 말 — 설계 초안 3절. roles.json(AI에게 주는 설명문)과 따로 둔다.
+ROLE_LABELS = {'LEG': '다리', 'SEAT': '좌판', 'BACK': '등받이', 'BEAM': '보', 'TOP': '상판', 'BASE': '바닥 받침', 'COLUMN': '기둥'}
 REQUIRED_KEYS = ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')
 ROLES_PATH = Path(__file__).with_name('roles.json')
 
@@ -117,12 +124,49 @@ class PartsToRecipe:
             vertices.append({'part_name': names[b['order']], 'handle': None, 'vertices': corners})
             hints[names[b['order']]] = {'SEQ': b['order'], 'STAGE': b['stage'], 'GRASP': b['grasp']}
         try:
-            recipe = self.builder.make_recipe(vertices, request['design_id'], None, None)
-            placements = self.builder.make_placements(recipe, hints)
+            built = self.builder.make_recipe(vertices, request['design_id'], None, None)
+            placements = self.builder.make_placements(built, hints)
         except ValueError as e:
             # 여기까지 오는 것은 단계 규칙 · 뜬 블록 · 겹침처럼 검사 묶음도 보는 AI 실수다 — 따로 불렸을 때도 CHECK_FAILED 로
             raise DesignRejected([{'part': None, 'detail': f'레시피 검사: {e}'}]) from e
+        recipe = self.to_template_recipe(built)
+        # 짝 확인 해시는 우리가 내보내는 구조 기준으로 다시 맞춘다(옛 builder 가 계산한 값은 옛 구조 기준이라 맞지 않는다).
+        # placements/3.0 에는 stock_id · cad_handle 이 없다 — builder 가 (옛 버전이) 넣어 줬다면 뗀다.
+        steps = [{k: v for k, v in step.items() if k not in ('stock_id', 'cad_handle')} for step in placements['steps']]
+        placements = dict(placements, steps=steps, recipe_sha256=recipe_sha256(recipe))
         return {'recipe': recipe, 'placements': placements}
+
+    def to_template_recipe(self, built):
+        """RecipeBuilder 가 만든 레시피(최상위 stocks · parts)를 AI·스캔 설계용 recipe/3.0(template.composition)으로 바꾼다.
+
+        입력: built = RecipeBuilder.make_recipe 출력(mm). 이미 template 이 있는 새 builder 출력이면 허용 칸만 남긴 복사본을 돌려준다
+        (옛 builder 의 stocks · parts 를 바꾸는 이 어댑터는 현재 builder 와의 호환용이며, 외부의 옛 레시피를 읽는 길이 아니다). 출력: {schema, model_id, source_cad, stocks, template:{composition:{역할:
+        {label, count, parts:{그룹:[{part, stock_id, center_mm, R}]}}}}} — 구성요소는 label · count · parts 만 두고
+        revision · name · description · tags · cad 는 없다(기본 설계 V000 에만 있다). 입력을 바꾸지 않는다. 바깥 영향 없음.
+        label 은 기존 값이 있으면 보존하고, 없거나 빈 값이면 ROLE_LABELS(화면 이름표)로 보완한다. 목록에 없는 역할은 역할 이름 그대로 쓴다. 옵션 역할(LEG_WHEEL)은 기본 역할 label 을 쓴다.
+        실패: 부품 이름이 규칙과 다르면 AttributeError(RecipeBuilder 가 이미 거른 이름이라 일어나지 않는다).
+        """
+        if 'template' in built:
+            # 새 builder 출력이 와도 AI·스캔 설계 계약(구성요소 label · count · parts, 부품 part · stock_id · center_mm · R)만 남긴다.
+            # name · description · tags · revision · cad 는 기본 설계 V000 에만 있다. 입력은 깊은 복사 뒤에 걸러 바꾸지 않는다.
+            new = copy.deepcopy(built)
+            composition = {role: {'label': comp.get('label') or ROLE_LABELS.get(role.split('_')[0], role), 'count': comp['count'],
+                                  'parts': {group: [{k: item[k] for k in ('part', 'stock_id', 'center_mm', 'R')} for item in items]
+                                            for group, items in comp['parts'].items()}}
+                           for role, comp in new['template']['composition'].items()}
+            return dict(new, template={'composition': composition})
+        composition = {}
+        for item in sorted(built['parts'], key=lambda p: p['part_name']):
+            role, group_no, part_no = PART_NAME_RE.fullmatch(item['part_name']).groups()
+            comp = composition.setdefault(role, {'label': ROLE_LABELS.get(role.split('_')[0], role), 'count': 0, 'parts': {}})
+            groups = comp['parts']
+            if f'{role}_{group_no}' not in groups:
+                comp['count'] += 1
+            groups.setdefault(f'{role}_{group_no}', []).append(
+                {'part': part_no, 'stock_id': item['stock_id'], 'center_mm': list(item['center_mm']),
+                 'R': [list(row) for row in item['R']]})
+        return {'schema': built['schema'], 'model_id': built['model_id'], 'source_cad': built['source_cad'],
+                'stocks': copy.deepcopy(built['stocks']), 'template': {'composition': composition}}
 
     def calculate_box(self, part):
         """블록 하나가 차지하는 축 정렬 상자.

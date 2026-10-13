@@ -7,6 +7,7 @@
 import ast
 import copy
 import csv
+import hashlib
 import io
 import json
 import shutil
@@ -53,6 +54,16 @@ def copy_pair(folder):
         shutil.copyfile(FIXTURES / f'{MODEL}{suffix}', folder / f'{MODEL}{suffix}')
 
 
+def comps(recipe):
+    """recipe/3.0 의 template.composition(역할 → 구성요소)."""
+    return recipe['template']['composition']
+
+
+def items(recipe):
+    """부품 항목을 부품 이름(LEG_001_01 …) 순으로 편 목록 — 시험이 값을 고칠 대상(항목은 레시피 안 같은 객체)."""
+    return [it for _, it in sorted((f'{g}_{it["part"]}', it) for c in comps(recipe).values() for g, its in c['parts'].items() for it in its)]
+
+
 def sealed(recipe, placements):
     """recipe 를 고친 뒤 짝 해시를 다시 맞춘다 — 해시 불일치가 아니라 고친 내용 때문에 거절되는지 보려고."""
     return recipe, dict(placements, recipe_sha256=recipe_sha256(recipe))
@@ -70,8 +81,9 @@ def test_두파일_판단은_역할이름과_받침을_보존한다(pair):
 def test_시험용_파일은_레시피_도구의_실제_벤치_파일과_같다():
     """fixtures 가 레시피 도구 출력(src/recipe_manager/recipes)과 어긋나면(한쪽만 고침) 여기서 걸린다."""
     real = Path(__file__).resolve().parents[2] / 'recipe_manager/recipes'
-    if json.loads((real / f'{MODEL}_recipe.json').read_text(encoding='utf-8')).get('schema') != 'recipe/3.0':
-        pytest.skip('레시피 도구의 recipes/ 가 아직 E-69 형식이 아니다(한세교 PR 병합 전) — 병합되면 이 시험이 켜진다')
+    tool = json.loads((real / f'{MODEL}_recipe.json').read_text(encoding='utf-8'))
+    if tool.get('schema') != 'recipe/3.0' or 'template' not in tool:
+        pytest.skip('레시피 도구의 recipes/ 가 아직 template.composition 구조가 아니다(한세교 도구 수정 전) — 바뀌면 이 시험이 켜진다')
     for suffix in ('_recipe.json', '_placements.csv'):
         assert (FIXTURES / f'{MODEL}{suffix}').read_bytes() == (real / f'{MODEL}{suffix}').read_bytes()
 
@@ -98,7 +110,7 @@ def test_입력문서는_변경하지_않는다(pair):
     original = copy.deepcopy(pair)
     d = RecipeDocument(*pair)
     d.geometry['steps'][0]['supports'].append('other')
-    d.design(MODEL)['recipe']['parts'].clear()
+    d.design(MODEL)['recipe']['template']['composition'].clear()
     assert pair == original
 
 
@@ -107,12 +119,21 @@ def test_입력문서는_변경하지_않는다(pair):
     (lambda r, p: p.update(model_id='OTHER'), True),
     (lambda r, p: p.update(recipe_sha256='bad'), False),
     (lambda r, p: p.update(recipe_sha256='0' * 64), False),
-    (lambda r, p: r['parts'][0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
-    (lambda r, p: r['parts'][0].update(part_name='B001'), True),
-    (lambda r, p: r['parts'][1].update(part_name=r['parts'][0]['part_name']), True),
-    (lambda r, p: r['parts'][0].update(stock_id='NOPE'), True),
-    (lambda r, p: r['parts'][0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
-    (lambda r, p: r['parts'][0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
+    (lambda r, p: items(r)[0].update(center_mm=[-25.0, 0.0, 9.0]), False),            # 구조만 고쳐 해시가 어긋남
+    (lambda r, p: comps(r)['LEG']['parts'].update(B001=comps(r)['LEG']['parts'].pop('LEG_001')), True),      # 그룹 이름이 역할_3자리가 아님
+    (lambda r, p: items(r)[1].update(part=items(r)[0]['part']), True),                  # 같은 그룹 안 부품 번호 중복
+    (lambda r, p: r['stocks'][0].update(size_mm=[-75.0, 25.0, 15.0]), True),
+    (lambda r, p: items(r)[0].update(part='1'), True),
+    (lambda r, p: comps(r)['LEG'].update(count=3), True),                                # count 가 실제 그룹 수(2)와 다름
+    (lambda r, p: comps(r)['LEG'].update(count=2.0), True),                              # 값이 같아도 정수 타입이 아님
+    (lambda r, p: comps(r)['SEAT'].update(count=True), True),                            # bool 은 정수가 아니다
+    (lambda r, p: comps(r)['LEG'].update(count='2'), True),
+    (lambda r, p: comps(r)['LEG'].pop('label'), True),
+    (lambda r, p: r.update(stocks=[{'stock_id': 'PART_001', 'size_mm': [75.0, 25.0, 15.0]}]), True),    # 부품이 참조하는 자재 번호가 사라짐
+    (lambda r, p: r.update(parts=[]), True),                                              # 옛 최상위 parts 가 남음
+    (lambda r, p: r['template'].pop('composition'), True),
+    (lambda r, p: items(r)[0].update(center_mm=[float('inf'), 0, 0]), False),            # 유한하지 않은 수는 해시를 만들 때부터 거절
+    (lambda r, p: items(r)[0].update(R=[[1, 0, 0], [0, 1, 0], [0, 0, -1]]), True),
     (lambda r, p: p['steps'][0].update(part_name='NOPE'), True),
     (lambda r, p: p['steps'][0].update(part_id='001_CHAIR_BENCH_V000_LEG_009_09'), True),
     (lambda r, p: p['steps'][1].update(sequence=1), True),
@@ -171,7 +192,7 @@ def test_옛_파일은_읽지_않는다(tmp_path):
     with pytest.raises(ValueError, match='cad_structure/1.0'):
         RecipeDocument.load(tmp_path, MODEL)
     copy_pair(tmp_path)
-    assert RecipeDocument.load(tmp_path, MODEL).recipe['parts'][0]['part_name'] == 'LEG_001_01'
+    assert items(RecipeDocument.load(tmp_path, MODEL).recipe)[0]['part'] == '01'
 
 
 def test_조립_방법_없이는_문서를_만들_수_없다(pair):
@@ -195,7 +216,7 @@ def test_구조_파일이_바뀌어_짝_해시가_다르면_거절한다(tmp_pat
     """조립 방법이 쓰인 뒤 구조가 바뀌면(재생성 · 수작업) 읽기를 거부한다."""
     copy_pair(tmp_path)
     recipe = json.loads((tmp_path / f'{MODEL}_recipe.json').read_text(encoding='utf-8'))
-    recipe['parts'][0]['center_mm'][2] += 1.0
+    items(recipe)[0]['center_mm'][2] += 1.0
     (tmp_path / f'{MODEL}_recipe.json').write_text(json.dumps(recipe))
     with pytest.raises(ValueError, match='recipe_sha256'):
         RecipeDocument.load(tmp_path, MODEL)
@@ -248,7 +269,7 @@ def test_경로이름을_설계ID로_쓰지_않는다(tmp_path, design_id):
 
 def test_검사응답은_recipe와_placements_원본을_반환한다(pair):
     """변환기 ① 두 문서 계약을 받으면 HMI 에 recipe · placements 를 함께 내보낸다(check_result/3.0)."""
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], placements=pair[1]))
     ok, reason, text = checker.handle_json(json.dumps(request))
     result = json.loads(text)
@@ -261,14 +282,14 @@ def test_변환기_두문서_누락은_ERROR(pair, missing):
     """부분 출력은 설계 합격이나 저장 가능한 결과로 전달하지 않는다."""
     output = dict(recipe=pair[0], placements=pair[1])
     del output[missing]
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: output)
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 
 
 def test_옛_이름_structure로_돌려주면_ERROR(pair):
     """E-52 의 {structure, recipe} 모양은 더 받지 않는다."""
-    request = RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair)
+    request = dict(RecipeToParts(MODEL, 'chair', [75, 25, 15]).convert(*pair), base_recipe=pair[0])
     checker = DesignChecker(CFG, parts_to_recipe=lambda _: dict(recipe=pair[0], structure=pair[1]))
     assert checker.handle_json(json.dumps(request))[:2] == (False, 'ERROR')
 
@@ -352,5 +373,27 @@ def test_해시_계산이_레시피_도구와_글자까지_같다(model_id):
     from d2_task.recipe_builder import RecipeBuilder
     doc = RecipeDocument.load(FIXTURES, model_id)
     assert recipe_sha256(doc.recipe) == RecipeBuilder().calculate_recipe_sha256(doc.recipe) == doc.placements['recipe_sha256']
+    # 두 함수와 별개로 hashlib 으로 직접 계산 — 키 정렬 · 공백 없음 · 한글 그대로 (10/8 한세교 정함)
+    direct = hashlib.sha256(json.dumps(doc.recipe, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')).hexdigest()
+    assert direct == doc.placements['recipe_sha256']
     if model_id == '001_CHAIR_BENCH_V000':
-        assert doc.placements['recipe_sha256'].startswith('2685767e') and doc.placements['recipe_sha256'].endswith('1c76')     # 한세교 시험에 고정된 벤치 값
+        # 새 구조(template.composition) 벤치 fixture 에 고정한 값 — 구조·키 이름이 바뀌면 여기서 걸린다(옛 구조 값 2685767e…1c76 은 폐기)
+        assert doc.placements['recipe_sha256'] == '87333b39c4897ce1fd6ebdf336b7f0a719feba547dd1bd1a3c63a4b039211645'
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda r: r.pop('stocks'),
+    lambda r: r.update(stocks=[]),
+    lambda r: r['stocks'].append(copy.deepcopy(r['stocks'][0])),
+    lambda r: r['stocks'][0].update(stock_id=''),
+    lambda r: items(r)[0].update(stock_id='MISSING'),
+    lambda r: items(r)[0].update(stock_id=[]),
+    lambda r: r['stocks'][0].update(size_mm=[True, 25, 15]),
+    lambda r: r['stocks'][0].update(size_mm=[0, 25, 15]),
+])
+def test_자재_목록과_참조_손상은_거절한다(pair, mutate):
+    """자재 누락·중복·없는 참조·불량 크기는 짝 해시가 맞아도 조립 전에 거절한다. 로봇 영향 없음."""
+    recipe, placements = pair
+    mutate(recipe)
+    with pytest.raises(ValueError):
+        RecipeDocument(*sealed(recipe, placements))

@@ -166,9 +166,10 @@ def _recipe(size_mm=(75, 25, 15), model_id='001_CHAIR_BENCH_V000'):
     """E-69 두 파일(조립 방법 · 구조)의 작은 레시피 — 눕힌 블록 두 개를 쌓는다 (SEAT_001_02 가 SEAT_001_01 위).
     반환: (조립 방법, 구조). recipe_parts 에는 load_recipe 처럼 구조를 'structure' 칸에 붙여 넣는다. steps 는 일부러 순서를 뒤집어 둔다."""
     structure = {'schema': 'recipe/3.0', 'model_id': model_id,
-                 'stocks': [{'stock_id': 'PART_001', 'size_mm': list(size_mm)}],
-                 'parts': [{'part_name': 'SEAT_001_01', 'stock_id': 'PART_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
-                            {'part_name': 'SEAT_001_02', 'stock_id': 'PART_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}
+                 'stocks': [{'stock_id': 'STOCK_001', 'size_mm': list(size_mm)}],
+                 'template': {'composition': {'SEAT': {'count': 1, 'parts': {'SEAT_001': [
+                     {'part': '01', 'stock_id': 'STOCK_001', 'center_mm': [0, 0, 7.5], 'R': IDENTITY},
+                     {'part': '02', 'stock_id': 'STOCK_001', 'center_mm': [0, 0, 22.5], 'R': IDENTITY}]}}}}}
     recipe = {'schema': 'placements/3.0', 'model_id': model_id,
               'steps': [{'part_name': 'SEAT_001_02', 'sequence': 2, 'stage': 2, 'grasp': 'FLAT_SHORT', 'grasp_axis': 'WIDTH',
                          'supports': ['SEAT_001_01']},
@@ -207,26 +208,32 @@ def test_recipe_blocks_rejects_old_blocks_format(robot_cfg):
         mm.recipe_parts(robot_cfg, {'schema': 'm0609.jenga.cad_recipe/1.0', 'parts': []})
 
 
-CSV_COLS = ['part_id', 'part_name', 'sequence', 'stage', 'stock_id', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
-            'center_z_mm', 'axis_L', 'axis_W', 'axis_T', 'grasp', 'grasp_axis', 'supports', 'cad_handle', 'recipe_sha256', 'schema']
+CSV_COLS = ['part_id', 'part_name', 'sequence', 'stage', 'size_L_mm', 'size_W_mm', 'size_T_mm', 'center_x_mm', 'center_y_mm',
+            'center_z_mm', 'axis_L', 'axis_W', 'axis_T', 'grasp', 'grasp_axis', 'supports', 'recipe_sha256', 'schema']
+
+
+def _tree_parts(structure):
+    """구조 트리(template.composition) → {블록 이름 '<그룹>_<part>': 부품 항목}."""
+    return {f'{group}_{item["part"]}': item for comp in structure['template']['composition'].values()
+            for group, items in comp['parts'].items() for item in items}
 
 
 def _write_files(folder, recipe, structure, sha=None, schema='placements/3.0'):
-    """_recipe() 를 E-69 파일 두 개로 쓴다: <모델ID>_recipe.json(구조) + <모델ID>_placements.csv(20칸, supports 는 ';').
+    """_recipe() 를 E-69 파일 두 개로 쓴다: <모델ID>_recipe.json(구조) + <모델ID>_placements.csv(18칸 — placements/3.0, supports 는 ';').
     sha · schema 를 주면 그 값으로 바꿔 써서 거절 시험에 쓴다. 반환: 구조 파일 경로(글자)."""
     rp = folder / f"{structure['model_id']}_recipe.json"
     rp.write_text(json.dumps(structure, indent=2, ensure_ascii=False), encoding='utf-8')
-    geo = {b['part_name']: b for b in structure['parts']}
+    geo = _tree_parts(structure)
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=CSV_COLS, lineterminator='\n')
     w.writeheader()
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]
         w.writerow({'part_id': f"{recipe['model_id']}_{st['part_name']}", 'part_name': st['part_name'], 'sequence': st['sequence'],
-                    'stage': st['stage'], 'stock_id': g['stock_id'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
+                    'stage': st['stage'], 'size_L_mm': 75.0, 'size_W_mm': 25.0, 'size_T_mm': 15.0,
                     'center_x_mm': g['center_mm'][0], 'center_y_mm': g['center_mm'][1], 'center_z_mm': g['center_mm'][2],
                     'axis_L': '+X', 'axis_W': '+Y', 'axis_T': '+Z', 'grasp': st['grasp'], 'grasp_axis': st['grasp_axis'],
-                    'supports': ';'.join(st['supports']), 'cad_handle': '', 'recipe_sha256': sha or mm.recipe_sha256(structure),
+                    'supports': ';'.join(st['supports']), 'recipe_sha256': sha or mm.recipe_sha256(structure),
                     'schema': schema})
     (folder / f"{structure['model_id']}_placements.csv").write_text(buf.getvalue(), encoding='utf-8')
     return str(rp)
@@ -275,7 +282,7 @@ def test_real_recipes_read_and_hash_matches_builder(robot_cfg, model_id):
     assert mm.recipe_sha256(structure) == RecipeBuilder().calculate_recipe_sha256(structure)
     loaded = mm.load_recipe(str(path))
     blocks = mm.recipe_parts(robot_cfg, loaded)
-    assert len(blocks) == len(structure['parts']) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
+    assert len(blocks) == len(_tree_parts(structure)) and all(b['part_id'].startswith(model_id + '_') for b in blocks)
 
 
 @pytest.mark.parametrize('ratio, factor', [(0.0, 1.0), (1.0, 1.0), (0.5, 0.5)])
