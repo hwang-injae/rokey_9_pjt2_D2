@@ -5,7 +5,7 @@
 - …/req 에 …/res 로 답한다(IRD 10.1 칸 그대로):
   hmi/command — select_design → READY · start → 가짜 조립(블록마다 progress/2.0) → DONE · scan → 스캔 단계 → SCAN_REVIEW + scan_result/2.0 · cancel
   (STOPPED 에서도 받음 = 화면 [초기화] — 작업 관리자 W183 흉내: 이번 조립을 버리고, [다시 시작]이 잠금을 풀면 IDLE) ·
-  gripper_open(ERROR · STOPPED 에서 그리퍼를 활짝 엶 = 화면 [그리퍼 열기]). 집고 놓는 중에는 그리퍼가 블록을 쥔 것으로(grasped true)
+  gripper_open(STOPPED 일 때만 그리퍼를 엶 = 화면 [그리퍼 열기] — 여는 동안 message_id gripper_opening, 끝나면 gripper_done). 집고 놓는 중에는 그리퍼가 블록을 쥔 것으로(grasped true)
   safety/stop → 잠금 + STOPPED(reason STOP_WEB) · check_design → 진짜 검사 묶음(d2_task DesignChecker + 변환기 ① — task_node 와 같은 연결,
   ROS 없는 파일이라 웹 PC 에서도 돎) — AI 생성(W108) 을 로봇 PC 없이 실제 검사 결과로 시험한다
   safety/resume → 풀림. 진짜 작업 관리자와 같이 조립 중에 멈췄으면 RECOVER → CHECK → 놓인 블록은 건너뛰고 이어서,
@@ -111,6 +111,7 @@ class MockRobot:
         self.st = dict(state='IDLE', run_id=None, design_id=None, part_id=None, message_id=None, message='대기')
         self.locked = False
         self.assembling = False       # 멈췄을 때 조립 중이었나 — 다시 시작 뒤 이어 갈지 정한다(진짜 작업 관리자와 같음)
+        self.opening = False          # 그리퍼 여는 중 — 그동안 state/2 message_id 는 gripper_opening 그대로(10/13 18시 PL)
         self.placed = []              # 이번 조립(run)에서 놓은 블록 이름 — 다시 시작 뒤 건너뛴다
         self.worker = None
         self.abort = threading.Event()
@@ -150,6 +151,8 @@ class MockRobot:
     def set_state(self, state, message='', message_id=None, **kw):
         """작업 관리자 상태를 바꾸고 state/2 을 보낸다."""
         with self.lock:
+            if self.opening:     # 여는 동안 다른 알림으로 덮지 않는다(진짜 작업 관리자와 같게 — 화면이 이 값으로 버튼을 막음)
+                message_id = 'gripper_opening'
             self.st.update(state=state, message=message, message_id=message_id, **kw)
             body = dict(schema='state/2', mode='auto', **self.st)
         self.pub('d2/task/state', body)
@@ -158,6 +161,13 @@ class MockRobot:
     def set_gripper(self, grasped, width_m=None):
         """가짜 그리퍼 상태 gripper_state/1 — 집고 놓는 중(PICK_PLACE)에는 블록을 쥔 것으로(화면 [그리퍼 열기] 시험용)."""
         self.pub('d2/gripper/state', {'schema': 'gripper_state/1', 'width_m': width_m, 'grasped': grasped}, qos=0)
+
+    def _open_gripper(self):
+        """가짜 그리퍼 열기 — 1.5초 뒤 빈 손(0.0865 m)으로 바꾸고 message_id gripper_done(처리 끝 — 성공 여부는 gripper/state)."""
+        time.sleep(1.5)
+        self.set_gripper(False, 0.0865)
+        self.opening = False
+        self.set_state(self.st['state'], '그리퍼 열기를 마쳤어요', 'gripper_done')
 
     def set_safety(self, locked, reason=''):
         """정지 상태를 바꾸고 safety_state/1 을 보낸다."""
@@ -261,10 +271,12 @@ class MockRobot:
         """hmi/command 처리 → (success, reason). 실제 작업 관리자 규칙을 간단히 흉내(잠금 · 상태 · 설계)."""
         cmd, design_id, state = b.get('cmd'), b.get('design_id') or '', self.st['state']
         if cmd == 'gripper_open':
-            # [그리퍼 열기]: 작업 관리자가 ERROR · STOPPED 에서 /d2/gripper/command(0.110 m — 활짝, 10/13 받침 경유) — 그 밖엔 거절
-            if state not in ('STOPPED', 'ERROR'):
+            # [그리퍼 열기](W183 · 10/13 PL): 작업 관리자가 STOPPED(잠김)일 때만 /d2/gripper/command(0.0865 m · 10 N) — 그 밖엔 거절
+            if state != 'STOPPED' or self.opening:
                 return False, 'BUSY'
-            self.set_gripper(False, 0.110)
+            self.opening = True
+            self.set_state(state, '그리퍼를 여는 중이에요', 'gripper_opening')
+            threading.Thread(target=self._open_gripper, daemon=True).start()   # 답은 바로, 열림 완료는 state/2 로(진짜와 같게)
             return True, ''
         if cmd == 'cancel' and state == 'STOPPED':
             # [초기화](W183 · W184): 정지 뒤 이번 조립을 버린다 — 잠금은 그대로, [다시 시작]이 풀면 이어 가지 않고 IDLE(작업 관리자

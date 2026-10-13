@@ -290,15 +290,6 @@ def test_놓은_블록이_5mm_넘게_어긋나면_사람이_고치고_다시_확
     drive(m, 'DONE')
 
 
-def test_그리퍼_열기는_오류_정지_상태에서만_받는다():
-    m, io = make()
-    opened = []
-    io.open_gripper = lambda: (opened.append(1) or True, '')
-    assert m.command('gripper_open')[0] is False and not opened                 # 대기 · 조립 중에는 안 받음
-    m._to_error('시험')
-    assert m.command('gripper_open') == (True, '') and opened == [1]
-
-
 class W144IO(SpareIO):
     """W144 촬영 훅(io.w144_start · w144_after_place · w144_finish)을 기록한다. fail_at = 몇 번째 촬영에서 실패할지(1부터, None = 안 함)."""
 

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import type { DesignPart, CmdResult, Design, Rules } from '@/lib/types';
-import type { Robot } from '@/lib/ws';
+import { gripperOpening, type Robot } from '@/lib/ws';
 import { MADE_KO, ROLE, designName, roleOf, stateName } from '@/lib/names';
 import DesignTree from './DesignTree';
 import Preview3D, { type Item3D } from './Preview3D';
@@ -61,7 +61,8 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
 
   const st = robot.state;
   const onRobot = !!design && st?.design_id === design.design_id;
-  const canSend = !!design && !sending && !robot.safety?.locked && robot.bridge && SELECTABLE.includes(st?.state ?? '');
+  const opening = gripperOpening(robot); // 그리퍼 여는 중엔 조립을 막는다(10/13 18시 PL)
+  const canSend = !!design && !sending && !robot.safety?.locked && !opening && robot.bridge && SELECTABLE.includes(st?.state ?? '');
 
   useEffect(() => setSent(null), [viewId]); // 다른 설계를 보면 앞 결과는 지운다
 
@@ -151,6 +152,8 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
               ? '누르면 로봇이 움직여요 — 작업 영역에 사람이 없는지 확인하세요'
               : robot.safety?.locked
                 ? '멈춤 — 먼저 왼쪽 [다시 시작]'
+                : opening
+                  ? '그리퍼를 여는 중 — 끝나면 누를 수 있어요'
                 : !robot.bridge
                   ? '로봇 PC 연결 끊김'
                   : `지금은 조립할 수 없어요(${stateName(st?.state) || '연결 전'})`}

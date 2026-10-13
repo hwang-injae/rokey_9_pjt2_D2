@@ -38,6 +38,11 @@ const EMPTY: Robot = {
   wrist: null, gen: null, scanImage: null, scanCloud: null, scanPreview: null, scanSave: null, log: [],
 };
 
+/** 작업 관리자가 그리퍼를 여는 중인가(state/2 message_id gripper_opening — 10/13 18시 PL, W183 · W184). 이 동안 화면은 조립 · 스캔 ·
+ *  다시 열기를 막는다. retained 마지막 state/2 로 판정하므로 새로고침 · 다시 붙어도 그대로이고, gripper_done 이나 그 뒤 다른 값이
+ *  오면 풀린다(완료 알림을 놓쳐도). message_id 로만 가르고 문구는 비교하지 않는다. 열렸는지는 gripper/state(잡힘 · 폭)로 따로 본다 */
+export const gripperOpening = (r: Robot) => r.state?.message_id === 'gripper_opening';
+
 function wsUrl(): string {
   const base = BASE || window.location.origin;
   return base.replace(/^http/, 'ws') + '/ws';

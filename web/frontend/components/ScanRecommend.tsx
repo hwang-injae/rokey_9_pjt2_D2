@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import * as api from '@/lib/api';
 import { designName } from '@/lib/names';
 import type { CmdResult, ScanMatch } from '@/lib/types';
-import type { Robot } from '@/lib/ws';
+import { gripperOpening, type Robot } from '@/lib/ws';
 
 const GOOD_RATE = 0.9; // V-48 기준(일치율 ≥ 90 %) — 이보다 낮으면 '많이 달라요'를 띄운다(막지는 않음, 사람이 정함)
 
@@ -43,7 +43,7 @@ export default function ScanRecommend({ robot, onView, onLog }: Props) {
   const best = list[0];
   const st = robot.state;
   const ready = st?.state === 'READY' && st.design_id === best.design_id; // 앞에서 설계 선택만 되고 출발이 거절된 경우
-  const canSend = !sending && !robot.safety?.locked && robot.bridge && (st?.state === 'SCAN_REVIEW' || ready);
+  const canSend = !sending && !robot.safety?.locked && !gripperOpening(robot) && robot.bridge && (st?.state === 'SCAN_REVIEW' || ready);
   const line = (m: ScanMatch) => `부품 ${m.matched}/${Math.max(m.scan_count, m.part_count)} 같음 (${Math.round(m.rate * 100)} %)`;
 
   async function assemble() {

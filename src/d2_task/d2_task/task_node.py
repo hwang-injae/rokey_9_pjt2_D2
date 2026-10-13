@@ -30,7 +30,7 @@ import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from d2_interfaces.action import PickPlace
-from d2_interfaces.srv import CheckProgress, GripperCommand, HmiCommand, JsonQuery, MoveTo, SceneAttach, StopRequest
+from d2_interfaces.srv import CheckProgress, HmiCommand, JsonQuery, MoveTo, SceneAttach, StopRequest
 from d2_safety.safe_stop import init_ros
 from geometry_msgs.msg import Pose
 from rclpy.action import ActionClient
@@ -86,8 +86,9 @@ class TaskNode(Node):
         self.declare_parameter('monitor_hmi', True)        # 웹 연결 신호(/d2/hmi/alive) 감시. design_source 와 따로다(E-62) — 웹 없이 개발할 때만 false 로 명시
         self.declare_parameter('log_dir', str(Path.home() / 'd2_data' / 'runs'))   # 조립 기록(CSV) 폴더 — 저장소 밖. 빈 값 = 파일 기록 끔
         # W144 촬영(one_pick 과 같음 — 최종 자리에 놓고 VERIFY 가 통과할 때마다 observe 에서 원자료 촬영, 끝나면 ZIP · 한석형 #140 촬영기).
-        # 촬영기(저장소 tools/w144_capture/placement_recorder.py)가 없으면 끈다
-        self.declare_parameter('w144_record', True)
+        # 촬영기(저장소 tools/w144_capture/placement_recorder.py)가 없으면 끈다. 기본 끔 — 카메라 없는 가상 · 가짜 로봇에서 [조립]이 바로 ERROR 가 되지 않게,
+        # A4 자료를 모을 실기 때만 -p w144_record:=true (10/13 19시 PL)
+        self.declare_parameter('w144_record', False)
         self.declare_parameter('w144_camera_prefix', '/camera/camera')   # 손목 카메라 토픽 접두(표준 RealSense — 다르면 이 값으로, INTEGRATION.md)
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
@@ -113,12 +114,10 @@ class TaskNode(Node):
         self.find_cli = self.create_client(JsonQuery, '/d2/vision/find_blocks', callback_group=cb)      # supply_mode: scatter 일 때만 쓴다
         self.stop_cli = self.create_client(StopRequest, '/d2/safety/stop', callback_group=cb)
         self.attach_cli = self.create_client(SceneAttach, '/d2/motion/scene/attach', callback_group=cb)    # 출발 때 남은 쥔 상자 떼기(받침 경유)
-        self.grip_cli = self.create_client(GripperCommand, '/d2/gripper/command', callback_group=cb)      # ERROR 에서 사람 확인 뒤 그리퍼 열기
         self.service_s = cfg['timeout']['service_s']      # 서비스 한 번의 제한 시간 · save_build 다시 보내기 간격 (robot.yaml)
         self.move_to_s = cfg['timeout']['move_to_s']
         self.pick_place_s = cfg['timeout']['pick_place_s']
         self.find_blocks_s = cfg['timeout'].get('find_blocks_s', self.service_s)    # 높이 지도 · 받침 재기는 3 s 를 넘을 수 있다(one_pick 10 s)
-        self.grip_force_n = cfg['gripper']['force_n']
         self.sender = BuildSender(self.manager, self._call_save, self.save_cli.remove_pending_request,
                                   self.save_cli.service_is_ready, self.service_s)
         self.state_pub = self.create_publisher(String, '/d2/task/state', LATCHED_QOS)
@@ -509,13 +508,6 @@ class TaskNode(Node):
             self.get_logger().info(f'[W144] 촬영 ZIP: {rec.finish(done)} (다 놓고 다 찍음 · 녹화 정상: {done})')
         except Exception as e:
             self.get_logger().warn(f'[W144] 기록 마무리 실패: {e!r}')
-
-    def open_gripper(self):
-        """그리퍼를 활짝(0.110 m) 연다 — ERROR 에서 사람이 블록을 받친 뒤 화면 명령 gripper_open 으로만(one_pick open_hand). 반환: (성공, reason)."""
-        if not self.grip_cli.wait_for_service(timeout_sec=self.service_s):
-            return False, 'GRIPPER_NO_RESPONSE'
-        res, why = self._call(self.grip_cli, GripperCommand.Request(width_m=0.110, force_n=float(self.grip_force_n)), lambda: False, 15.0)
-        return (res is not None and bool(res.success)), ('' if res is not None and res.success else why or 'GRIPPER_NO_RESPONSE')
 
     def publish_scan_result(self, body):
         """완성된 scan_result/2.0(mm)을 retained 성격의 ROS 토픽으로 방송한다. NaN·Infinity는 직렬화 오류로 거절한다."""

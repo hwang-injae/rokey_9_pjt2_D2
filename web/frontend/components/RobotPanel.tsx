@@ -6,12 +6,13 @@
 // 멈춘 뒤에는 [정지] 자리가 [초기화](W183 · W184 — 10/13 16시 PL 확정): 한 번 더 확인 → cancel(작업 관리자가 잠긴 채 이번 조립 기록을 닫음,
 // STOPPED 유지) → '블록을 치워 주세요' 알림 — 치우는 동안 잠금 유지 → [정리 끝] → resume(→ RECOVER → IDLE, 로봇 안 움직임).
 // cancel 이 거절되면 잠금을 풀지 않는다(그대로 풀면 조립을 이어 가므로). [그리퍼 열기] = 잠김 + 그리퍼가 쥐고 있을 때만 — 한 사람이
-// 블록을 받쳤는지 확인한 뒤 cmd gripper_open(작업 관리자가 ERROR · STOPPED 에서 연다 — 그 밖 상태와 잠김 + 쥠이 아닐 때는 아래 [그리퍼 열기] 버튼).
+// 블록을 받쳤는지 확인한 뒤 cmd gripper_open(작업 관리자가 STOPPED 일 때만 연다). 여는 동안(state/2 message_id gripper_opening — 10/13 18시
+// PL)은 조립 · 스캔 · 다시 열기를 막는다(lib/ws gripperOpening — 새로고침해도 retained 로 그대로).
 import { useState } from 'react';
 import * as api from '@/lib/api';
 import { designName, stateName, stopReasonKo } from '@/lib/names';
 import type { CmdResult } from '@/lib/types';
-import type { Robot } from '@/lib/ws';
+import { gripperOpening, type Robot } from '@/lib/ws';
 
 const has = (list: string[], s?: string) => !!s && list.includes(s);
 
@@ -43,10 +44,11 @@ export default function RobotPanel({ robot, onLog }: Props) {
 
   // 상태표(web/README 3장, SDD 5.1). 로봇 PC 가 끊기면 계속 · 스캔은 막는다(IRD 10.3)
   const bridge = robot.bridge;
+  const opening = gripperOpening(robot); // 그리퍼 여는 중 — 조립 · 스캔 · 다시 열기를 막는다(10/13 18시 PL)
   const waiting = has(['WAIT_SUPPLY', 'WAIT_HMI'], st);
   const can = {
     cont: !busy && !locked && bridge && waiting,
-    scan: !busy && !locked && bridge && has(['IDLE', 'DONE', 'SCAN_REVIEW'], st),
+    scan: !busy && !locked && !opening && bridge && has(['IDLE', 'DONE', 'SCAN_REVIEW'], st),
     cancel: !busy && !locked && has(['READY', 'ERROR', 'SCAN_REVIEW'], st),
   };
   const showResume = locked || has(['STOPPED', 'ERROR'], st);
@@ -70,15 +72,15 @@ export default function RobotPanel({ robot, onLog }: Props) {
     if (u.success) setClearNotice(false);
     else setNoticeErr(`잠금을 못 풀었어요 — ${u.message ?? u.reason}`);
   }
-  /** [그리퍼 열기]: 사람이 블록을 받친 뒤 — cmd gripper_open(작업 관리자가 ERROR · STOPPED 에서 연다). 바깥 영향: 그리퍼가 열림 */
+  /** [그리퍼 열기]: 사람이 블록을 받친 뒤 — cmd gripper_open(작업 관리자가 STOPPED 일 때만 연다). 바깥 영향: 그리퍼가 열림 */
   async function openGripper() {
     setAskOpen(false);
     const r = await send('그리퍼 열기', () => api.command('gripper_open'));
     if (!r.success) setNoticeErr(`그리퍼를 못 열었어요 — ${r.message ?? r.reason}`);
   }
   const gripperButton = locked && grasped && (
-    <button className="warn" disabled={!!busy} onClick={() => setAskOpen(true)} title="정지 중에 그리퍼가 쥔 블록을 빼요 — 한 사람이 블록을 받치고 누르세요">
-      {label('그리퍼 열기', '그리퍼 열기')}
+    <button className="warn" disabled={!!busy || opening} onClick={() => setAskOpen(true)} title="정지 중에 그리퍼가 쥔 블록을 빼요 — 한 사람이 블록을 받치고 누르세요">
+      {opening ? '그리퍼 여는 중…' : label('그리퍼 열기', '그리퍼 열기')}
     </button>
   );
   const width = robot.gripper?.width_m;
@@ -140,12 +142,6 @@ export default function RobotPanel({ robot, onLog }: Props) {
             {label('다시 시작', '다시 시작')}
           </button>
         )}
-        {has(['STOPPED', 'ERROR'], st) && !gripperButton && (
-          <button className="secondary" disabled={!!busy} title="블록을 쥔 채 멈췄을 때 — 블록을 손으로 받친 뒤 누르세요(그리퍼를 활짝 엶)"
-            onClick={() => send('그리퍼 열기', () => api.command('gripper_open'))}>
-            {label('그리퍼 열기', '그리퍼 열기')}
-          </button>
-        )}
       </div>
 
       {gripperButton && !clearNotice && <div className="btn-row">{gripperButton}</div>}
@@ -201,7 +197,7 @@ export default function RobotPanel({ robot, onLog }: Props) {
       )}
 
       <div className="foot muted">
-        그리퍼 {robot.gripper ? `${robot.gripper.grasped ? '잡음' : '안 잡음'}${width == null ? '' : ` · ${(width * 1000).toFixed(0)} mm`}` : '신호 없음'}
+        그리퍼 {opening ? '여는 중… · ' : ''}{robot.gripper ? `${robot.gripper.grasped ? '잡음' : '안 잡음'}${width == null ? '' : ` · ${(width * 1000).toFixed(0)} mm`}` : '신호 없음'}
       </div>
     </section>
   );
