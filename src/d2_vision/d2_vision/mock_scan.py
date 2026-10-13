@@ -103,7 +103,7 @@ def ori_table(size_mm):
 def load_recipe_files(recipe_dir, design_id):
     """recipe_dir 의 레시피 두 파일(E-69) → (구조 recipe/3.0 dict, 조립 방법 placements/3.0 dict). 바깥 영향 없음(파일 읽기만).
 
-    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{block, part_id, sequence, stage, grasp,
+    조립 방법은 IRD 6장 전달 객체 모양으로 만든다: {schema, model_id, recipe_sha256, steps[{part_name, part_id, sequence, stage, grasp,
     grasp_axis, supports[]}]} — CSV 에서 sequence · stage 는 정수, supports 는 ';' 로 나눈 목록(빈 칸이면 []).
     d2_motion.load_recipe 를 쓰지 않는 이유: d2_vision 시험(CI)은 src/d2_vision 만 경로에 넣는다. 거절 규칙은 load_recipe 와 같다.
     출력: 두 파일 중 하나라도 없으면(이름 비었음 · 경로 문자 포함) None.

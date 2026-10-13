@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 from d2_task.recipe_document import GRASPS
+from d2_task.recipe_to_parts import ORIS, ori_extents   # 방향 코드 · 표 정본(10/14 PL C2)
 from design_store import AI_NONE, SCHEMA_PARTS, build_summary, family_of, split_design_id
 
 LLM_URL = os.environ.get('D2_LLM_URL') or 'http://127.0.0.1:8790/v1'   # 중계 claude_bridge(컨테이너에서는 compose 가 호스트 주소로 줌)
@@ -52,7 +53,6 @@ FIX_HINTS = (
     ('역할 목록', '역할은 [역할 목록]의 이름만 쓴다'),
     ('group', '같은 role · group 블록은 면으로 이어져야 한다 — 떨어진 덩어리는 group 번호를 나눠라'),
 )
-ORIS = ('x', 'y', 'xe', 'ye', 'zx', 'zy')   # IRD 2장 방향 코드
 PROMPTS = Path(__file__).parent / 'prompts'
 ROLES = Path(__file__).resolve().parents[2] / 'src' / 'd2_task' / 'd2_task' / 'roles.json'   # 변환기 ①과 같은 목록 파일
 MADE_KO = {'cad': '도면', 'web': '웹 글', 'voice': '음성', 'scan': '스캔'}
@@ -92,7 +92,7 @@ class DesignGenerator:
         role_lines = [f'- {k}: {v}' for k, v in roles['roles'].items()]
         role_lines += [f'- (옵션) {k}: {v} — 역할 뒤에 붙임(예 LEG_{k})' for k, v in roles.get('options', {}).items()]
         L, W, T = (round(v * 1000) for v in rules['block_size_m'])
-        self.extent = {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}   # IRD 2장 ori 표 — 피드백 설명용
+        self.extent = ori_extents((L, W, T))   # IRD 2장 ori 표 — 피드백 설명용(정본 d2_task, 10/14 PL C2)
         self.design_prompt = string.Template((Path(prompts_dir) / 'design_system.txt').read_text(encoding='utf-8')).substitute(
             L=L, W=W, T=T, area_half=round(rules['assembly_area_half_m'] * 1000), margin=rules['margin_mm'],
             edge=f"{L / 2 - rules['margin_mm']:g}", half_L=f'{L / 2:g}', two_L=2 * L,     # 받침 예시 숫자(다리 끝 안쪽 · 이어 붙이기)

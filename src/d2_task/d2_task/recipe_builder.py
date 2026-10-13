@@ -4,6 +4,9 @@ import re
 
 import numpy as np
 
+# 설계 잡기 6개 · 부품 이름 규칙은 정본(recipe_document)을 가져다 쓴다(10/14 PL C1 · C3 — 같은 표를 따로 두면 한쪽만 고쳐 어긋난다)
+from d2_task.recipe_document import GRASPS, part_id, part_name
+
 # 형식 이름 = <이름>/<앞>.<뒤>. 레시피(구조)와 조립 방법은 짝이라 숫자를 같이 올린다 (10/8 한세교, E-52 의 cad_structure/1.0 · cad_recipe/1.0 다음).
 RECIPE_SCHEMA = 'recipe/3.0'
 PLACEMENTS_SCHEMA = 'placements/3.0'
@@ -24,7 +27,6 @@ VERTICAL_AXIS = {'FLAT': 2, 'EDGE': 1, 'STAND': 0}
 
 # 파지 방법 6가지 <놓인 상태>_<LONG|SHORT> (IRD 2장, S-25). LONG = 수평 치수 중 긴 쪽을 손가락 사이에 끼운다.
 # 그리퍼는 위에서 내려오므로 닫는 방향은 늘 수평이다. 치수는 이름에 넣지 않는다(닫는 폭은 블록 치수로 계산).
-GRASPS = ('FLAT_SHORT', 'FLAT_LONG', 'EDGE_SHORT', 'EDGE_LONG', 'STAND_SHORT', 'STAND_LONG')
 
 # 옛 DXF의 GRASP 속성(75×25×15 블록 기준 치수 이름) → 닫힘 축 이름. CAD 속성을 읽을 때만 쓴다.
 LEGACY_GRASP = {'END_75': 'LENGTH', 'SIDE_25': 'WIDTH', 'THICKNESS_15': 'THICKNESS'}
@@ -152,7 +154,7 @@ class RecipeBuilder:
         실패: 없는 stock_id 를 참조하면 KeyError.
         """
         sizes = {stock['stock_id']: stock['size_mm'] for stock in recipe['stocks']}
-        return [{'part_name': f'{group}_{item["part"]}', 'size_mm': sizes[item['stock_id']],
+        return [{'part_name': part_name(group, item['part']), 'size_mm': sizes[item['stock_id']],
                  'center_mm': item['center_mm'], 'R': item['R']}
                 for comp in recipe['template']['composition'].values()
                 for group, items in comp['parts'].items()
@@ -263,7 +265,7 @@ class RecipeBuilder:
                 if not supports:
                     raise ValueError(f'{part["part_name"]}: nothing placed beneath it yet; it would float at this point in the sequence')
             # part_id = <모델ID 대문자>_<블록 이름> (IRD 2장 — 생성 설계 001_CHAIR_BENCH_V001 → 001_CHAIR_BENCH_V001_LEG_001_01, task RecipeDocument 와 같음)
-            steps.append({'part_name': part['part_name'], 'part_id': f'{recipe["model_id"].upper()}_{part["part_name"]}',
+            steps.append({'part_name': part['part_name'], 'part_id': part_id(recipe['model_id'], part['part_name']),
                           'sequence': sequence, 'stage': stage, 'grasp': grasp,
                           'grasp_axis': next(name for name, k in AXES.items() if k == closing_axis),
                           'supports': supports})

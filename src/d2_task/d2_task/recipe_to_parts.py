@@ -13,6 +13,9 @@ SCHEMA_OUT = 'parts/3.0'              # IRD 6장 parts/3.0 (E-69)
 
 
 
+ORIS = ('x', 'y', 'xe', 'ye', 'zx', 'zy')   # 방향 코드(IRD 2장) — 정본(10/14 PL C2). ori_extents 키와 같다
+
+
 def ori_extents(block_mm):
     """블록 크기(길이 · 폭 · 두께, mm) → 방향 코드마다 (x · y · z 방향 길이). IRD 2장 `ori` 표 · jenga_check.py SIZE 와 같은 규칙.
 

@@ -584,7 +584,7 @@ def recipe_sha256(recipe):
 def load_recipe(path):
     """레시피 파일 <모델ID>_recipe.json(구조, recipe/3.0)과 같은 폴더의 <모델ID>_placements.csv(조립 방법, 줄마다 placements/3.0)를 읽어
     {'schema', 'model_id', 'recipe_sha256', 'steps', 'structure'} 로 붙인다 — recipe_parts 가 둘을 블록 이름으로 잇는다(E-69).
-    steps 는 CSV 의 조립 방법 칸(block · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
+    steps 는 CSV 의 조립 방법 칸(part_name · part_id · sequence · stage · grasp · grasp_axis · supports)만 쓰고, 표시 칸(중심 · 크기 · 방향)은
     구조 파일과 같은 값이라 읽지 않는다. sequence · stage 는 정수, supports 는 ';' 로 나눈 목록.
     실패: 조립 방법 파일이 없으면 FileNotFoundError. 형식이 recipe/3.0 · placements/3.0 이 아니거나(옛 cad_* 는 바꿔 읽지 않고 거절)
     recipe_sha256 이 구조와 다르면 ValueError — 구조가 바뀌었는데 옛 조립 방법으로 쌓으면 받침 · 잡기가 어긋난다."""
@@ -616,7 +616,7 @@ def recipe_model_id(recipe):
 def recipe_parts(cfg, recipe):
     """레시피 -> sequence 순서의 블록 목록 (설계 좌표 -> base 좌표).
 
-    레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](block · part_id · sequence · stage · grasp_axis · supports — 블록 이름)
+    레시피 = E-69 두 파일: 조립 방법 placements/3.0 steps[](part_name · part_id · sequence · stage · grasp_axis · supports — 부품 이름)
     + 구조 recipe/3.0 (load_recipe 가 'structure' 칸에 붙임: stocks[](stock_id · size_mm) +
     template.composition[역할].parts[그룹][](part · stock_id · center_mm · R),
     블록 이름 = '<그룹>_<part>' 예 LEG_001_01 — 사람 칸 label · revision 은 읽지 않는다).
@@ -658,7 +658,8 @@ def recipe_parts(cfg, recipe):
         model = recipe['model']
         sizes = {p['stock_id']: p['size_mm'] for p in model['stocks']}
         inst = {i['instance_id']: i for i in model['instances']}
-        bid = {st['instance_id']: st.get('part_id') or f'{model["model_id"]}_B{st["sequence"]:03d}' for st in recipe['steps']}
+        # 순서표에 part_id 가 없을 때만 정본 규칙(<설계 ID 대문자>_<부품 이름>)으로 — 옛 _B### 꼴은 없앰(10/14 PL C3, tests/test_shared_tables.py)
+        bid = {st['instance_id']: st.get('part_id') or f'{model["model_id"].upper()}_{st["instance_id"]}' for st in recipe['steps']}
         for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
             i = inst[st['instance_id']]
             out.append(part(bid[st['instance_id']], st['sequence'], st.get('stage'), sizes[i['stock_id']], i['center_mm'], i['R'],
@@ -668,7 +669,7 @@ def recipe_parts(cfg, recipe):
     sizes = {p['stock_id']: p['size_mm'] for p in struct['stocks']}
     geo = {f'{group}_{item["part"]}': item for comp in struct['template']['composition'].values()
            for group, items in comp['parts'].items() for item in items}
-    full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"]}_{st["part_name"]}' for st in recipe['steps']}
+    full = {st['part_name']: st.get('part_id') or f'{recipe["model_id"].upper()}_{st["part_name"]}' for st in recipe['steps']}
     for st in sorted(recipe['steps'], key=lambda k: k['sequence']):
         g = geo[st['part_name']]
         out.append(part(full[st['part_name']], st['sequence'], st.get('stage'), sizes[g['stock_id']], g['center_mm'], g['R'],

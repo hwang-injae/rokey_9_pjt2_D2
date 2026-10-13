@@ -37,6 +37,7 @@ import time
 
 from d2_task.block_picker import BlockPicker
 from d2_task.recipe_document import same_major
+from d2_task.recipe_to_parts import ORIS
 from d2_task.run_logger import RunLogger, _reject_constant
 from d2_task.scatter_pick import REOBSERVE, REPLAN_SAME, ScatterFlow, StepTracker, contact_phase, grasped_now
 from d2_task.task_planner import TaskPlanner
@@ -1142,7 +1143,7 @@ class TaskManager:
                 if isinstance(num, bool) or not isinstance(num, int) or num <= 0 or num in nums:
                     raise ValueError('블록 scan_num 이 잘못됐다')
                 nums.add(num)
-                if b.get('ori') not in ('x', 'y', 'xe', 'ye', 'zx', 'zy') or not isinstance(b.get('inferred', False), bool):
+                if b.get('ori') not in ORIS or not isinstance(b.get('inferred', False), bool):
                     raise ValueError('블록 ori · inferred 가 잘못됐다')
                 if any(isinstance(b[k], bool) or not isinstance(b[k], (int, float)) for k in ('x', 'y', 'z')):
                     raise ValueError('블록 좌표가 숫자가 아니다')

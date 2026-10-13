@@ -28,6 +28,17 @@ def same_major(got, expected):
     return name == exp_name and ver.split('.')[0] == exp_ver.split('.')[0]
 
 
+def part_name(group, part):
+    """부품 이름 = <그룹>_<번호 2자리>(예 LEG_001 + '01' → LEG_001_01 — 작명 규칙 v3). 정본(10/14 PL C3) — 레시피 도구 · 읽기가 이 함수를 쓰고,
+    다른 패키지 복사본(d2_motion · d2_vision)은 tests/test_shared_tables.py 가 같은지 본다. 바깥 영향 없음."""
+    return f'{group}_{part}'
+
+
+def part_id(design_id, name):
+    """노드 사이 전체 부품 이름 = <설계 ID 대문자>_<부품 이름>(IRD 2장 — 예 001_CHAIR_BENCH_V000_LEG_001_01). 정본(10/14 PL C3). 바깥 영향 없음."""
+    return f'{design_id.upper()}_{name}'
+
+
 def check_schema(obj, expected, label):
     """obj 가 객체이고 schema 가 expected 와 앞자리까지 같은지 본다(same_major). 아니면 받은 schema 를 적어 ValueError
     (옛 recipe/2.0 · cad_* · assembly.recipe 도 여기서 거절)."""
@@ -173,7 +184,7 @@ class RecipeDocument:
                 for item in items:
                     if not isinstance(item, dict) or not isinstance(item.get('part'), str) or not re.fullmatch(r'[0-9]{2}', item['part']):
                         raise ValueError(f'{group}: part 가 2자리 글자가 아니다')
-                    name = f'{group}_{item["part"]}'
+                    name = part_name(group, item['part'])
                     if name in instances:
                         raise ValueError(f'{name}: 부품 이름이 중복이다')
                     stock_id = item.get('stock_id')
@@ -224,10 +235,10 @@ class RecipeDocument:
             if len(supports) != len(set(supports)):
                 raise ValueError('supports 에 같은 block 이 중복이다')
             sequences[st['part_name']] = seq
-            part_id = f'{model_id.upper()}_{st["part_name"]}'
-            if 'part_id' in st and st['part_id'] != part_id:
-                raise ValueError(f'step 의 part_id({st["part_id"]!r})가 <모델ID 대문자>_<블록 이름>({part_id!r})과 다르다')
-            rows.append(dict(st, instance_id=st['part_name'], part_id=part_id, support_instance_ids=supports))
+            pid = part_id(model_id, st['part_name'])
+            if 'part_id' in st and st['part_id'] != pid:
+                raise ValueError(f'step 의 part_id({st["part_id"]!r})가 <모델ID 대문자>_<블록 이름>({pid!r})과 다르다')
+            rows.append(dict(st, instance_id=st['part_name'], part_id=pid, support_instance_ids=supports))
         if set(sequences) != set(instances):
             raise ValueError('recipe(구조)의 모든 block 이 placements 에 한 번씩 있어야 한다')
         for st in steps:

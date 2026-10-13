@@ -19,7 +19,7 @@ import threading
 import time
 from pathlib import Path
 
-from d2_task.recipe_document import RecipeDocument
+from d2_task.recipe_document import RecipeDocument, same_major  # 형식 앞자리 비교 정본(10/14 PL C4)
 from d2_task.recipe_to_parts import RecipeToParts, ori_extents
 
 SCHEMA_DESIGN = 'design/3.0'
@@ -49,15 +49,6 @@ def split_design_id(design_id):
     if not m:
         raise ValueError(f'설계 ID {design_id!r} 가 <Template ID>_V<3자리> 꼴이 아니다(E-84)')
     return m.group(1), int(m.group(2))
-
-
-def same_major(got, expected):
-    """형식 버전 규칙(IRD 6장): 이름과 앞자리가 같으면 받는다(뒷자리 · 모르는 칸은 무시). 'state/2' 같은 점 없는 이름도 앞자리로 본다."""
-    if not isinstance(got, str) or '/' not in got:
-        return False
-    name, ver = got.split('/', 1)
-    exp_name, exp_ver = expected.split('/', 1)
-    return name == exp_name and ver.split('.')[0] == exp_ver.split('.')[0]
 
 
 def build_summary(build):

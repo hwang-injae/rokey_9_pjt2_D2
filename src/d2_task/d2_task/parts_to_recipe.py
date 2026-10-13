@@ -10,6 +10,7 @@ from pathlib import Path
 
 from d2_task.recipe_builder import RecipeBuilder
 from d2_task.recipe_document import recipe_sha256, same_major
+from d2_task.recipe_to_parts import ori_extents
 
 SCHEMA_REQUEST = 'parts/3.0'
 
@@ -59,9 +60,8 @@ class PartsToRecipe:
         실패: 목록 파일이 없거나 깨졌으면 OSError · ValueError (설정 고장 — AI 실수가 아님).
         """
         self.grasp_options = grasp_options
-        L, W, T = block_mm
-        # 방향 코드 → (x · y · z 방향 길이) mm. IRD 2장 ori 표 · task ori_extents 와 같은 규칙.
-        self.extent = {'x': (L, W, T), 'y': (W, L, T), 'xe': (L, T, W), 'ye': (T, L, W), 'zx': (T, W, L), 'zy': (W, T, L)}
+        # 방향 코드 → (x · y · z 방향 길이) mm — 정본 ori_extents 를 쓴다(10/14 PL C2)
+        self.extent = ori_extents(block_mm)
         self.roles, self.options = self.load_role_list(roles_path)
         self.builder = RecipeBuilder()
 
