@@ -78,7 +78,7 @@ def test_string_fields_defaults_and_rejects_non_text():
 def test_query_request_drops_req_id_keeps_rest():
     """check_design 요청: req_id 만 빼고 parts/4.0 객체 그대로(한글 포함)."""
     body = {'req_id': '9a', 'schema': 'parts/4.0', 'design_id': '001_CHAIR_BENCH_V001', 'family': 'chair',
-            'blocks': [{'order': 1, 'role': 'LEG'}], 'note': '의자'}
+            'parts': [{'sequence': 1, 'role': 'LEG'}], 'note': '의자'}
     assert json.loads(bc.query_request_json(body)) == {k: v for k, v in body.items() if k != 'req_id'}
     assert '의자' in bc.query_request_json(body)
 

@@ -155,7 +155,7 @@ def test_infer_result_failures(tmp_path):
 
 
 def test_bench_blocks_match_ird_example():
-    """벤치 첫 블록 = IRD 6장 blocks/2 예시({"order":1,"x":-25,"y":0,"z":0,"ori":"y"}) — 설계 좌표 mm, z = 아랫면."""
+    """벤치 첫 블록 = IRD 6장 blocks/2 예시({"scan_num":1,"x":-25,"y":0,"z":0,"ori":"y"}) — 설계 좌표 mm, z = 아랫면."""
     s, r = load('001_CHAIR_BENCH_V000')
     first = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)['blocks'][0]
     assert (first['scan_num'], first['x'], first['y'], first['z'], first['ori'], first['inferred']) == (1, -25.0, 0.0, 0.0, 'y', False)
@@ -164,7 +164,7 @@ def test_bench_blocks_match_ird_example():
 @pytest.mark.parametrize('design_id, n', DESIGNS)
 def test_same_blocks_as_converter_2(design_id, n):
     """변환기 ②(d2_task RecipeToParts)와 같은 자리 · 방향을 낸다. d2_task 를 못 읽으면 건너뜀.
-    변환기 ②는 parts/4.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 order · x · y · z · ori 만 비교한다."""
+    변환기 ②는 parts/4.0(역할 · 단계 · 잡기 칸 더함, E-69)이고 스캔은 blocks/2 이라 sequence(= scan_num) · x · y · z · ori 만 비교한다."""
     s, r = load(design_id)
     sys.path.insert(0, str(ROOT / 'src/d2_task'))
     try:
@@ -174,7 +174,7 @@ def test_same_blocks_as_converter_2(design_id, n):
     want = rtb.RecipeToParts('scan_chair_01', 'chair', BLOCK_MM).convert(s, r)
     got = structure_to_blocks(s, r, 'scan_chair_01', 'chair', 0)
     keys = ('x', 'y', 'z', 'ori')
-    assert [b['scan_num'] for b in got['blocks']] == [b['order'] for b in want['parts']]     # 가짜 스캔 번호 = 조립 순서
+    assert [b['scan_num'] for b in got['blocks']] == [b['sequence'] for b in want['parts']]     # 가짜 스캔 번호 = 조립 순서
     assert [{k: b[k] for k in keys} for b in got['blocks']] == [{k: b[k] for k in keys} for b in want['parts']]
     assert (got['design_id'], len(got['blocks'])) == (want['design_id'], n)
 

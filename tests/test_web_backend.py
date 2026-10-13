@@ -467,7 +467,7 @@ def test_store_registers_four_bases_as_design_2(store):
     assert d['recipe']['schema'] == 'recipe/4.0' and d['placements']['schema'] == 'placements/4.0'
     assert d['parts']['schema'] == 'parts/4.0' and len(d['parts']['parts']) == 11
     # 3D 진행도 색을 잇는 길: placements 의 sequence = blocks 의 order
-    assert sorted(s['sequence'] for s in d['placements']['steps']) == sorted(b['order'] for b in d['parts']['parts'])
+    assert sorted(s['sequence'] for s in d['placements']['steps']) == sorted(b['sequence'] for b in d['parts']['parts'])
 
 
 def test_store_list_is_summary_for_tree(store):

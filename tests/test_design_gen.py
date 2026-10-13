@@ -430,7 +430,7 @@ def scan_answer(parts, parent, reason='블록 수 · 다리 벽이 같다', drop
     """GPT 의 스캔 채우기 답(W177 진짜 scan_fill 시험용) — scan_num 마다 채울 칸만(scan_of 의 번호 규칙: 거꾸로 = n − order + 1).
     drop 개만큼 뒤에서 뺀다(모양 틀린 답)."""
     n = len(parts)
-    rows = [{'scan_num': n - p['order'] + 1, **{k: p[k] for k in ('order', 'role', 'group', 'stage', 'grasp')}} for p in parts]
+    rows = [{'scan_num': n - p['sequence'] + 1, **{k: p[k] for k in ('sequence', 'role', 'group', 'stage', 'grasp')}} for p in parts]
     body = {'parent_id': parent, 'reason': reason, 'plan': 'z0: …', 'parts': rows[:len(rows) - drop]}
     return SimpleNamespace(content=json.dumps(body, ensure_ascii=False), refusal=None, tool_calls=None)
 
@@ -440,8 +440,8 @@ def test_scan_fill_keeps_scan_shape_and_passes_check(store, good):
     gen, client = make(store, [tool_call(BENCH), scan_answer(good, BENCH)])
     r = gen.scan_fill(scan_of(good))
     assert r['parent_id'] == BENCH and r['ai_template'] == TEMPLATE and r['ai_reason'] == '블록 수 · 다리 벽이 같다'
-    assert [{k: p[k] for k in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in r['parts']] == \
-        [{k: p[k] for k in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in good]
+    assert [{k: p[k] for k in ('sequence', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in r['parts']] == \
+        [{k: p[k] for k in ('sequence', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp')} for p in good]
     assert all('inferred' not in p for p in r['parts'])                     # 스캔에 없는 칸은 만들지 않음
     design_id, _ = store.new_design_id(TEMPLATE, r['parent_id'])
     chk = gen._check({'schema': 'parts/4.0', 'design_id': design_id, 'parts': r['parts']})
@@ -491,7 +491,7 @@ def test_scan_fill_feedback_and_tool_failure_fallback(store, good):
     assert '[앞 검사 결과]' in text and '9번 블록이 공중' in text and '고칠 것' in text
     n = len(good)
     shown = json.loads(text.split('[앞 답]\n')[1].split('\n')[0])
-    assert {'scan_num': n - 9 + 1, 'order': 9} == {k: shown[8][k] for k in ('scan_num', 'order')}   # 앞 order 9 = 어느 스캔 블록인지
+    assert {'scan_num': n - 9 + 1, 'sequence': 9} == {k: shown[8][k] for k in ('scan_num', 'sequence')}   # 앞 sequence 9 = 어느 스캔 블록인지
 
 
 def test_scan_fill_rejects_bad_input_before_calling_ai(store):

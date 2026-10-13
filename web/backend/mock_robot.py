@@ -226,7 +226,7 @@ class MockRobot:
         (지금까지 모은 누적본, index 1 · 2 · 3) — 다리가 보내는 것과 같은 토픽 · 순서(JSON 바로 뒤 PLY). 손목 RGB 는 화면에 안 씀(10/13 PL).
         """
         _, design = self.local_design(BENCH)
-        items = [{'scan_num': b['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
+        items = [{'scan_num': b['sequence'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'], 'inferred': i < 2}
                  for i, b in enumerate(design['parts'])]     # 가려져 추측한 블록 2개를 흉내(화면 반투명 표시 시험용)
         poses = ('observe', 'observe_front', 'observe_side')
         live = 0

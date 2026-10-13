@@ -153,7 +153,7 @@ def test_design_gen_runs_through_bridge(tmp_path):
     store.register_bases()
     bench = store.get_design(BENCH)['parts']['parts']
     n = len(bench)
-    fill = [{'scan_num': n - p['order'] + 1, **{k: p[k] for k in ('order', 'role', 'group', 'stage', 'grasp')}} for p in bench]
+    fill = [{'scan_num': n - p['sequence'] + 1, **{k: p[k] for k in ('sequence', 'role', 'group', 'stage', 'grasp')}} for p in bench]
     answers = iter([
         {'out_of_scope': False, 'reason': '', 'candidates': [{'idea': '그대로', 'plan': 'p', 'parts': bench}] * 3},   # ① 후보
         {'design_id': BENCH},                                                                                            # ② 도구 읽기

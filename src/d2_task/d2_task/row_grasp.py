@@ -13,11 +13,11 @@ SIDE_TOL_MM = 3.0          # 긴 면을 맞댐 = 폭 방향 중심 거리가 설
 
 
 def row_orders(parts, block_mm):
-    """연짝에 든 눕힌 블록의 order 집합.
+    """연짝에 든 눕힌 블록의 sequence 집합.
 
     연짝 = 두 블록이 모두 눕힘 · 같은 방향(ori) · 같은 층(아랫면 차 LAYER_TOL_MM 안)이고, 폭 방향 중심 거리가 설계 폭(±SIDE_TOL_MM),
     길이 방향 어긋남이 길이 절반보다 작음(긴 면이 서로 마주 봄). 입력: parts = parts/4.0 parts 목록, block_mm = [길이, 폭, 두께] mm
-    (robot.yaml block_size_m × 1000). 출력: set(order). 칸이 빠진 블록은 KeyError(부르는 쪽 형식 검사가 먼저다).
+    (robot.yaml block_size_m × 1000). 출력: set(sequence). 칸이 빠진 블록은 KeyError(부르는 쪽 형식 검사가 먼저다).
     """
     length, width = block_mm[0], block_mm[1]
     flat = [p for p in parts if p['ori'] in FLAT_ORIS]
@@ -29,23 +29,23 @@ def row_orders(parts, block_mm):
             dx, dy = abs(b['x'] - a['x']), abs(b['y'] - a['y'])
             along_l, along_w = (dx, dy) if a['ori'] == 'x' else (dy, dx)
             if abs(along_w - width) <= SIDE_TOL_MM and along_l < length / 2:
-                rows.add(a['order'])
+                rows.add(a['sequence'])
                 break
     return rows
 
 
 def fix_row_grasps(parts, block_mm):
-    """연짝 블록 중 grasp 가 FLAT_SHORT 인 것을 FLAT_LONG 으로 바꾼 새 parts 목록과 바꾼 order 목록.
+    """연짝 블록 중 grasp 가 FLAT_SHORT 인 것을 FLAT_LONG 으로 바꾼 새 parts 목록과 바꾼 sequence 목록.
 
     입력 목록은 바꾸지 않는다(블록마다 얕은 복사). 연짝이 아닌 블록 · 이미 FLAT_LONG 인 블록은 그대로.
-    반환: (새 parts 목록, [바꾼 order …] — order 순).
+    반환: (새 parts 목록, [바꾼 sequence …] — sequence 순).
     """
     rows = row_orders(parts, block_mm)
     out, changed = [], []
     for p in parts:
         q = dict(p)
-        if p['order'] in rows and p.get('grasp') == 'FLAT_SHORT':
+        if p['sequence'] in rows and p.get('grasp') == 'FLAT_SHORT':
             q['grasp'] = 'FLAT_LONG'
-            changed.append(p['order'])
+            changed.append(p['sequence'])
         out.append(q)
     return out, sorted(changed)

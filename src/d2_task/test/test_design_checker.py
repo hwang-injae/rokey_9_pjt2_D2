@@ -35,7 +35,7 @@ def base_design(model_id):
 def design(*items):
     """(x, y, z, ori) 들 → order 1.. 의 parts/4.0 (AI 칸은 형식만 맞는 값: 역할 LEG · 부품 1 · 단계 1 · 잡기 FLAT_SHORT). base_recipe 는 없다 — NO_TEMPLATE 과 같이 쓴다."""
     return {'schema': 'parts/4.0', 'design_id': 't', 'family': 'test',
-            'parts': [{'order': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
+            'parts': [{'sequence': i, 'x': x, 'y': y, 'z': z, 'ori': o, 'role': 'LEG', 'group': 1, 'stage': 1, 'grasp': 'FLAT_SHORT'}
                        for i, (x, y, z, o) in enumerate(items, 1)]}
 
 
@@ -144,8 +144,8 @@ def test_작업영역_밖():
     (lambda r: r['parts'][0].update(ori='q'), 'ori='),
     (lambda r: r['parts'][0].update(x='1'), 'x 가 숫자가 아니다'),
     (lambda r: r['parts'][0].update(z=True), 'z 가 숫자가 아니다'),
-    (lambda r: r['parts'][1].update(order=5), 'order'),
-    (lambda r: r['parts'][1].update(order=True), 'order'),
+    (lambda r: r['parts'][1].update(sequence=5), 'sequence'),
+    (lambda r: r['parts'][1].update(sequence=True), 'sequence'),
 ])
 def test_형식_오류(mutate, text):
     req = design((0, 0, 0, 'x'), (0, 0, 15, 'x'))

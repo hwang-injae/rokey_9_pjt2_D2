@@ -192,11 +192,11 @@ def test_generated_design_id_part_id_upper(bench):
 # AI 값은 그대로: 순서 · 단계 · 잡기를 옮기고, 둘 다 되는 블록에서 AI 가 고른 긴 쪽도 짧은 쪽으로 바꾸지 않는다(공식 채움 없음)
 def test_ai_values_kept_as_written(bench):
     options = DesignChecker(CFG).grasp_options(bench['parts'])
-    both = next(b for b in bench['parts'] if {'FLAT_SHORT', 'FLAT_LONG'} <= set(options[b['order']]))
+    both = next(b for b in bench['parts'] if {'FLAT_SHORT', 'FLAT_LONG'} <= set(options[b['sequence']]))
     both['grasp'] = 'FLAT_LONG'
     steps = {s['sequence']: s for s in make_converter().convert(bench)['placements']['steps']}
-    assert steps[both['order']]['grasp'] == 'FLAT_LONG'
-    assert all((steps[b['order']]['stage'], steps[b['order']]['grasp']) == (b['stage'], b['grasp']) for b in bench['parts'])
+    assert steps[both['sequence']]['grasp'] == 'FLAT_LONG'
+    assert all((steps[b['sequence']]['stage'], steps[b['sequence']]['grasp']) == (b['stage'], b['grasp']) for b in bench['parts'])
 
 
 # 칸이 빠지면 대신 채우지 않고 거부 — 어느 블록의 어느 칸인지 적는다
@@ -248,11 +248,11 @@ def test_face_contact_only():
 # ③ AI 가 고른 잡기로 손가락이 안 들어가면 거부하고 가능한 잡기를 알려 준다 · 놓인 자세와 다른 잡기(눕힌 블록에 STAND)도 거부
 def test_blocked_or_wrong_state_grasp_rejected(bench):
     options = DesignChecker(CFG).grasp_options(bench['parts'])
-    only = next(b for b in bench['parts'] if len(options[b['order']]) == 1)
-    allowed = options[only['order']][0]
+    only = next(b for b in bench['parts'] if len(options[b['sequence']]) == 1)
+    allowed = options[only['sequence']][0]
     only['grasp'] = 'FLAT_LONG' if allowed == 'FLAT_SHORT' else 'FLAT_SHORT'
     details = rejected_details(bench)
-    assert len(details) == 1 and f'{only["order"]}번' in details[0] and f'가능: {allowed}' in details[0]
+    assert len(details) == 1 and f'{only["sequence"]}번' in details[0] and f'가능: {allowed}' in details[0]
     only['grasp'] = allowed
     bench['parts'][0]['grasp'] = 'STAND_SHORT'
     assert any('1번 grasp STAND_SHORT' in d for d in rejected_details(bench))
@@ -263,7 +263,7 @@ def test_all_mistakes_reported_together(bench):
     bench['parts'][0]['role'] = 'FOOT'
     for b in bench['parts']:
         if b['role'] == 'SEAT':
-            b['group'] = b['order']                       # 좌판 3장 → 각자 다른 part(한 장짜리 부품, 맞닿음 문제 없음)
+            b['group'] = b['sequence']                       # 좌판 3장 → 각자 다른 part(한 장짜리 부품, 맞닿음 문제 없음)
     bench['parts'][-1]['grasp'] = 'EDGE_LONG'
     details = rejected_details(bench)
     assert any('FOOT' in d for d in details) and any('EDGE_LONG' in d for d in details)
@@ -272,8 +272,8 @@ def test_all_mistakes_reported_together(bench):
 # 형식이 틀린 요청(schema · order 빠짐)은 레시피를 만들지 않고 거부
 def test_bad_request_rejected(bench):
     assert rejected_details(dict(bench, schema='blocks/2'))
-    bench['parts'][3]['order'] = 99
-    assert any('order' in d for d in rejected_details(bench))
+    bench['parts'][3]['sequence'] = 99
+    assert any('sequence' in d for d in rejected_details(bench))
 
 
 # 역할 목록 파일: 작명 규칙 v3 3장 — 역할 7개 + 옵션 WHEEL, 이름은 대문자 한 단어(밑줄 없음), 뜻이 비어 있지 않음

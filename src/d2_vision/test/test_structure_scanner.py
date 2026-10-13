@@ -199,12 +199,12 @@ def test_match_rate_rules():
     assert match_rate(tb, tb)[0] == 1.0
     moved = [dict(b, x=b['x'] + 40, y=b['y'] - 30) for b in tb]              # 통째로 옮겨도 같다
     assert match_rate(moved, tb)[0] == 1.0
-    wrong = [dict(b, ori='y') if b['order'] == 10 else b for b in tb]      # 방향 하나 틀림(위층 — 바닥 외곽은 그대로)
+    wrong = [dict(b, ori='y') if b['sequence'] == 10 else b for b in tb]      # 방향 하나 틀림(위층 — 바닥 외곽은 그대로)
     assert match_rate(wrong, tb)[:2] == (10 / 11, 10)
-    extra = tb + [dict(tb[0], order=99, z=75.0)]                          # 하나 더 → 분모가 추론 수
+    extra = tb + [dict(tb[0], sequence=99, z=75.0)]                          # 하나 더 → 분모가 추론 수
     rate, matched, detail = match_rate(extra, tb)
     assert (rate, matched, len(detail['extra'])) == (11 / 12, 11, 1)
-    off = [dict(b, x=b['x'] + 13) if b['order'] == 10 else b for b in tb]  # 반 칸(12.5 mm) 넘게 어긋남
+    off = [dict(b, x=b['x'] + 13) if b['sequence'] == 10 else b for b in tb]  # 반 칸(12.5 mm) 넘게 어긋남
     assert match_rate(off, tb)[1] == 10
     assert match_rate([], tb)[0] == 0.0
 
@@ -347,7 +347,7 @@ def test_real_s11_bench_report():
         print(f'\n[s11 {"+".join(poses)}] 일치율 {rate:.2f} ({matched} 맞음 / 정답 {len(tb["blocks"])} · 추론 {len(r["blocks"]["blocks"])}) '
               f'ok={r["ok"]} {r["reason"]} 설명률 {c.get("explained")} 추정 {r["inferred_count"]} '
               f'자세 맞춤 {[pl.get("align_mm") for pl in c.get("planes", [])]}')
-        print('   틀림(정답 중 못 맞춤):', [(t['order'], t['x'], t['y'], t['z'], t['ori']) for t in detail['missed']])
+        print('   틀림(정답 중 못 맞춤):', [(t.get('scan_num', t.get('sequence')), t['x'], t['y'], t['z'], t['ori']) for t in detail['missed']])
         print('   남음(추론 중 짝 없음):', [(b['scan_num'], b['x'], b['y'], b['z'], b['ori'], b['inferred']) for b in detail['extra']])
 
 

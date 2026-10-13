@@ -406,7 +406,7 @@ def test_형식이_틀리면_21번은_읽을_수_없어_형식_실패만_돌려�
     (lambda r: r['parts'][0].update(group=0), 'ai_fields'),
     (lambda r: r['parts'][0].update(stage=True), 'ai_fields'),
     (lambda r: r['parts'][0].update(grasp='SIDE'), 'ai_fields'),
-    (lambda r: r['parts'][1].update(order=99), 'ai_fields'),
+    (lambda r: r['parts'][1].update(sequence=99), 'ai_fields'),
     (lambda r: r.update(parts=r['parts'] * 6), 'scope'),
 ])
 def test_기존_형식_실패에도_kind가_붙는다(mutate, kind):
@@ -491,7 +491,7 @@ def rig(composition, design_id='X_V001'):
 
 
 def put(order, x, y, z, ori, role, group):
-    return {'order': order, 'x': x, 'y': y, 'z': z, 'ori': ori, 'role': role, 'group': group}
+    return {'sequence': order, 'x': x, 'y': y, 'z': z, 'ori': ori, 'role': role, 'group': group}
 
 
 def measure(composition, parts):
@@ -755,7 +755,7 @@ def real_converter():
 def free_shape():
     """벤치 V000 + 설계도에 없는 좌판 한 장을 맨 위에 더한 자유 모양(물리적으로는 받쳐짐)."""
     req = base_design(BENCH)
-    req['parts'].append(dict(req['parts'][-1], order=len(req['parts']) + 1, z=req['parts'][-1]['z'] + 15, stage=req['parts'][-1]['stage'] + 1))
+    req['parts'].append(dict(req['parts'][-1], sequence=len(req['parts']) + 1, z=req['parts'][-1]['z'] + 15, stage=req['parts'][-1]['stage'] + 1))
     return req
 
 

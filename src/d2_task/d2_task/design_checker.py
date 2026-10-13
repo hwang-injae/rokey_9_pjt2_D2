@@ -171,16 +171,16 @@ class DesignChecker:
         return value
 
     def grasp_options(self, parts):
-        """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {order: [잡기 이름…]}.
+        """놓는 시점(앞 블록들만 놓인 상태)에 손가락이 들어가는 잡기 후보. {sequence: [잡기 이름…]}.
 
-        blocks: 형식이 맞는 parts/4.0 의 parts 목록(order 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
+        blocks: 형식이 맞는 parts/4.0 의 parts 목록(sequence 순). 변환기 ① · 집을 블록 고르기(W130)가 같은 규칙을 쓰려고 연다.
         """
-        boxes = [self._box(b) for b in sorted(parts, key=lambda b: b['order'])]
-        return {bx['order']: self._grasps(bx, boxes[:i]) for i, bx in enumerate(boxes)}
+        boxes = [self._box(b) for b in sorted(parts, key=lambda b: b['sequence'])]
+        return {bx['sequence']: self._grasps(bx, boxes[:i]) for i, bx in enumerate(boxes)}
 
     # ---------------- 1. 형식 ----------------
     def _parse(self, request, errors):
-        """형식을 확인해 order 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
+        """형식을 확인해 sequence 순 블록 목록을 돌려준다. 틀린 곳은 errors 에 쌓는다."""
         def bad(detail, kind, part=None, reason='CHECK_FAILED'):
             """형식 오류 한 줄을 바깥 errors 에 쌓는다. 입력: detail = 이유 글자, kind = position · ai_fields · scope, part = 부품 order(없으면 None), reason = 실패 코드. 반환 없음. 바깥 영향은 errors 목록뿐이며 실패하지 않는다."""
             errors.append({'part': part, 'reason': reason, 'detail': f'형식: {detail}', 'kind': kind})
@@ -196,7 +196,7 @@ class DesignChecker:
             if not isinstance(it, dict):
                 bad(f'{k}번째 항목이 객체가 아니다', 'position')
                 continue
-            miss = [key for key in ('order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp') if key not in it]
+            miss = [key for key in ('sequence', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp') if key not in it]
             if miss:
                 bad(f'{k}번째 항목에 {", ".join(miss)} 없음 (role · group · stage · grasp 는 AI 가 써야 한다 — 코드가 대신 채우지 않는다)',
                     'position' if set(miss) <= {'x', 'y', 'z', 'ori'} else 'ai_fields')
@@ -217,11 +217,11 @@ class DesignChecker:
                 bad(f'{k}번째 항목 inferred 가 true · false 가 아니다', 'ai_fields')
         if errors:
             return []
-        orders = [it['order'] for it in items]
+        orders = [it['sequence'] for it in items]
         if any(not isinstance(o, int) or isinstance(o, bool) for o in orders) or sorted(orders) != list(range(1, len(items) + 1)):
-            bad(f'order 가 1부터 {len(items)}까지 하나씩 있지 않다', 'ai_fields')
+            bad(f'sequence 가 1부터 {len(items)}까지 하나씩 있지 않다', 'ai_fields')
             return []
-        ordered = sorted(items, key=lambda it: it['order'])
+        ordered = sorted(items, key=lambda it: it['sequence'])
         stages = [it['stage'] for it in ordered]
         if stages[0] != 1 or any(b - a not in (0, 1) for a, b in zip(stages, stages[1:])):
             bad('stage 는 1부터 시작해 순서를 따라 같거나 1씩 늘어야 한다', 'ai_fields')
@@ -236,7 +236,7 @@ class DesignChecker:
     def _box(self, b):
         """블록 하나 → 상자 정보. x0 x1 y0 y1 z0 z1 은 mm, i 는 0부터 센 순서."""
         dx, dy, dz = self.extent[b['ori']]
-        return {'order': b['order'], 'ori': b['ori'], 'x': b['x'], 'y': b['y'], 'dx': dx, 'dy': dy, 'dz': dz,
+        return {'sequence': b['sequence'], 'ori': b['ori'], 'x': b['x'], 'y': b['y'], 'dx': dx, 'dy': dy, 'dz': dz,
                 'x0': b['x'] - dx / 2, 'x1': b['x'] + dx / 2, 'y0': b['y'] - dy / 2, 'y1': b['y'] + dy / 2,
                 'z0': b['z'], 'z1': b['z'] + dz}
 
@@ -254,8 +254,8 @@ class DesignChecker:
                 if (self._gap(a['x0'], a['x1'], b['x0'], b['x1']) > PENETRATION_MM
                         and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > PENETRATION_MM
                         and self._gap(a['z0'], a['z1'], b['z0'], b['z1']) > PENETRATION_MM):
-                    errs.append({'part': b['order'], 'reason': 'CHECK_FAILED',
-                                 'detail': f'{a["order"]}번 ↔ {b["order"]}번 겹침', 'kind': 'position'})
+                    errs.append({'part': b['sequence'], 'reason': 'CHECK_FAILED',
+                                 'detail': f'{a["sequence"]}번 ↔ {b["sequence"]}번 겹침', 'kind': 'position'})
         return errs
 
     # ---------------- 3. 받침 ----------------
@@ -278,20 +278,20 @@ class DesignChecker:
                     if x1 > x0 and y1 > y0:
                         sup.append((j, (x0, x1, y0, y1)))
             if a['z0'] < 0:
-                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업면 아래(z<0)', 'kind': 'position'})
+                errors.append({'part': a['sequence'], 'reason': 'CHECK_FAILED', 'detail': f'{a["sequence"]}번 작업면 아래(z<0)', 'kind': 'position'})
                 floating = True
             elif not sup:
-                later = [b['order'] for b in boxes[i + 1:] if b['z1'] == a['z0'] and
+                later = [b['sequence'] for b in boxes[i + 1:] if b['z1'] == a['z0'] and
                          self._gap(a['x0'], a['x1'], b['x0'], b['x1']) > 0 and self._gap(a['y0'], a['y1'], b['y0'], b['y1']) > 0]
                 hint = f' (받침 {later[0]}번이 더 늦게 놓임)' if later else ''
-                errors.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 공중{hint}', 'kind': 'position'})
+                errors.append({'part': a['sequence'], 'reason': 'CHECK_FAILED', 'detail': f'{a["sequence"]}번 공중{hint}', 'kind': 'position'})
                 floating = True
             below.append(sup)
         return None if floating else below
 
     # ---------------- 4. 안정성 ----------------
     def _stability(self, boxes, below, errors):
-        """order 순서로 하나씩 놓을 때마다, 블록 b 와 그 위에 얹힌 덩어리 U(b) 의 무게중심이 U 가 바깥(받침 · 작업면)에 닿은 면들의
+        """sequence 순서로 하나씩 놓을 때마다, 블록 b 와 그 위에 얹힌 덩어리 U(b) 의 무게중심이 U 가 바깥(받침 · 작업면)에 닿은 면들의
         볼록 껍질 안쪽으로 margin_mm 이상 들어와 있는지 본다. 가장 작은 여유(mm)를 돌려주고, 모자란 블록은 errors 에 쌓는다.
 
         10/3 jenga_check 는 위 블록의 하중을 받침 접촉면 중심에 걸어서, 한쪽으로 내민 구조를 실제보다 안전하게 판정했다
@@ -321,8 +321,8 @@ class DesignChecker:
                 if mg < self.margin_mm and (b not in worst or mg < worst[b][0]):
                     worst[b] = (mg, k)
         for b, (mg, k) in sorted(worst.items()):
-            errors.append({'part': boxes[b]['order'], 'reason': 'CHECK_FAILED',
-                           'detail': f'{boxes[b]["order"]}번 위 덩어리: {boxes[k]["order"]}번까지 놓았을 때 여유 {mg:.1f} mm < {self.margin_mm}', 'kind': 'position'})
+            errors.append({'part': boxes[b]['sequence'], 'reason': 'CHECK_FAILED',
+                           'detail': f'{boxes[b]["sequence"]}번 위 덩어리: {boxes[k]["sequence"]}번까지 놓았을 때 여유 {mg:.1f} mm < {self.margin_mm}', 'kind': 'position'})
         return overall
 
     @staticmethod
@@ -405,8 +405,8 @@ class DesignChecker:
         errs = []
         for i, a in enumerate(boxes):
             if not self._grasps(a, boxes[:i]):
-                errs.append({'part': a['order'], 'reason': 'CHECK_FAILED',
-                             'detail': f'{a["order"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'ai_fields'})
+                errs.append({'part': a['sequence'], 'reason': 'CHECK_FAILED',
+                             'detail': f'{a["sequence"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'ai_fields'})
         return errs
 
     # ---------------- 6. 작업영역 ----------------
@@ -422,10 +422,10 @@ class DesignChecker:
                 bx = o['x_m'] + (c * x - s * y) / 1000.0
                 by = o['y_m'] + (s * x + c * y) / 1000.0
                 if abs(bx - o['x_m']) > half or abs(by - o['y_m']) > half:
-                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업영역 밖(조립 작업공간 ± {half} m)', 'kind': 'position'})
+                    errs.append({'part': a['sequence'], 'reason': 'CHECK_FAILED', 'detail': f'{a["sequence"]}번 작업영역 밖(조립 작업공간 ± {half} m)', 'kind': 'position'})
                     break
                 if not (self.table['x_m'][0] <= bx <= self.table['x_m'][1] and self.table['y_m'][0] <= by <= self.table['y_m'][1]):
-                    errs.append({'part': a['order'], 'reason': 'CHECK_FAILED', 'detail': f'{a["order"]}번 작업대 밖', 'kind': 'position'})
+                    errs.append({'part': a['sequence'], 'reason': 'CHECK_FAILED', 'detail': f'{a["sequence"]}번 작업대 밖', 'kind': 'position'})
                     break
         return errs
 

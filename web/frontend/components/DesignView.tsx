@@ -3,7 +3,7 @@
 // 보는 곳에서 보낸다(10/10 황인재): 보고 있는 설계 바로 아래 [조립] 한 번 = select_design → 이어서 start(10/13 PL — 준비 · 출발 두 단계를
 // 합침). 이 누름이 출발 확인(SR-09 — 사람이 작업 영역 밖인지 확인하고 누름). 같은 설계로 AI 생성은 아래 패널(GeneratePanel).
 // 색: 평소엔 역할(다리 · 좌판 …)별. 그 설계로 조립 중이면 진행표(progress/2.0) 색 — 놓음 초록 · 지금 블록 노랑 · 확인 못 함 주황 · 아직 흐린 회색.
-// 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = parts.order 로 잇는다.
+// 판정은 하지 않는다(진행표가 준 state 그대로). 블록 이름 ↔ 3D 블록은 placements.steps 의 sequence = parts.sequence 로 잇는다(10/14 PL C6 — 같은 이름).
 import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import type { DesignPart, CmdResult, Design, Rules } from '@/lib/types';
@@ -85,7 +85,7 @@ export default function DesignView({ robot, viewId, rules, dark, onPick, onLog }
     if (!running) return roleItems(design.parts.parts);
     return design.parts.parts.map((b) => {
       const at = { x: b.x, y: b.y, z: b.z, ori: b.ori };
-      const id = idBySeq.get(b.order);
+      const id = idBySeq.get(b.sequence);
       const s = id ? stateById.get(id) : undefined;
       if (id && id === st?.part_id) return { ...at, color: PROG.current };
       if (s === 'present') return { ...at, color: PROG.present };

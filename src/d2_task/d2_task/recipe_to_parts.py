@@ -29,7 +29,7 @@ class RecipeToParts:
     """레시피 하나를 parts/4.0 하나로 바꾸는 변환기.
 
     입력: recipe(recipe/4.0 구조) + placements(placements/4.0 조립 방법) dict(단위 mm). 출력: parts/4.0 dict(mm, 설계 좌표계 — 바닥 외곽 가운데 = (0,0)).
-    위치 · 방향 · order 는 구조와 sequence 에서(계산 규칙 그대로), role · group 은 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
+    위치 · 방향 · sequence 는 구조와 sequence 에서(계산 규칙 그대로), role · group 은 블록 이름에서, stage · grasp 는 조립 방법에서 가져온다 — 기본 설계 왕복(V-45)이 이름까지 같아진다.
     바깥 영향: 없음(계산만).
     실패: 형식이 다르거나 없는 instance · part 를 가리키거나 방향을 못 고르면 ValueError (어느 블록인지 메시지에 적는다).
     **블록 크기를 두 곳에서 가져온다:** ① 방향 길이 계산 = 레시피 stocks[].size_mm, ② 방향 코드 표 = robot.yaml block_size_m × 1000(생성자의 block_mm).
@@ -51,9 +51,9 @@ class RecipeToParts:
     def convert(self, recipe, placements):
         """recipe(구조) + placements(조립 방법)를 parts/4.0 로 바꾼다. 파일·로봇 영향 없이 잘못된 참조는 ValueError.
 
-        order = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
+        sequence = sequence, x · y = 블록 중심, z = 아랫면 높이, ori = 회전 + 부품 크기로 복원.
 
-        반환: {"schema","design_id","parts":[{"order","x","y","z","ori","role","group","stage","grasp"}]} (order 오름차순). inferred 는 스캔 설계만이라 넣지 않는다.
+        반환: {"schema","design_id","parts":[{"sequence","x","y","z","ori","role","group","stage","grasp"}]} (sequence 오름차순). inferred 는 스캔 설계만이라 넣지 않는다.
         """
         recipe = RecipeDocument(recipe, placements).geometry
         model = recipe.get('model')
@@ -76,7 +76,7 @@ class RecipeToParts:
             x, y, cz = inst['center_mm']
             extent = self._world_extent(seq, inst['R'], stocks[inst['stock_id']])
             role, group = self._role_group(seq, step['part_name'])
-            parts.append({'order': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
+            parts.append({'sequence': seq, 'x': x, 'y': y, 'z': cz - extent[2] / 2, 'ori': self._ori(seq, extent),
                            'role': role, 'group': group, 'stage': step['stage'], 'grasp': step['grasp']})
         if not parts:
             raise ValueError('레시피에 steps 가 없다')

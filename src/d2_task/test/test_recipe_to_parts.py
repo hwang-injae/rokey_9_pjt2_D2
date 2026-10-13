@@ -45,7 +45,7 @@ def test_4종_블록_수와_머리말(model_id):
     out = convert(model_id)
     design_id, family, n = IDS[model_id]
     assert (out['schema'], out['design_id']) == ('parts/4.0', design_id) and 'family' not in out    # family 는 설계 이름에서 계산(10/13 PL)
-    assert [b['order'] for b in out['parts']] == list(range(1, n + 1))
+    assert [b['sequence'] for b in out['parts']] == list(range(1, n + 1))
     assert all(b['ori'] in ori_extents(BLOCK_MM) and 'inferred' not in b for b in out['parts'])      # inferred 는 스캔 설계만
 
 
@@ -55,13 +55,13 @@ def test_role_part_stage_grasp가_블록_이름과_조립_방법에서_나온다
     recipe, placements = load(model_id)
     steps = {s['sequence']: s for s in placements['steps']}
     for b in convert(model_id)['parts']:
-        st = steps[b['order']]
+        st = steps[b['sequence']]
         m = re.fullmatch(r'([A-Z]+(?:_[A-Z]+)?)_([0-9]{3})_[0-9]{2}', st['part_name'])
         assert (b['role'], b['group'], b['stage'], b['grasp']) == (m.group(1), int(m.group(2)), st['stage'], st['grasp'])
 
 
 def test_벤치_역할과_부품_묶음():
-    b = {x['order']: x for x in convert('001_CHAIR_BENCH_V000')['parts']}
+    b = {x['sequence']: x for x in convert('001_CHAIR_BENCH_V000')['parts']}
     assert (b[1]['role'], b[1]['group'], b[1]['stage'], b[1]['grasp']) == ('LEG', 1, 1, 'FLAT_SHORT')
     assert (b[2]['role'], b[2]['group']) == ('LEG', 2)               # 오른쪽 다리는 다른 부품 묶음
     assert (b[3]['role'], b[3]['group'], b[3]['stage']) == ('LEG', 1, 2)
@@ -69,7 +69,7 @@ def test_벤치_역할과_부품_묶음():
 
 
 def test_벤치_실제_레시피와_같다():
-    b = {x['order']: x for x in convert('001_CHAIR_BENCH_V000')['parts']}
+    b = {x['sequence']: x for x in convert('001_CHAIR_BENCH_V000')['parts']}
     assert (b[1]['x'], b[1]['y'], b[1]['z'], b[1]['ori']) == (-25, 0, 0, 'y')
     assert (b[2]['x'], b[2]['y'], b[2]['z'], b[2]['ori']) == (25, 0, 0, 'y')
     assert (b[9]['x'], b[9]['y'], b[9]['z'], b[9]['ori']) == (0, -25, 60, 'x')
@@ -77,14 +77,14 @@ def test_벤치_실제_레시피와_같다():
 
 
 def test_책상_세운_다리는_zx_이고_아랫면_높이():
-    b = {x['order']: x for x in convert('003_DESK_STAND_V000')['parts']}
+    b = {x['sequence']: x for x in convert('003_DESK_STAND_V000')['parts']}
     assert (b[1]['x'], b[1]['y'], b[1]['z'], b[1]['ori']) == (-30, -25, 0, 'zx')   # 중심 37.5 − 길이 75/2
     assert (b[5]['z'], b[5]['ori']) == (75, 'x')
     assert (b[7]['x'], b[7]['z'], b[7]['ori']) == (-25, 90, 'y')
 
 
 def test_의자_등받이_위층():
-    b = {x['order']: x for x in convert('002_CHAIR_BACK_V000')['parts']}
+    b = {x['sequence']: x for x in convert('002_CHAIR_BACK_V000')['parts']}
     assert b[16]['z'] == 135 and b[16]['ori'] == 'x'
 
 
@@ -92,7 +92,7 @@ def test_steps_순서가_섞여도_sequence_순():
     r, pl = load('001_CHAIR_BENCH_V000')
     pl['steps'].reverse()
     out = RecipeToParts('bench', 'chair', BLOCK_MM).convert(r, pl)
-    assert [b['order'] for b in out['parts']] == list(range(1, 12))
+    assert [b['sequence'] for b in out['parts']] == list(range(1, 12))
     assert out == convert('001_CHAIR_BENCH_V000')
 
 

@@ -46,7 +46,7 @@ FIX_HINTS = (
     ('여유', '무게중심이 받침 가장자리에 너무 가깝다 — 안쪽으로 옮기거나 받침을 그쪽으로 넓혀라(이어 붙인 다리 벽 등)'),
     ('겹침', '두 블록이 파고든다 — 하나를 옮겨라(면끼리 닿는 것은 괜찮다)'),
     ('grasp', '잡기를 괄호 안 \'가능\'한 것으로 바꿔라'),
-    ('잡을 면 없음', '옆이 막혀 손가락이 못 들어간다 — 옆 블록과 띄우거나 놓는 순서(order)를 바꿔라'),
+    ('잡을 면 없음', '옆이 막혀 손가락이 못 들어간다 — 옆 블록과 띄우거나 놓는 순서(sequence)를 바꿔라'),
     ('작업영역 밖', '작업 영역을 넘는다 — 가운데 쪽으로 옮기거나 크기를 줄여라'),
     ('작업대 밖', '작업대를 넘는다 — 가운데 쪽으로 옮기거나 크기를 줄여라'),
     ('z<0', 'z 는 0 이상이다'),
@@ -276,10 +276,10 @@ class DesignGenerator:
         입력: scan_result(scan_result/2.0 — blocks = blocks/2 {blocks[{scan_num, x, y, z, ori, inferred?}]} mm 설계 좌표 ·
               nearest_base(선택 — 추론기가 본 가장 가까운 기본 설계)), feedback(다시 채울 때만, 처음엔 None —
               {'errors': 앞 시도의 검사 errors[{part, reason, detail, kind}], 'parts': 앞 시도에서 이 함수가 돌려준 parts 그대로}.
-              errors[].part · detail 의 'N번' = 그 parts 의 order(위치 · 방향을 바꾼 줄은 part null). 10/13 PL — 오류가 어느 부품인지
+              errors[].part · detail 의 'N번' = 그 parts 의 sequence(위치 · 방향을 바꾼 줄은 part null). 10/13 PL — 오류가 어느 부품인지
               AI 가 알게 같이 넘긴다. 다시 채울 때 위치 · 방향은 그대로 두고 AI 칸만 고친다).
-        출력: {'parts': [{order, x, y, z, ori, role, group, stage, grasp, inferred?}] — x · y · z · ori 는 스캔 그대로(바꾸면 save_scan 이
-                         검사 전에 떨어뜨림), order = 쌓는 순서(스캔 번호 scan_num 아님) · role · group · stage · grasp = 생성과 같은 규칙,
+        출력: {'parts': [{sequence, x, y, z, ori, role, group, stage, grasp, inferred?}] — x · y · z · ori 는 스캔 그대로(바꾸면 save_scan 이
+                         검사 전에 떨어뜨림), sequence = 쌓는 순서(스캔 번호 scan_num 아님) · role · group · stage · grasp = 생성과 같은 규칙,
                'parent_id': 최종 부모(DB 에 있는 설계 ID — 새 설계 ID 의 Template 이 이것으로 정해짐),
                'ai_template': AI 가 고른 부모의 Template ID(못 고르면 'NONE'), 'ai_reason': 고른 까닭 한 줄(실패면 '실패: <코드>'),
                'gen_log': 이 호출의 AI 기록 이름(_save_log 가 남긴 log['file'] — 저장하면 그 기록에 design_id 를 적음, 설계_DB #14)}.
@@ -288,7 +288,7 @@ class DesignGenerator:
               화면 없음, 10/13 PL) — 그러면 최종 parent_id 의 Template 과 ai_template 이 달라 template_changed 가 true 가 된다(설계_DB 1절).
               부모 고르기만 실패하고 AI 칸 채우기가 됐으면 ai_reason = '실패: <코드>' 로 적고 parts 를 돌려준다(저장은 계속 — 생성의
               ai_judgment 와 같은 규칙). AI 칸 채우기 자체가 실패할 때만 GenError.
-        구현: AI 는 scan_num 마다 order · role · group · stage · grasp 만 답하고 x · y · z · ori · inferred 는 코드가 스캔에서 옮긴다
+        구현: AI 는 scan_num 마다 sequence · role · group · stage · grasp 만 답하고 x · y · z · ori · inferred 는 코드가 스캔에서 옮긴다
               (모양이 바뀔 수 없음). 대신할 부모 = nearest_base, 없으면 같은 family(nearest_base 의 family, 없으면 blocks.family) 기본 설계 중
               부품 수가 가장 가까운 것. '부모 고르기 실패' = 도구 단계 실패 — 그때는 대신할 부모의 부품 목록을 코드가 넣고 칸만 채우게 한 번 더.
               AI 가 틀린 role · stage · grasp 를 코드가 고치지 않는다(E-69) — 검사에서 떨어져 feedback 으로 다시 온다.
@@ -319,8 +319,8 @@ class DesignGenerator:
             '사람이 쌓은 가구를 스캔해 블록마다 위치(x · y · z)와 방향(ori)을 얻었다. 모양은 정해졌다 — 블록을 더하거나 빼거나 옮기지 않는다.\n'
             '1. [DB 목록](한 줄 = 설계 하나 — 기본 · 파생 · 예전 스캔)을 보고 도구 get_design 으로 스캔과 가장 비슷한 설계를 1 ~ 2개 읽는다.\n'
             '   가장 비슷한 설계 = 부모(parent_id): 블록 수 · 외곽 크기 · 층 구성이 가깝고 같은 가구 종류(의자 · 책상)인 것. 맞는 것이 없으면 NONE.\n'
-            '2. 스캔 블록마다(scan_num) role · group · order · stage · grasp 를 위 규칙대로 쓴다. 읽은 설계에서 같은 자리 블록의 칸을 참고한다.\n'
-            '   order 는 scan_num 과 상관없이 실제로 쌓는 순서다(1부터, 겹치지 않게, 받치는 블록 먼저).\n'
+            '2. 스캔 블록마다(scan_num) role · group · sequence · stage · grasp 를 위 규칙대로 쓴다. 읽은 설계에서 같은 자리 블록의 칸을 참고한다.\n'
+            '   sequence 는 scan_num 과 상관없이 실제로 쌓는 순서다(1부터, 겹치지 않게, 받치는 블록 먼저).\n'
             '   inferred = true 는 가려져서 추정한 블록이다 — 다른 블록과 똑같이 채운다.\n'
             '3. parts 에는 스캔 블록 하나마다 정확히 한 줄(scan_num 이 빠지거나 겹치면 안 된다).\n'
             '4. reason: 그 부모를 고른 까닭 한국어 한 줄. plan: parts 를 쓰기 전에 층마다 한 줄 — 그 층 z, scan_num, role · stage.')
@@ -336,25 +336,25 @@ class DesignGenerator:
         text = (f"[스캔] 블록 {len(scan)}개" + (f" · 추론기가 고른 가까운 기본 설계 {nearest}" if nearest else '') + '\n'
                 + json.dumps(shown, ensure_ascii=False, separators=(',', ':')) + '\n[DB 목록 — 전체 설계]\n' + '\n'.join(lines))
         if feedback:
-            # 앞 답은 이 대화에 없다(요청마다 새 대화) — 앞 parts 를 scan_num 과 함께 보여 줘 오류의 'N번'(= 앞 order)이 어느 블록인지 알게
+            # 앞 답은 이 대화에 없다(요청마다 새 대화) — 앞 parts 를 scan_num 과 함께 보여 줘 오류의 'N번'(= 앞 sequence)이 어느 블록인지 알게
             fb = feedback if isinstance(feedback, dict) else {'errors': feedback}
 
             def shape(b):                                      # save_scan._moved 와 같은 비교 키(0.1 mm · ori)
                 return round(float(b['x']), 1), round(float(b['y']), 1), round(float(b['z']), 1), str(b['ori'])
             num_of = {shape(b): b['scan_num'] for b in scan}
-            prev = [{'scan_num': num_of.get(shape(p)), **{k: p.get(k) for k in ('order', 'role', 'group', 'stage', 'grasp')}}
+            prev = [{'scan_num': num_of.get(shape(p)), **{k: p.get(k) for k in ('sequence', 'role', 'group', 'stage', 'grasp')}}
                     for p in fb.get('parts') or [] if isinstance(p, dict) and all(k in p for k in ('x', 'y', 'z', 'ori'))]
             fix = []
             for e in (fb.get('errors') or [])[:FEEDBACK_MAX]:
                 detail = str(e.get('detail') or e.get('reason')) if isinstance(e, dict) else str(e)
                 hint = next((h for key, h in FIX_HINTS if key in detail), '')
                 fix.append(f'- {detail}' + (f' → 고칠 것: {hint}' if hint else ''))
-            text += ('\n\n[앞 검사 결과] 앞서 채운 칸이 검사에서 떨어졌다. 오류의 N번 = 아래 [앞 답]의 order. 위치 · 방향은 그대로 두고 '
-                     'role · group · order · stage · grasp 를 고쳐 다시 채워라.\n[앞 답]\n'
+            text += ('\n\n[앞 검사 결과] 앞서 채운 칸이 검사에서 떨어졌다. 오류의 N번 = 아래 [앞 답]의 sequence. 위치 · 방향은 그대로 두고 '
+                     'role · group · sequence · stage · grasp 를 고쳐 다시 채워라.\n[앞 답]\n'
                      + json.dumps(prev, ensure_ascii=False, separators=(',', ':')) + '\n[오류]\n' + '\n'.join(fix))
         part = {'type': 'object', 'additionalProperties': False,
-                'required': ['scan_num', 'order', 'role', 'group', 'stage', 'grasp'],
-                'properties': {'scan_num': {'type': 'integer'}, 'order': {'type': 'integer'},
+                'required': ['scan_num', 'sequence', 'role', 'group', 'stage', 'grasp'],
+                'properties': {'scan_num': {'type': 'integer'}, 'sequence': {'type': 'integer'},
                                'role': {'type': 'string', 'enum': self.role_names}, 'group': {'type': 'integer'},
                                'stage': {'type': 'integer'}, 'grasp': {'type': 'string', 'enum': list(GRASPS)}}}
         fmt = self._format('scan_fill', {
@@ -390,9 +390,9 @@ class DesignGenerator:
                 raise GenError('GEN_FAILED', 'AI 답의 블록이 스캔과 맞지 않아요(scan_num 빠짐 · 겹침)')
             by_text = {str(k): b for k, b in by_num.items()}      # 비교와 같은 글자 키 — 숫자 · 글자 scan_num 이 섞여도 같은 블록
             parts = []
-            for p in sorted(got, key=lambda p: p['order']):
+            for p in sorted(got, key=lambda p: p['sequence']):
                 b = by_text[str(p['scan_num'])]
-                parts.append({'order': p['order'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'],
+                parts.append({'sequence': p['sequence'], 'x': b['x'], 'y': b['y'], 'z': b['z'], 'ori': b['ori'],
                               'role': p['role'], 'group': p['group'], 'stage': p['stage'], 'grasp': p['grasp'],
                               **({'inferred': bool(b['inferred'])} if 'inferred' in b else {})})
             choice = data.get('parent_id')
@@ -460,7 +460,7 @@ class DesignGenerator:
             if not errors or not kinds <= {'ai_fields', 'template'} or attempt > SCAN_REFILLS:
                 break
             progress('retry', {'attempt': attempt + 1})
-            feedback = {'errors': errors, 'parts': fill.get('parts')}     # 오류의 'N번'(order)이 어느 부품인지 AI 가 알게(10/13 PL)
+            feedback = {'errors': errors, 'parts': fill.get('parts')}     # 오류의 'N번'(sequence)이 어느 부품인지 AI 가 알게(10/13 PL)
         scope = any(e.get('kind') == 'scope' for e in errors)
         raise GenError('OUT_OF_SCOPE' if scope else 'CHECK_FAILED',
                        '블록이 너무 많아 저장할 수 없어요' if scope else '스캔한 설계가 검사를 통과하지 못했어요', errors)
@@ -621,7 +621,7 @@ class DesignGenerator:
             if not errs:
                 continue
             lines.append(f"후보 {i}({c['idea']}):")
-            by_order = {b.get('order'): b for b in c['parts']['parts'] if isinstance(b, dict)}
+            by_order = {b.get('sequence'): b for b in c['parts']['parts'] if isinstance(b, dict)}
             for e in errs:
                 detail = str(e.get('detail') or e.get('reason'))
                 hint = next((h for key, h in FIX_HINTS if key in detail), '')
@@ -703,8 +703,8 @@ class DesignGenerator:
     def _candidates_format(self):
         """후보 3개 구조화 출력 형식(JSON Schema strict). role 은 역할 목록 파일의 이름만(enum — 목록 밖 이름은 변환기 ①이 어차피 거절)."""
         part = {'type': 'object', 'additionalProperties': False,
-                 'required': ['order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'],
-                 'properties': {'order': {'type': 'integer'}, 'x': {'type': 'number'}, 'y': {'type': 'number'},
+                 'required': ['sequence', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'],
+                 'properties': {'sequence': {'type': 'integer'}, 'x': {'type': 'number'}, 'y': {'type': 'number'},
                                 'z': {'type': 'number'}, 'ori': {'type': 'string', 'enum': list(ORIS)},
                                 'role': {'type': 'string', 'enum': self.role_names}, 'group': {'type': 'integer'},
                                 'stage': {'type': 'integer'}, 'grasp': {'type': 'string', 'enum': list(GRASPS)}}}

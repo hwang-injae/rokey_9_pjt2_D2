@@ -20,7 +20,7 @@ ROWS = {'001_CHAIR_BENCH_V000': {'SEAT_001_01', 'SEAT_001_02', 'SEAT_001_03'},
 
 def part(order, x, y, z, ori='x', grasp='FLAT_SHORT'):
     """parts/4.0 블록 하나(mm, 설계 좌표)."""
-    return {'order': order, 'x': x, 'y': y, 'z': z, 'ori': ori, 'role': 'TOP', 'group': 1, 'stage': 1, 'grasp': grasp}
+    return {'sequence': order, 'x': x, 'y': y, 'z': z, 'ori': ori, 'role': 'TOP', 'group': 1, 'stage': 1, 'grasp': grasp}
 
 
 def base_parts(model_id):
@@ -67,4 +67,4 @@ def test_기본_설계_연짝은_레시피_파일에서_모두_FLAT_LONG(model_i
     parts, name = base_parts(model_id)
     assert {name[o] for o in row_orders(parts, BLOCK_MM)} == ROWS[model_id]
     assert fix_row_grasps(parts, BLOCK_MM)[1] == []
-    assert all(p['grasp'] == 'FLAT_LONG' for p in parts if name[p['order']] in ROWS[model_id])
+    assert all(p['grasp'] == 'FLAT_LONG' for p in parts if name[p['sequence']] in ROWS[model_id])

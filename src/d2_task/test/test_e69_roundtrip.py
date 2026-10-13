@@ -43,7 +43,7 @@ def test_blocks_2_0의_role_part로_번호를_다시_매기면_레시피_블록_
     for (role, part), items in groups.items():
         ordered = sorted(items, key=lambda b: (b['z'], b['y'], b['x']))
         for k, b in enumerate(ordered, 1):
-            assert name_of[b['order']] == f'{role}_{part:03d}_{k:02d}', (model_id, b)
+            assert name_of[b['sequence']] == f'{role}_{part:03d}_{k:02d}', (model_id, b)
 
 
 @pytest.mark.parametrize('model_id', IDS)
@@ -61,4 +61,4 @@ def test_blocks_2_0_왕복으로_같은_구조가_다시_나온다(model_id):
     doc, blocks = blocks_of(model_id)
     _, again = blocks_of(model_id)
     assert blocks == again
-    assert all(set(b) == {'order', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'} for b in blocks['parts'])
+    assert all(set(b) == {'sequence', 'x', 'y', 'z', 'ori', 'role', 'group', 'stage', 'grasp'} for b in blocks['parts'])

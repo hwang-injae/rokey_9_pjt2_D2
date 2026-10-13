@@ -255,7 +255,7 @@ class TemplateChecker:
 
     # ---------------- 2. 설계 재기 ----------------
     def check(self, rules, parts):
-        """설계(parts: 형식이 맞는 parts/4.0 의 parts 목록 — order · x · y · z · ori · role · group)를 규칙에 맞춰 잰다.
+        """설계(parts: 형식이 맞는 parts/4.0 의 parts 목록 — sequence · x · y · z · ori · role · group)를 규칙에 맞춰 잰다.
 
         반환: errors 목록 [{part: None, reason: TEMPLATE_SHAPE | TEMPLATE_RANGE, detail, kind: 'template'}] — 모양(SHAPE)을 먼저, 같음 · 범위 · 대칭(RANGE)을 뒤에.
         한 줄에 한 가지 실패를 적고, 앞선 실패로 잴 수 없는 값은 같은 이유로 또 알리지 않는다.
@@ -312,7 +312,7 @@ class _Measure:
         for p in parts:
             dx, dy, dz = checker.extent[p['ori']]
             group = self.groups.setdefault((p['role'], p['group']), _Group(p['role'], p['group']))
-            group.add(p['order'], p['ori'], (p['x'] - dx / 2, p['y'] - dy / 2, p['z']), (p['x'] + dx / 2, p['y'] + dy / 2, p['z'] + dz))
+            group.add(p['sequence'], p['ori'], (p['x'] - dx / 2, p['y'] - dy / 2, p['z']), (p['x'] + dx / 2, p['y'] + dy / 2, p['z'] + dz))
         for key in sorted(self.groups):
             self.by_role.setdefault(self.groups[key].role, []).append(self.groups[key])
 

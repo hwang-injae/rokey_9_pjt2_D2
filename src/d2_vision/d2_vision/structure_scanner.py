@@ -84,7 +84,8 @@ def match_rate(pred_blocks, truth_blocks, block_mm=(75.0, 25.0, 15.0), tol_mm=12
             continue
         used_t.add(i)
         used_p.add(j)
-        detail['pairs'].append((truth[i].get('scan_num', truth[i].get('order')), pred[j].get('scan_num', pred[j].get('order')), round(dx, 1), round(dy, 1), round(dz, 1)))
+        detail['pairs'].append((truth[i].get('scan_num', truth[i].get('sequence')), pred[j].get('scan_num', pred[j].get('sequence')),   # 정답 = parts/4.0 sequence(10/14 PL C6)
+                                 round(dx, 1), round(dy, 1), round(dz, 1)))
     detail['missed'] = [t for i, t in enumerate(truth) if i not in used_t]
     detail['extra'] = [p for j, p in enumerate(pred) if j not in used_p]
     matched = len(used_t)
