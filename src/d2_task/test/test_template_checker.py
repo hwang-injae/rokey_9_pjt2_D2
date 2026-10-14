@@ -436,8 +436,8 @@ def test_물리_실패_kind():
 
 
 def test_잡을_면_없음은_ai_fields이다():
-    pocket = [(0, -25, 0, 'x'), (0, 25, 0, 'x'), (-50, 0, 0, 'y'), (50, 0, 0, 'y'), (0, 0, 0, 'x')]
-    res = DesignChecker(CFG, template_checker=NO_TEMPLATE).check(design(*pocket))
+    corner = [(37.5, 0, 0, 'x'), (-37.5, 25, 0, 'x'), (-37.5, 0, 0, 'x')]     # 같은 층 L 자 — 모서리가 마지막이면 막힘, 다른 순서는 됨(W201)
+    res = DesignChecker(CFG, template_checker=NO_TEMPLATE).check(design(*corner))
     assert [(e['reason'], e['kind']) for e in res['errors']] == [('CHECK_FAILED', 'ai_fields')]
 
 

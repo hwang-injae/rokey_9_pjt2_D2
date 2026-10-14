@@ -9,6 +9,7 @@ import json
 import math
 import re
 
+from d2_task.assembly_feasibility import AssemblyFeasibility
 from d2_task.recipe_to_parts import ori_extents
 from d2_task.parts_to_recipe import DesignRejected
 from d2_task.recipe_document import GRASPS, RecipeDocument, same_major
@@ -24,7 +25,7 @@ STATE_OF_ORI = {'x': FLAT, 'y': FLAT, 'xe': EDGE, 'ye': EDGE, 'zx': STAND, 'zy':
 
 
 class DesignChecker:
-    """요청(parts/4.0 + base_recipe) 하나를 요청 확인 → 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 작업영역 → Template(21번) 순으로 검사해 check_result/3.0 을 만든다.
+    """요청(parts/4.0 + base_recipe) 하나를 요청 확인 → 형식 → 파고듦 → 받침 → 안정성 → 잡기 틈 → 로봇 조립 가능(W201) → 작업영역 → Template(21번) 순으로 검사해 check_result/3.0 을 만든다.
 
     입력: robot.yaml 을 읽은 dict(cfg — block_size_m · finger · grasp_depth_m · assembly_origin ·
     assembly_area_half_m · table · check.margin_mm · check.max_blocks), 요청 dict. 변환기 ①(parts_to_recipe)은 선택으로 받는다.
@@ -53,10 +54,12 @@ class DesignChecker:
             raise ValueError(f'robot.yaml 에 {e.args[0]} 가 없다') from e
         self.parts_to_recipe = parts_to_recipe
         self.template_checker = template_checker if template_checker is not None else TemplateChecker(self.extent)
+        self.feasibility = AssemblyFeasibility(self)     # W201 — 안정성 · 손가락 자리는 이 객체의 계산을 그대로 쓴다(E-121 ④)
 
     # ---------------- 바깥에서 부르는 곳 ----------------
     def check(self, request):
-        """요청(parts/4.0 + base_recipe) → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail · kind] · recipe + placements(ok 일 때 둘 다).
+        """요청(parts/4.0 + base_recipe) → check_result/3.0. ok · min_margin_mm(쌓는 도중 최소 여유, 못 구하면 None) · errors[part · reason · detail · kind] ·
+        feasible_order(로봇이 지을 수 있는 순서 — sequence 번호 목록, 못 찾았거나 안 봤으면 None, W201) · recipe + placements(ok 일 때 둘 다).
 
         요청이 틀리면(base_recipe 없음 · Template 이 design_id 와 다름 · revision 모양 틀림 …) 바로 REQUEST_INVALID 한 줄로 돌려준다(kind 없음, 재생성 안 함).
         그 뒤 형식이 틀리면 바로 돌려주고(뒤 검사가 읽을 수 없음), 받침이 없는 블록이 있으면 안정성은 건너뛴다.
@@ -80,11 +83,15 @@ class DesignChecker:
             return self._result(False, None, errors)
         boxes = [self._box(b) for b in parts]
         errors += self._penetration(boxes)
+        crossing = bool(errors)
         below = self._supports(boxes, errors)
-        margin = None
+        margin, order_errors, feasible = None, [], None
         if below is not None:
-            margin = self._stability(boxes, below, errors)
-        errors += self._grasp_errors(boxes)
+            margin = self._stability(boxes, below, order_errors)
+        order_errors += self._grasp_errors(boxes)
+        if not crossing and below is not None:      # 파고들거나 공중이면 순서를 따질 수 없다 — 그 실패만 돌려준다(지금처럼)
+            order_errors, feasible = self._assembly(parts, order_errors, request.get('made_by') == 'scan')
+        errors += order_errors
         errors += self._workspace(boxes)
         try:
             if request.get('made_by') != 'scan':    # 스캔으로 저장하는 설계(정확히 글자 "scan")는 21번만 건너뛴다(E-106) — 요청 확인 · 1~20번 · 변환기 ①은 그대로
@@ -92,8 +99,8 @@ class DesignChecker:
         except RequestInvalid as e:         # 규칙의 식이 이 설계로 계산되지 않는다(0 으로 나눔 등) = 잘못된 규칙이지 AI 설계 탓이 아니다
             return self._request_invalid(e)
         if errors:
-            return self._result(False, margin, errors)
-        result = self._result(True, margin, [])
+            return dict(self._result(False, margin, errors), feasible_order=feasible)
+        result = dict(self._result(True, margin, []), feasible_order=feasible)
         if self.parts_to_recipe is not None:
             try:
                 converted = self.parts_to_recipe({k: v for k, v in request.items() if k != 'base_recipe'})
@@ -416,6 +423,30 @@ class DesignChecker:
                 errs.append({'part': a['sequence'], 'reason': 'CHECK_FAILED',
                              'detail': f'{a["sequence"]}번 잡을 면 없음: 놓는 시점에 두 손가락이 다 들어가는 방향이 없다', 'kind': 'ai_fields'})
         return errs
+
+    # ---------------- 5-1. 로봇 조립 가능(W201) ----------------
+    def _assembly(self, parts, order_errors, scan):
+        """W201 · E-121 — 위치 · 방향만 보고 로봇이 지을 순서가 하나라도 있는지(R0 ~ R5, assembly_feasibility) 따져 AI 순서 실패를 바꾼다.
+
+        입력: parts = _parse 뒤 블록 목록(mm), order_errors = AI 가 쓴 순서(sequence)로 본 안정성 · 잡을 면 실패, scan = 스캔 설계(격자 맞춤은 판정에만, E-121 ⑤).
+        출력: (errors, feasible_order). 어떤 순서로도 안 되면 그 까닭(어느 층 · 블록 · 규칙)을 position 실패로 — AI 순서 실패는 빼고(스캔은 다시 채우지 않고 멈춤, E-121 ②).
+        AI 순서로는 안 되고 다른 순서로는 되면 ai_fields 실패 한 줄에 찾은 순서 · 그 순서의 잡기를 실어 AI 가 sequence · stage · grasp 를 다시 쓰게 한다(E-121 ⑦ —
+        코드는 AI 칸을 고치지 않는다). AI 순서로 되면 지금 실패 그대로(같은 계산이라 비어 있다). 바깥 영향 없음.
+        """
+        found = self.feasibility.check_parts(parts, snap_to_grid=scan)
+        if not found['ok']:
+            return [{'part': f['part'], 'reason': 'CHECK_FAILED', 'detail': f'로봇 조립 불가({f["rule"]}): {f["detail"]}', 'kind': 'position'}
+                    for f in found['failures']], None
+        if found['given_order_ok'] or not order_errors:
+            # 계산은 같은데 지금 검사만 AI 순서를 통과시키면(있으면 안 됨) 오래 써 온 지금 검사를 따른다
+            return order_errors, found['order']
+        seq = ' → '.join(str(s) for s in found['order'])
+        grasps = ' · '.join(f'{s}번 {"/".join(found["grasps"].get(s) or [])}' for s in found['order'])
+        first = order_errors[0]
+        more = f' 외 {len(order_errors) - 1}줄' if len(order_errors) > 1 else ''
+        return [{'part': first['part'], 'reason': 'CHECK_FAILED', 'kind': 'ai_fields',
+                 'detail': f'쓴 순서로는 로봇이 못 지어요({first["detail"]}{more}) → 로봇이 지을 수 있는 순서가 있어요 → '
+                           f'sequence 를 지금 번호로 이 순서대로 다시 매기고 stage · grasp 도 맞추세요: {seq} / 그 순서에서 되는 잡기: {grasps}'}], found['order']
 
     # ---------------- 6. 작업영역 ----------------
     def _workspace(self, boxes):

@@ -73,8 +73,9 @@ def test_계단_20mm씩_3번_내밀면_불안정():
     res = check(design(*[(20 * i, 0, 15 * i, 'x') for i in range(4)]))
     assert not res['ok']
     assert res['min_margin_mm'] == -2.5
-    assert reasons(res) == [(2, 'CHECK_FAILED')]
-    assert '2번 위 덩어리' in res['errors'][0]['detail'] and '-2.5' in res['errors'][0]['detail']
+    # 어떤 순서로도 안 되는 배치 — W201(E-121 ②)이 '로봇 조립 불가(R3)'를 position 으로(막힌 블록 = 4번을 놓을 때 2번 위 덩어리가 기움)
+    assert reasons(res) == [(4, 'CHECK_FAILED')] and res['errors'][0]['kind'] == 'position' and res['feasible_order'] is None
+    assert '로봇 조립 불가(R3)' in res['errors'][0]['detail'] and '2번 위 덩어리' in res['errors'][0]['detail'] and '-2.5' in res['errors'][0]['detail']
 
 
 def test_5mm_내밀면_통과():
@@ -85,7 +86,10 @@ def test_쌓는_도중_불안정은_순서에_따라_다르다():
     a, b, c = (-25, 0, 0, 'y'), (25, 0, 0, 'y'), (0, 0, 15, 'x')
     assert check(design(a, b, c))['ok']
     res = check(design(a, c, b))                  # b 가 없을 때 c 가 한 쪽 기둥에만 얹혀 쓰러진다
-    assert not res['ok'] and res['min_margin_mm'] == -12.5 and reasons(res) == [(1, 'CHECK_FAILED'), (2, 'CHECK_FAILED')]   # 1번은 위 덩어리 무게중심이 가장자리(여유 0)
+    assert not res['ok'] and res['min_margin_mm'] == -12.5
+    # 다른 순서(1 → 3 → 2)로는 된다 — AI 순서 실패 두 줄(1 · 2번 위 덩어리)을 ai_fields 한 줄로 바꾸고 찾은 순서를 싣는다(W201 · E-121 ⑦)
+    assert reasons(res) == [(1, 'CHECK_FAILED')] and res['errors'][0]['kind'] == 'ai_fields' and res['feasible_order'] == [1, 3, 2]
+    assert '1 → 3 → 2' in res['errors'][0]['detail'] and '1번 위 덩어리' in res['errors'][0]['detail'] and '외 1줄' in res['errors'][0]['detail']
 
 
 def test_파고듦():
@@ -118,10 +122,14 @@ def test_작업면_아래():
 
 
 def test_양쪽_막힌_칸():
-    pocket = [(0, -25, 0, 'x'), (0, 25, 0, 'x'), (-50, 0, 0, 'y'), (50, 0, 0, 'y'), (0, 0, 0, 'x')]
-    res = check(design(*pocket))
-    assert reasons(res) == [(5, 'CHECK_FAILED')] and '잡을 면 없음' in res['errors'][0]['detail']
-    assert check(design(*pocket[:2], pocket[4]))['ok']                  # 한 방향만 막히면 다른 방향으로 잡는다
+    # 같은 층에 눕힘 3개 L 자 — AI 순서는 모서리(3번)가 마지막이라 두 방향 다 막혀 '잡을 면 없음', 모서리를 먼저 놓으면 된다(W201 · E-121 ⑦)
+    corner = [(37.5, 0, 0, 'x'), (-37.5, 25, 0, 'x'), (-37.5, 0, 0, 'x')]
+    res = check(design(*corner))
+    assert reasons(res) == [(3, 'CHECK_FAILED')] and '잡을 면 없음' in res['errors'][0]['detail'] and res['errors'][0]['kind'] == 'ai_fields'
+    assert sorted(res['feasible_order']) == [1, 2, 3] and res['feasible_order'].index(3) < 2
+    assert check(design(corner[2], *corner[:2]))['ok']                  # 모서리를 먼저 쓰면 그대로 합격
+    pocket = [(0, -25, 0, 'x'), (0, 25, 0, 'x'), (0, 0, 0, 'x')]
+    assert check(design(*pocket))['ok']                                 # 한 방향만 막히면 다른 방향으로 잡는다
 
 
 def test_잡기_후보는_놓는_시점_기준():
@@ -401,3 +409,30 @@ def test_변환기_결과의_짝_해시가_안_맞으면_ERROR():
     wrong = {'recipe': CONVERTED['recipe'], 'placements': dict(CONVERTED['placements'], recipe_sha256='0' * 64)}
     ok, reason, res = handle(json.dumps(base_design('001_CHAIR_BENCH_V000')), parts_to_recipe=lambda b: wrong)
     assert (ok, reason) == (False, 'ERROR') and not res['ok'] and 'recipe_sha256' in res['errors'][0]['detail']
+
+
+# ---------------- W201 로봇 조립 가능(E-121) ----------------
+def test_같은_층_2x2는_어떤_순서로도_조립_불가_position():
+    square = [(-37.5, -12.5, 0, 'x'), (37.5, -12.5, 0, 'x'), (-37.5, 12.5, 0, 'x'), (37.5, 12.5, 0, 'x')]
+    res = check(design(*square))
+    assert not res['ok'] and res['feasible_order'] is None
+    assert res['errors'] and all(e['kind'] == 'position' and '로봇 조립 불가(R5)' in e['detail'] for e in res['errors'])   # 스캔 [저장]은 다시 채우지 않고 멈춤
+
+
+def test_한_층에_방향이_섞이면_R0_position():
+    res = check(design((0, 0, 0, 'x'), (0, 100, 0, 'y')))
+    assert [(e['part'], e['kind']) for e in res['errors']] == [(None, 'position')] and '로봇 조립 불가(R0)' in res['errors'][0]['detail']
+
+
+@pytest.mark.parametrize('model_id', DESIGNS)
+def test_기본_설계는_조립_가능_순서도_그대로(model_id):
+    res = check(base_design(model_id))
+    assert res['ok'] and res['feasible_order'] == sorted(p['sequence'] for p in base_design(model_id)['parts'])
+
+
+def test_스캔은_격자_맞춤으로_판정만():
+    bench = base_design('001_CHAIR_BENCH_V000')
+    shaken = dict(bench, made_by='scan', parts=[dict(p, x=p['x'] + 0.1) for p in bench['parts']])
+    res = check(shaken)
+    assert res['feasible_order'] is not None                            # 0.1 mm 흔들림이어도 격자에 맞춰 '조립 가능'
+    assert not any('로봇 조립 불가' in e['detail'] for e in res['errors'])
