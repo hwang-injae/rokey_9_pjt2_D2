@@ -3,6 +3,7 @@
 에이전트는 이 파일의 맨 위 며칠만 읽는다. 자세한 내용은 커밋·PR의 '변경 파일'을 본다.
 
 ## 2026-10-14
+- 공통(PM — 10/14 10시대 한석형 확인 · PL, E-111 A2 ① 바로잡음): 그리퍼 여는 중 **`select_design` · `start` · `scan` · `gripper_open`만 `BUSY`, `cancel` · 정지 · resume은 받음**(E-101 ① 예외, #157 실제) — 처음 글 '다른 명령 = BUSY'가 '전부'로 읽혀 #163 가짜 로봇이 `cancel`까지 막았음(가짜 로봇은 HMI). 결정 기록 · 설명 문서 A2 줄.
 - 공통(PM — 10/14 10시대 PL '1', E-110 ③ · E-111 A6): **받침 상자 윗면 = 0.5 mm 낮춤 그대로**(main `scene_manager_node` · IRD 9장 `spare_base_m` 그대로 — 코드 변경 없음). 한세교 '실물 그대로'(c78c9ae) 거둠. 한계: 0.5 mm 안쪽 경로는 장면 검사로 못 잡음 → 받침 교시값을 바꾸면 실기 저속 확인. 결정 기록 · 설명 문서 A6 줄.
 - 공통(PM — 10/13 밤 ~ 10/14 새벽 PL, E-111 · 통합 브랜치 `황인재/20261014-integrate-data-names`): **팀원끼리 다르던 데이터 · 인터페이스 하나로** — 웹 스캔 [저장]만 `made_by: scan` · 가짜 로봇 = 실제(BUSY · 빈 거절 · 진행표 9칸) · 화면 `VISION_LOST` · 비전 `tilted` 5 mm 또는 5° · `gap_mm` 99 · W144 `part_id` · 같은 표 · 규칙 정본 하나 + `tests/test_shared_tables.py` · **레시피 `model_id` → `design_id` · 설계도 `order` → `sequence` · 형식 recipe · placements · parts · design 4.0**(옛 3.0 설계 안 읽음) · `PickPlace.action` 잡기 12개 · IRD 닫는 폭 · 설명 문서 `docs/설명_데이터인터페이스_통일_v1_101408.md`. 로봇 PC 전부 다시 빌드 · 웹 backend 다시 켜기.
 
