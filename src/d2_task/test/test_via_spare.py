@@ -739,3 +739,101 @@ def test_조립_중이_아닐_때_정지는_W144_녹화를_건드리지_않는�
     m.run_once()
     m.run_once()
     assert not [e for e in io.w144 if e[0] in ('start', 'finish')] and not m._w144_reopen
+
+
+class OpenGateIO(W144IO):
+    """실제 task_node 처럼 열기에 성공한 녹화만 '열림'으로 보고(w144_finish 로 닫힘), w144_start 결과와 pick_place 를 일어난 순서대로 order 에 적는다.
+    starts = 열기 결과 대기열(True 성공 · False 실패, 비면 성공). pick 줄의 셋째 값 = 그때 녹화가 열려 있었나."""
+
+    def __init__(self, starts=()):
+        super().__init__()
+        self.starts, self.order, self.open = list(starts), [], False
+
+    def w144_start(self, design_id, run_id):
+        super().w144_start(design_id, run_id)
+        self.open = self.starts.pop(0) if self.starts else True
+        self.order.append(('start', self.open))
+        return (True, '') if self.open else (False, 'W144 기록 준비 실패: 필수 토픽 없음')
+
+    def w144_finish(self, completed):
+        super().w144_finish(completed)
+        self.open = False
+
+    def pick_place(self, goal, should_abort, on_feedback=None, on_result=None):
+        self.order.append(('pick', goal['part_id'], self.open))
+        return super().pick_place(goal, should_abort, on_feedback, on_result)
+
+
+def make_gate(starts=(), clock=None):
+    """make_w144 와 같은 준비. clock 을 주면 웹 연결 신호를 감시한다(monitor_hmi)."""
+    io = OpenGateIO(starts)
+    extra = {'clock': clock, 'monitor_hmi': True} if clock else {}
+    m = TaskManager(SPARE_CFG, io, open_width_m=0.0, **extra)
+    io.manager = m
+    fast_wait(m)
+    m.on_safety(SAFE_OK)
+    m.on_gripper({'grasped': False})
+    return m, io
+
+
+def picked_only_while_open(io):
+    """집기가 있었고, 모두 녹화가 열린 뒤였나(완료 조건: 녹화 켜짐이면 열기 성공 전 pick_place 0번)."""
+    picks_ = [e for e in io.order if e[0] == 'pick']
+    return bool(picks_) and all(e[2] for e in picks_)
+
+
+def test_W144_출발_직후_진행_확인_전에_웹이_끊겨도_계속하면_녹화를_연_뒤에_집는다():
+    """10/15 재현: CHECK 첫 단계(녹화 열기) 전에 웹이 끊겨 WAIT_HMI → [계속]이 SELECT 로 가 녹화를 한 번도 안 열고 끝까지 조립했다."""
+    now = [0.0]
+    m, io = make_gate(clock=lambda: now[0])
+    alive = [True]
+    m.sleep_hook = lambda _n: alive[0] and m.on_hmi_alive({'alive': True})   # 붙어 있는 동안은 그리퍼 대기(가짜 시간)마다 연결 신호
+    m.on_hmi_alive({'alive': True})
+    start(m)
+    alive[0] = False
+    now[0] += SPARE_CFG['mqtt']['lost_after_s']
+    m.run_once()
+    assert m.state == 'WAIT_HMI' and io.order == []                          # 녹화 열기도 집기도 아직 없음
+    alive[0] = True
+    m.on_hmi_alive({'alive': True})
+    assert m.command('start') == (True, '') and m.state == 'CHECK'          # 계속 → CHECK 부터(녹화를 먼저 연다)
+    drive(m, ('DONE', 'ERROR'))
+    assert m.state == 'DONE'
+    assert io.order[0] == ('start', True) and picked_only_while_open(io)
+
+
+def test_W144_녹화_열기가_실패한_뒤_다시_시작하면_다시_열고_또_실패하면_집지_않는다():
+    """10/15 재현: 열기 실패 → ERROR → [다시 시작]이 다시 열지 않고 녹화 없이 끝까지 조립했다. 이제 다시 열고, 또 실패하면 ERROR(집기 0번)."""
+    m, io = make_gate(starts=[False, False, True])
+    start(m)
+    m.run_once()
+    assert m.state == 'ERROR' and io.order == [('start', False)]
+    for expect in ('ERROR', 'DONE'):
+        m.run_once()                                                          # 덜 된 기록 닫기(잠금 밖)
+        m.on_safety(SAFE_OK)                                                  # 화면 [다시 시작] → 정지 노드가 safety/state 를 다시 냄
+        m.run_once()
+        assert m.state == 'RECOVER'
+        drive(m, ('ERROR', 'DONE'))
+        assert m.state == expect
+        if expect == 'ERROR':                                                 # 두 번째 열기도 실패 — 움직이기 · 집기 전에 멈춤
+            assert io.order == [('start', False), ('start', False)]
+            assert io.goals == [] and calls(io, 'move_to') == [] and calls(io, 'find_blocks') == []
+    assert [e for e in io.order if e[0] == 'start'] == [('start', False), ('start', False), ('start', True)]
+    assert picked_only_while_open(io)
+
+
+def test_W144_조립_중_정지_뒤_다시_시작해도_새_녹화를_연_뒤에만_집는다():
+    """기존 정지 → 다시 시작(#185 · #188)도 같은 조건: 닫은 뒤의 집기는 새로 연 녹화가 열린 다음에만."""
+    from test_task_manager import SAFE_STOP
+    m, io = make_gate()
+    io.pick_script = [lambda io: (io.manager.on_safety(SAFE_STOP), (False, 'STOPPED'))[1]]
+    start(m)
+    drive(m, 'STOPPED')
+    m.run_once()
+    m.run_once()                                                              # 닫음
+    assert not io.open
+    m.on_safety(SAFE_OK)
+    drive(m, ('DONE', 'ERROR'))
+    assert m.state == 'DONE'
+    assert [e for e in io.order if e[0] == 'start'] == [('start', True), ('start', True)]
+    assert picked_only_while_open(io)

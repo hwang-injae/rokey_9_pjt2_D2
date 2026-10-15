@@ -346,7 +346,7 @@ class TaskManager:
         self._spare_on = None                     # 받침에 놓아 둔 블록의 목표 part_id(있으면 다음 SELECT 가 공급 대신 받침부터 마무리한다)
         self._w144_due = None                     # 닫을 W144 기록(조립 결과 DONE 인가) — 잠금 밖 작업 스레드가 닫는다(10/14 #152 리뷰 3)
         self._w144_starting = False               # 출발했고 W144 기록을 아직 안 열었다 — CHECK 첫 단계가 잠금 밖에서 연다(#152 리뷰 3)
-        self._w144_reopen = False                 # 조립 중 정지로 W144 녹화를 닫았다 — [다시 시작]으로 이어 가면 새로 연다(10/15 박진용)
+        self._w144_reopen = False                 # W144 녹화를 닫았거나(조립 중 정지) 못 열었다 — [다시 시작]으로 이어 가면 새로 연다(10/15 박진용 · 10/15 재현)
         self._spare_centers = 0                   # 받침 위 이 블록에 받침 맞추기를 한 수 — 맞춘 뒤 다시 재서 2 mm 넘으면 다시(scatter_pick.CENTER_MAX 번까지)
         self._spare_failed = []                   # 이번 블록에서 받침으로 옮기다 안 된 시도 [(x_m, y_m, 잡기, 각도 °, 옮김 m)] — 같은 후보를 다시 고르지 않게
         self._plan_streak = 0                     # 움직이기 전 길 계산 거절이 연달아 몇 번(받침 경유) — PLAN_STREAK 번이면 사람
@@ -751,8 +751,9 @@ class TaskManager:
             ok, why = self.io.w144_start(self.design_id, self.run_id)
             if not ok:
                 # 덜 된 기록은 닫아 둔다(다음 run_once 가 잠금 밖에서 ZIP) — 열린 채 [다시 시작]으로 이어 가면 촬영이 반쯤 연 기록을 썼다(10/14 점검 ② 3)
+                # [다시 시작]이면 RECOVER 가 다시 열게 한다 — 안 하면 녹화 없이 집어 끝까지 갔다(10/15 재현). 또 실패하면 여기로 와 ERROR(집기 없음)
                 with self._lock:
-                    self._w144_due = False
+                    self._w144_due, self._w144_reopen = False, True
                 return self._to_error(why)
         if self._fresh and self._scatter is not None and self._scatter.via_spare:
             self._fresh = False
@@ -1498,7 +1499,7 @@ class TaskManager:
         if grip.get('grasped'):
             return self._to_error('그리퍼가 블록을 쥐고 있어 이어 갈 수 없어요 → 쥔 블록을 먼저 빼야 해요 → 블록을 받칠 사람과 함께 [정지] → [그리퍼 열기] → [다시 시작]')
         self._recover_slow = True
-        if self._w144_reopen:                      # 정지 때 닫은 W144 녹화를 CHECK 첫 단계가 새 폴더로 다시 연다(녹화 꺼짐이면 아무것도 안 함)
+        if self._w144_reopen:                      # 정지 때 닫았거나 못 연 W144 녹화를 CHECK 첫 단계가 새 폴더로 다시 연다(녹화 꺼짐이면 아무것도 안 함)
             self._w144_reopen, self._w144_starting = False, True
             # 새 녹화는 앞 녹화의 시도 번호를 모른다 — 남겨 두면 다시 집기 · 촬영이 옛 번호를 써서 'action_id 없음' → ERROR 를 되풀이했다(10/15 002 실기).
             # 정지 때가 아니라 여기서 비운다: 정지 직후 늦게 온 집기 결과가 옛 녹화(아직 열림)에 실패를 적고 옛 번호를 다시 남기기 때문
@@ -1946,13 +1947,19 @@ class TaskManager:
         """(lock 안) READY 출발(→ CHECK), WAIT_SUPPLY · WAIT_HMI 에서 계속. 설계 조회는 _lookup_then 이 먼저 한다.
 
         WAIT_SUPPLY 에서는 관측 자세에 도착해 supply_empty 를 낸 뒤에만 받는다(도착 전 start 는 BUSY 로 거절, 진행시키지 않는다).
+        WAIT_HMI 의 계속은 SELECT(진행 재확인)로 가되, W144 녹화를 아직 열지 않았으면 CHECK 로 돌아가 먼저 연다.
         """
         if self.state == 'WAIT_HMI':
             ok, code, text = self._precheck()
             if not ok:
                 return self._reject(code, f'계속 점검 실패: {text}')
-            self._hmi_pause, self._hmi_recheck = False, True
             self.logger.log('command', self.part_id, 'continue_hmi')
+            if self._w144_starting:
+                # CHECK 첫 단계(W144 녹화 열기) 전에 끊겼다 — SELECT 로 가면 녹화를 한 번도 안 열고 집었다(10/15 재현). CHECK 가 열고 진행 확인까지 한다
+                self._hmi_pause = False
+                self._set('CHECK', None, '웹이 연결됐어요. 진행 확인부터 다시 합니다')
+                return True, ''
+            self._hmi_pause, self._hmi_recheck = False, True
             self._set('SELECT', None, '웹이 연결됐어요. 진행 확인부터 이어갑니다')
             return True, ''
         if self.state == 'WAIT_SUPPLY':
