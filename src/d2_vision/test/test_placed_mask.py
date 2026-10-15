@@ -21,7 +21,7 @@ CAM_H = 0.30                              # 카메라 높이 m — 1 px ≈ 0.48
 INTR = (600.0, 600.0, 320.0, 240.0)       # (fx, fy, cx, cy) 픽셀
 HW = (480, 640)
 SAG_W, SAG_DROP = 0.004, 0.008            # 처짐: 윗면 가장자리 4 mm 띠가 8 mm 낮게 — 깊이 윗면 띠(±5 mm)에서 빠진다
-KEYS = {'part_id', 'x_m', 'y_m', 'top_z_m', 'yaw_deg', 'up', 'tilted', 'confidence', 'size_mm'}
+KEYS = {'part_id', 'x_m', 'y_m', 'top_z_m', 'yaw_deg', 'up', 'tilted', 'confidence', 'size_mm', 'corners_z_m'}
 
 
 def rot_z(yaw_deg):
@@ -269,3 +269,18 @@ def test_output_keys_and_shape_same_as_measure_placed():
     assert set(got[0]) == set(want[0]) == KEYS
     assert {k: type(v) for k, v in got[0].items()} == {k: type(v) for k, v in want[0].items()}
     assert got[0]['part_id'] == pt['part_id'] and len(got[0]['size_mm']) == 2
+
+
+# ---------- 모서리 높이 corners_z_m (10/15 한석형 #190 — 마스크 방식도 낸다) ----------
+
+def test_mask_result_has_corners_at_measured_pose():
+    """마스크 방식 답에도 corners_z_m 4개 — 칸은 마스크로 잰 가운데 · yaw 기준이라 8 mm 비켜 놓인 블록도 네 모서리 모두 윗면 높이(null 없음)."""
+    pt = part(20.0)
+    c = np.array(pt['center']); c[0] += 0.008
+    P, masks = render([(c, placed(pt)[1])])
+    blk, rej, info = run(P, masks, pt)
+    assert rej is None and info['method'] == 'mask', (rej, info)
+    cz = blk['corners_z_m']
+    assert isinstance(cz, list) and len(cz) == 4 and all(v is not None for v in cz), cz
+    assert all(abs(v - (c[2] + T / 2)) < 0.0015 for v in cz), cz
+    assert set(blk) == KEYS

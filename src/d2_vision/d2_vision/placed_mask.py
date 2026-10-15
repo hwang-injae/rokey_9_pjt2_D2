@@ -5,10 +5,11 @@ W144(챌린지 A4)의 놓은 블록 다시 재기. placed_measure.measure_placed
 여기서는 10/15 PL 결정대로 **기울기 · 덮임 · 자세 판단은 깊이(measure_placed)**, **크기 · 위치 · yaw 는 마스크**로 잰다:
   마스크 픽셀마다 카메라 광선을 쏴 '윗면 높이 평면'과 만나는 점(xy)을 모아 주축으로 잰다 — 가장자리 깊이가 처져도 윤곽은 컬러에서 온다.
   실기 사진 16장(V008 · V009 · V001 observe, 10/15 eval_mask.py): 잰 블록 8 → 15장 · 크기 74.3±0.3 × 25.4±0.6 mm · 가운데 흔들림 ±0.6~0.8 mm.
-  단 dy −2.5±0.8 mm 일정 치우침 — 컬러 ↔ 깊이 정렬 어긋남(마스크를 깊이 윗면에 맞추려면 u 약 −5 px) 또는 비스듬히 보여 마스크에 든
-  옆면 픽셀(윗면 높이 픽셀만 남기면 −0.9 mm) — 어느 쪽인지는 2 · 3층 사진 · 실기로 가린다(고정 픽셀 옮김은 층 · 자세가 바뀌면 안 맞을 수 있다).
-  (같은 15장에서 가운데 dy 를 0 으로 하는 옮김은 약 (−3, 0) px — 그 15장에 맞춘 값이라 검증은 아니다.)
-  정확한 값은 실기에서 정한다 → 마스크를 옮기는 픽셀 수(px_shift)를 인자로 둔다(기본 0 = 옮기지 않음).
+  dy −2.4±0.8 mm 치우침(다리 긴 축 방향)은 10/15 오후 세 자 비교(깊이 띠 · 마스크 · 컬러 밝기 경계, 다리 22장)로 가려졌다: 마스크 = 컬러이고
+  **깊이 쪽이 −y 끝만 5 mm 잘려** 가운데가 치우친 것 + 다리가 실제로 긴 축 −2.4 mm 밀려 놓임(놓기 쪽 치우침 — 박진용). 컬러 ↔ 깊이 정렬
+  어긋남이 아니므로 **마스크 옮김(px_shift)은 0 으로 쓴다**('−3 px 옮김' 안은 폐기 — 좌판에서 +3 mm 틀어짐). px_shift 인자 · 파라미터는
+  정렬 보정이 필요해질 때를 위해 남겨 둔다(기본 0).
+  응답 corners_z_m(10/15 한석형 #190)은 깊이 점으로 — 칸 위치는 마스크로 잰 가운데 · yaw, 높이 창은 placed_measure.corner_heights 와 같다.
 단위: 입력 · 출력 좌표 m(base_link), 픽셀은 컬러(= 정렬된 깊이) 영상 기준. 바깥 영향 없음. numpy 만(CI 에 cv2 가 없다).
 """
 import math
@@ -16,7 +17,7 @@ import math
 import numpy as np
 
 from d2_vision.block_finder import TOP_AXES, _erode, wrap_deg
-from d2_vision.placed_measure import SIZE_TOL_M, TOP_TOL_M, measure_placed, up_of
+from d2_vision.placed_measure import SIZE_TOL_M, TOP_TOL_M, corner_heights, measure_placed, up_of
 from d2_vision.spare_measure import UP_DIM
 
 DEPTH_FINAL = ('NO_PART', 'COVERED', 'STANDING', 'FEW_POINTS', 'TILTED')   # 깊이가 정하는 거절 — 마스크로 다시 재지 않고 그대로 돌려준다(10/15 PL)
@@ -107,7 +108,8 @@ def measure_placed_mask_detail(pts_img, masks, part, block_actual_m, intr, T_bas
              인 점 z 의 가운데 값. ④ 마스크 픽셀마다 광선 → z = 윗면 높이 평면과 만나는 xy. ⑤ xy 주축(PCA)으로 yaw · 양 끝 백분위
              (MASK_EDGE_PCT)로 두 변 길이 · 가운데. ⑥ 크기가 블록보다 SIZE_TOL_M 넘게 크거나 작으면 마스크를 믿지 않고
              깊이 결과를 그대로 돌려준다(깊이가 통과한 블록을 거절로 바꾸지 않음).
-    출력: (블록 dict 또는 None, 거절 (코드, 설명) 또는 None, info) — 앞 둘은 measure_placed 와 같은 꼴 · 같은 키.
+    출력: (블록 dict 또는 None, 거절 (코드, 설명) 또는 None, info) — 앞 둘은 measure_placed 와 같은 꼴 · 같은 키(corners_z_m 포함 —
+          칸 위치는 마스크로 잰 가운데 · yaw, 높이는 깊이 점).
           info = {'method': 'mask' | 'depth', 'reason': 깊이 결과를 쓴 까닭(마스크로 쟀으면 ''), 'depth_reject': 깊이 거절 코드 또는 None,
                   'depth_size_mm': 깊이로 잰 두 변(통과했을 때) 또는 None, 'mask_px'(옮겨서 영상 안에 남은 픽셀), 'inner_pts',
                   'center_px': 투영 픽셀 [u, v] 또는 None, 'shift_px': [du, dv](정수), 'mask_size_mm': 마스크로 잰 두 변(광선까지 갔을 때)}.
@@ -190,16 +192,20 @@ def measure_placed_mask_detail(pts_img, masks, part, block_actual_m, intr, T_bas
     info['method'] = 'mask'
     ctr = mean + ax_u * (lo_u + hi_u) / 2 + ax_v * (lo_v + hi_v) / 2
     yaw = round(wrap_deg(math.degrees(math.atan2(ax_u[1], ax_u[0]))), 1)
+    yaw = yaw if yaw < 90.0 else -90.0                                   # 반올림으로 90.0 이 되면 −90(measure_placed 와 같은 규칙)
+    p_all = pts_img.reshape(-1, 3)
+    p_all = p_all[np.isfinite(p_all).all(axis=1)]
     return {
         'part_id': part['part_id'],
         'x_m': round(float(ctr[0]), 4),
         'y_m': round(float(ctr[1]), 4),
         'top_z_m': round(top_z, 4),
-        'yaw_deg': yaw if yaw < 90.0 else -90.0,                          # 반올림으로 90.0 이 되면 −90(measure_placed 와 같은 규칙)
+        'yaw_deg': yaw,
         'up': up,
         'tilted': False,
         'confidence': 1.0,
         'size_mm': [round(span_u * 1000.0, 1), round(span_v * 1000.0, 1)],
+        'corners_z_m': corner_heights(p_all, ctr, yaw, top_design, a, b),   # 높이는 깊이에서, 칸은 마스크로 잰 가운데 · yaw(한석형 #190)
     }, None, info
 
 
