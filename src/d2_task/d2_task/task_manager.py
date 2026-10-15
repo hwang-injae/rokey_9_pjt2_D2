@@ -1396,6 +1396,9 @@ class TaskManager:
         self._recover_slow = True
         if self._w144_reopen:                      # 정지 때 닫은 W144 녹화를 CHECK 첫 단계가 새 폴더로 다시 연다(녹화 꺼짐이면 아무것도 안 함)
             self._w144_reopen, self._w144_starting = False, True
+            # 새 녹화는 앞 녹화의 시도 번호를 모른다 — 남겨 두면 다시 집기 · 촬영이 옛 번호를 써서 'action_id 없음' → ERROR 를 되풀이했다(10/15 002 실기).
+            # 정지 때가 아니라 여기서 비운다: 정지 직후 늦게 온 집기 결과가 옛 녹화(아직 열림)에 실패를 적고 옛 번호를 다시 남기기 때문
+            self._w144_open, self._w144_last, self._w144_legs = {}, {}, {}
         if self._scatter is not None and self._scatter.via_spare:
             # 받침 경유: 사람이 확인하고 [다시 시작]하면 시도 수 · 안 된 후보를 비우고 이어 간다(one_pick hold → Enter 와 같음).
             # 받침 기록(_spare_on)은 남겨 받침 위 블록부터 다시 잰다
