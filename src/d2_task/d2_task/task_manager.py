@@ -118,7 +118,7 @@ def placed_offset(center_m, part_id, ok, why, body):
             'target_y_m': round(float(center_m[1]), 5), 'dx_mm': dx, 'dy_mm': dy, 'dx_raw_mm': dx_raw, 'dy_raw_mm': dy_raw,
             'yaw_deg': _finite(b.get('yaw_deg')), 'up': up,
             'tilted': tilted, 'top_z_m': _finite(b.get('top_z_m')), 'measured_stamp': stamp,
-            # 모서리 높이 4곳(m, CORNER_SIGNS 순서, 못 잰 곳 None) — 응답에 칸이 있을 때만 싣는다(지금 비전 응답의 기록은 그대로).
+            # 모서리 안쪽 칸 높이 4곳(m, CORNER_SIGNS 순서, 못 잰 곳 None — 꼭짓점이 아님) — 응답에 칸이 있을 때만 싣는다(지금 비전 응답의 기록은 그대로).
             # 칸 이름 · 순서는 민범진과 맞출 제안(아직 계약 아님). 꼴이 다르면(4개 목록 아님) None
             **({'corners_z_m': [_finite(v) for v in corners] if isinstance(corners, list) and len(corners) == 4 else None}
                if 'corners_z_m' in b else {})}
@@ -129,7 +129,7 @@ FLOAT_EPS_MM = 1e-9        # 부동소수 표현 오차만 흡수(예 0.402 − 
 A4_MAX_TRIES = 2           # 같은 블록 다시 집기 최대 횟수(W144 '최대 2번') — 다 쓰고도 크면 남은 오차를 적고 다음 블록으로(10/14 19:47 사용자 확정)
 STAMP_ROUND_S = 0.0005     # 비전 #177 이 measured_stamp 를 소수 3자리(1 ms)로 반올림해 보낸다 — 비교에 그 반올림 폭만 둔다(새 문턱 아님)
 UP_NAMES = ('LENGTH', 'WIDTH', 'THICKNESS')
-A4_Z_TOL_MM = 5.0          # 모서리 높이: 가장 낮은 1곳을 뺀 3곳의 평균과 하나라도 이만큼 이상 다르면 Z 문제 → 사람 수정 대기(10/15 사용자 합의, 단일 블록)
+A4_Z_TOL_MM = 5.0          # 모서리 안쪽 칸 높이: 가장 낮은 1곳을 뺀 3곳의 평균과 하나라도 이만큼 이상 다르면 Z 문제 → 사람 수정 대기(10/15 사용자 합의, 단일 블록)
 # 모서리 순서 = 윗면 (긴 축 −, 짧은 축 −) · (−, +) · (+, −) · (+, +). 비전 corners_z_m 칸과 같은 순서 — 칸 이름 · 순서는 민범진과 맞출 제안(아직 계약 아님)
 CORNER_SIGNS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
 
@@ -169,10 +169,11 @@ def corner_xy_errors(row, part, cfg):
 
 
 def corner_z_check(corners_z_m):
-    """모서리 높이 4곳(m) → ('OK' | 'Z' | 'MISSING', 글). 바깥 영향 없음.
+    """모서리 안쪽 칸 높이 4곳(m — 비전 corners_z_m, 꼭짓점이 아니라 잰 중심 · yaw 기준 윗면 안쪽 칸) → ('OK' | 'Z' | 'MISSING', 글). 바깥 영향 없음.
 
     10/15 사용자 합의: 가장 낮은 1곳을 빼고 남은 3곳의 평균과 하나라도 A4_Z_TOL_MM 이상 다르면 Z 문제(자동 다시 집기 안 함 · 사람 수정 대기).
-    한 모서리만 h 들리면 2h/3, 긴 끝 두 모서리가 h 들리면 2h/3 가 차이라 둘 다 h ≥ 7.5 mm 부터 Z 문제다.
+    판정 문턱은 칸 높이 기준 '세 점 평균 대비 편차 ≥ 5 mm' 하나다. 예: 칸 하나만 h 높으면 편차 2h/3 → 칸 높이 7.5 mm 부터.
+    칸이 꼭짓점 안쪽이라 강체로 기운 블록은 꼭짓점이 더 들려야 걸린다(긴 끝 들림 ≈ 9 mm) — 그 전에 비전 TILTED 가 먼저 거른다.
     4곳이 다 유한한 수가 아니면 'MISSING' — 못 얻은 것을 정상으로 보지 않는다.
     """
     if not isinstance(corners_z_m, (list, tuple)) or len(corners_z_m) != 4:
@@ -192,7 +193,7 @@ def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries, corners=F
     """W144 A4 자동 다시 집기 판단(ROS 없음 · 바깥 영향 없음). 기록 모드와 따로 — w144_regrasp 가 켜졌을 때만 부른다.
 
     corners(기본 False — 선택 기능, task 파라미터 w144_corner_judge): False 면 지금 판정 그대로(중심 dx · dy 만, 모서리 칸은 보지 않음).
-    True 면 모서리 판정(10/15 사용자 합의, 단일 블록): 모서리 높이 → 중심 · 모서리 x · y. 비전 TILTED 거절 · tilted True 는 사람 수정 대기(HOLD — 안 B′,
+    True 면 모서리 판정(10/15 사용자 합의, 단일 블록): 모서리 안쪽 칸 높이 → 중심 · 모서리 x · y. 비전 TILTED 거절 · tilted True 는 사람 수정 대기(HOLD — 안 B′,
     #182 의 '기울어짐도 기록 · 다음 블록'과 달라 PL 확인 대기), 다른 거절은 지금처럼 SKIP. 비전이 모서리 높이(corners_z_m)를 내야 돈다 —
     칸이 없으면 '못 얻음'으로 다시 집지 않는다(지금 비전에서 켜면 다시 집기가 모두 멈춘다 — 비전 칸과 같이 켤 것).
 
@@ -202,7 +203,7 @@ def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries, corners=F
     최신성: #177 은 요청 뒤에 받은 깊이만 쓰고(fresh_frames) measured_stamp 는 그중 마지막 장을 받은 시각(노드 시계)이다 —
           같은 로봇 PC 시계라는 가정 아래 t_req ≤ measured_stamp ≤ t_resp 일 때만 '이번 요청의 영상'으로 본다(밖이면 시계 · 영상을 믿지 않음).
           measured_stamp 는 1 ms 로 반올림돼 오므로 양 끝에 STAMP_ROUND_S(0.5 ms)만 둔다.
-    판정 차례(10/15 사용자 합의 — 단일 블록): 측정 유효 → 모서리 높이(corner_z_check — 못 얻으면 SKIP, Z 문제면 HOLD) → 중심 · 모서리 4곳 x · y(corner_xy_errors).
+    판정 차례(10/15 사용자 합의 — 단일 블록): 측정 유효 → 모서리 안쪽 칸 높이(corner_z_check — 못 얻으면 SKIP, Z 문제면 HOLD) → 중심 · 모서리 4곳 x · y(corner_xy_errors).
     출력: ('OK', None) = 중심 · 모서리 모두 두 축 A4_TOL_MM 미만(반올림 전 값) — 그대로 이어 감 / ('HOLD', 글) = Z 문제 — 다시 집지 않고 사람 수정 대기 / ('EXHAUSTED', 글) = A4_TOL_MM 이상이지만 이미 A4_MAX_TRIES 번 다시 놓음 — 남은 오차를 적고
           이어 감(유효한 측정일 때만 — 측정 불가 · 기울어짐 등은 그 전에 SKIP) / ('REGRASP', 목표) = PickPlace 목표 {part_id, supply_slot '', grasp(레시피), pick_pose(잰 중심 ·
           잰 yaw · 잰 윗면에서 자세 치수로 구한 중심 높이 — block_pose), place_pose(설계), open_width_m 0, obstacles []} /
