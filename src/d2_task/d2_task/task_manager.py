@@ -808,10 +808,12 @@ class TaskManager:
                 self.logger.log('fail', self.part_id, f'find_blocks {why} — 다시({k + 1}/{tries - 1})')
         return ok, why, body
 
-    def _hold(self, part_id, text, then=None):
-        """받침 경유: 서지 않고 사람을 부른다(one_pick hold) — WAIT_SUPPLY + 알림 no_match_block, [계속]이면 then 을 한 뒤 이어 간다."""
+    def _hold(self, part_id, text, then=None, message_id='no_match_block'):
+        """받침 경유: 서지 않고 사람을 부른다(one_pick hold) — WAIT_SUPPLY + 알림(기본 no_match_block), [계속]이면 then 을 한 뒤 이어 간다.
+
+        message_id: 화면 알림 이름 — 받침 경유 · 공급은 기본 no_match_block 그대로, A4 모서리 판정의 사람 수정 대기만 placed_check(10/15 PL)."""
         self._hold_then = then
-        self._enter_wait_supply(part_id, ('no_match_block', text))
+        self._enter_wait_supply(part_id, (message_id, text))
         return None
 
     def _move_observe(self):
@@ -1383,7 +1385,7 @@ class TaskManager:
             if verdict == 'HOLD':                  # Z 문제 — 자동으로 다시 집지 않고 사람이 고친 뒤 [계속]이면 다시 확인(VERIFY → 다시 잼)
                 self.logger.log('a4_regrasp', self.placed, f'Z 문제 — 사람 수정 대기: {out}')
                 self._w144_event('regrasp_hold', self.placed, reason=out)
-                self._hold(self.placed, f'{self.placed}: {out}', then='verify')
+                self._hold(self.placed, f'{self.placed}: {out}', then='verify', message_id='placed_check')   # 놓은 블록 확인 대기 — 공급 대기(no_match_block)와 구분(10/15 PL)
                 return True
             if verdict == 'EXHAUSTED':
                 self.logger.log('a4_regrasp', self.placed, f'보정 소진: {out}')

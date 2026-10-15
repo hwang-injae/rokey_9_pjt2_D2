@@ -270,3 +270,25 @@ def test_다시_집기_중_정지_뒤_재개해도_처음_목표_횟수가_남�
     assert m._a4_place[IDS[0]] == first_target and m._a4_tries[IDS[0]] == 1   # 목표 · 횟수 그대로
     assert len(picks_of(io, IDS[0])) == 2 and all(len(picks_of(io, p)) == 1 for p in IDS[1:])
     assert m.last_build['placed'] == len(IDS)                                  # 놓은 수 중복 없음
+
+
+
+def test_A4_사람_대기는_placed_check_공급_대기는_no_match_block_그대로():
+    """10/15 PL: A4 모서리 판정의 사람 수정 대기(Z · TILTED)만 WAIT_SUPPLY 알림 placed_check, [계속]이면 VERIFY 에서 다시 잰다.
+    받침 경유 · 공급의 사람 확인(_hold 기본)은 no_match_block 그대로."""
+    for first in ({'dz': (7.5, 0.0, 0.0, 0.0)}, ok_body(IDS[0], [], 'TILTED', '긴 축 양 끝 6 mm')):
+        io = CornerIO([first, {}])
+        m, rows = start(io)
+        drive(m, 'WAIT_SUPPLY')
+        assert io.states[-1]['message_id'] == 'placed_check' and io.states[-1]['part_id'] == IDS[0]
+        n = len(io.measured)
+        assert m.command('start') == (True, '')
+        drive(m, 'VERIFY')
+        drive(m, 'SELECT')
+        assert len(io.measured) == n + 1 and [p for _, p in io.measured][-1] == IDS[0]     # [계속] → 같은 블록 다시 잼
+    from test_a4_regrasp import RegraspIO as R
+    io = R([(5.0, 0.0)])
+    io.pick_script = [(True, ''), (False, 'PLAN_FAILED')]                   # 다시 집기 길 없음 → 기존 사람 확인
+    m, rows = start(io)
+    drive(m, 'WAIT_SUPPLY')
+    assert io.states[-1]['message_id'] == 'no_match_block'
