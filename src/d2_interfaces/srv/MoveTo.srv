@@ -1,6 +1,6 @@
 # 정해진 자세로 팔 이동 — task 노드 → 집기·놓기 (/d2/motion/move_to). 팔을 움직이는 노드를 pick_place 하나로 (S-23)
 string target                     # robot.yaml <target>_pose 가 있는 이름 — observe | home | observe_supply | observe_spare | observe_back_left | observe_front | observe_front_right | observe_side (없으면 실패, W186)
-float64 speed_ratio               # robot.yaml speed_scale 에 곱할 비율 (0 < 값 ≤ 1). 0 이면 1.0(평소 속도). 다시 시작(RECOVER) 뒤 첫 이동 0.5 (W121 C-1 · C-9)
+float64 speed_ratio               # robot.yaml speed_scale 에 곱할 비율 (0 < 값 ≤ 1). 0 이면 1.0(평소 속도). 다시 시작(RECOVER) 뒤 첫 이동 0.4 — robot.yaml recover.speed_ratio (W121 C-1 · C-9)
 ---
 bool success                      # 다 간 뒤 답
 string reason                     # IRD 7장 실패 코드

@@ -24,7 +24,7 @@ run_id 는 조립 출발(READY → CHECK) 또는 스캔 시작(SCAN_MOVE) 때 �
 답이 오면 어떻게 할지(build_result)만 정한다. 저장이 확인된 run_id 만 목록에서 지운다 — 실패 · 시간 초과 · 잘못된 답은 요약을 남긴다.
 WAIT_SUPPLY(공급 채우기 · [계속])는 05 작업분류 W119 ②의 일부지만 SDD 5장 상태표에 있어 W044 에서 먼저 구현했다 — **W119 완료가 아니다**
 (W119 는 스캔 흐름이 더 남아 있다).
-복구(RECOVER) 뒤 첫 성공한 move_to 는 robot.yaml recover.speed_ratio(0.5)로 움직인다. 조립 중이 아닐 때(IDLE · READY · DONE)
+복구(RECOVER) 뒤 첫 성공한 move_to 는 robot.yaml recover.speed_ratio(0.4)로 움직인다. 조립 중이 아닐 때(IDLE · READY · DONE)
 정지됐다 풀린 뒤 돌아갈 곳은 SDD 에
 없어서 가장 가까운 규칙(비조립 RECOVER → IDLE)만 따른다(IRD 12장 W121 다시 확인 대상).
 """
