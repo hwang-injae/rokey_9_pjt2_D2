@@ -40,6 +40,10 @@
         "area": "assembly" + "design_id" · "part_id"(10/14 W144 — 한석형 · 민범진) → 조립 자리에 방금 놓은 블록 하나를 깊이로만 잰다
             (placed_measure.measure_placed — 설계 자리 둘레, YOLO 없음) → {"ok":true,"part_id","blocks":[b] 또는 [],"rejected","detail","measured_stamp"}.
             못 재면(옆 블록과 붙음 · 덮임 · 세운 블록 · 기울어짐 · 점 부족 · 크기 다름 · 없음) blocks [] + rejected 코드 — 요청 오류(SCAN_FAILED)와 다르다.
+            placed_method:=mask(10/15 PL — 기본 꺼짐)면 같은 깊이로 measure_placed 를 먼저 보고(기울어짐 · 덮임 · 세움 · 점 부족 · 없음은
+            그대로), 크기 · 위치 · yaw 는 요청 뒤 컬러 한 장의 YOLO 마스크 + 광선으로 다시 잰다(placed_mask.measure_placed_mask —
+            깊이가 윗면 가장자리를 처지게 재 크기가 작게 · 가운데가 흔들리는 것을 피하려고). 응답 칸은 같다 — 어느 방법으로 쟀는지는 로그에만.
+            컬러가 없거나 · YOLO 를 안 읽었거나(yolo_fallback) · 마스크 쪽 예외면 깊이 결과 그대로 + 경고.
   `/d2/vision/wrist_image`(sensor_msgs/CompressedImage, JPEG 품질 70, 640×480 그대로) — find_blocks 때마다 검출 결과
       (윤곽 · 윤곽 위 작은 글자 'FLAT/EDGE/STAND[ TILT n]')를 그린 그림 한 장(IRD E-67 '때만 내도 됨'). 매 프레임 내지 않는다.
       고른 뒤 덧그림(10/14 22시 PL): `/d2/task/state`(std_msgs/String state/2 JSON, task 와 같은 QoS — RELIABLE · TRANSIENT_LOCAL · KEEP_LAST 1)를
@@ -86,11 +90,17 @@
   yolo_model   YOLO seg 모델 파일(.pt) 경로. 기본 = 이 패키지 share/models 에 설치된 판(DEFAULT_YOLO_MODEL, E-86)
   yolo_fallback  true 면 YOLO 를 읽지 않고 예비 마스크(엣지 + 깊이, E-47)만 쓴다(기본 false — 모델 · ultralytics 가 없는 시험 · CI 용)
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
+  placed_method  find_blocks area assembly 재는 방법: 'depth'(기본 — 깊이만, measure_placed) · 'mask'(YOLO 마스크 + 광선으로 크기 · 위치,
+               기울기 · 덮임은 깊이 — 10/15 PL). 'mask' 가 아니면 모두 depth. 요청마다 읽는다(ros2 param set 으로 바로 바꿀 수 있다)
+  placed_mask_shift_px  mask 방법에서 YOLO 마스크를 옮길 (du, dv) 픽셀(**실수로**, 기본 [0.0, 0.0]) — 컬러 ↔ 깊이 정렬 어긋남 보정.
+               10/15 흉내 시험에서 dy −2.6 mm 치우침 · 마스크를 깊이 윗면에 맞추려면 u 약 −5 px, 같은 15장의 가운데 dy 를 0 으로 하는 값은
+               약 [−3, 0](eval_mask) — 값은 실기에서 정한다. 요청마다 읽는다
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
   table_z_m · find.min_gap_mm · grasp_depth_m · finger.width_m · supply_area_m · spare_spots(area spare 때) 를 읽는다.
 
 바깥 영향: 서비스 답 · camera_status · wrist_image · scan_preview 발행 · /d2/task/state 구독(그림만) · get_design 조회(remote, 설계마다 · 판마다 한 번) ·
   scan_capture 미리보기 PLY · 자세 자료(사진 · 깊이 · 자세) · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
+  placed_method:=mask 면 find_blocks area assembly 때 YOLO 를 한 번 더 돌린다(답 시간 + YOLO 한 번 — 이 PC GPU 실측 약 0.02초 · CPU 면 더 길다. wrist_image 는 그때도 내지 않는다).
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 run_id 가 바뀌었으면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 켤 때 YOLO(10/11 E-86): yolo_fallback 이 false(기본)인데 ultralytics 가 없거나 · 모델 파일이 없거나 · 읽기 · 미리 돌리기가 실패하면
@@ -155,6 +165,7 @@ from d2_vision.design_cache import RunDesignCache
 # 요청 검사(run_id 를 폴더 이름으로 써도 되는지까지) · 레시피 두 파일 → blocks/2 는 가짜 노드와 같은 함수를 쓴다(ROS 없는 계산, 시험 있음)
 from d2_vision.height_grid import height_grid, spare_map_area, supply_map_area
 from d2_vision.mock_scan import assembly_target, find_options, load_recipe_files, parse_request, structure_to_blocks
+from d2_vision.placed_mask import measure_placed_mask_detail
 from d2_vision.placed_measure import measure_placed
 from d2_vision.spare_measure import ideal_spare_block, measure_on_spare
 from d2_vision.structure_scanner import StructureScanner, family_of, save_capture, save_preview, scan_response
@@ -202,6 +213,8 @@ class WristBlock(Node):
         self.declare_parameter('yolo_fallback', False)     # true = YOLO 안 읽고 예비 마스크만(시험 · CI 용 — E-86, 기본 끔)
         self.declare_parameter('yolo_conf', 0.55)
         self.declare_parameter('status_hz', 2.0)
+        self.declare_parameter('placed_method', 'depth')          # find_blocks area assembly: depth(기본, 깊이만) · mask(마스크 + 광선, 10/15 PL)
+        self.declare_parameter('placed_mask_shift_px', [0.0, 0.0])  # mask 때 마스크를 옮길 (du, dv) 픽셀 — 컬러 ↔ 깊이 정렬 보정(실기에서 정함)
 
         self.bridge = CvBridge()
         self.lock = threading.Lock()
@@ -925,7 +938,8 @@ class WristBlock(Node):
               "measured_stamp": 쓴 깊이 중 마지막 장을 받은 시각(초, 노드 시계)}. 측정 거절 · 블록 없음(NO_PART)은 ok true(이번엔 못 잼 — 다시 집지 않음).
         실패(success false): 설계에 없는 part_id → SCAN_FAILED '요청 오류' · 설계를 못 읽음 → ERROR(get_design 시간 초과 TIMEOUT) ·
         보정값 없음 · 계산 예외 → ERROR · TF · 깊이 시간 초과 → TIMEOUT. 바깥 영향: 로그(remote 면 get_design — 보통 check_progress 로 이미 캐시) ·
-        요청 뒤 컬러가 있으면 wrist_image 작업대 그림 한 장(설계 자리 빨간 상자 + 잰 블록 초록 + placed_note 글자, 박진용 안 ②)."""
+        요청 뒤 컬러가 있으면 wrist_image 작업대 그림 한 장(설계 자리 빨간 상자 + 잰 블록 초록 + placed_note 글자, 박진용 안 ②).
+        placed_method:=mask 면 깊이 결과 뒤에 _placed_by_mask 가 크기 · 위치를 마스크로 다시 잰다(응답 꼴 같음, 거기서 실패하면 깊이 결과 그대로)."""
         design_id, part_id = target
         with self.design_lock:
             checker, reason = self.checker_for(design_id, rid)
@@ -946,6 +960,8 @@ class WristBlock(Node):
         except Exception as e:                # 계산 예외로 노드가 죽지 않게 — 원인은 로그로
             self.get_logger().error('find_blocks(assembly) %s %s 예외: %r' % (rid, part_id, e))
             return self._answer(res, 'find_blocks(assembly)', self._fail(False, 'ERROR', '놓은 블록 재기 예외: %s' % e), t0)
+        if self.get_parameter('placed_method').value == 'mask':
+            b, why = self._placed_by_mask(rid, part_id, part, depth_mm, color, T, b, why)
         out = {'ok': True, 'part_id': part_id, 'blocks': [b] if b else [], 'rejected': None if b else why[0],
                'detail': '' if b else why[1], 'measured_stamp': round(float(stamp), 3)}
         c = part['center']
@@ -956,6 +972,34 @@ class WristBlock(Node):
             self._publish_bench_image(None, [{'part_id': part_id, 'center': c, 'rot': part['rot'], 'state': None}], T,
                                       measured=b, note=placed_note(part_id, b, c, out['rejected']), color=(color, frame_id))
         return self._answer(res, 'find_blocks(assembly)', (True, '', out), t0)
+
+    def _placed_by_mask(self, rid, part_id, part, depth_mm, color, T, b, why):
+        """_find_assembly 의 placed_method:=mask 갈래 — 깊이 결과 (b, why) 를 YOLO 마스크 + 광선 결과(placed_mask.measure_placed_mask)로 바꾼다.
+
+        입력: depth_mm = 평균 깊이 (H, W) mm · color = 요청 뒤 컬러 BGR 또는 None · T = 카메라 → base 4x4 m · (b, why) = measure_placed 결과.
+        출력: (블록 dict 또는 None, 거절 (코드, 설명) 또는 None) — measure_placed 와 같은 꼴. 쓴 방법 · 까닭은 로그 한 줄에만(응답 칸 그대로).
+        실패 때: 컬러 없음 · YOLO 안 읽음(yolo_fallback) · 추론 실패 · 계산 예외면 받은 깊이 결과를 그대로 돌려주고 경고 로그(노드는 계속).
+        바깥 영향: YOLO 한 번(find_lock 안 — find_blocks · scan_capture 와 차례로) · 로그."""
+        if color is None:
+            self.get_logger().warn('find_blocks(assembly) %s %s: placed_method mask 인데 요청 뒤 컬러가 없다 — 깊이 결과로' % (rid, part_id))
+            return b, why
+        try:
+            shift = [float(v) for v in self.get_parameter('placed_mask_shift_px').value]
+            with self.find_lock:
+                masks, _ = self._yolo_masks(color)
+            if masks is None:
+                self.get_logger().warn('find_blocks(assembly) %s %s: YOLO 마스크가 없다(yolo_fallback · 추론 실패) — 깊이 결과로' % (rid, part_id))
+                return b, why
+            P = base_image(depth_mm / 1000.0, self.intr, T)
+            bm, wm, info = measure_placed_mask_detail(P, masks, {'part_id': part_id, 'center': part['center'], 'rot': part['rot']},
+                                                      self.cfg['block_actual_m'], self.intr, T, shift)
+        except Exception as e:                # 마스크 쪽 예외로 노드가 죽거나 답을 못 하지 않게 — 깊이 결과로 돌아간다
+            self.get_logger().warn('find_blocks(assembly) %s %s: 마스크 재기 예외 %r — 깊이 결과로' % (rid, part_id, e))
+            return b, why
+        self.get_logger().info('find_blocks(assembly) %s %s: 방법 %s%s · 마스크 %d개 · 픽셀 %d · 옮김 %s px · 깊이 %s' % (
+            rid, part_id, info['method'], ' (%s)' % info['reason'] if info['reason'] else '', len(masks), info['mask_px'], info['shift_px'],
+            info['depth_reject'] or 'OK %s mm' % info['depth_size_mm']))
+        return bm, wm
 
 
 def main(args=None):
