@@ -40,7 +40,7 @@
         "area": "assembly" + "design_id" · "part_id"(10/14 W144 — 한석형 · 민범진) → 조립 자리에 방금 놓은 블록 하나를 깊이로만 잰다
             (placed_measure.measure_placed — 설계 자리 둘레, YOLO 없음) → {"ok":true,"part_id","blocks":[b] 또는 [],"rejected","detail","measured_stamp"}.
             못 재면(옆 블록과 붙음 · 덮임 · 세운 블록 · 기울어짐 · 점 부족 · 크기 다름 · 없음) blocks [] + rejected 코드 — 요청 오류(SCAN_FAILED)와 다르다.
-            placed_method:=mask(10/15 PL — 기본 꺼짐)면 같은 깊이로 measure_placed 를 먼저 보고(기울어짐 · 덮임 · 세움 · 점 부족 · 없음은
+            placed_method:=mask(기본 — 10/15 저녁 PL, 다시 집기 기본 켬 #194 과 함께)면 같은 깊이로 measure_placed 를 먼저 보고(기울어짐 · 덮임 · 세움 · 점 부족 · 없음은
             그대로), 크기 · 위치 · yaw 는 요청 뒤 컬러 한 장의 YOLO 마스크 + 광선으로 다시 잰다(placed_mask.measure_placed_mask —
             깊이가 윗면 가장자리를 처지게 재 크기가 작게 · 가운데가 흔들리는 것을 피하려고). 응답 칸은 같다 — 어느 방법으로 쟀는지는 로그에만.
             컬러가 없거나 · YOLO 를 안 읽었거나(yolo_fallback) · 마스크 쪽 예외면 깊이 결과 그대로 + 경고.
@@ -90,8 +90,9 @@
   yolo_model   YOLO seg 모델 파일(.pt) 경로. 기본 = 이 패키지 share/models 에 설치된 판(DEFAULT_YOLO_MODEL, E-86)
   yolo_fallback  true 면 YOLO 를 읽지 않고 예비 마스크(엣지 + 깊이, E-47)만 쓴다(기본 false — 모델 · ultralytics 가 없는 시험 · CI 용)
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
-  placed_method  find_blocks area assembly 재는 방법: 'depth'(기본 — 깊이만, measure_placed) · 'mask'(YOLO 마스크 + 광선으로 크기 · 위치,
-               기울기 · 덮임은 깊이 — 10/15 PL). 'mask' 가 아니면 모두 depth. 요청마다 읽는다(ros2 param set 으로 바로 바꿀 수 있다)
+  placed_method  find_blocks area assembly 재는 방법: 'mask'(기본 — YOLO 마스크 + 광선으로 크기 · 위치, 기울기 · 덮임은 깊이) · 'depth'(깊이만,
+               measure_placed — 끌 때만 -p placed_method:=depth). 'mask' 가 아니면 모두 depth. 요청마다 읽는다(ros2 param set 으로 바로 바꿀 수 있다).
+               기본을 mask 로 둔 까닭(10/15 저녁 PL): 다시 집기가 기본 켜짐(#194)이라 깊이 값(−y 끝이 약 5 mm 짧게 잡힘)으로 재면 멀쩡한 블록을 다시 집는다
   placed_mask_shift_px  mask 방법에서 YOLO 마스크를 옮길 (du, dv) 픽셀(정수 · 실수 둘 다 됨 — 정수 픽셀로 반올림, 기본 [0, 0]) — 컬러 ↔ 깊이 정렬 어긋남 보정.
                10/15 흉내 시험에서 dy −2.6 mm 치우침 · 마스크를 깊이 윗면에 맞추려면 u 약 −5 px, 같은 15장의 가운데 dy 를 0 으로 하는 값은
                약 [−3, 0](eval_mask) — 값은 실기에서 정한다. 요청마다 읽는다
@@ -214,7 +215,7 @@ class WristBlock(Node):
         self.declare_parameter('yolo_fallback', False)     # true = YOLO 안 읽고 예비 마스크만(시험 · CI 용 — E-86, 기본 끔)
         self.declare_parameter('yolo_conf', 0.55)
         self.declare_parameter('status_hz', 2.0)
-        self.declare_parameter('placed_method', 'depth')          # find_blocks area assembly: depth(기본, 깊이만) · mask(마스크 + 광선, 10/15 PL)
+        self.declare_parameter('placed_method', 'mask')           # find_blocks area assembly: mask(기본 — 마스크 + 광선, 10/15 저녁 PL) · depth(깊이만)
         # mask 때 마스크를 옮길 (du, dv) 픽셀 — 컬러 ↔ 깊이 정렬 보정(실기에서 정함). 형을 안 묶는다(dynamic_typing): [-3, 0] 처럼 정수로 넣어도
         # 노드가 죽지 않게(DOUBLE_ARRAY 로 선언하면 INTEGER_ARRAY 를 넣을 때 InvalidParameterTypeException 으로 안 켜진다 — 10/15 검토)
         self.declare_parameter('placed_mask_shift_px', [0.0, 0.0], ParameterDescriptor(dynamic_typing=True))
