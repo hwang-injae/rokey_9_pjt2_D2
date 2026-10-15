@@ -13,12 +13,15 @@ R3 · R5 는 판정이 두 곳에서 갈리지 않게 검사 프로그램의 계
 (이 파일이 design_checker 를 import 하면 검사 프로그램이 이 파일을 import 할 때 서로 물린다).
 단위 mm, 설계 좌표계(작업면 z = 0). 기울기는 보지 않고, 그리퍼는 손가락 두 개만 본다(손바닥 · 손목 · 팔 충돌은 안 봄).
 """
+import time
 from functools import lru_cache
 
 MIN_BEARING_MM = 15.0      # R2 닿는 면 최소 폭(10/14 PL — 25 mm 면 기본 설계 003 세운 다리 받침 면 25 × 15 가 떨어진다)
 GRID_XY_MM = 2.5           # 스캔 격자 맞춤(판정에만): 블록 중심 x · y 는 젠가 반 치수(7.5 · 12.5 · 37.5)의 공약수 2.5 mm 칸에 놓인다
 GRID_Z_MM = 5.0            # 밑면 높이는 블록 높이(15 · 25 · 75)의 합이라 5 mm 칸
-MAX_STATES = 200000        # 한 층 순서 찾기에서 따지는 '놓인 묶음' 수 상한 — 서비스 제한(5 초) 안에 끝내려고. 넘으면 '다 못 따짐' 실패
+MAX_STATES = 200000        # 한 층 순서 찾기에서 따지는 '놓인 묶음' 수 상한. 넘으면 '다 못 따짐' 실패(아래 시간 상한과 같은 처리)
+TIME_LIMIT_S = 1.5         # 한 층 순서 찾기 시간 상한(time.monotonic) — 웹이 check_design 답을 기다리는 5초(robot.yaml mqtt.req_timeout_s) 안에
+                           # 검사 전체가 끝나게. 묶음 상한만으로는 최악 약 32초(10/15 한석형 리뷰). 넘으면 '다 못 따짐' R3 실패(10/15 PL '가')
 EPS = 1e-6                 # 같은 높이 · 닿음으로 볼 오차(검사 프로그램 PENETRATION_MM 과 같은 기준)
 POSE_KO = {'x': '눕힘 · 긴 변 좌우', 'y': '눕힘 · 긴 변 앞뒤', 'xe': '옆세움 · 긴 변 좌우', 'ye': '옆세움 · 긴 변 앞뒤',
            'zx': '세움 · 넓은 면 앞뒤', 'zy': '세움 · 넓은 면 좌우'}
@@ -164,12 +167,16 @@ class AssemblyFeasibility:
 
 
         # ③ 층 안 전부 따지기(R1 ~ R5) — 가장 많이 놓은 상태를 기억해 두었다가 못 찾으면 거기서 막힌 블록을 알린다
-        deepest = {'placed': placed, 'states': 0}
+        deepest = {'placed': placed, 'states': 0, 'timeout': False}
+        started = time.monotonic()
 
         @lru_cache(maxsize=None)
         def place_rest(cur):
             deepest['states'] += 1
             if deepest['states'] > MAX_STATES:
+                return None
+            if time.monotonic() - started > TIME_LIMIT_S:
+                deepest['timeout'] = True
                 return None
             if len(cur) > len(deepest['placed']):
                 deepest['placed'] = cur
@@ -187,7 +194,7 @@ class AssemblyFeasibility:
         found = place_rest(placed)
         if found is not None:
             return list(found), placed | set(members), []
-        if deepest['states'] > MAX_STATES:
+        if deepest['states'] > MAX_STATES or deepest['timeout']:
             return None, placed, [{'part': None, 'layer': layer, 'rule': 'R3',
                                    'detail': f'{layer}층 블록이 너무 많거나 얽혀 놓는 순서를 다 따져 보지 못했어요 → 그 층 블록 수 · 받침 위치 → '
                                              f'층을 나눠 쌓거나 블록 수를 줄여 다시 검사하세요'}]

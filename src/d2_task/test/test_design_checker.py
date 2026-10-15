@@ -92,6 +92,30 @@ def test_쌓는_도중_불안정은_순서에_따라_다르다():
     assert '1 → 3 → 2' in res['errors'][0]['detail'] and '1번 위 덩어리' in res['errors'][0]['detail'] and '외 1줄' in res['errors'][0]['detail']
 
 
+def test_W201_한_층_순서_찾기가_시간_상한을_넘으면_R3_position(monkeypatch):
+    # 10/15 PL '가' — 시간 상한(TIME_LIMIT_S)을 넘으면 '다 못 따짐' R3 position 실패, 순서 칸 없음(웹이 5초만 기다려서)
+    import d2_task.assembly_feasibility as af
+    monkeypatch.setattr(af, 'TIME_LIMIT_S', -1.0)
+    res = check(design((-25, 0, 0, 'y'), (0, 0, 15, 'x'), (25, 0, 0, 'y')))    # AI 순서로는 안 돼 다른 순서를 찾게 되는 배치
+    assert not res['ok'] and res['feasible_order'] is None
+    assert [e['kind'] for e in res['errors']] == ['position'] and '로봇 조립 불가(R3)' in res['errors'][0]['detail']
+    assert '다 따져 보지 못했어요' in res['errors'][0]['detail']
+
+
+@pytest.mark.parametrize('given_ok, layout, ok, why', [
+    (True, ((-25, 0, 0, 'y'), (0, 0, 15, 'x'), (25, 0, 0, 'y')), False, [(1, 'CHECK_FAILED'), (2, 'CHECK_FAILED')]),   # W201 은 AI 순서로 된다는데 지금 검사는 떨어뜨림
+    (False, ((-25, 0, 0, 'y'), (25, 0, 0, 'y'), (0, 0, 15, 'x')), True, []),                                         # 지금 검사는 통과인데 W201 은 AI 순서로 안 된다고 함
+])
+def test_W201_과_지금_검사가_엇갈리면_지금_검사를_따르고_순서_칸은_비움(monkeypatch, given_ok, layout, ok, why):
+    # 10/15 PL '나' — 엇갈림은 있으면 안 되는 경우(계산이 같아서). 지금 검사(AI 순서의 안정성 · 잡기 틈) 결과 그대로 · feasible_order = None
+    checker = DesignChecker(CFG, template_checker=NO_TEMPLATE)
+    monkeypatch.setattr(checker.feasibility, 'check_parts', lambda parts, snap_to_grid=False: {'ok': True, 'given_order_ok': given_ok,
+                                                                                          'order': [1, 3, 2], 'grasps': {}, 'failures': []})
+    res = checker.check(design(*layout))
+    assert res['feasible_order'] is None
+    assert res['ok'] is ok and reasons(res) == why
+
+
 def test_파고듦():
     res = check(design((0, 0, 0, 'x'), (10, 0, 5, 'x')))
     assert any('1번 ↔ 2번 겹침' in e['detail'] for e in res['errors'])

@@ -437,8 +437,11 @@ class DesignChecker:
         if not found['ok']:
             return [{'part': f['part'], 'reason': 'CHECK_FAILED', 'detail': f'로봇 조립 불가({f["rule"]}): {f["detail"]}', 'kind': 'position'}
                     for f in found['failures']], None
-        if found['given_order_ok'] or not order_errors:
-            # 계산은 같은데 지금 검사만 AI 순서를 통과시키면(있으면 안 됨) 오래 써 온 지금 검사를 따른다
+        if found['given_order_ok'] != (not order_errors):
+            # 엇갈림(있으면 안 됨) — AI 순서가 된다는데 지금 검사가 떨어뜨렸거나 그 반대. 오래 써 온 지금 검사를 따르고,
+            # 순서 칸은 실패 내용과 어긋날 수 있어 비운다(10/15 PL '나' — 한석형 #184 리뷰)
+            return order_errors, None
+        if found['given_order_ok']:
             return order_errors, found['order']
         seq = ' → '.join(str(s) for s in found['order'])
         grasps = ' · '.join(f'{s}번 {"/".join(found["grasps"].get(s) or [])}' for s in found['order'])
