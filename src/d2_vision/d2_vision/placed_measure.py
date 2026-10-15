@@ -9,6 +9,7 @@ W144(챌린지 A4 — 놓은 블록이 많이 비켰으면 다시 집어 놓기)
 놓은 블록 전용 문턱, 10/15) · NEIGHBOR_MERGED(같은 높이
 이웃과 붙어 윗면이 블록보다 큼 — 경계가 안 보임) · SIZE_MISMATCH(윗면이 블록보다 4 mm 넘게 작음 — 가장자리가 가려지거나 깊이 구멍).
 정확도는 실기로 아직 안 봤다(10/14) — 작업 관리자는 실기 흔들림을 확인한 뒤에 다시 집기에 쓴다(PL · 한석형).
+응답 corners_z_m(10/15 한석형 #190): 잰 블록 네 모서리 안쪽 칸 높이 — 모서리 판정(한 모서리가 뜨면 사람 대기)에 쓴다. 못 잰 모서리는 null.
 단위: 입력 · 출력 좌표 m(base_link). 바깥 영향 없음.
 """
 import math
@@ -41,6 +42,13 @@ END_STRIP_M = 0.010       # 긴 축 끝에서 이만큼 안쪽 띠
 END_ABOVE_M = 0.004       # 설계 윗면보다 이만큼 넘게 높으면 '위로 빠진 점'
 END_FRAC = 0.5            # 한쪽 끝 띠에서 위로 빠진 점 비율이 이 이상이고 다른 끝은 아래면 TILTED(둘 다 높으면 기울기가 아니라 통째로 높음)
 END_MARGIN_M = 0.004      # 끝 띠는 짧은 변 가장자리에서 이만큼 안쪽만(옆 블록 · 가장자리 튐 빼기)
+# 모서리 높이(10/15 한석형 #190 모서리 판정 입력 — 응답 blocks[0].corners_z_m): 잰 블록 윗면 네 모서리 안쪽 칸의 깊이 z 가운데 값
+CORNER_INSET_M = 0.004     # 모서리 칸은 윗면 끝에서 이만큼 안쪽부터(가장자리 깊이 처짐 · 튐을 피함)
+CORNER_CELL_M = 0.006      # 칸 한 변 — 0.5 m 에서 약 7 px, 실기 다리 92개 모서리에서 칸마다 점 30 ~ 80개
+CORNER_Z_LO_M = 0.008      # 칸 점은 설계 윗면보다 이만큼 아래까지(아래층 15 mm 아래 · 작업면은 뺌)
+CORNER_Z_HI_M = 0.020      # 설계 윗면보다 이만큼 위까지 — 윗면 ±TOP_TOL_M 띠로 자르면 8 mm 넘게 들린 모서리가 null 이 된다(합성 8 · 10 · 15 mm 들림).
+                           # 위에 손가락 · 블록이 있으면 COVERED 가 먼저 거르므로 위쪽은 넓게 둔다
+CORNER_MIN_PTS = 5         # 칸 점이 이보다 적으면 그 모서리는 null(못 잼)
 REJECTS = ('NO_PART', 'COVERED', 'STANDING', 'FEW_POINTS', 'TILTED', 'NEIGHBOR_MERGED', 'SIZE_MISMATCH')
 
 
@@ -83,15 +91,41 @@ def _end_lifted(p, local, top_z, up, size):
     return None
 
 
+def corner_heights(p, center_xy, yaw_deg, top_z, a, b):
+    """잰 블록 윗면 네 모서리 안쪽 칸의 높이 — 응답 corners_z_m(한석형 #190 모서리 판정: 한 모서리가 뜨면 자동 다시 집기 대신 사람 대기).
+
+    입력: p = base 점 (N, 3) m(NaN 뺀 것) · center_xy = 잰 블록 가운데 (x, y) m · yaw_deg = 잰 yaw(°) · top_z = 설계 윗면 높이 m ·
+          a · b = 윗면 긴 변 · 짧은 변 m. 칸은 설계 자리가 아니라 **잰 가운데 · yaw** 기준 — 비켜 놓인 블록(10/15 실기 +7 mm)을 설계 자리로
+          재면 끝 칸이 블록 밖(아래층)을 재서 'Z 문제'로 잘못 간다(한석형 XY 모서리도 잰 값 기준).
+    출력: [z(−u,−v), z(−u,+v), z(+u,−v), z(+u,+v)] — u = 긴 변 방향(yaw) · v = 짧은 변, 값 = 칸 점(설계 윗면 −CORNER_Z_LO_M ~ +CORNER_Z_HI_M)
+          z 가운데 값 m(base, 소수 4자리) 또는 None(점 CORNER_MIN_PTS 미만). 바깥 영향 없음."""
+    th = math.radians(yaw_deg)
+    u = np.array([math.cos(th), math.sin(th)])
+    v = np.array([-u[1], u[0]])
+    d = p[:, :2] - np.asarray(center_xy, float)
+    su, sv = d @ u, d @ v
+    zok = (p[:, 2] >= top_z - CORNER_Z_LO_M) & (p[:, 2] <= top_z + CORNER_Z_HI_M)
+    out = []
+    for si in (-1.0, 1.0):
+        for sj in (-1.0, 1.0):
+            cu = si * (a / 2.0 - CORNER_INSET_M - CORNER_CELL_M / 2.0)
+            cv = sj * (b / 2.0 - CORNER_INSET_M - CORNER_CELL_M / 2.0)
+            m = zok & (np.abs(su - cu) <= CORNER_CELL_M / 2.0) & (np.abs(sv - cv) <= CORNER_CELL_M / 2.0)
+            out.append(round(float(np.median(p[m, 2])), 4) if int(np.count_nonzero(m)) >= CORNER_MIN_PTS else None)
+    return out
+
+
 def measure_placed(pts, part, block_actual_m):
     """설계 자리에 놓인 블록 하나를 깊이 점으로 잰다.
 
     입력: pts = base 점 (N, 3) 또는 (H, W, 3) m(NaN 은 뺌) · part = 설계 자리 {part_id, center (x, y, z) m, rot 3x3}(motion_math.recipe_parts
           · BlockChecker.parts 와 같은 칸) · block_actual_m = [길이, 폭, 두께] m.
-    출력: (블록 dict, None) — {part_id, x_m, y_m, top_z_m, yaw_deg, up, tilted, confidence, size_mm [두 변]} 또는 (None, (거절 코드, 설명)).
+    출력: (블록 dict, None) — {part_id, x_m, y_m, top_z_m, yaw_deg, up, tilted, confidence, size_mm [두 변], corners_z_m [모서리 4곳 z 또는 null]}
+          또는 (None, (거절 코드, 설명)).
     순서: ① 세움이면 STANDING ② 설계 자리 둘레(REACH_M) 점 ③ 자리 안 높은 점 비율로 COVERED ④ 설계 윗면 ± TOP_TOL_M 점 — 없으면 NO_PART,
           가운데와 이어진 덩어리만(틈 보이는 이웃 뺌) — 모자라면 FEW_POINTS ⑤ 윗면 평면의 긴 축 양 끝 높이 차 · 긴 축 각 · 폭 방향 각, 또는 한쪽 끝 띠만 위로 빠짐(_end_lifted)으로 TILTED ⑥ 주축 yaw · 양 끝 백분위 가운데 ·
-          두 변 길이(백분위 폭 ÷ EDGE_KEEP) → 크면 NEIGHBOR_MERGED, 작으면 SIZE_MISMATCH. 윗면 높이 = 윗면 점 가운데 값.
+          두 변 길이(백분위 폭 ÷ EDGE_KEEP) → 크면 NEIGHBOR_MERGED, 작으면 SIZE_MISMATCH. 윗면 높이 = 윗면 점 가운데 값 ⑦ 잰 가운데 · yaw 로
+          모서리 네 칸 높이(corner_heights).
     바깥 영향 없음. 실패: part 칸이 없으면 KeyError."""
     L, W, T = (float(v) for v in block_actual_m)
     size = (L, W, T)
@@ -148,14 +182,16 @@ def measure_placed(pts, part, block_actual_m):
         return None, ('SIZE_MISMATCH', f'윗면 {span_u * 1000:.0f} × {span_v * 1000:.0f} mm < 블록 {a * 1000:.0f} × {b * 1000:.0f} mm — 가장자리가 안 보임')
     c = mean + u * (lo_u + hi_u) / 2 + v * (lo_v + hi_v) / 2
     yaw = round(wrap_deg(math.degrees(math.atan2(u[1], u[0]))), 1)
+    yaw = yaw if yaw < 90.0 else -90.0
     return {
         'part_id': part['part_id'],
         'x_m': round(float(c[0]), 4),
         'y_m': round(float(c[1]), 4),
         'top_z_m': round(float(np.median(sel[:, 2])), 4),                # 윗면 점의 가운데 값 — 98 % 백분위는 깊이 잡음만큼 높게 나온다
-        'yaw_deg': yaw if yaw < 90.0 else -90.0,
+        'yaw_deg': yaw,
         'up': up,
         'tilted': False,
         'confidence': 1.0,
         'size_mm': [round(span_u * 1000.0, 1), round(span_v * 1000.0, 1)],
+        'corners_z_m': corner_heights(p, c, yaw, top_z, a, b),      # 한석형 #190 모서리 판정 입력(10/15) — 못 잰 모서리는 null
     }, None
