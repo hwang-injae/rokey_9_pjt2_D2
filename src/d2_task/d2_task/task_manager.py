@@ -111,12 +111,17 @@ def placed_offset(center_m, part_id, ok, why, body):
         return unmeasured('BAD_RESPONSE', 'x_m · y_m 이 유한하지 않음', stamp)
     up = b.get('up') if b.get('up') in ('THICKNESS', 'WIDTH', 'LENGTH') else None
     tilted = b.get('tilted') if isinstance(b.get('tilted'), bool) else None
+    corners = b.get('corners_z_m')
     # top_z_m = #177 윗면 점 가운데 값(잰 값). 다시 집기 높이는 이것과 자세 치수로 구한다(regrasp_decision) — 설계 z 로 대신하지 않음
     # MEASURED = 'x · y 를 기록할 수 있음'일 뿐 — 다시 집기 판정은 regrasp_decision(대상 · 자세 · 기울기 · 시각 · 횟수)이 따로 한다
     return {'status': 'MEASURED', 'x_m': round(x, 5), 'y_m': round(y, 5), 'target_x_m': round(float(center_m[0]), 5),
             'target_y_m': round(float(center_m[1]), 5), 'dx_mm': dx, 'dy_mm': dy, 'dx_raw_mm': dx_raw, 'dy_raw_mm': dy_raw,
             'yaw_deg': _finite(b.get('yaw_deg')), 'up': up,
-            'tilted': tilted, 'top_z_m': _finite(b.get('top_z_m')), 'measured_stamp': stamp}
+            'tilted': tilted, 'top_z_m': _finite(b.get('top_z_m')), 'measured_stamp': stamp,
+            # 모서리 높이 4곳(m, CORNER_SIGNS 순서, 못 잰 곳 None) — 응답에 칸이 있을 때만 싣는다(지금 비전 응답의 기록은 그대로).
+            # 칸 이름 · 순서는 민범진과 맞출 제안(아직 계약 아님). 꼴이 다르면(4개 목록 아님) None
+            **({'corners_z_m': [_finite(v) for v in corners] if isinstance(corners, list) and len(corners) == 4 else None}
+               if 'corners_z_m' in b else {})}
 
 
 A4_TOL_MM = 2.0            # 축별 이 값 이상이면 다시 집어 놓는다(10/14 20:37 PL 승인 — 일정표 W144 · E-119 의 3 mm 초과를 바꿈)
@@ -124,6 +129,9 @@ FLOAT_EPS_MM = 1e-9        # 부동소수 표현 오차만 흡수(예 0.402 − 
 A4_MAX_TRIES = 2           # 같은 블록 다시 집기 최대 횟수(W144 '최대 2번') — 다 쓰고도 크면 남은 오차를 적고 다음 블록으로(10/14 19:47 사용자 확정)
 STAMP_ROUND_S = 0.0005     # 비전 #177 이 measured_stamp 를 소수 3자리(1 ms)로 반올림해 보낸다 — 비교에 그 반올림 폭만 둔다(새 문턱 아님)
 UP_NAMES = ('LENGTH', 'WIDTH', 'THICKNESS')
+A4_Z_TOL_MM = 5.0          # 모서리 높이: 가장 낮은 1곳을 뺀 3곳의 평균과 하나라도 이만큼 이상 다르면 Z 문제 → 사람 수정 대기(10/15 사용자 합의, 단일 블록)
+# 모서리 순서 = 윗면 (긴 축 −, 짧은 축 −) · (−, +) · (+, −) · (+, +). 비전 corners_z_m 칸과 같은 순서 — 칸 이름 · 순서는 민범진과 맞출 제안(아직 계약 아님)
+CORNER_SIGNS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
 
 
 def design_up(quat):
@@ -132,8 +140,61 @@ def design_up(quat):
     return UP_NAMES[max(range(3), key=lambda k: abs(R[2][k]))]
 
 
-def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries):
+def design_yaw_deg(quat):
+    """설계 자세(쿼터니언 xyzw) → 블록 긴 축(LENGTH)이 base x 와 이루는 각(°, [−90, 90)) — 비전 yaw_deg 와 같은 규약(180° 대칭). 바깥 영향 없음."""
+    R = matrix_from_quat(quat)
+    return (math.degrees(math.atan2(R[1][0], R[0][0])) + 90.0) % 180.0 - 90.0
+
+
+def corner_xy_errors(row, part, cfg):
+    """중심과 윗면 모서리 4곳의 x · y 오차(mm, 잰 − 설계). 바깥 영향 없음.
+
+    입력: row = placed_offset MEASURED(dx_raw_mm · dy_raw_mm · yaw_deg · up — 눕힘 THICKNESS · 옆세움 WIDTH) · part(quat) · cfg(block_actual_m).
+    출력: [('center', ex, ey), ('c1', ex, ey), …, ('c4', ex, ey)] — 모서리 순서는 CORNER_SIGNS.
+    모서리는 비전이 재지 않는다: 잰 중심 · 잰 yaw 와 실측 블록 치수로 만든 **계산값**(직사각형 가정)이다. 잰 yaw − 설계 yaw 는 블록이 180° 대칭이라
+    [−90, 90) 로 감아 같은 모서리끼리 짝짓는다. 회전만 틀어졌을 때 모서리 한 축 2 mm ≈ 3.1°(긴 축 절반 37.2 mm).
+    """
+    L, W, T = (float(v) * 1000.0 for v in cfg['block_actual_m'])
+    a, b = L / 2.0, (W if row['up'] == 'THICKNESS' else T) / 2.0
+    yd = design_yaw_deg(part['quat'])
+    ym = math.radians(yd + (row['yaw_deg'] - yd + 90.0) % 180.0 - 90.0)
+    yd = math.radians(yd)
+    dx, dy = row.get('dx_raw_mm', row['dx_mm']), row.get('dy_raw_mm', row['dy_mm'])
+    out = [('center', dx, dy)]
+    for k, (su, sv) in enumerate(CORNER_SIGNS, 1):
+        u, v = su * a, sv * b
+        out.append((f'c{k}', dx + (u * math.cos(ym) - v * math.sin(ym)) - (u * math.cos(yd) - v * math.sin(yd)),
+                    dy + (u * math.sin(ym) + v * math.cos(ym)) - (u * math.sin(yd) + v * math.cos(yd))))
+    return out
+
+
+def corner_z_check(corners_z_m):
+    """모서리 높이 4곳(m) → ('OK' | 'Z' | 'MISSING', 글). 바깥 영향 없음.
+
+    10/15 사용자 합의: 가장 낮은 1곳을 빼고 남은 3곳의 평균과 하나라도 A4_Z_TOL_MM 이상 다르면 Z 문제(자동 다시 집기 안 함 · 사람 수정 대기).
+    한 모서리만 h 들리면 2h/3, 긴 끝 두 모서리가 h 들리면 2h/3 가 차이라 둘 다 h ≥ 7.5 mm 부터 Z 문제다.
+    4곳이 다 유한한 수가 아니면 'MISSING' — 못 얻은 것을 정상으로 보지 않는다.
+    """
+    if not isinstance(corners_z_m, (list, tuple)) or len(corners_z_m) != 4:
+        return 'MISSING', '모서리 높이 4곳이 응답에 없어요'
+    z = [_finite(v) for v in corners_z_m]
+    if any(v is None for v in z):
+        return 'MISSING', f'모서리 4곳 중 {sum(v is None for v in z)}곳 높이를 못 얻었어요'
+    rest = sorted(z)[1:]                            # 가장 낮은 1곳을 뺀다
+    mean = sum(rest) / 3.0
+    dev = max(abs(v - mean) for v in rest) * 1000.0
+    if dev >= A4_Z_TOL_MM - FLOAT_EPS_MM:
+        return 'Z', f'모서리 높이 차 {dev:.1f} mm ≥ {A4_Z_TOL_MM:.0f} mm(가장 낮은 곳을 뺀 3곳 평균 기준)'
+    return 'OK', f'모서리 높이 차 {dev:.1f} mm'
+
+
+def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries, corners=False):
     """W144 A4 자동 다시 집기 판단(ROS 없음 · 바깥 영향 없음). 기록 모드와 따로 — w144_regrasp 가 켜졌을 때만 부른다.
+
+    corners(기본 False — 선택 기능, task 파라미터 w144_corner_judge): False 면 지금 판정 그대로(중심 dx · dy 만, 모서리 칸은 보지 않음).
+    True 면 모서리 판정(10/15 사용자 합의, 단일 블록): 모서리 높이 → 중심 · 모서리 x · y. 비전 TILTED 거절 · tilted True 는 사람 수정 대기(HOLD — 안 B′,
+    #182 의 '기울어짐도 기록 · 다음 블록'과 달라 PL 확인 대기), 다른 거절은 지금처럼 SKIP. 비전이 모서리 높이(corners_z_m)를 내야 돈다 —
+    칸이 없으면 '못 얻음'으로 다시 집지 않는다(지금 비전에서 켜면 다시 집기가 모두 멈춘다 — 비전 칸과 같이 켤 것).
 
     입력: row = placed_offset 결과(없으면 None) · t_req · t_resp = 측정을 부른 · 답을 받은 시각(time.time(), 초) ·
           part = 설계 부품(part_id · quat · grasp) · place_pose = 이 블록을 놓을 때 실제로 보낸 목표((xyz m, 쿼터니언) — 흩뿌림이면 같은 층
@@ -141,7 +202,8 @@ def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries):
     최신성: #177 은 요청 뒤에 받은 깊이만 쓰고(fresh_frames) measured_stamp 는 그중 마지막 장을 받은 시각(노드 시계)이다 —
           같은 로봇 PC 시계라는 가정 아래 t_req ≤ measured_stamp ≤ t_resp 일 때만 '이번 요청의 영상'으로 본다(밖이면 시계 · 영상을 믿지 않음).
           measured_stamp 는 1 ms 로 반올림돼 오므로 양 끝에 STAMP_ROUND_S(0.5 ms)만 둔다.
-    출력: ('OK', None) = 두 축 모두 A4_TOL_MM 미만(반올림 전 값) — 그대로 이어 감 / ('EXHAUSTED', 글) = A4_TOL_MM 이상이지만 이미 A4_MAX_TRIES 번 다시 놓음 — 남은 오차를 적고
+    판정 차례(10/15 사용자 합의 — 단일 블록): 측정 유효 → 모서리 높이(corner_z_check — 못 얻으면 SKIP, Z 문제면 HOLD) → 중심 · 모서리 4곳 x · y(corner_xy_errors).
+    출력: ('OK', None) = 중심 · 모서리 모두 두 축 A4_TOL_MM 미만(반올림 전 값) — 그대로 이어 감 / ('HOLD', 글) = Z 문제 — 다시 집지 않고 사람 수정 대기 / ('EXHAUSTED', 글) = A4_TOL_MM 이상이지만 이미 A4_MAX_TRIES 번 다시 놓음 — 남은 오차를 적고
           이어 감(유효한 측정일 때만 — 측정 불가 · 기울어짐 등은 그 전에 SKIP) / ('REGRASP', 목표) = PickPlace 목표 {part_id, supply_slot '', grasp(레시피), pick_pose(잰 중심 ·
           잰 yaw · 잰 윗면에서 자세 치수로 구한 중심 높이 — block_pose), place_pose(설계), open_width_m 0, obstacles []} /
           ('SKIP', 까닭) = 측정을 못 씀 — 다시 집지 않고 까닭만 적고 다음 블록(사람 대기 없음, 10/14 21:5x 사용자 결정). 다시 집기 조건 = |dx| ≥ A4_TOL_MM 또는 |dy| ≥ A4_TOL_MM(반올림 전 값). 측정을 못 했거나 믿을 수 없으면(대상 · 자세 다름 · 기울어짐 · 좌표 · yaw · 윗면 없음 · 측정 시각이 요청 · 답 사이가 아님 ·
@@ -150,10 +212,14 @@ def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries):
     if row is None:
         return 'SKIP', '놓은 블록을 다시 재지 못했어요(측정 꺼짐 · 답 없음)'
     if row.get('status') != 'MEASURED':
+        if corners and row.get('reason') == 'TILTED':   # 모서리 판정이 켜졌으면 비전 TILTED 거절도 Z 문제 — 자동 집기 없이 사람 수정 대기(안 B′, #182 와 다름 → PL 확인 대기)
+            return 'HOLD', f'놓은 블록이 기울었어요(손목 카메라 TILTED{": " + row["detail"] if row.get("detail") else ""}) — 손으로 바로 놓은 뒤 [계속]을 누르면 다시 잽니다'
         return 'SKIP', f'놓은 블록을 재지 못했어요({row.get("reason")}{": " + row["detail"] if row.get("detail") else ""})'
     stamp = row.get('measured_stamp')
     if not isinstance(stamp, (int, float)) or isinstance(stamp, bool) or not math.isfinite(stamp) or not t_req - STAMP_ROUND_S <= stamp <= t_resp + STAMP_ROUND_S:
         return 'SKIP', '측정 영상이 이번 요청 뒤의 것인지 확인되지 않았어요(measured_stamp가 요청 · 답 시각 사이가 아님)'
+    if corners and row.get('tilted') is True:      # 잰 블록이 기울었다고 온 경우도 TILTED 거절과 같이 사람 수정 대기(안 B′). 모름(None)은 SKIP
+        return 'HOLD', '놓은 블록이 기울었어요(손목 카메라 tilted) — 손으로 바로 놓은 뒤 [계속]을 누르면 다시 잽니다'
     if row.get('tilted') is not False:
         return 'SKIP', '놓은 블록이 기울어졌거나 기울기를 모릅니다'
     want_up = design_up(part['quat'])
@@ -161,11 +227,32 @@ def regrasp_decision(row, t_req, t_resp, part, place_pose, cfg, tries):
         return 'SKIP', f'놓은 블록 자세({row.get("up")})가 설계({want_up})와 다릅니다'
     if row.get('yaw_deg') is None or row.get('top_z_m') is None:
         return 'SKIP', '잰 yaw · 윗면 높이가 없습니다'
-    dx_raw, dy_raw = row.get('dx_raw_mm', row['dx_mm']), row.get('dy_raw_mm', row['dy_mm'])   # 반올림 전 값으로 판단(1.996 이 2.00 으로 보여도 다시 집지 않음)
-    if abs(dx_raw) < A4_TOL_MM - FLOAT_EPS_MM and abs(dy_raw) < A4_TOL_MM - FLOAT_EPS_MM:
+    if not corners:                                # 지금 판정(기본) — 중심만
+        dx_raw, dy_raw = row.get('dx_raw_mm', row['dx_mm']), row.get('dy_raw_mm', row['dy_mm'])   # 반올림 전 값으로 판단(1.996 이 2.00 으로 보여도 다시 집지 않음)
+        if abs(dx_raw) < A4_TOL_MM - FLOAT_EPS_MM and abs(dy_raw) < A4_TOL_MM - FLOAT_EPS_MM:
+            return 'OK', None
+        if tries >= A4_MAX_TRIES:                  # 다시 집기를 다 썼다 — 남은 오차만 적고 이어 감(기존 VERIFY 판정은 이미 통과, 사람 대기 없음)
+            return 'EXHAUSTED', f'다시 집기 {A4_MAX_TRIES}번을 다 써도 남은 오차 dx {row["dx_mm"]} · dy {row["dy_mm"]} mm — 그대로 다음 블록'
+        return _regrasp_goal(row, part, place_pose, cfg)
+    if row.get('up') not in ('THICKNESS', 'WIDTH'):
+        return 'SKIP', f'윗면 모서리를 만들 수 없는 자세({row.get("up")})예요'
+    z_state, z_text = corner_z_check(row.get('corners_z_m'))
+    if z_state == 'MISSING':                       # 못 얻은 것은 정상이 아니다 — 다시 집지 않고 까닭을 적고 다음 블록(#182 규칙, 사람 대기 여부는 결정 대기)
+        return 'SKIP', f'모서리 높이를 못 얻어 판정하지 않아요({z_text})'
+    if z_state == 'Z':
+        return 'HOLD', f'놓은 블록이 기울었어요({z_text}) — 손으로 바로 놓은 뒤 [계속]을 누르면 다시 잽니다'
+    errs = corner_xy_errors(row, part, cfg)        # 반올림 전 값으로 판단(1.996 이 2.00 으로 보여도 다시 집지 않음)
+    if all(abs(ex) < A4_TOL_MM - FLOAT_EPS_MM and abs(ey) < A4_TOL_MM - FLOAT_EPS_MM for _, ex, ey in errs):
         return 'OK', None
+    worst = max(errs, key=lambda e: max(abs(e[1]), abs(e[2])))
     if tries >= A4_MAX_TRIES:                      # 다시 집기를 다 썼다 — 남은 오차만 적고 이어 감(기존 VERIFY 판정은 이미 통과, 사람 대기 없음)
-        return 'EXHAUSTED', f'다시 집기 {A4_MAX_TRIES}번을 다 써도 남은 오차 dx {row["dx_mm"]} · dy {row["dy_mm"]} mm — 그대로 다음 블록'
+        return 'EXHAUSTED', (f'다시 집기 {A4_MAX_TRIES}번을 다 써도 남은 오차 dx {row["dx_mm"]} · dy {row["dy_mm"]} mm'
+                             f'(가장 큰 곳 {worst[0]} {worst[1]:.2f} · {worst[2]:.2f} mm) — 그대로 다음 블록')
+    return _regrasp_goal(row, part, place_pose, cfg)
+
+
+def _regrasp_goal(row, part, place_pose, cfg):
+    """다시 집기 목표(잰 자세에서 집어 처음 보낸 목표에 놓기). 처음 목표를 모르면 SKIP. 바깥 영향 없음."""
     if place_pose is None:
         return 'SKIP', '이 블록을 놓을 때 보낸 목표를 몰라 다시 놓을 자리를 정할 수 없어요'
     pick = block_pose(cfg, row['up'], row['yaw_deg'], row['x_m'], row['y_m'], row['top_z_m'])
@@ -1271,7 +1358,7 @@ class TaskManager:
     def _a4_regrasp(self, part):
         """W144 A4 자동 다시 집기(기본 꺼짐 — io.w144_regrasp_on() 이 참일 때만). 반환: True = 상태를 바꿨다(PICK_PLACE · WAIT_SUPPLY), False = 이어 감.
 
-        판단은 regrasp_decision. 다시 집기는 같은 part_id 목표로 PICK_PLACE → 기존 성공 처리 → VERIFY(다시 잼). 사람 확인은 기존 _hold
+        판단은 regrasp_decision. 다시 집기는 같은 part_id 목표로 PICK_PLACE → 기존 성공 처리 → VERIFY(다시 잼). Z 문제(HOLD)와 사람 확인은 기존 _hold
         (WAIT_SUPPLY no_match_block → [계속]이면 다시 확인). 바깥 영향: CSV 'a4_regrasp' 한 줄, 상태 방송.
         """
         on = getattr(self.io, 'w144_regrasp_on', None)
@@ -1280,13 +1367,23 @@ class TaskManager:
         last = self._a4_last
         mine = bool(last) and last[0][3] == self.placed
         row, t_req, t_resp = (last[1], last[2], last[3]) if mine else (None, 0.0, 0.0)
-        verdict, out = regrasp_decision(row, t_req, t_resp, part, self._a4_place.get(self.placed), self.cfg, self._a4_tries.get(self.placed, 0))
+        corner_on = getattr(self.io, 'w144_corner_on', None)
+        corner_on = bool(corner_on and corner_on())          # 모서리 판정(선택, 기본 꺼짐 — w144_corner_judge)
+        verdict, out = regrasp_decision(row, t_req, t_resp, part, self._a4_place.get(self.placed), self.cfg, self._a4_tries.get(self.placed, 0),
+                                        corner_on)
         with self._lock:                           # 판단 뒤 적용 전에 정지 · 취소 · run 바뀜이 끼면 버린다(commit 과 같은 방식, OK 도) — 다음 run_once 가 정지 절차
             if not mine or (self._epoch, self._stop_count, self.run_id, self.placed) != last[0] or self.halted():
                 LOG.info('A4 다시 집기 판단을 버림(정지 또는 상태 바뀜): %s', self.placed)
                 return True
-            if verdict == 'OK':
+            if verdict == 'OK':                    # 모서리 판정이면 기준 안을 다시 집은 횟수와 함께 적어 소진 뒤 진행과 가른다(10/15 사용자 합의)
+                if corner_on:
+                    self.logger.log('a4_regrasp', self.placed, f'기준 안: 다시 집기 {self._a4_tries.get(self.placed, 0)}번 뒤 중심 · 모서리 2 mm 안')
                 return False
+            if verdict == 'HOLD':                  # Z 문제 — 자동으로 다시 집지 않고 사람이 고친 뒤 [계속]이면 다시 확인(VERIFY → 다시 잼)
+                self.logger.log('a4_regrasp', self.placed, f'Z 문제 — 사람 수정 대기: {out}')
+                self._w144_event('regrasp_hold', self.placed, reason=out)
+                self._hold(self.placed, f'{self.placed}: {out}', then='verify')
+                return True
             if verdict == 'EXHAUSTED':
                 self.logger.log('a4_regrasp', self.placed, f'보정 소진: {out}')
                 self._w144_event('regrasp_exhausted', self.placed, dx_mm=row['dx_mm'], dy_mm=row['dy_mm'], tries=self._a4_tries.get(self.placed, 0))
@@ -1296,8 +1393,12 @@ class TaskManager:
                 self._w144_event('regrasp_skipped', self.placed, reason=out)
                 return False                       # 기존 흐름(W144 촬영 → SELECT)으로 다음 블록
             n = self._a4_tries[self.placed] = self._a4_tries.get(self.placed, 0) + 1
+            more = ''
+            if corner_on:                          # 회전만이면 중심은 작고 모서리가 까닭 — 가장 큰 곳을 같이 적는다
+                worst = max(corner_xy_errors(row, part, self.cfg), key=lambda e: max(abs(e[1]), abs(e[2])))
+                more = f'가장 큰 곳 {worst[0]} {worst[1]:.2f} · {worst[2]:.2f} mm · '
             self.logger.log('a4_regrasp', self.placed, f'{n}번째 다시 집기: dx {row["dx_mm"]} · dy {row["dy_mm"]} mm(설계 중심 기준) · '
-                                                       f'놓을 자리 = 처음 보낸 목표')
+                                                       f'{more}놓을 자리 = 처음 보낸 목표')
             self._start_goal(dict(out, status='FOUND', a4_regrasp=n))
             self._set('PICK_PLACE', None, f'{self.placed} 가 설계 자리에서 벗어나 다시 집어 놓습니다({n}/{A4_MAX_TRIES})')
         return True

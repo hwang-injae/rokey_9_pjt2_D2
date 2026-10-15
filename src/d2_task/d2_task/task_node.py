@@ -93,6 +93,7 @@ class TaskNode(Node):
         self.declare_parameter('w144_measure', False)
         # W144 A4 자동 다시 집기(기본 끔): 켜면 잰 블록이 축별 3 mm 넘게 벗어났을 때 같은 블록을 다시 집어 설계 자리에 놓는다(측정도 같이 켜짐)
         self.declare_parameter('w144_regrasp', False)
+        self.declare_parameter('w144_corner_judge', False)   # A4 모서리 판정(10/15 사용자 합의 · 선택) — 비전 corners_z_m 칸과 같이 켤 것. 이름은 제안
         self.declare_parameter('w144_camera_prefix', '/camera/camera')   # 손목 카메라 토픽 접두(표준 RealSense — 다르면 이 값으로, INTEGRATION.md)
         cb = ReentrantCallbackGroup()
         cfg = load_robot_yaml()
@@ -308,6 +309,10 @@ class TaskNode(Node):
     def w144_regrasp_on(self):
         """W144 A4 자동 다시 집기 파라미터(기본 false). 바깥 영향 없음."""
         return bool(self.get_parameter('w144_regrasp').value)
+
+    def w144_corner_on(self):
+        """W144 A4 모서리 판정 파라미터(기본 false — 꺼지면 중심 dx · dy 만 보는 지금 판정). 바깥 영향 없음."""
+        return bool(self.get_parameter('w144_corner_judge').value)
 
     def scene_detach(self):
         """출발 때 장면에 남은 쥔 상자를 뗀다(SceneAttach part_id '' · attach false — one_pick 시작과 같음). 앞 실행이 쥔 채 멈췄으면 장면 속
