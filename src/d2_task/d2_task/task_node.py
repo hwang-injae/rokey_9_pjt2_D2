@@ -91,8 +91,9 @@ class TaskNode(Node):
         self.declare_parameter('w144_record', False)
         # W144 A4 놓은 블록 다시 재기(E-119 — find_blocks area assembly). 기본 끔: 켜면 VERIFY 통과 뒤 방금 놓은 블록만 재서 기록(다시 집기 없음)
         self.declare_parameter('w144_measure', False)
-        # W144 A4 자동 다시 집기(기본 끔): 켜면 잰 블록이 축별 2 mm 이상 벗어났을 때(task_manager A4_TOL_MM) 같은 블록을 다시 집어 설계 자리에 놓는다(측정도 같이 켜짐)
-        self.declare_parameter('w144_regrasp', False)
+        # W144 A4 자동 다시 집기(기본 켬 — 10/15 PL, 시연 포함): 잰 블록이 축별 2 mm 이상 벗어났을 때(task_manager A4_TOL_MM) 같은 블록을 다시 집어 설계 자리에 놓는다(측정도 같이 켜짐).
+        # 끄려면 -p w144_regrasp:=false
+        self.declare_parameter('w144_regrasp', True)
         self.declare_parameter('w144_corner_judge', False)   # A4 모서리 판정(10/15 사용자 합의 · 선택) — 비전 corners_z_m 칸과 같이 켤 것. 이름은 제안
         self.declare_parameter('w144_camera_prefix', '/camera/camera')   # 손목 카메라 토픽 접두(표준 RealSense — 다르면 이 값으로, INTEGRATION.md)
         cb = ReentrantCallbackGroup()

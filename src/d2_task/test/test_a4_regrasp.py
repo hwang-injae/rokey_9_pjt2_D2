@@ -1,4 +1,4 @@
-"""W144 A4 자동 다시 집기(기본 꺼짐) — 가짜 측정 입력으로 흐름만 본다(실제 재픽 효과 · 비전 · 로봇은 확인 안 함). ROS 없음."""
+"""W144 A4 자동 다시 집기(기본 켬 — 10/15 PL) — 가짜 측정 입력으로 흐름만 본다(실제 재픽 효과 · 비전 · 로봇은 확인 안 함). ROS 없음."""
 import json
 import time
 
@@ -279,3 +279,16 @@ def test_경계_2mm_이상이면_다시_집기_미만이면_그대로_반올림_
     assert row['dx_mm'] == 2.0 and verdict == 'OK'
     verdict, row = _judge(0.0, -0.001996)
     assert row['dy_mm'] == -2.0 and verdict == 'OK'
+
+
+def test_다시_집기는_기본으로_켜고_측정은_따로_끌_수_있다():
+    """10/15 PL: A4 다시 집기 늘 켬(시연 포함) — task_node 파라미터 기본값 w144_regrasp=True, 끌 때만 -p w144_regrasp:=false.
+    w144_measure · w144_corner_judge 기본값은 그대로 꺼짐(다시 집기가 켜지면 측정도 같이 켜진다 — w144_regrasp_on)."""
+    import ast
+    from pathlib import Path
+    tree = ast.parse((Path(__file__).parents[1] / 'd2_task/task_node.py').read_text(encoding='utf-8'))
+    defaults = {c.args[0].value: c.args[1].value for c in ast.walk(tree)
+                if isinstance(c, ast.Call) and getattr(c.func, 'attr', '') == 'declare_parameter'
+                and len(c.args) == 2 and isinstance(c.args[0], ast.Constant) and isinstance(c.args[1], ast.Constant)}
+    assert defaults['w144_regrasp'] is True
+    assert defaults['w144_measure'] is False and defaults['w144_corner_judge'] is False
