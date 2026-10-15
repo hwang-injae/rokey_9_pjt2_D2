@@ -92,7 +92,7 @@
   yolo_conf    YOLO 검출 신뢰도 문턱(0.55 — 10/8 확정 모델 26s판: 검증 장면 재현율 ≥ 0.95 를 지키는 가장 높은 값, 0.5 보다 헛것만 줄고 놓침은 같음)
   placed_method  find_blocks area assembly 재는 방법: 'depth'(기본 — 깊이만, measure_placed) · 'mask'(YOLO 마스크 + 광선으로 크기 · 위치,
                기울기 · 덮임은 깊이 — 10/15 PL). 'mask' 가 아니면 모두 depth. 요청마다 읽는다(ros2 param set 으로 바로 바꿀 수 있다)
-  placed_mask_shift_px  mask 방법에서 YOLO 마스크를 옮길 (du, dv) 픽셀(**실수로**, 기본 [0.0, 0.0]) — 컬러 ↔ 깊이 정렬 어긋남 보정.
+  placed_mask_shift_px  mask 방법에서 YOLO 마스크를 옮길 (du, dv) 픽셀(정수 · 실수 둘 다 됨 — 정수 픽셀로 반올림, 기본 [0, 0]) — 컬러 ↔ 깊이 정렬 어긋남 보정.
                10/15 흉내 시험에서 dy −2.6 mm 치우침 · 마스크를 깊이 윗면에 맞추려면 u 약 −5 px, 같은 15장의 가운데 dy 를 0 으로 하는 값은
                약 [−3, 0](eval_mask) — 값은 실기에서 정한다. 요청마다 읽는다
 robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_size_m · block_actual_m · timeout.service_s ·
@@ -100,7 +100,7 @@ robot.yaml(d2_bringup)에서 assembly_origin · assembly_area_half_m · block_si
 
 바깥 영향: 서비스 답 · camera_status · wrist_image · scan_preview 발행 · /d2/task/state 구독(그림만) · get_design 조회(remote, 설계마다 · 판마다 한 번) ·
   scan_capture 미리보기 PLY · 자세 자료(사진 · 깊이 · 자세) · scan_infer 의 파일 쓰기(scan_dir 아래)뿐. 로봇·카메라·그리퍼에 명령을 보내지 않는다(관측 · 촬영 자세 이동은 작업 관리자가 move_to 로).
-  placed_method:=mask 면 find_blocks area assembly 때 YOLO 를 한 번 더 돌린다(답 시간 + YOLO 한 번 — 이 PC GPU 실측 약 0.02초 · CPU 면 더 길다. wrist_image 는 그때도 내지 않는다).
+  placed_method:=mask 면 find_blocks area assembly 때 YOLO 를 한 번 더 돌린다(답 시간 + YOLO 한 번 — 이 PC GPU 실측 약 0.02초 · CPU 면 더 길다). 작업대 그림은 두 방법 다 같은 조건(요청 뒤 컬러가 있을 때)으로 낸다.
 답할 때: 요청이 온 **뒤에** 들어온 깊이 프레임 n_frames 장(최대 1.5초 기다림)의 중앙값을 쓴다 — 로봇이 막 멈춘 직후의 움직이던 프레임을 섞지 않으려고.
   remote 에서 처음 보는 설계이거나 run_id 가 바뀌었으면 그 앞에 get_design 을 최대 timeout.service_s(3초) 기다린다.
 켤 때 YOLO(10/11 E-86): yolo_fallback 이 false(기본)인데 ultralytics 가 없거나 · 모델 파일이 없거나 · 읽기 · 미리 돌리기가 실패하면
@@ -144,6 +144,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -214,7 +215,9 @@ class WristBlock(Node):
         self.declare_parameter('yolo_conf', 0.55)
         self.declare_parameter('status_hz', 2.0)
         self.declare_parameter('placed_method', 'depth')          # find_blocks area assembly: depth(기본, 깊이만) · mask(마스크 + 광선, 10/15 PL)
-        self.declare_parameter('placed_mask_shift_px', [0.0, 0.0])  # mask 때 마스크를 옮길 (du, dv) 픽셀 — 컬러 ↔ 깊이 정렬 보정(실기에서 정함)
+        # mask 때 마스크를 옮길 (du, dv) 픽셀 — 컬러 ↔ 깊이 정렬 보정(실기에서 정함). 형을 안 묶는다(dynamic_typing): [-3, 0] 처럼 정수로 넣어도
+        # 노드가 죽지 않게(DOUBLE_ARRAY 로 선언하면 INTEGER_ARRAY 를 넣을 때 InvalidParameterTypeException 으로 안 켜진다 — 10/15 검토)
+        self.declare_parameter('placed_mask_shift_px', [0.0, 0.0], ParameterDescriptor(dynamic_typing=True))
 
         self.bridge = CvBridge()
         self.lock = threading.Lock()
@@ -984,7 +987,14 @@ class WristBlock(Node):
             self.get_logger().warn('find_blocks(assembly) %s %s: placed_method mask 인데 요청 뒤 컬러가 없다 — 깊이 결과로' % (rid, part_id))
             return b, why
         try:
-            shift = [float(v) for v in self.get_parameter('placed_mask_shift_px').value]
+            raw = self.get_parameter('placed_mask_shift_px').value
+            try:
+                shift = [float(v) for v in raw]
+                if len(shift) != 2:
+                    raise ValueError
+            except (TypeError, ValueError):
+                self._warn_once('mask_shift', 'placed_mask_shift_px 가 [du, dv] 두 수가 아니다(%r) — 옮기지 않음(이 경고는 한 번만)' % (raw,))
+                shift = [0.0, 0.0]
             with self.find_lock:
                 masks, _ = self._yolo_masks(color)
             if masks is None:

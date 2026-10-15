@@ -11,7 +11,7 @@ import math
 import numpy as np
 import pytest
 
-from d2_vision.placed_mask import measure_placed_mask, measure_placed_mask_detail
+from d2_vision.placed_mask import _project, measure_placed_mask, measure_placed_mask_detail
 from d2_vision.placed_measure import REJECTS, measure_placed
 
 SIZE = [0.07445, 0.0248, 0.0148]          # 실측 블록 (robot.yaml block_actual_m) [길이, 폭, 두께] m
@@ -156,10 +156,11 @@ def test_px_shift_moves_center(shift):
     P, masks = render([placed(pt)])
     b0, _, _ = run(P, masks, pt)
     b1, rej, info = run(P, masks, pt, shift)
-    assert rej is None and info['method'] == 'mask' and info['shift_px'] == [float(shift[0]), float(shift[1])]
+    du, dv = (int(round(float(v))) for v in shift)                     # 정수 픽셀로 반올림해 마스크 고르기 · 높이 · 광선에 같이 쓴다
+    assert rej is None and info['method'] == 'mask' and info['shift_px'] == [du, dv]
     scale = (CAM_H - T) / INTR[0]
-    assert abs((b1['x_m'] - b0['x_m']) - shift[0] * scale) <= 0.0002, (b0, b1)
-    assert abs((b1['y_m'] - b0['y_m']) + shift[1] * scale) <= 0.0002, (b0, b1)
+    assert abs((b1['x_m'] - b0['x_m']) - du * scale) <= 0.0002, (b0, b1)
+    assert abs((b1['y_m'] - b0['y_m']) + dv * scale) <= 0.0002, (b0, b1)
     assert abs(b1['size_mm'][0] - b0['size_mm'][0]) <= 0.3 and abs(b1['yaw_deg'] - b0['yaw_deg']) <= 0.2
 
 
@@ -179,7 +180,7 @@ def test_no_mask_over_center_returns_depth_result():
 
 
 def test_far_shift_moves_mask_off_center():
-    """4b. 마스크를 블록 폭보다 멀리 옮기면 설계 가운데를 안 덮어 깊이 결과로 돌아간다(옮긴 뒤 마스크로 고른다)."""
+    """4b. 마스크를 블록 폭보다 멀리 옮기면 설계 자리와 40 % 넘게 안 겹쳐 깊이 결과로 돌아간다(옮긴 뒤 마스크로 고른다)."""
     pt = part(0.0)
     P, masks = render([placed(pt)])
     blk, rej, info = run(P, masks, pt, (0, 40))                 # 40 px ≈ 19 mm > 폭 절반 12.4 mm
@@ -227,18 +228,32 @@ def test_flush_neighbor_depth_merged_mask_separates():
     blk, rej, info = run(P, masks, pt)
     assert rej is None and info['method'] == 'mask', (rej, info)
     assert abs(blk['y_m'] - CY) <= 0.0005 and abs(blk['size_mm'][1] - W * 1000) <= 0.5, blk
-    blk, rej, info = run(P, [masks[0] | masks[1]], pt)           # YOLO 가 두 블록을 한 마스크로 냈으면 마스크도 NEIGHBOR_MERGED
-    assert blk is None and rej[0] == 'NEIGHBOR_MERGED' and info['method'] == 'mask'
+    blk, rej, info = run(P, [masks[0] | masks[1]], pt)           # YOLO 가 두 블록을 한 마스크로 냈으면 마스크를 안 믿고 깊이 결과(여기선 깊이도 붙음)
+    assert (blk, rej) == measure_placed(P, pt, SIZE) and rej[0] == 'NEIGHBOR_MERGED' and info['method'] == 'depth' and '붙음' in info['reason']
 
 
-def test_partial_mask_is_size_mismatch():
-    """7. 마스크가 블록 절반만 덮으면 SIZE_MISMATCH(마스크 방식) — 잘못된 가운데를 내지 않는다."""
+def test_partial_mask_falls_back_to_depth():
+    """7. 마스크가 블록 절반만 덮으면 마스크를 안 믿고 깊이 결과 그대로 — 깊이가 통과한 블록을 거절로 바꾸지 않고, 잘못된 가운데도 내지 않는다."""
     pt = part(0.0)
     P, masks = render([placed(pt)])
     half = masks[0].copy()
     half[:, :int(INTR[2]) - 20] = False                         # 가운데 픽셀은 남기고 왼쪽을 지움
+    want = measure_placed(P, pt, SIZE)
+    assert want[1] is None
     blk, rej, info = run(P, [half], pt)
-    assert blk is None and rej[0] == 'SIZE_MISMATCH' and rej[0] in REJECTS and info['method'] == 'mask'
+    assert (blk, rej) == want and info['method'] == 'depth' and '일부만' in info['reason'] and info['mask_size_mm'][0] < L * 1000 - 4
+
+
+def test_picks_mask_overlapping_design_footprint_not_first():
+    """7b. 붙은 이웃 마스크가 목록에 먼저 있고 설계 가운데 픽셀까지 살짝 덮어도, 설계 자리와 가장 많이 겹치는 이 블록 마스크를 고른다."""
+    pt = part(0.0)
+    nb = part(0.0, xy=(CX, CY + W))
+    P, masks = render([placed(pt), placed(nb)])
+    u0, v0 = (int(round(v)) for v in _project((CX, CY, T), INTR, cam_pose()))
+    fat = masks[1].copy()
+    fat[v0 - 2:v0 + 3, u0 - 2:u0 + 3] = True                    # 이웃 마스크가 설계 가운데 픽셀을 덮음(겹친 픽셀을 남기는 YOLO 중복)
+    blk, rej, info = run(P, [fat, masks[0]], pt)
+    assert rej is None and info['method'] == 'mask' and abs(blk['y_m'] - CY) <= 0.0005, (blk, info)
 
 
 # ---------- ⑥ 꼴 ----------
