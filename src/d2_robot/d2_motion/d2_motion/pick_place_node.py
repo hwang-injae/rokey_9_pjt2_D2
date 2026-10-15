@@ -22,7 +22,7 @@ from std_msgs.msg import String
 from d2_motion.executor import MoveItExecutor
 from d2_motion.motion_math import (CENTER_PREFIX, GRASP_AXIS, STANDUP_GRASPS, TILT, TILT_AS, TILT_LESS_DEG, TIP, TIP_GRASP, TIP_LIFT_M,
                                    flip_about_z, held_block_pose, held_finger_angle, matrix_from_quat, move_speed_scale, open_finger_angle,
-                                   pick_open_width, pick_place_tcp, scan_structure_box, standup_case, standup_held_box, standup_targets,
+                                   pick_open_width, pick_place_tcp, place_offset_m, scan_structure_box, standup_case, standup_held_box, standup_targets,
                                    tcp_target, tilt_pick_place_tcp, tip_place_tcp, up_axis)
 from d2_safety.safe_stop import SafeStop, init_ros
 
@@ -253,10 +253,14 @@ class PickPlaceNode(Node):
     def _place_ratio(self, center):
         """놓기 하강 속도 비율 — 놓을 블록 가운데 center(m)가 받침 자리(spare_spots 첫 자리)에서 SPARE_NEAR_M 안이면 1.0(받침에 놓기는
         평소 속도, 10/14 박진용), 아니면 robot.yaml motion.place_speed_ratio(조립 자리에 놓기는 살살). 받침 자리가 없으면 늘 place_speed_ratio."""
-        spots = self.cfg.get('spare_spots') or []
-        if spots and math.hypot(center[0] - spots[0]['x_m'], center[1] - spots[0]['y_m']) <= SPARE_NEAR_M:
+        if self._at_spare(center):
             return 1.0
         return self.cfg['motion'].get('place_speed_ratio', 1.0)
+
+    def _at_spare(self, center):
+        """놓을 블록 가운데 center(m)가 받침 자리(robot.yaml spare_spots 첫 자리)에서 SPARE_NEAR_M 안인가 — 받침에 놓기. 받침 자리가 없으면 False."""
+        spots = self.cfg.get('spare_spots') or []
+        return bool(spots) and math.hypot(center[0] - spots[0]['x_m'], center[1] - spots[0]['y_m']) <= SPARE_NEAR_M
 
     def line_clear(self, jt, kind, finger=None, held=None, ignore=None):
         """수직 직선 궤적 jt 를 촘촘히 나눠(dense) 손가락 각 finger · 쥔 블록 held 로 부딪히는 자세가 없는지. 반환: 괜찮으면 True.
@@ -326,6 +330,12 @@ class PickPlaceNode(Node):
         except (ValueError, KeyError) as e:
             self.get_logger().error(f'{g.part_id}: 목표 계산 실패 — {e}')
             return None
+        # 조립 자리 놓기 보정(10/15 PL — FLAT_SHORT 블록이 긴 축으로 밀려 놓임, robot.yaml motion.place_offset_flat_short_m, 0 = 끔).
+        # 받침에 놓기는 받침에서 다시 재므로 옮기지 않는다. 장면의 놓은 자리(placed)는 목표 그대로 — 보정은 그 자리에 놓이게 하려는 것
+        shift = (0.0, 0.0, 0.0) if self._at_spare(lc) else place_offset_m(self.cfg, lr, g.grasp)
+        if any(shift):
+            place_xyz = tuple(v + d for v, d in zip(place_xyz, shift))
+            self.get_logger().info(f'{g.part_id}: 놓기 보정 {g.grasp} x {shift[0] * 1000:+.1f} · y {shift[1] * 1000:+.1f} mm')
         m = self.cfg['motion']
         # IK 는 홈 자세에서 출발해 푼다: 지금 자세(예: 관절 0° 로 선 자세)에서 풀면 팔을 뒤로 꺾은 해(관절 1 이 154°)가
         # 나와 놓는 자리까지 길을 못 찾은 적이 있다 (10/6 가상). 놓기는 집기 해에서 출발한다 (원본 run_targets 와 같음)

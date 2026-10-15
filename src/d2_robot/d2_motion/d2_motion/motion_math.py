@@ -321,6 +321,23 @@ def pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, grasp, s
     return pick_xyz, pick_q, place_xyz, place_q, held
 
 
+def place_offset_m(cfg, place_rot, grasp):
+    """조립 자리 놓기 보정(10/15 PL) — 잡기 FLAT_SHORT 로 놓는 블록만, 놓기 TCP 를 블록 긴 축(LENGTH) 방향으로 옮길 양.
+
+    FLAT_SHORT 는 손가락이 폭만 물어 긴 축 어디를 잡았는지가 놓는 자리에 그대로 남는다(FLAT_LONG 은 긴 축을 물어 저절로 가운데).
+    10/15 마스크 실기(R20261015_152525_8d83): FLAT_SHORT 로 놓은 다리 8개 dy −1.43 ~ −3.63 mm(긴 축 = base y) · FLAT_LONG 좌판 3개 긴 축 dx −0.13 ~ 0.5 mm,
+    민범진 사진 22장 분석 −2.4 ± 0.8 mm. robot.yaml motion.place_offset_flat_short_m [x, y](base, m)를 긴 축에 내린 만큼만 쓴다 —
+    긴 축이 base x 인 블록에는 y 보정이 0 이 된다(그 블록은 아직 잰 값이 없어 옮기지 않는다).
+    입력: cfg(robot.yaml dict), place_rot(놓을 블록 회전 3x3), grasp(잡기 이름). 출력: (dx, dy, 0) m. 키가 없거나 [0, 0] 이면 (0, 0, 0) — 보정 끔.
+    """
+    off = (cfg.get('motion') or {}).get('place_offset_flat_short_m') or [0.0, 0.0]
+    if grasp != 'FLAT_SHORT' or not any(off):
+        return (0.0, 0.0, 0.0)
+    u = column(place_rot, AXES['LENGTH'])
+    k = off[0] * u[0] + off[1] * u[1]
+    return (k * u[0], k * u[1], 0.0)
+
+
 def tilt_pick_place_tcp(cfg, pick_center, pick_rot, place_center, place_rot, less_deg):
     """기울어진(걸친) 눕힌 블록을 윗면에 수직으로 기울인 공구로 FLAT_SHORT 폭으로 물어 눕혀 놓는 TCP 목표 (잡기 TILT).
 

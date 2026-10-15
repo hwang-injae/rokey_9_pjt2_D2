@@ -541,3 +541,21 @@ def test_held_block_pose(robot_cfg, case):
     c, q = mm.held_block_pose(*t['place'], held)
     assert mm.up_axis(mm.matrix_from_quat(q)) == mm.up_axis(STAND_STOOD[case])
     assert math.hypot(c[0] - pick_c[0], c[1] - pick_c[1]) < 0.015
+
+
+def test_place_offset_flat_short_only_along_long_axis(robot_cfg):
+    """10/15 PL 놓기 보정: FLAT_SHORT 로 놓는 블록만 robot.yaml motion.place_offset_flat_short_m 를 블록 긴 축에 내린 만큼 옮긴다.
+
+    다리(긴 축 = base y, yaw ±90°)는 설정 y 그대로 · 긴 축이 base x 인 블록(yaw 0)은 0 · FLAT_LONG 은 0 · [0, 0] 이면 끔."""
+    off = robot_cfg['motion']['place_offset_flat_short_m']
+    assert len(off) == 2 and any(off)                         # 켜 둔 값(10/15 [0, 0.0024]) — 0 이면 끔이라 여기서는 켜져 있어야 한다
+    for yaw in (math.pi / 2, -math.pi / 2):                   # 다리: 블록은 앞뒤가 같아 ±90° 어느 쪽으로 놓여도 같은 보정
+        d = mm.place_offset_m(robot_cfg, mm.rpy_matrix(0, 0, yaw), 'FLAT_SHORT')
+        assert close(d, (0.0, off[1], 0.0), 1e-12)
+    assert close(mm.place_offset_m(robot_cfg, mm.rpy_matrix(0, 0, 0), 'FLAT_SHORT'), (off[0], 0.0, 0.0), 1e-12)
+    for grasp in ('FLAT_LONG', 'EDGE_LONG', 'STAND_LONG'):
+        assert mm.place_offset_m(robot_cfg, mm.rpy_matrix(0, 0, math.pi / 2), grasp) == (0.0, 0.0, 0.0)
+    cfg_off = dict(robot_cfg, motion=dict(robot_cfg['motion'], place_offset_flat_short_m=[0.0, 0.0]))
+    assert mm.place_offset_m(cfg_off, mm.rpy_matrix(0, 0, math.pi / 2), 'FLAT_SHORT') == (0.0, 0.0, 0.0)
+    cfg_none = dict(robot_cfg, motion={k: v for k, v in robot_cfg['motion'].items() if k != 'place_offset_flat_short_m'})
+    assert mm.place_offset_m(cfg_none, mm.rpy_matrix(0, 0, math.pi / 2), 'FLAT_SHORT') == (0.0, 0.0, 0.0)
