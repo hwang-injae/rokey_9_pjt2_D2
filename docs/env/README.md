@@ -45,7 +45,7 @@
 
 ```bash
 # 위치는 자유. 저장소 폴더 = 우리 ROS 2 워크스페이스
-git clone https://github.com/hwang-injae/rokey_9_pjt2_D2.git
+git clone https://github.com/rokey9-d2/rokey_9_pjt2_D2.git
 cd rokey_9_pjt2_D2
 ```
 
